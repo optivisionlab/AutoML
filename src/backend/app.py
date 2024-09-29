@@ -5,7 +5,8 @@ from typing import List
 from fastapi.responses import JSONResponse
 from io import BytesIO
 import pandas as pd
-
+from users.engine import checkLogin
+import pathlib
 
 # default sync
 app = FastAPI()
@@ -20,9 +21,13 @@ def ping():
 
 @app.post("/login")
 def api_login(username: str = Form(...), password: str = Form(...)):
-    message = "This is Users"
+
+    if checkLogin(username=username, pwd=password):
+        message = "Login OKE >>> "
+
+    message += "This is Users"
     if username == "Admin" and password == "Admin":
-        message = "This is Admin"
+        message += "This is Admin"
 
     return{
         "username": username,
@@ -32,17 +37,22 @@ def api_login(username: str = Form(...), password: str = Form(...)):
 
 
 @app.post("/upload-files")
-def api_login(files: List[UploadFile] = File(...), mode: str = Form(...), sep: str = Form(...)):
+def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     
-    if mode != "csv":
-        return{
-            "data": None,
-            "messages": "File not CSV",
-        }
+    """
+        file: test.csv
+        stem => test
+        suffix => .csv
+    """
 
     data_list = []
     files_list = []
     for file in files:
+        if pathlib.Path(os.path.basename(file.filename)).suffix != ".csv":
+            data_list.append(None)
+            files_list.append(file.filename)
+            continue
+
         files_list.append(file.filename)
         contents = file.file.read()
         data = BytesIO(contents)
@@ -51,7 +61,7 @@ def api_login(files: List[UploadFile] = File(...), mode: str = Form(...), sep: s
         data.close()
         file.file.close()
 
-    return{
+    return {
         "data_list": data_list,
         "files_list": files_list
     } 
