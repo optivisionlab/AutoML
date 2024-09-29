@@ -6,4 +6,4 @@ fastapi==0.111.1
 fastapi-cli==0.0.4
 numpy==1.26.2
 uvicorn==0.30.3
-
+opencv-python==4.10.0.84
