@@ -1,0 +1,5 @@
+user_id,full_name,email,gender,birthday,phone
+u1,Nguyễn Văn A,nguyenvana@example.com,Nam,1990-01-01,0123456789
+u2,Trần Thị B,tranthib@example.com,Nữ,1995-05-15,0987654321
+u3,Lê Đình C,ledinhc@example.com,Nam,1985-07-20,0369852147
+u4,Phạm Thị D,phamthid@example.com,Nữ,1992-11-30,0765432198
