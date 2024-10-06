@@ -7,6 +7,7 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
+from automl.engine import get_config, train_process
 
 # default sync
 app = FastAPI()
@@ -64,6 +65,29 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     return {
         "data_list": data_list,
         "files_list": files_list
+    } 
+
+
+@app.post("/training")
+def api_train(files: List[UploadFile] = File(...)):
+
+    for file in files:
+        if pathlib.Path(os.path.basename(file.filename)).suffix == ".csv":
+            contents = file.file.read()
+            data_file = BytesIO(contents)
+            data = pd.read_csv(data_file)
+        if pathlib.Path(os.path.basename(file.filename)).suffix == ".yml":
+            contents = file.file.read()
+            data_file = BytesIO(contents)
+            choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
+    
+    best_model_name, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+    
+    return {
+        "Best Model Name: ": best_model_name,
+        "Best Model: ": str(best_model),
+        "Best Params: ": best_params,
+        "Best Score: ": best_score
     } 
 
 
