@@ -145,8 +145,49 @@ def update_user(username: str, new_user: User):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 
+from users.engine import send_reset_password_email
+
+@app.post("/forgot_password/{email}")
+def forgot_password(email: str):
+    user = users_collection.find_one({"email":email})
+    if user:
+        send_reset_password_email(email, user['password'])
+        return {"message": f"Password đã gửi về email: {email}"}
+    else:
+        return {"message": f"Người dùng {email} không tồn tại"}
+
+
+from users.engine import save_otp, send_otp, generate_otp
+@app.post("/send_email/{username}")
+def send_email(username: str):
+    user = users_collection.find_one({"username":username})
+    if user:
+        otp = generate_otp()
+        save_otp(username,otp )
+        send_otp(user['email'], otp)
+        return {"message": f"OTP đã gửi về email: {user['email']}"}
+    else:
+        return {"message": f"Người dùng {username} không tồn tại"}
+
+
+
+from users.engine import check_time_otp 
+@app.post("/verification_email/{username}")
+def verification_email(username: str, otp: str):
+    user = users_collection.find_one({"username":username})
+    if user:
+        if otp == user['otp']:
+            if check_time_otp(username):
+                return {"message": f"Xác thực email {user['email']} thành công"}
+            else:
+                return {"message": "OTP hết hiệu lực"}
+        else:
+            return {"message": "OTP không chính xác"}
+    else:
+        return {"message": f"Người dùng {username} không tồn tại"}
 
 
 if __name__ == "__main__":
+    
     uvicorn.run('app:app', host="127.0.0.1", port=8088, reload=True)
     pass
