@@ -7,7 +7,7 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
-from automl.engine import get_config, train_process
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
 
 # default sync
 app = FastAPI()
@@ -68,19 +68,32 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     } 
 
 
-@app.post("/training")
-def api_train(files: List[UploadFile] = File(...)):
+@app.post("/training_file_local")
+def api_train1(file_data: UploadFile, file_config : UploadFile):
 
-    for file in files:
-        if pathlib.Path(os.path.basename(file.filename)).suffix == ".csv":
-            contents = file.file.read()
-            data_file = BytesIO(contents)
-            data = pd.read_csv(data_file)
-        if pathlib.Path(os.path.basename(file.filename)).suffix == ".yml":
-            contents = file.file.read()
-            data_file = BytesIO(contents)
-            choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
     
+    contents = file_data.file.read()
+    data_file = BytesIO(contents)
+    data = pd.read_csv(data_file)
+
+    contents = file_config.file.read()
+    data_file = BytesIO(contents)
+    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
+
+
+    best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+    
+    return {
+        "Best Model ID: ": best_model_id,
+        "Best Model: ": str(best_model),
+        "Best Params: ": best_params,
+        "Best Score: ": best_score
+    } 
+
+
+@app.post("/training_file_MongoDB")
+def api_train2():
+    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
     best_model_name, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
