@@ -55,7 +55,6 @@ def training(models, list_model_search, matrix, X_train, y_train):
 
     return best_model_id, best_model ,best_score, best_params
 
-
 def get_config(file):
     
     config = yaml.safe_load(file)

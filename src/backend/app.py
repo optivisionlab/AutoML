@@ -8,7 +8,10 @@ import pandas as pd
 from users.engine import checkLogin
 import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+<<<<<<< HEAD
 
+=======
+>>>>>>> binhdev
 
 # default sync
 app = FastAPI()
@@ -20,19 +23,30 @@ def ping():
         "message": "Hi there :P"
     }
 
-
 # @app.post("/login")
 # def api_login(username: str = Form(...), password: str = Form(...)):
 #     message = "This is Users"
 #     if username == "Admin" and password == "Admin":
 #         message = "This is Admin"
 
+<<<<<<< HEAD
+# @app.post("/login")
+# def api_login(username: str = Form(...), password: str = Form(...)):
+#     message = "This is Users"
+#     if username == "Admin" and password == "Admin":
+#         message = "This is Admin"
+
+=======
+>>>>>>> binhdev
 #     return{
 #         "username": username,
 #         "password": password,
 #         "message": message
 #     }
+<<<<<<< HEAD
 
+=======
+>>>>>>> binhdev
 
 @app.post("/upload-files")
 def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
@@ -64,12 +78,12 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
         "files_list": files_list
     } 
 
-
 #Nam api user
 from users.engine import User
 from database.database import get_database
 from users.engine import user_helper
 from users.engine import users_collection
+
 
 
 
@@ -92,7 +106,6 @@ def get_user(username):
 
 
 
-
 from users.engine import checkLogin
 @app.post("/login")
 def login(username, password):
@@ -110,7 +123,6 @@ def login(username, password):
         return {"message": "Tài khoản mật khẩu không chính xác!"}
 
 
-
 #Thêm user, đăng kí user mới
 @app.post("/signup")
 def singup(new_user : User):
@@ -125,7 +137,6 @@ def singup(new_user : User):
         return {'message': 'Đã xảy ra lỗi khi thêm người dùng'}
 
 
-
 #Xóa user
 @app.delete("/delete/{username}")
 def delete_user(username):
@@ -135,7 +146,6 @@ def delete_user(username):
         return {"message": f"Người dùng {username} đã xóa"}
     else:
         return {"message": f"Không thể xóa người dùng {username}. Người dùng không tồn tại hoặc đã xảy ra lỗi"}
-
 
 #update user
 @app.put("/update/{username}")
@@ -152,7 +162,6 @@ def update_user(username: str, new_user: User):
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
 
-
 from users.engine import send_reset_password_email
 
 @app.post("/forgot_password/{email}")
@@ -163,7 +172,6 @@ def forgot_password(email: str):
         return {"message": f"Password đã gửi về email: {email}"}
     else:
         return {"message": f"Người dùng {email} không tồn tại"}
-
 
 from users.engine import save_otp, send_otp, generate_otp
 @app.post("/send_email/{username}")
@@ -176,7 +184,6 @@ def send_email(username: str):
         return {"message": f"OTP đã gửi về email: {user['email']}"}
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
-
 
 
 from users.engine import check_time_otp 
@@ -194,10 +201,8 @@ def verification_email(username: str, otp: str):
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
 
-
 @app.post("/training-file-local")
 def api_train1(file_data: UploadFile, file_config : UploadFile):
-
     
     contents = file_data.file.read()
     data_file = BytesIO(contents)
@@ -206,7 +211,6 @@ def api_train1(file_data: UploadFile, file_config : UploadFile):
     contents = file_config.file.read()
     data_file = BytesIO(contents)
     choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
-
     best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
