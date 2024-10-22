@@ -13,7 +13,6 @@ import random
 np.random.seed(42)
 random.seed(42)
 
-
 # Hàm load data
 def load_data(file_path):
         data = pd.read_csv(file_path)
@@ -55,7 +54,6 @@ def training(models, list_model_search, matrix, X_train, y_train):
             best_params = grid_search.best_params_
 
     return best_model_id, best_model ,best_score, best_params
-
 
 def get_config(file):
     
@@ -119,4 +117,3 @@ def train_process(data, choose, list_model_search, list_feature, target,matrix,m
     X_train,y_train,X_test,y_test = preprocess_data(list_feature, target, data)
     best_model_id, best_model ,best_score, best_params = training(models,list_model_search, matrix,X_train,y_train)
     return best_model_id, best_model ,best_score, best_params
-
