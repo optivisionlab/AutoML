@@ -7,6 +7,11 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 import yaml
 import pymongo
+import numpy as np
+import random
+
+np.random.seed(42)
+random.seed(42)
 
 
 # Hàm load data

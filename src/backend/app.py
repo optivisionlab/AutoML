@@ -68,7 +68,7 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     } 
 
 
-@app.post("/training_file_local")
+@app.post("/training-file-local")
 def api_train1(file_data: UploadFile, file_config : UploadFile):
 
     
@@ -84,14 +84,14 @@ def api_train1(file_data: UploadFile, file_config : UploadFile):
     best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
-        "Best Model ID: ": best_model_id,
+        "best_model_id": best_model_id,
         "Best Model: ": str(best_model),
         "Best Params: ": best_params,
         "Best Score: ": best_score
     } 
 
 
-@app.post("/training_file_MongoDB")
+@app.post("/training-file-mongodb")
 def api_train2():
     data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
     best_model_name, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
