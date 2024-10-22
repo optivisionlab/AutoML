@@ -28,26 +28,11 @@ def ping():
 #     message = "This is Users"
 #     if username == "Admin" and password == "Admin":
 #         message = "This is Admin"
-
-<<<<<<< HEAD
-# @app.post("/login")
-# def api_login(username: str = Form(...), password: str = Form(...)):
-#     message = "This is Users"
-#     if username == "Admin" and password == "Admin":
-#         message = "This is Admin"
-
-=======
->>>>>>> binhdev
 #     return{
 #         "username": username,
 #         "password": password,
 #         "message": message
 #     }
-<<<<<<< HEAD
-
-=======
->>>>>>> binhdev
-
 @app.post("/upload-files")
 def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     
