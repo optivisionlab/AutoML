@@ -6,6 +6,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 import yaml
+import json
 import pymongo
 import numpy as np
 import random
@@ -39,21 +40,25 @@ def training(models, list_model_search, matrix, X_train, y_train):
     best_model = None
     best_score = -1
     best_params = {}
+    model_scores = {}
     
     for model_id in list_model_search:
-        model_info = models[model_id]  
+        model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
         grid_search = GridSearchCV(model, param_grid, cv=5, scoring=matrix)
         grid_search.fit(X_train, y_train)
         
+        model_name = model.__class__.__name__
+        model_scores[model_name] = grid_search.best_score_
+
         if grid_search.best_score_ > best_score:
             best_model_id = model_id
             best_model = grid_search.best_estimator_
             best_score = grid_search.best_score_
             best_params = grid_search.best_params_
 
-    return best_model_id, best_model ,best_score, best_params
+    return best_model_id, best_model ,best_score, best_params, model_scores
 
 def get_config(file):
     
@@ -100,7 +105,6 @@ def get_data_and_config_from_MongoDB():
     list_model_search = config['list_model_search']
     target = config['target']
     matrix = config['matrix']
-
     models = {}
     for key, model_info in config['models'].items():
         model_class = eval(model_info['model'])
@@ -113,7 +117,140 @@ def get_data_and_config_from_MongoDB():
         }
     return data, choose, list_model_search, list_feature, target,matrix,models
 
+
+
+def get_data_config_from_json(file_content):
+    json_data = json.loads(file_content)
+    data = json_data['data']
+    data = pd.DataFrame(data)
+    config = json_data['config']
+    
+    choose = config['choose']
+    list_model_search = config['list_model_search']
+    list_feature = config['list_feature']
+    target = config['target']
+    matrix = config['matrix']
+
+    models = {}
+    for key, model_info in config['models'].items():
+        model_class = eval(model_info['model'])
+        params = model_info['params']
+        models[key] = {
+            "model": model_class(),
+            "params": params
+        }
+    return data, choose, list_model_search, list_feature, target,matrix,models
+
 def train_process(data, choose, list_model_search, list_feature, target,matrix,models):
     X_train,y_train,X_test,y_test = preprocess_data(list_feature, target, data)
-    best_model_id, best_model ,best_score, best_params = training(models,list_model_search, matrix,X_train,y_train)
-    return best_model_id, best_model ,best_score, best_params
+    best_model_id, best_model ,best_score, best_params,model_scores = training(models,list_model_search, matrix,X_train,y_train)
+    return best_model_id, best_model ,best_score, best_params, model_scores
+
+
+
+#đây là mấy cái hàm em test lại mà không cần chạy api thôi, k có gì đâu ạ.
+
+
+def api_train_local(file_data_path: str, file_config_path: str):
+    try:
+        # Đọc dữ liệu từ file CSV
+        data = pd.read_csv(file_data_path)
+
+        # Đọc cấu hình từ file YAML
+        with open(file_config_path, 'r') as config_file:
+            config = yaml.safe_load(config_file)
+            choose = config['choose']
+            list_feature = config['list_feature']
+            list_model_search = config['list_model_search']
+            target = config['target']
+            matrix = config['matrix']
+
+            models = {}
+            for key, model_info in config['models'].items():
+                model_class = eval(model_info['model'])
+                params = model_info['params']
+                for param_key, param_value in params.items():
+                    params[param_key] = [None if v is None else v for v in param_value]
+                models[key] = {
+                    "model": model_class(),
+                    "params": params 
+                }
+
+        best_model_id, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
+        
+        return {
+            "List other model's score": model_scores
+        }
+
+    except Exception as e:
+        print(f"Lỗi_Local: {e}")
+        return None
+
+
+def api_train_mongo():
+    try:
+        data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
+        best_model_name, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+        
+        return {
+            "List other model's score:  ": model_scores
+        } 
+    except Exception as e:
+        print(f"Lỗi: {e}")
+        return None
+
+def api_train_json(file_path: str):
+    try:
+        with open(file_path, 'r') as file:
+            file_content = file.read()
+        data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(file_content)
+
+        best_model_name, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
+        
+        return {
+            "List other model's score": model_scores
+        }
+
+    except Exception as e:
+        print(f"Lỗi: {e}")
+        return None
+    
+def main():
+    file_data_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\glass.csv" 
+    file_config_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\config.yml" 
+    json_file_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\output.json"
+    
+    try:
+        local_result = api_train_local(file_data_path, file_config_path)
+        print("Local Training Result:")
+        print(local_result)
+        print("========================================================================\n")
+    except Exception as e:
+        print(f"Lỗi của hàm api_train_local: {str(e)}")
+        print("========================================================================\n")
+
+
+
+    try:
+        mongo_result = api_train_mongo()
+        print("MongoDB Training Result:")
+        print(mongo_result)
+        print("========================================================================\n")
+
+    except Exception as e:
+        print(f"Lỗi của hàm api_train_mongo: {str(e)}")
+        print("========================================================================\n")
+
+
+    try:
+        json_result = api_train_json(json_file_path)
+        print("JSON Training Result:")
+        print(json_result)
+        print("========================================================================\n")
+
+    except Exception as e:
+        print(f"Lỗi của hàm api_train_json: {str(e)}")
+        print("========================================================================\n")
+
+if __name__ == "__main__":
+    main()

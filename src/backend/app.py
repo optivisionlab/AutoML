@@ -3,11 +3,12 @@ import cv2, datetime, os, tempfile, uvicorn, uuid
 import numpy as np
 from typing import List
 from fastapi.responses import JSONResponse
+import json
 from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
 
 # default sync
 app = FastAPI()
@@ -183,7 +184,7 @@ def verification_email(username: str, otp: str):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 @app.post("/training-file-local")
-def api_train1(file_data: UploadFile, file_config : UploadFile):
+def api_train_local(file_data: UploadFile, file_config : UploadFile):
 
     
     contents = file_data.file.read()
@@ -195,28 +196,48 @@ def api_train1(file_data: UploadFile, file_config : UploadFile):
     choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
 
 
-    best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+    best_model_id, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
         "best_model_id": best_model_id,
         "Best Model: ": str(best_model),
         "Best Params: ": best_params,
-        "Best Score: ": best_score
+        "Best Score: ": best_score,
+        "List other model's score:  ": model_scores
     } 
 
 
 @app.post("/training-file-mongodb")
-def api_train2():
+def api_train_mongo():
     data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
-    best_model_name, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+    best_model_name, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
         "Best Model Name: ": best_model_name,
         "Best Model: ": str(best_model),
         "Best Params: ": best_params,
-        "Best Score: ": best_score
+        "Best Score: ": best_score,
+        "List other model's score:  ": model_scores
     } 
 
+
+@app.post("/upload-json/")
+async def api_train_json(file: UploadFile = File(...)):
+    file_content = await file.read()
+    file_content = file_content.decode('utf-8')
+
+
+    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(file_content)
+
+    best_model_name, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
+    
+    return {
+        "Best Model Name": best_model_name,
+        "Best Model": str(best_model),
+        "Best Params": best_params,
+        "Best Score": best_score,
+        "List other model's score": model_scores
+    }
 
 if __name__ == "__main__":
     

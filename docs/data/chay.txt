@@ -1,0 +1,9 @@
+cd D:\Hoc\LAB\Auto ML\AutoML\src\backend
+
+d:
+
+conda activate automl
+
+python app.py
+
+python engine.py
