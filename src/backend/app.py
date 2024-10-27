@@ -8,15 +8,7 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
-<<<<<<< HEAD
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
-=======
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
-<<<<<<< HEAD
-
-=======
->>>>>>> binhdev
->>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
 
 # default sync
 app = FastAPI()
@@ -192,12 +184,7 @@ def verification_email(username: str, otp: str):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 @app.post("/training-file-local")
-<<<<<<< HEAD
 def api_train_local(file_data: UploadFile, file_config : UploadFile):
-
-=======
-def api_train1(file_data: UploadFile, file_config : UploadFile):
->>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
     
     contents = file_data.file.read()
     data_file = BytesIO(contents)
@@ -206,20 +193,13 @@ def api_train1(file_data: UploadFile, file_config : UploadFile):
     contents = file_config.file.read()
     data_file = BytesIO(contents)
     choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
-<<<<<<< HEAD
-
-
-    best_model_id, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
-=======
-    best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
->>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
-    
+    best_model_name, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     return {
-        "best_model_id": best_model_id,
-        "Best Model: ": str(best_model),
-        "Best Params: ": best_params,
-        "Best Score: ": best_score,
-        "List other model's score:  ": model_scores
+        "best_model_name": best_model_name,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_code": model_scores
     } 
 
 @app.post("/training-file-mongodb")
@@ -228,16 +208,15 @@ def api_train_mongo():
     best_model_name, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
-        "Best Model Name: ": best_model_name,
-        "Best Model: ": str(best_model),
-        "Best Params: ": best_params,
-        "Best Score: ": best_score,
-        "List other model's score:  ": model_scores
+        "best_model_name": best_model_name,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_code": model_scores
     } 
 
 
-<<<<<<< HEAD
-@app.post("/upload-json/")
+@app.post("/train-from-json/")
 async def api_train_json(file: UploadFile = File(...)):
     file_content = await file.read()
     file_content = file_content.decode('utf-8')
@@ -248,15 +227,12 @@ async def api_train_json(file: UploadFile = File(...)):
     best_model_name, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
     
     return {
-        "Best Model Name": best_model_name,
-        "Best Model": str(best_model),
-        "Best Params": best_params,
-        "Best Score": best_score,
-        "List other model's score": model_scores
-    }
-=======
->>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
-
+        "best_model_name": best_model_name,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_code": model_scores
+    } 
 if __name__ == "__main__":
     
     uvicorn.run('app:app', host="0.0.0.0", port=9999, reload=True)
