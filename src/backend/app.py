@@ -8,7 +8,15 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
+<<<<<<< HEAD
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
+=======
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+<<<<<<< HEAD
+
+=======
+>>>>>>> binhdev
+>>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
 
 # default sync
 app = FastAPI()
@@ -25,13 +33,11 @@ def ping():
 #     message = "This is Users"
 #     if username == "Admin" and password == "Admin":
 #         message = "This is Admin"
-
 #     return{
 #         "username": username,
 #         "password": password,
 #         "message": message
 #     }
-
 @app.post("/upload-files")
 def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     
@@ -67,6 +73,8 @@ from users.engine import User
 from database.database import get_database
 from users.engine import user_helper
 from users.engine import users_collection
+
+
 
 
 #Lấy danh sách user
@@ -184,8 +192,12 @@ def verification_email(username: str, otp: str):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 @app.post("/training-file-local")
+<<<<<<< HEAD
 def api_train_local(file_data: UploadFile, file_config : UploadFile):
 
+=======
+def api_train1(file_data: UploadFile, file_config : UploadFile):
+>>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
     
     contents = file_data.file.read()
     data_file = BytesIO(contents)
@@ -194,9 +206,13 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
     contents = file_config.file.read()
     data_file = BytesIO(contents)
     choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
+<<<<<<< HEAD
 
 
     best_model_id, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+=======
+    best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+>>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
     
     return {
         "best_model_id": best_model_id,
@@ -205,7 +221,6 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
         "Best Score: ": best_score,
         "List other model's score:  ": model_scores
     } 
-
 
 @app.post("/training-file-mongodb")
 def api_train_mongo():
@@ -221,6 +236,7 @@ def api_train_mongo():
     } 
 
 
+<<<<<<< HEAD
 @app.post("/upload-json/")
 async def api_train_json(file: UploadFile = File(...)):
     file_content = await file.read()
@@ -238,6 +254,8 @@ async def api_train_json(file: UploadFile = File(...)):
         "Best Score": best_score,
         "List other model's score": model_scores
     }
+=======
+>>>>>>> cd888b899a5ad04770fe1a8c00a25e8aba5c37bd
 
 if __name__ == "__main__":
     
