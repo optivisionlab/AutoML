@@ -9,6 +9,17 @@ import pandas as pd
 from users.engine import checkLogin
 import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
+from automl.model import Item
+
+
+
+
+
+
+
+
+
+
 
 # default sync
 app = FastAPI()
@@ -199,7 +210,7 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "orther_model_code": model_scores
+        "orther_model_scores": model_scores
     } 
 
 @app.post("/training-file-mongodb")
@@ -212,17 +223,15 @@ def api_train_mongo():
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "orther_model_code": model_scores
+        "orther_model_scores": model_scores
     } 
 
 
-@app.post("/train-from-json/")
-async def api_train_json(file: UploadFile = File(...)):
-    file_content = await file.read()
-    file_content = file_content.decode('utf-8')
+@app.post("/train-from-requestbody-json/")
+def api_train_json(item:Item):
 
 
-    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(file_content)
+    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
 
     best_model_name, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
     
@@ -231,8 +240,8 @@ async def api_train_json(file: UploadFile = File(...)):
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "orther_model_code": model_scores
-    } 
+        "orther_model_scores": model_scores
+    }
 if __name__ == "__main__":
     
     uvicorn.run('app:app', host="0.0.0.0", port=9999, reload=True)

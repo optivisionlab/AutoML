@@ -10,6 +10,8 @@ import json
 import pymongo
 import numpy as np
 import random
+from database.database import get_database
+from .model import Item
 
 np.random.seed(42)
 random.seed(42)
@@ -84,7 +86,7 @@ def get_config(file):
     return choose, list_model_search, list_feature, target,matrix,models
 
 def get_data_and_config_from_MongoDB():
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
+    client = get_database()
     db = client["data_automl"]
     csv_collection = db["file_csv"]
     yml_collection = db["file_yaml"]
@@ -119,11 +121,9 @@ def get_data_and_config_from_MongoDB():
 
 
 
-def get_data_config_from_json(file_content):
-    json_data = json.loads(file_content)
-    data = json_data['data']
-    data = pd.DataFrame(data)
-    config = json_data['config']
+def get_data_config_from_json(file_content: Item):
+    data = pd.DataFrame(file_content.data)
+    config = file_content.config
     
     choose = config['choose']
     list_model_search = config['list_model_search']
@@ -252,5 +252,8 @@ def main():
         print(f"Lỗi của hàm api_train_json: {str(e)}")
         print("========================================================================\n")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
+
+
+

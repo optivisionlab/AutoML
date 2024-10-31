@@ -3,9 +3,10 @@ import pandas as pd
 import yaml
 from pathlib import Path
 import os
+from backend.database.database import get_database
 
 
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+client = get_database()
 db = client["data_automl"]
 csv_collection = db["file_csv"]
 yml_collection = db["file_yaml"]
