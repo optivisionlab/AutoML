@@ -6,7 +6,12 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 import yaml
+import pymongo
+import numpy as np
+import random
 
+np.random.seed(42)
+random.seed(42)
 
 # Hàm load data
 def load_data(file_path):
@@ -36,7 +41,9 @@ def training(models, list_model_search, matrix, X_train, y_train):
     best_params = {}
     
     for model_id in list_model_search:
-        model, param_grid = models[model_id]
+        model_info = models[model_id]  
+        model = model_info['model']
+        param_grid = model_info['params']
         grid_search = GridSearchCV(model, param_grid, cv=5, scoring=matrix)
         grid_search.fit(X_train, y_train)
         
@@ -47,7 +54,6 @@ def training(models, list_model_search, matrix, X_train, y_train):
             best_params = grid_search.best_params_
 
     return best_model_id, best_model ,best_score, best_params
-
 
 def get_config(file):
     
@@ -66,11 +72,48 @@ def get_config(file):
         params = model_info['params']
         for param_key, param_value in params.items():
             params[param_key] = [None if v is None else v for v in param_value]
-        models[int(key)] = (model_class(), params)
+        models[key] = {
+            "model": model_class(),
+            "params": params 
+        }
     return choose, list_model_search, list_feature, target,matrix,models
+
+def get_data_and_config_from_MongoDB():
+    client = pymongo.MongoClient("mongodb://localhost:27017/")
+    db = client["data_automl"]
+    csv_collection = db["file_csv"]
+    yml_collection = db["file_yaml"]
+
+    csv_data = list(csv_collection.find())
+    data = pd.DataFrame(csv_data)
+
+    if '_id' in data.columns:
+        data.drop(columns=['_id'], inplace=True)
+
+    config = yml_collection.find_one()
+
+    if '_id' in config:
+        del config['_id']
+    
+    choose = config['choose']
+    list_feature = config['list_feature']
+    list_model_search = config['list_model_search']
+    target = config['target']
+    matrix = config['matrix']
+
+    models = {}
+    for key, model_info in config['models'].items():
+        model_class = eval(model_info['model'])
+        params = model_info['params']
+        for param_key, param_value in params.items():
+            params[param_key] = [None if v is None else v for v in param_value]
+        models[key] = {
+            "model": model_class(),
+            "params": params 
+        }
+    return data, choose, list_model_search, list_feature, target,matrix,models
 
 def train_process(data, choose, list_model_search, list_feature, target,matrix,models):
     X_train,y_train,X_test,y_test = preprocess_data(list_feature, target, data)
-    best_model_name, best_model ,best_score, best_params = training(models,list_model_search, matrix,X_train,y_train)
-    return best_model_name, best_model ,best_score, best_params
-
+    best_model_id, best_model ,best_score, best_params = training(models,list_model_search, matrix,X_train,y_train)
+    return best_model_id, best_model ,best_score, best_params

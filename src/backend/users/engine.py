@@ -12,17 +12,25 @@ class User(BaseModel):
     date: str
     number: int
     role: str
+    avatar: str
+
+# Định nghĩa mô hình cho dữ liệu đầu vào
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
     #Hàm chuyển đổi objectID thành chuỗi
 def user_helper(user) -> dict:
     return{
         "_id": str(user["_id"]),
         "username": str(user["username"]),
+        "email": str(user["email"]),
         # "Password": str(user["password"]),
         "gender": str(user["gender"]),
         "date": str(user["date"]),
         "number": str(user["number"]),
         "role": str(user["role"]),
+        "avatar": str(user["avatar"])
     }
 
 #Hàm lấy danh sách user
@@ -136,3 +144,4 @@ def check_time_otp(username):
             return False
     else:
         False
+        

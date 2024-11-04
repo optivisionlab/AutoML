@@ -17,6 +17,3 @@ if __name__ == "__main__":
         print("Kết nối đến cơ sở dữ liệu MongoDB thành công.")
     else:
         print("Kết nối đến cơ sở dữ liệu MongoDB không thành công.")
-
-
-
