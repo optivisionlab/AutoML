@@ -87,7 +87,7 @@ def get_config(file):
 
 def get_data_and_config_from_MongoDB():
     client = get_database()
-    db = client["data_automl"]
+    db = client["AutoML"]
     csv_collection = db["file_csv"]
     yml_collection = db["file_yaml"]
 

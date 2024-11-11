@@ -7,7 +7,7 @@ from backend.database.database import get_database
 
 
 client = get_database()
-db = client["data_automl"]
+db = client["AutoML"]
 csv_collection = db["file_csv"]
 yml_collection = db["file_yaml"]
 
