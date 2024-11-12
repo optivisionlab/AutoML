@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, status, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, status, HTTPException, Form, Query
 import cv2, datetime, os, tempfile, uvicorn, uuid
 import numpy as np
 from typing import List
@@ -7,32 +7,28 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 import pathlib
-from automl.engine import get_config, train_process
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
 
 # default sync
 app = FastAPI()
 
-@app.get("/")
+@app.get("/home")
 def ping():
     return{
         "AutoML": "version 1.0",
         "message": "Hi there :P"
     }
 
-
 # @app.post("/login")
 # def api_login(username: str = Form(...), password: str = Form(...)):
 #     message = "This is Users"
 #     if username == "Admin" and password == "Admin":
 #         message = "This is Admin"
-
 #     return{
 #         "username": username,
 #         "password": password,
 #         "message": message
 #     }
-
-
 @app.post("/upload-files")
 def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     
@@ -63,12 +59,12 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
         "files_list": files_list
     } 
 
-
 #Nam api user
 from users.engine import User
 from database.database import get_database
 from users.engine import user_helper
 from users.engine import users_collection
+
 
 
 
@@ -81,8 +77,8 @@ def get_users():
 
 from users.engine import check_exits_username
 #Lấy 1 user
-@app.get("/users/{username}")
-def get_user(username):
+@app.get("/users/")
+def get_user(username: str = Query(...)):
     if check_exits_username(username):
         existing_user = users_collection.find_one({"username": username})
         return user_helper(existing_user)
@@ -90,24 +86,43 @@ def get_user(username):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 
-
-
 from users.engine import checkLogin
+from users.engine import LoginRequest
+from users.engine import create_access_token
 @app.post("/login")
-def login(username, password):
+def login(request: LoginRequest):
+    username = request.username
+    password = request.password
+    
     if checkLogin(username, password):
-        user = users_collection.find_one({"username": username}) 
-        if user['role'] == "Admin":
+        user_username = users_collection.find_one({"username": username}) 
+        user_email = users_collection.find_one({"email": username})
+        user = user_username if user_username else user_email
+        if user['role'] == "Admin" :
             message = "This is Admin"
+            role = user.get('role', 'Admin')
+            token = create_access_token(data={"sub": username, "role": role})
+            update_user = {"$set":{
+                "token": token
+            }}
+            users_collection.update_one({"username": username}, update_user)
         else:
             message = "This is User"
+            role = user.get('role', 'User')
+            token = create_access_token(data={"sub": username, "role": role})
+            update_user = {"$set":{
+                "token": token
+            }}
+            
+            users_collection.update_one({"username": username}, update_user)
+            
         return {
-            "Hello": f"Xin chào {username}",
-            "message": message
+            "Hello": f"Xin chào {user['username']}",
+            "message": message,
+            "token": token
         }
     else:
         return {"message": "Tài khoản mật khẩu không chính xác!"}
-
 
 
 #Thêm user, đăng kí user mới
@@ -124,7 +139,6 @@ def singup(new_user : User):
         return {'message': 'Đã xảy ra lỗi khi thêm người dùng'}
 
 
-
 #Xóa user
 @app.delete("/delete/{username}")
 def delete_user(username):
@@ -134,7 +148,6 @@ def delete_user(username):
         return {"message": f"Người dùng {username} đã xóa"}
     else:
         return {"message": f"Không thể xóa người dùng {username}. Người dùng không tồn tại hoặc đã xảy ra lỗi"}
-
 
 #update user
 @app.put("/update/{username}")
@@ -151,7 +164,6 @@ def update_user(username: str, new_user: User):
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
 
-
 from users.engine import send_reset_password_email
 
 @app.post("/forgot_password/{email}")
@@ -162,7 +174,6 @@ def forgot_password(email: str):
         return {"message": f"Password đã gửi về email: {email}"}
     else:
         return {"message": f"Người dùng {email} không tồn tại"}
-
 
 from users.engine import save_otp, send_otp, generate_otp
 @app.post("/send_email/{username}")
@@ -175,7 +186,6 @@ def send_email(username: str):
         return {"message": f"OTP đã gửi về email: {user['email']}"}
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
-
 
 
 from users.engine import check_time_otp 
@@ -193,20 +203,28 @@ def verification_email(username: str, otp: str):
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
 
-
-@app.post("/training")
-def api_train(files: List[UploadFile] = File(...)):
-
-    for file in files:
-        if pathlib.Path(os.path.basename(file.filename)).suffix == ".csv":
-            contents = file.file.read()
-            data_file = BytesIO(contents)
-            data = pd.read_csv(data_file)
-        if pathlib.Path(os.path.basename(file.filename)).suffix == ".yml":
-            contents = file.file.read()
-            data_file = BytesIO(contents)
-            choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
+@app.post("/training-file-local")
+def api_train1(file_data: UploadFile, file_config : UploadFile):
     
+    contents = file_data.file.read()
+    data_file = BytesIO(contents)
+    data = pd.read_csv(data_file)
+
+    contents = file_config.file.read()
+    data_file = BytesIO(contents)
+    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
+    best_model_id, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
+    
+    return {
+        "best_model_id": best_model_id,
+        "Best Model: ": str(best_model),
+        "Best Params: ": best_params,
+        "Best Score: ": best_score
+    } 
+
+@app.post("/training-file-mongodb")
+def api_train2():
+    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
     best_model_name, best_model ,best_score, best_params = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
     
     return {
@@ -217,7 +235,177 @@ def api_train(files: List[UploadFile] = File(...)):
     } 
 
 
+#FastAPI with Google OAuth
+import json
+from starlette.config import Config
+from starlette.requests import Request
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import HTMLResponse, RedirectResponse
+from authlib.integrations.starlette_client import OAuth, OAuthError
+
+
+app.add_middleware(SessionMiddleware, secret_key="!secret")
+
+import yaml
+file_path = "config.yml"
+with open(file_path, "r") as f:
+    data = yaml.safe_load(f)
+
+CLIENT_ID = data['CLIENT_ID']
+CLIENT_SECRET = data['CLIENT_SECRET']
+SESSION_TIMEOUT = data['SESSION_TIMEOUT']
+
+
+config = Config(file_path)
+oauth = OAuth(config)
+
+
+# phương thức để đăng ký một dịch vụ OAuth
+CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
+oauth.register(
+    name='google',
+    server_metadata_url=CONF_URL,  #lay thong tin tu may chu
+    client_id = CLIENT_ID,
+    client_secret = CLIENT_SECRET,
+    client_kwargs={
+        'scope': 'openid email profile',
+        'redirect_url': 'http://localhost:9999/auth'
+    }
+)
+
+import time
+@app.get('/')
+async def homepage(request: Request):
+    user = request.session.get('user')
+    if user:
+        username = user.get('name')
+        email = user.get('email')
+        role = 'User'
+        user_iat = user.get('iat')
+        
+       
+        
+        new_user = {
+            'username': username,
+            'email': email,
+            'gender': "",
+            'date':"",
+            'number':"",
+            'role': role,
+            'avatar':"",
+            'time_start': user_iat
+        }
+        update_user = {"$set":{
+            'username': username,
+            'email': email,
+            'role': role,
+            'time_start': user_iat
+        }}
+        
+        check_user = users_collection.find_one({"email": email})
+        if check_user :
+            users_collection.update_one({'email':email}, update_user)
+        else:
+            users_collection.insert_one(new_user)
+        
+        
+        print(user_iat)
+        current_time = time.time()
+        print(current_time)
+        if (current_time - user_iat > SESSION_TIMEOUT):
+            request.session.pop('user', None)
+            return HTMLResponse('<a href="/login">login</a>')
+        request.session['last_activity_time'] = time.time()
+        data = json.dumps(user)
+        html = (
+            f'<pre>{data}</pre>'
+            '<a href="/logout">logout</a>'
+        )
+        return HTMLResponse(html)
+    return HTMLResponse('<a href="/login_google">login</a>')
+
+
+@app.get('/login_google')
+async def login(request: Request):
+    redirect_uri = request.url_for('auth')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get('/auth')
+async def auth(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except OAuthError as error:
+        return HTMLResponse(f'<h1>{error.error}</h1>')
+    user = token.get('userinfo')
+    if user:
+        request.session['user'] = dict(user)
+    return RedirectResponse(url='/')
+
+
+@app.get('/logout')
+async def logout(request: Request):
+    request.session.pop('user', None)
+    return RedirectResponse(url='/')
+
+
+from users.engine import ChangePassword
+
+@app.post('/change_password')
+def change_password(username: str, password: ChangePassword):
+    pw = password.password
+    new_pw1 = password.new1_password
+    new_pw2 = password.new2_password
+    
+    user = users_collection.find_one({"username": username})
+    if user:
+        if pw == user['password']:
+            if new_pw1 == new_pw2:
+                value_set = {"$set":{
+                    "password": new_pw1
+                }}
+                users_collection.update_one({"_id": user["_id"]}, value_set)
+                return {"message": "Thay đổi mật khẩu thành công!"}
+            else:
+                return {"message": "Mật khẩu mới chưa trùng khớp!"}
+        else:
+            return {"message": "Mật khẩu không chính xác!"}
+    else:
+        return {"message": f"Người dùng {username} không tồn tại"}
+
+
+import base64
+import io
+from fastapi.responses import StreamingResponse
+
+@app.post('/update_avatar')
+def update_avarta(username: str, avatar: UploadFile = File(...)):
+    user = users_collection.find_one({"username": username})
+    if user:
+        # avatar_data = avatar.read()
+        avatar_data = avatar.file.read()
+        avatar_base64 = base64.b64encode(avatar_data).decode('utf-8') 
+        avatar_set = {"$set":{
+            "avatar": avatar_base64
+        }}
+        users_collection.update_one({"_id": user["_id"]}, avatar_set)
+        return {"message": "Avatar cập nhật thành công"}
+    else:
+        return {"message": f"Người dùng {username} không tồn tại"}
+
+@app.get('/get_avatar/{username}')
+def get_avatar(username: str):
+    user = users_collection.find_one({"username": username})
+    if user and "avatar":
+        avatar_base64 = user['avatar']
+        avatar_data = base64.b64decode(avatar_base64)
+        
+        return StreamingResponse(io.BytesIO(avatar_data), media_type="image/png")
+    else:
+        return {"message": f"Người dùng {username} không tồn tại"}
+
+
 if __name__ == "__main__":
     
-    uvicorn.run('app:app', host="127.0.0.1", port=8088, reload=True)
+    uvicorn.run('app:app', host="127.0.0.1", port=9999, reload=True)
     pass
