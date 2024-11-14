@@ -12,17 +12,31 @@ class User(BaseModel):
     date: str
     number: int
     role: str
+    avatar: str
 
+# Định nghĩa mô hình cho dữ liệu đầu vào
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    
+class ChangePassword(BaseModel):
+    password: str
+    new1_password: str 
+    new2_password: str
+     
+     
     #Hàm chuyển đổi objectID thành chuỗi
 def user_helper(user) -> dict:
     return{
         "_id": str(user["_id"]),
         "username": str(user["username"]),
+        "email": str(user["email"]),
         # "Password": str(user["password"]),
         "gender": str(user["gender"]),
         "date": str(user["date"]),
         "number": str(user["number"]),
         "role": str(user["role"]),
+        "avatar": str(user["avatar"])
     }
 
 #Hàm lấy danh sách user
@@ -46,8 +60,10 @@ def check_exits_username(username):
 #Hàm kiểm tra username , password 
 def checkLogin(username, password):
     check_user = users_collection.find_one({"username": username})
-    if check_user:
-        if check_user['password'] == password:
+    check_email = users_collection.find_one({"email": username})
+    user = check_user if check_user else check_email
+    if user:
+        if user['password'] == password:
             return True
         else:
             return False
@@ -136,3 +152,19 @@ def check_time_otp(username):
             return False
     else:
         False
+       
+import jwt 
+import datetime      
+SECRET_KEY = "" 
+ALGORITHM = ""
+EXPIRE_MINUTES = 30        
+        
+def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        
