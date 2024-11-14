@@ -1,0 +1,12 @@
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+D:
+conda activate automl
+python app.py
+
+
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+D:
+conda activate automl
+python -m automl.demo_gradio
+
+
