@@ -8,9 +8,18 @@ import pandas as pd
 from users.engine import checkLogin
 import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
-
+from flask_cors import CORS
+from fastapi.middleware.cors import CORSMiddleware
 # default sync
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"],  
+)
 
 @app.get("/home")
 def ping():
@@ -119,7 +128,8 @@ def login(request: LoginRequest):
         return {
             "Hello": f"Xin chào {user['username']}",
             "message": message,
-            "token": token
+            "token": token,
+            "role": role
         }
     else:
         return {"message": "Tài khoản mật khẩu không chính xác!"}
