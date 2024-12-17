@@ -1,10 +1,15 @@
+from io import BytesIO
 import pandas as pd # type: ignore
+from sklearn.calibration import LabelEncoder
+from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
 import yaml
 import json
 import pymongo
@@ -16,16 +21,22 @@ from .model import Item
 np.random.seed(42)
 random.seed(42)
 
-# Hàm load data
-def load_data(file_path):
-        data = pd.read_csv(file_path)
-        return data
 # Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn. 
 def preprocess_data(list_feature, target, data):
-    X= data[list_feature]
-    y=data[target]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    return X_train,y_train,X_test,y_test
+    for column in data.columns:
+        if data[column].dtype == 'object':
+            le = LabelEncoder()
+            data[column] = le.fit_transform(data[column])
+    
+    X = data[list_feature]
+    y = data[target]
+    
+    scaler = StandardScaler() 
+    X_scaled = scaler.fit_transform(X)
+    
+    X, y = X_scaled, y
+    
+    return X, y
 
 def choose_model_version(choose):
     if(choose == "new model") : 
@@ -37,52 +48,25 @@ def choose_model_version(choose):
         list_model_search = [2]
     return list_model_search
 
-def training(models, list_model_search, matrix, X_train, y_train):
-    best_model_id = None
-    best_model = None
-    best_score = -1
-    best_params = {}
-    model_scores = {}
-    
-    for model_id in list_model_search:
-        model_info = models[model_id]
-        model = model_info['model']
-        param_grid = model_info['params']
-        grid_search = GridSearchCV(model, param_grid, cv=5, scoring=matrix)
-        grid_search.fit(X_train, y_train)
-        
-        model_name = model.__class__.__name__
-        model_scores[model_name] = grid_search.best_score_
-
-        if grid_search.best_score_ > best_score:
-            best_model_id = model_id
-            best_model = grid_search.best_estimator_
-            best_score = grid_search.best_score_
-            best_params = grid_search.best_params_
-
-    return best_model_id, best_model ,best_score, best_params, model_scores
-
 def get_config(file):
     
     config = yaml.safe_load(file)
 
-    # Trích xuất các thông tin cần thiết
+    # Trích xuất các thông tin cần thiết từ file config
     choose = config['choose']
     list_feature = config['list_feature']
-    list_model_search = config['list_model_search']
     target = config['target']
     matrix = config['matrix']
+    
+    #Lấy ra danh sách id của model từ MôngDB
+    client = get_database()
+    db = client["AutoML"]
+    model_collection = db["Classification_models"]
+    document = model_collection.find_one(sort=[('_id', -1)])
+    list_model_search = document['model_keys']
 
-    models = {}
-    for key, model_info in config['models'].items():
-        model_class = eval(model_info['model'])
-        params = model_info['params']
-        for param_key, param_value in params.items():
-            params[param_key] = [None if v is None else v for v in param_value]
-        models[key] = {
-            "model": model_class(),
-            "params": params 
-        }
+
+    models = get_model(list_model_search)
     return choose, list_model_search, list_feature, target,matrix,models
 
 def get_data_and_config_from_MongoDB():
@@ -141,119 +125,148 @@ def get_data_config_from_json(file_content: Item):
         }
     return data, choose, list_model_search, list_feature, target,matrix,models
 
-def train_process(data, choose, list_model_search, list_feature, target,matrix,models):
-    X_train,y_train,X_test,y_test = preprocess_data(list_feature, target, data)
-    best_model_id, best_model ,best_score, best_params,model_scores = training(models,list_model_search, matrix,X_train,y_train)
+
+
+Classification_models = {
+    "0": {
+        "model": DecisionTreeClassifier(),
+        "params": {
+            "max_depth": [5, 10, 15],
+            "min_samples_split": [2, 5, 10]
+        }
+    },
+    "1": {
+        "model": RandomForestClassifier(),
+        "params": {
+            "n_estimators": [50, 100, 200],
+            "max_features": ["sqrt", "log2", 0.5, 1]
+        }
+    },
+    "2": {
+        "model": KNeighborsClassifier(),
+        "params": {
+            "n_neighbors": [3, 5, 7, 9],
+            "weights": ["uniform", "distance"]
+        }
+    },
+    "3": {
+        "model": SVC(),
+        "params": {
+            "C": [0.1, 1, 10],
+            "kernel": ["linear", "rbf"]
+        }
+    },
+    "4": {
+        "model": LogisticRegression(),
+        "params": {
+            "C": [0.001, 0.01, 0.1, 1],
+            "penalty": ["l1", "l2"],
+            "solver": ["saga"],
+            "max_iter": [500, 1000]
+        }
+    },
+    "5": {
+        "model": GaussianNB(),
+        "params": {
+            "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6]
+        }
+    }
+}
+Clustering_models = {
+    "0": {
+        "model": DecisionTreeClassifier(),
+        "params": {
+            "max_depth": [5, 10, 15],
+            "min_samples_split": [2, 5, 10]
+        }
+    },
+    "1": {
+        "model": RandomForestClassifier(),
+        "params": {
+            "n_estimators": [50, 100, 200],
+            "max_features": ["sqrt", "log2", 0.5, 1]
+        }
+    },
+    "2": {
+        "model": KNeighborsClassifier(),
+        "params": {
+            "n_neighbors": [3, 5, 7, 9],
+            "weights": ["uniform", "distance"]
+        }
+    },
+    "3": {
+        "model": SVC(),
+        "params": {
+            "C": [0.1, 1, 10],
+            "kernel": ["linear", "rbf"]
+        }
+    },
+    "4": {
+        "model": LogisticRegression(),
+        "params": {
+            "C": [0.001, 0.01, 0.1, 1],
+            "penalty": ["l1", "l2"],
+            "solver": ["saga"],
+            "max_iter": [500, 1000]
+        }
+    },
+    "5": {
+        "model": GaussianNB(),
+        "params": {
+            "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6]
+        }
+    }
+}
+
+
+def get_model(list_model_search):
+    Models = {}
+    for key in list_model_search:
+        if key in Classification_models:
+            Models[key] = Classification_models[key]
+    return Models
+def training(models, list_model_search, matrix, X_train, y_train):
+    best_model_id = None
+    best_model = None
+    best_score = -1
+    best_params = {}
+    model_scores = {}
+    
+    for model_id in list_model_search:
+        model_info = models[model_id]
+        model = model_info['model']
+        param_grid = model_info['params']
+        grid_search = GridSearchCV(model, param_grid, cv=5, scoring=matrix, error_score="raise")
+        grid_search.fit(X_train, y_train)
+        
+        model_name = model.__class__.__name__
+        model_scores[model_name] = grid_search.best_score_
+
+        if grid_search.best_score_ > best_score:
+            best_model_id = model_id
+            best_model = grid_search.best_estimator_
+            best_score = grid_search.best_score_
+            best_params = grid_search.best_params_
+
     return best_model_id, best_model ,best_score, best_params, model_scores
 
 
 
-#đây là mấy cái hàm em test lại mà không cần chạy api thôi, k có gì đâu ạ.
+def train_process(data, choose, list_model_search, list_feature, target,matrix,models):
+    X_train,y_train = preprocess_data(list_feature, target, data)
+    best_model_id, best_model ,best_score, best_params,model_scores = training(models,list_model_search, matrix,X_train,y_train)
+    return best_model_id, best_model ,best_score, best_params, model_scores
 
 
-def api_train_local(file_data_path: str, file_config_path: str):
-    try:
-        # Đọc dữ liệu từ file CSV
-        data = pd.read_csv(file_data_path)
+def app_train_local(file_data, file_config):
+    contents = file_data.file.read()
+    data_file = BytesIO(contents)
+    data = pd.read_csv(data_file)
 
-        # Đọc cấu hình từ file YAML
-        with open(file_config_path, 'r') as config_file:
-            config = yaml.safe_load(config_file)
-            choose = config['choose']
-            list_feature = config['list_feature']
-            list_model_search = config['list_model_search']
-            target = config['target']
-            matrix = config['matrix']
-
-            models = {}
-            for key, model_info in config['models'].items():
-                model_class = eval(model_info['model'])
-                params = model_info['params']
-                for param_key, param_value in params.items():
-                    params[param_key] = [None if v is None else v for v in param_value]
-                models[key] = {
-                    "model": model_class(),
-                    "params": params 
-                }
-
-        best_model_id, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
-        
-        return {
-            "List other model's score": model_scores
-        }
-
-    except Exception as e:
-        print(f"Lỗi_Local: {e}")
-        return None
-
-
-def api_train_mongo():
-    try:
-        data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
-        best_model_name, best_model ,best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target,matrix,models)
-        
-        return {
-            "List other model's score:  ": model_scores
-        } 
-    except Exception as e:
-        print(f"Lỗi: {e}")
-        return None
-
-def api_train_json(file_path: str):
-    try:
-        with open(file_path, 'r') as file:
-            file_content = file.read()
-        data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(file_content)
-
-        best_model_name, best_model, best_score, best_params, model_scores = train_process(data, choose, list_model_search, list_feature, target, matrix, models)
-        
-        return {
-            "List other model's score": model_scores
-        }
-
-    except Exception as e:
-        print(f"Lỗi: {e}")
-        return None
-    
-def main():
-    file_data_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\glass.csv" 
-    file_config_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\config.yml" 
-    json_file_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\output.json"
-    
-    try:
-        local_result = api_train_local(file_data_path, file_config_path)
-        print("Local Training Result:")
-        print(local_result)
-        print("========================================================================\n")
-    except Exception as e:
-        print(f"Lỗi của hàm api_train_local: {str(e)}")
-        print("========================================================================\n")
-
-
-
-    try:
-        mongo_result = api_train_mongo()
-        print("MongoDB Training Result:")
-        print(mongo_result)
-        print("========================================================================\n")
-
-    except Exception as e:
-        print(f"Lỗi của hàm api_train_mongo: {str(e)}")
-        print("========================================================================\n")
-
-
-    try:
-        json_result = api_train_json(json_file_path)
-        print("JSON Training Result:")
-        print(json_result)
-        print("========================================================================\n")
-
-    except Exception as e:
-        print(f"Lỗi của hàm api_train_json: {str(e)}")
-        print("========================================================================\n")
-
-# if __name__ == "__main__":
-#     main()
-
-
-
+    contents = file_config.file.read()
+    data_file_config = BytesIO(contents)
+    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file_config)
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_model_search, list_feature, target, matrix, models
+    )
+    return best_model_id, best_model, best_score, best_params, model_scores

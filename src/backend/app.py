@@ -3,7 +3,8 @@ from typing import List
 from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB,get_data_config_from_json
+from automl.engine import app_train_local
 from automl.model import Item
 from users.engine import User
 from users.engine import user_helper
@@ -28,7 +29,7 @@ from users.engine import check_time_otp
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
-file_path = ".config.yml"
+file_path = "temp.config.yml"
 with open(file_path, "r") as f:
     data = yaml.safe_load(f)
 
@@ -223,16 +224,7 @@ def verification_email(username: str, otp: str):
 @app.post("/training-file-local")
 def api_train_local(file_data: UploadFile, file_config : UploadFile):
     
-    contents = file_data.file.read()
-    data_file = BytesIO(contents)
-    data = pd.read_csv(data_file)
-
-    contents = file_config.file.read()
-    data_file = BytesIO(contents)
-    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
+    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(file_data, file_config)
 
     return {
         "best_model_id": best_model_id,
@@ -247,8 +239,7 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
 def api_train_mongo():
     data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
+        data, choose, list_model_search, list_feature, target, matrix, models)
 
     return {
         "best_model_id": best_model_id,
@@ -264,8 +255,7 @@ def api_train_json(item:Item):
     data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
+        data, choose, list_model_search, list_feature, target, matrix, models)
 
     return {
         "best_model_id": best_model_id,
