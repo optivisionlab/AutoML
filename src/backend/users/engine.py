@@ -155,8 +155,12 @@ def check_time_otp(username):
        
 import jwt 
 import datetime      
-SECRET_KEY = "" 
-ALGORITHM = ""
+# SECRET_KEY = "" 
+# ALGORITHM = ""
+# EXPIRE_MINUTES = 30
+
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
 EXPIRE_MINUTES = 30        
         
 def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
