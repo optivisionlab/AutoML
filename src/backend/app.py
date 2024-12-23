@@ -28,7 +28,7 @@ from users.engine import check_time_otp
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
-file_path = "temp.config.yml"
+file_path = ".config.yml"
 with open(file_path, "r") as f:
     data = yaml.safe_load(f)
 
@@ -111,12 +111,7 @@ def login(request: LoginRequest):
     username = request.username
     password = request.password
     
-    print("username >>> ", username, "passs>>>", password)
-
     if checkLogin(username, password):
-        
-        print("check login OKIE")
-
         user_username = users_collection.find_one({"username": username}) 
         user_email = users_collection.find_one({"email": username})
         user = user_username if user_username else user_email
