@@ -1,22 +1,5 @@
-choose: "new model"
-list_feature:
-  - "RI"
-  - "Na"
-  - "Mg"
-  - "Al"
-  - "Si"
-  - "K"
-  - "Ca"
-  - "Ba"
-  - "Fe"
-target: "Type"
 matrix: "accuracy"
-list_model_search:
-  - "0"
-  - "1"
-  - "2"
-  - "3"
-models:
+Classification_models:
   "0":
     model: DecisionTreeClassifier
     params:
@@ -26,7 +9,7 @@ models:
     model: RandomForestClassifier
     params:
       n_estimators: [50, 100, 200]
-      max_features: ["sqrt", "log2",0.5,1]
+      max_features: ["sqrt", "log2", 0.5, 1]
   "2":
     model: KNeighborsClassifier
     params:
@@ -37,3 +20,16 @@ models:
     params:
       C: [0.1, 1, 10]
       kernel: ["linear", "rbf"]
+  "4":
+    model: LogisticRegression
+    params:
+      C: [0.001, 0.01, 0.1, 1]
+      penalty: ["l1", "l2"]
+      solver: ["saga"]
+      max_iter: [500,1000]
+  "5":
+    model: GaussianNB
+    params:
+      var_smoothing: [0.000000001, 0.00000001, 0.0000001, 0.000001]
+
+

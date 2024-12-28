@@ -1,0 +1,18 @@
+choose: "new model"
+list_feature:
+  - "RI"
+  - "Na"
+  - "Mg"
+  - "Al"
+  - "Si"
+  - "K"
+  - "Ca"
+  - "Ba"
+  - "Fe"
+target: "Type"
+list_model_search:
+  - "0"
+  - "1"
+  - "2"
+  - "3"
+  - "4"
