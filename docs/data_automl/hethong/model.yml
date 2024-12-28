@@ -1,37 +1,5 @@
-<<<<<<< HEAD:docs/data/config.yml
-choose: "new model"
-list_feature:
-  - "Administrative"
-  - "Administrative_Duration"
-  - "Informational"
-  - "Informational_Duration"
-  - "ProductRelated"
-  - "ProductRelated_Duration"
-  - "BounceRates"
-  - "ExitRates"
-  - "PageValues"
-  - "SpecialDay"
-  - "Month"
-  - "OperatingSystems"
-  - "Browser"
-  - "Region"
-  - "TrafficType"
-  - "VisitorType"
-  - "Weekend"
-target: "Revenue"
-matrix: "accuracy"
-list_model_search:
-  - "0"
-  - "1"
-  - "2"
-  - "3"
-  - "4"
-  - "5"
-models:
-=======
 matrix: "accuracy"
 Classification_models:
->>>>>>> 1e092eaee65c40a36be8c7444c69e6fda80772c7:docs/data_automl/hethong/model.yml
   "0":
     model: DecisionTreeClassifier
     params:
@@ -62,10 +30,4 @@ Classification_models:
   "5":
     model: GaussianNB
     params:
-<<<<<<< HEAD:docs/data/config.yml
       var_smoothing: [0.000000001, 0.00000001, 0.0000001, 0.000001]
-=======
-      var_smoothing: [0.000000001, 0.00000001, 0.0000001, 0.000001]
-
-
->>>>>>> 1e092eaee65c40a36be8c7444c69e6fda80772c7:docs/data_automl/hethong/model.yml
