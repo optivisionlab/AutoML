@@ -10,6 +10,8 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
+
 import yaml
 import json
 import pymongo
@@ -17,6 +19,7 @@ import numpy as np
 import random
 from database.database import get_database
 from .model import Item
+from pathlib import Path
 
 np.random.seed(42)
 random.seed(42)
@@ -56,20 +59,40 @@ def get_config(file):
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
-    matrix = config['matrix']
+    list_model_search = config['list_model_search']
     
     #Lấy ra danh sách id của model từ MôngDB
-    client = get_database()
-    db = client["AutoML"]
-    model_collection = db["Classification_models"]
-    document = model_collection.find_one(sort=[('_id', -1)])
-    list_model_search = document['model_keys']
+    # client = get_database()
+    # db = client["AutoML"]
+    # model_collection = db["Classification_models"]
+    # document = model_collection.find_one(sort=[('_id', -1)])
+    # list_model_search = document['model_keys']
 
 
-    models = get_model(list_model_search)
+    models,matrix  = get_model()
     return choose, list_model_search, list_feature, target,matrix,models
 
-def get_data_and_config_from_MongoDB():
+
+def get_model():
+
+    base_dir = Path(__file__).resolve().parents[3]  
+    file_path = base_dir / "docs" / "data_automl" / "hethong" / "model.yml"
+    with file_path.open("r", encoding="utf-8") as file:
+        data = yaml.safe_load(file)
+    
+    models = {}
+    for key, model_info in data['Classification_models'].items():
+        model_class = eval(model_info['model'])
+        params = model_info['params']
+        models[key] = {
+            "model": model_class(),
+            "params": params
+        }
+    matrix = data['matrix']
+    return models, matrix
+
+
+def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọc model từ file models.yml
     client = get_database()
     db = client["AutoML"]
     csv_collection = db["file_csv"]
@@ -105,7 +128,7 @@ def get_data_and_config_from_MongoDB():
 
 
 
-def get_data_config_from_json(file_content: Item):
+def get_data_config_from_json(file_content: Item):#phần này vẫn chưa sửa là đọc model từ file models.yml
     data = pd.DataFrame(file_content.data)
     config = file_content.config
     
@@ -125,106 +148,6 @@ def get_data_config_from_json(file_content: Item):
         }
     return data, choose, list_model_search, list_feature, target,matrix,models
 
-
-
-Classification_models = {
-    "0": {
-        "model": DecisionTreeClassifier(),
-        "params": {
-            "max_depth": [5, 10, 15],
-            "min_samples_split": [2, 5, 10]
-        }
-    },
-    "1": {
-        "model": RandomForestClassifier(),
-        "params": {
-            "n_estimators": [50, 100, 200],
-            "max_features": ["sqrt", "log2", 0.5, 1]
-        }
-    },
-    "2": {
-        "model": KNeighborsClassifier(),
-        "params": {
-            "n_neighbors": [3, 5, 7, 9],
-            "weights": ["uniform", "distance"]
-        }
-    },
-    "3": {
-        "model": SVC(),
-        "params": {
-            "C": [0.1, 1, 10],
-            "kernel": ["linear", "rbf"]
-        }
-    },
-    "4": {
-        "model": LogisticRegression(),
-        "params": {
-            "C": [0.001, 0.01, 0.1, 1],
-            "penalty": ["l1", "l2"],
-            "solver": ["saga"],
-            "max_iter": [500, 1000]
-        }
-    },
-    "5": {
-        "model": GaussianNB(),
-        "params": {
-            "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6]
-        }
-    }
-}
-Clustering_models = {
-    "0": {
-        "model": DecisionTreeClassifier(),
-        "params": {
-            "max_depth": [5, 10, 15],
-            "min_samples_split": [2, 5, 10]
-        }
-    },
-    "1": {
-        "model": RandomForestClassifier(),
-        "params": {
-            "n_estimators": [50, 100, 200],
-            "max_features": ["sqrt", "log2", 0.5, 1]
-        }
-    },
-    "2": {
-        "model": KNeighborsClassifier(),
-        "params": {
-            "n_neighbors": [3, 5, 7, 9],
-            "weights": ["uniform", "distance"]
-        }
-    },
-    "3": {
-        "model": SVC(),
-        "params": {
-            "C": [0.1, 1, 10],
-            "kernel": ["linear", "rbf"]
-        }
-    },
-    "4": {
-        "model": LogisticRegression(),
-        "params": {
-            "C": [0.001, 0.01, 0.1, 1],
-            "penalty": ["l1", "l2"],
-            "solver": ["saga"],
-            "max_iter": [500, 1000]
-        }
-    },
-    "5": {
-        "model": GaussianNB(),
-        "params": {
-            "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6]
-        }
-    }
-}
-
-
-def get_model(list_model_search):
-    Models = {}
-    for key in list_model_search:
-        if key in Classification_models:
-            Models[key] = Classification_models[key]
-    return Models
 def training(models, list_model_search, matrix, X_train, y_train):
     best_model_id = None
     best_model = None
@@ -256,7 +179,6 @@ def train_process(data, choose, list_model_search, list_feature, target,matrix,m
     X_train,y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model ,best_score, best_params,model_scores = training(models,list_model_search, matrix,X_train,y_train)
     return best_model_id, best_model ,best_score, best_params, model_scores
-
 
 def app_train_local(file_data, file_config):
     contents = file_data.file.read()

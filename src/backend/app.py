@@ -221,50 +221,6 @@ def verification_email(username: str, otp: str):
         return {"message": f"Người dùng {username} không tồn tại"}
 
 
-@app.post("/training-file-local")
-def api_train_local(file_data: UploadFile, file_config : UploadFile):
-    
-    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(file_data, file_config)
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-
-
-@app.post("/training-file-mongodb")
-def api_train_mongo():
-    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-
-
-@app.post("/train-from-requestbody-json/")
-def api_train_json(item:Item):
-    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
-
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-    
 
 @app.get('/')
 async def homepage(request: Request):
@@ -388,6 +344,57 @@ def get_avatar(username: str):
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
 
+
+
+
+
+# Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
+
+
+@app.post("/training-file-local")
+def api_train_local(file_data: UploadFile, file_config : UploadFile):
+    
+    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(file_data, file_config)
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores
+    }
+
+
+@app.post("/training-file-mongodb")
+def api_train_mongo():
+    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_model_search, list_feature, target, matrix, models)
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores
+    }
+
+
+@app.post("/train-from-requestbody-json/")
+def api_train_json(item:Item):
+    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
+
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_model_search, list_feature, target, matrix, models)
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores
+    }
+    
 
 if __name__ == "__main__":
     uvicorn.run('app:app', host=data['HOST'], port=data['PORT'], reload=True)
