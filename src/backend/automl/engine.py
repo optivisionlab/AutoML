@@ -59,7 +59,6 @@ def get_config(file):
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
-    list_model_search = config['list_model_search']
     
     #Lấy ra danh sách id của model từ MôngDB
     # client = get_database()
@@ -70,7 +69,7 @@ def get_config(file):
 
 
     models,matrix  = get_model()
-    return choose, list_model_search, list_feature, target,matrix,models
+    return choose, list_feature, target,matrix,models
 
 
 def get_model():
@@ -148,14 +147,14 @@ def get_data_config_from_json(file_content: Item):#phần này vẫn chưa sửa
         }
     return data, choose, list_model_search, list_feature, target,matrix,models
 
-def training(models, list_model_search, matrix, X_train, y_train):
+def training(models, matrix, X_train, y_train):
     best_model_id = None
     best_model = None
     best_score = -1
     best_params = {}
     model_scores = {}
     
-    for model_id in list_model_search:
+    for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
@@ -175,9 +174,9 @@ def training(models, list_model_search, matrix, X_train, y_train):
 
 
 
-def train_process(data, choose, list_model_search, list_feature, target,matrix,models):
+def train_process(data, choose, list_feature, target, matrix, models):
     X_train,y_train = preprocess_data(list_feature, target, data)
-    best_model_id, best_model ,best_score, best_params,model_scores = training(models,list_model_search, matrix,X_train,y_train)
+    best_model_id, best_model ,best_score, best_params,model_scores = training(models, matrix,X_train,y_train)
     return best_model_id, best_model ,best_score, best_params, model_scores
 
 def app_train_local(file_data, file_config):
@@ -187,8 +186,8 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file_config)
+    choose,  list_feature, target, matrix,models = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
+        data, choose, list_feature, target, matrix, models
     )
     return best_model_id, best_model, best_score, best_params, model_scores
