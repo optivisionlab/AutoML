@@ -10,9 +10,4 @@ list_feature:
   - "Ba"
   - "Fe"
 target: "Type"
-list_model_search:
-  - "0"
-  - "1"
-  - "2"
-  - "3"
-  - "4"
+

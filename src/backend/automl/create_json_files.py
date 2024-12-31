@@ -21,7 +21,7 @@ json_content = {
 }
 
 
-json_file_path = "D:\Hoc\LAB\Auto ML\AutoML\docs\data\output.json"
+json_file_path = "D:\Hoc\LAB\AutoML\AutoML\docs\data\output.json"
 with open(json_file_path, 'w') as json_file:
     json.dump(json_content, json_file, indent=4)
 

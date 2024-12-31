@@ -7,9 +7,9 @@ import gradio as gr
 def gradio_train_local(file_data, file_config):
     data = pd.read_csv(file_data)
     with open(file_config.name, 'r') as f:
-        choose, list_model_search, list_feature, target, matrix, models = get_config(f)
+        choose, list_feature, target, matrix, models = get_config(f)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
+        data, choose, list_feature, target, matrix, models
     )
 
     # Chuyển best_params thành chuỗi JSON dễ đọc

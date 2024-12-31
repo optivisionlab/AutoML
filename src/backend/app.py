@@ -29,7 +29,7 @@ from users.engine import check_time_otp
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
-file_path = ".config.yml"
+file_path = "temp.config.yml"
 with open(file_path, "r") as f:
     data = yaml.safe_load(f)
 
@@ -219,9 +219,6 @@ def verification_email(username: str, otp: str):
             return {"message": "OTP không chính xác"}
     else:
         return {"message": f"Người dùng {username} không tồn tại"}
-
-
-
 
 
 
