@@ -1,4 +1,4 @@
-matrix:
+metric_list:
   - accuracy
   - precision
   - recall
