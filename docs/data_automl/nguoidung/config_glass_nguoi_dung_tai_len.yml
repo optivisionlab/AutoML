@@ -1,4 +1,5 @@
 choose: "new model"
+matrix_sort: accuracy
 list_feature:
   - "RI"
   - "Na"
