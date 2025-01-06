@@ -1,7 +1,9 @@
 from io import BytesIO
 import pandas as pd # type: ignore
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
+from sklearn.metrics import make_scorer
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
@@ -59,6 +61,7 @@ def get_config(file):
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
+    metric_sort = config['metric_sort']
     
     #Lấy ra danh sách id của model từ MôngDB
     # client = get_database()
@@ -68,8 +71,8 @@ def get_config(file):
     # list_model_search = document['model_keys']
 
 
-    models,matrix  = get_model()
-    return choose, list_feature, target,matrix,models
+    models,metric_list  = get_model()
+    return choose, list_feature, target, metric_list, metric_sort, models
 
 
 def get_model():
@@ -87,8 +90,8 @@ def get_model():
             "model": model_class(),
             "params": params
         }
-    matrix = data['matrix']
-    return models, matrix
+    metric_list = data['metric_list']
+    return models, metric_list
 
 
 def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọc model từ file models.yml
@@ -112,7 +115,7 @@ def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọ
     list_feature = config['list_feature']
     list_model_search = config['list_model_search']
     target = config['target']
-    matrix = config['matrix']
+    metric_list = config['metric_list']
     models = {}
     for key, model_info in config['models'].items():
         model_class = eval(model_info['model'])
@@ -123,7 +126,7 @@ def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọ
             "model": model_class(),
             "params": params 
         }
-    return data, choose, list_model_search, list_feature, target,matrix,models
+    return data, choose, list_model_search, list_feature, target,metric_list,models
 
 
 
@@ -135,7 +138,7 @@ def get_data_config_from_json(file_content: Item):#phần này vẫn chưa sửa
     list_model_search = config['list_model_search']
     list_feature = config['list_feature']
     target = config['target']
-    matrix = config['matrix']
+    metric_list = config['metric_list']
 
     models = {}
     for key, model_info in config['models'].items():
@@ -145,38 +148,60 @@ def get_data_config_from_json(file_content: Item):#phần này vẫn chưa sửa
             "model": model_class(),
             "params": params
         }
-    return data, choose, list_model_search, list_feature, target,matrix,models
+    return data, choose, list_model_search, list_feature, target,metric_list,models
 
-def training(models, matrix, X_train, y_train):
+
+def training(models, metric_list, metric_sort, X_train, y_train):
     best_model_id = None
     best_model = None
     best_score = -1
     best_params = {}
-    model_scores = {}
-    
+    model_results = []
+
+    scoring = {}
+    for metric in metric_list:
+        if metric == 'accuracy':
+            scoring[metric] = make_scorer(accuracy_score)
+        else:
+            scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
+
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
-        grid_search = GridSearchCV(model, param_grid, cv=5, scoring=matrix, error_score="raise")
-        grid_search.fit(X_train, y_train)
         
-        model_name = model.__class__.__name__
-        model_scores[model_name] = grid_search.best_score_
+        
+        grid_search = GridSearchCV(
+            model,
+            param_grid,
+            cv=5,
+            scoring = scoring,
+            refit=metric_sort,
+            error_score="raise"
+        )
+        grid_search.fit(X_train, y_train)
 
+        results = {
+            "model_id": model_id,
+            "model_name": model.__class__.__name__,
+            "best_params": grid_search.best_params_,
+            "scores": {metric: grid_search.cv_results_[f"mean_test_{metric}"][grid_search.best_index_] for metric in metric_list}
+        }
+        model_results.append(results)
+        
         if grid_search.best_score_ > best_score:
             best_model_id = model_id
             best_model = grid_search.best_estimator_
             best_score = grid_search.best_score_
             best_params = grid_search.best_params_
 
-    return best_model_id, best_model ,best_score, best_params, model_scores
+    return best_model_id, best_model ,best_score, best_params, model_results
 
 
 
-def train_process(data, choose, list_feature, target, matrix, models):
-    X_train,y_train = preprocess_data(list_feature, target, data)
-    best_model_id, best_model ,best_score, best_params,model_scores = training(models, matrix,X_train,y_train)
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
+    X_train, y_train = preprocess_data(list_feature, target, data)
+    best_model_id, best_model ,best_score, best_params, model_scores = training(models, metric_list, metric_sort, X_train, y_train)
     return best_model_id, best_model ,best_score, best_params, model_scores
 
 def app_train_local(file_data, file_config):
@@ -186,8 +211,8 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose,  list_feature, target, matrix,models = get_config(data_file_config)
+    choose,  list_feature, target, metric_list, metric_sort , models = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, matrix, models
+        data, choose, list_feature, target, metric_list, metric_sort, models
     )
     return best_model_id, best_model, best_score, best_params, model_scores
