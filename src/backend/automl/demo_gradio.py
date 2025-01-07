@@ -7,10 +7,10 @@ def gradio_train_local(file_data, file_config):
     data = pd.read_csv(file_data)
 
     with open(file_config.name, 'r') as f:
-        choose, list_feature, target, matrix, matrix_sort, models = get_config(f)
+        choose, list_feature, target, metric_list, metric_sort, models = get_config(f)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, matrix, matrix_sort , models
+        data, choose, list_feature, target, metric_list, metric_sort , models
     )
     
     model_results = []
@@ -18,7 +18,7 @@ def gradio_train_local(file_data, file_config):
         model_name = result["model_name"]
         scores = result["scores"]
         row = {"Model": model_name}
-        for metric in matrix:
+        for metric in metric_list:
             row[metric] = scores.get(metric, 'N/A')
         model_results.append(row)
     
