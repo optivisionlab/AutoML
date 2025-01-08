@@ -15,3 +15,23 @@ pip install -r requirements.txt
 cd src/backend
 python app.py
 ```
+## Quick start frontend
+- Yêu cầu hệ thống
++ Node.js 18.18 or later.
++ NPM
++ macOS, Windows (including WSL), and Linux are supported.
+
+- docs hướng dẫn cài đặt nodejs và NPM: https://www.geeksforgeeks.org/how-to-install-node-run-npm-in-vs-code/
+
+- di chuyển vào thư mục frontend:
+```
+cd src/frontend
+```
+- gõ lệnh để install các package cần thiết
+```
+npm i
+```
+- chạy dự án trên môi trường dev
+```
+npm run dev
+```
