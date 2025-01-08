@@ -2,6 +2,14 @@ import pandas as pd
 import json
 from automl.engine import get_config, train_process
 import gradio as gr
+from pathlib import Path
+
+
+def read_markdown_file(file_path):  #<-- Function to convert file to str
+    with open(file_path, 'r', encoding='utf-8') as file:
+        markdown_string = file.read()
+    return markdown_string
+
 
 def gradio_train_local(file_data, file_config):
     data = pd.read_csv(file_data)
@@ -32,8 +40,10 @@ def gradio_train_local(file_data, file_config):
     }
     return pd.DataFrame([best_model_info]), model_results_df
 
-def run_gradio_demo():
+def run_gradio_demo(desc):
     interface = gr.Interface(
+        title="HAutoML : Opensouce for Automated Machine Learning by SICT - HaUI",
+        description=desc,
         fn=gradio_train_local,
         inputs=[
             gr.File(label="Upload Data CSV File"),
@@ -42,9 +52,13 @@ def run_gradio_demo():
         outputs=[
             gr.DataFrame(label="Best Model Information"),
             gr.DataFrame(label="All Model Scores")
+        ],
+        examples=[
+            ["assets/iris.data.csv", "assets/config-data-iris.yaml"],
         ]
     )
-    interface.launch()
+    interface.launch(share=True, debug=True)
 
 if __name__ == "__main__":
-    run_gradio_demo()
+    desc_md = Path("assets/desc.md") #<-- Path to file with description written in Markdown
+    run_gradio_demo(desc=read_markdown_file(desc_md))
