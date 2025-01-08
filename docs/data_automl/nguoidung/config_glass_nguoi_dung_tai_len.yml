@@ -1,4 +1,5 @@
-choose: "new model"
+choose: "new_model"
+metric_sort: accuracy
 list_feature:
   - "RI"
   - "Na"
