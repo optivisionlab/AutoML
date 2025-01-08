@@ -1,0 +1,9 @@
+choose: "new_model"
+metric_sort: accuracy
+list_feature:
+  - "sepal_length"
+  - "sepal_width"
+  - "petal_length"
+  - "petal_width"
+target: "class"
+
