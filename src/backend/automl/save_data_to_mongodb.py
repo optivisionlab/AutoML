@@ -3,7 +3,7 @@ import pandas as pd
 import yaml
 from pathlib import Path
 import os
-from backend.database.database import get_database
+from database.database import get_database
 
 
 client = get_database()

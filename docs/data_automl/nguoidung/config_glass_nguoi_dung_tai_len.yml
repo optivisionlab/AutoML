@@ -1,0 +1,14 @@
+choose: "new_model"
+metric_sort: accuracy
+list_feature:
+  - "RI"
+  - "Na"
+  - "Mg"
+  - "Al"
+  - "Si"
+  - "K"
+  - "Ca"
+  - "Ba"
+  - "Fe"
+target: "Type"
+
