@@ -178,61 +178,6 @@ def verification_email(username: str, otp: str):
     message = handle_verification_email(username, otp)
     return message
 
-@app.post("/training-file-local")
-def api_train_local(file_data: UploadFile, file_config : UploadFile):
-    
-    contents = file_data.file.read()
-    data_file = BytesIO(contents)
-    data = pd.read_csv(data_file)
-
-    contents = file_config.file.read()
-    data_file = BytesIO(contents)
-    choose, list_model_search, list_feature, target, matrix,models = get_config(data_file)
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-
-
-@app.post("/training-file-mongodb")
-def api_train_mongo():
-    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-
-
-@app.post("/train-from-requestbody-json/")
-def api_train_json(item:Item):
-    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
-
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-    
 
 @app.get('/')
 async def homepage(request: Request):
