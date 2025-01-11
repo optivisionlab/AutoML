@@ -150,7 +150,7 @@ def handleLogin(username, password):
         return user_login
     else:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tài khoản hoặc mật khẩu không chính xác!"
         )
         # message = {
