@@ -22,9 +22,6 @@ export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
   const { data: session } = useSession();
 
-  console.log(">> session: ", session);
-
-
   return (
     <header className="flex items-center h-16 px-4 border-b shrink-0 md:px-6 justify-between">
       <Link

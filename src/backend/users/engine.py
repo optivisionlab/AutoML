@@ -308,6 +308,27 @@ def handle_get_avatar(username):
         )
     
     
+# def handle_signup(new_user: User):
+#     if check_exits_username(new_user.username) or check_exits_email(new_user.email):
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT,
+#             detail="Người dùng đã tồn tại!"
+#         )
+
+#     result = users_collection.insert_one(new_user.dict())
+#     # print(result)
+#     if result.inserted_id:
+#         raise HTTPException(
+#             status_code=status.HTTP_200_OK,
+#             detail=f"Đăng ký thành công user: {new_user.username}"
+#         )
+#     else:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail='Đã xảy ra lỗi khi thêm người dùng'
+#         )
+    
+from fastapi.responses import JSONResponse   
 def handle_signup(new_user: User):
     if check_exits_username(new_user.username) or check_exits_email(new_user.email):
         raise HTTPException(
@@ -318,10 +339,18 @@ def handle_signup(new_user: User):
     result = users_collection.insert_one(new_user.dict())
     # print(result)
     if result.inserted_id:
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"Đăng ký thành công user: {new_user.username}"
-        )
+        return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "username": new_user.username,
+            "email": new_user.email,
+            "gender": new_user.gender,
+            "date": new_user.date,
+            "number": new_user.number,
+            "role": new_user.role,
+            "avatar": new_user.avatar
+        }
+    )
     else:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

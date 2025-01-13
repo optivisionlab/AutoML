@@ -17,7 +17,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const { username, password } = credentials as any;
 
-          const res = await fetch(`https://dummyjson.com/auth/login`, {
+          const res = await fetch(`http://localhost:9999/login`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

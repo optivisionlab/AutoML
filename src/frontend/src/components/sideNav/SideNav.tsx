@@ -11,42 +11,53 @@ import {
 import { NavItems } from '@/config';
 import { cn } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { ThemeToggle } from '@/components/themeToggle/ThemeToggle';
+// import { ThemeToggle } from '@/components/themeToggle/ThemeToggle';
+
 
 export default function SideNav() {
   const navItems = NavItems();
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('sidebarExpanded');
-      if (saved === null) {
-        return true;
-      }
-      return JSON.parse(saved);
-    }
-    return true; // default state if window is not defined
-  });
+  // const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
+  //   if (typeof window !== 'undefined') {
+  //     const saved = window.localStorage.getItem('sidebarExpanded');
+  //     if (saved === null) {
+  //       return true;
+  //     }
+  //     return JSON.parse(saved);
+  //   }
+  //   return true; // default state if window is not defined
+  // });
 
+  // useEffect(() => {
+  //   if (typeof window !== 'undefined') {
+  //     window.localStorage.setItem(
+  //       'sidebarExpanded',
+  //       JSON.stringify(isSidebarExpanded),
+  //     );
+  //   }
+  // }, [isSidebarExpanded]);
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(
-        'sidebarExpanded',
-        JSON.stringify(isSidebarExpanded),
-      );
+      const saved = window.localStorage.getItem('sidebarExpanded');
+      if (saved !== null) {
+        setIsSidebarExpanded(JSON.parse(saved));
+      }
     }
-  }, [isSidebarExpanded]);
+  }, []);
 
   const toggleSidebar = () => {
     setIsSidebarExpanded(!isSidebarExpanded);
   };
 
   return (
-    <div className="pr-4">
+    <div className="pr-4" suppressHydrationWarning>
       <div
         className={cn(
           isSidebarExpanded ? 'w-[200px]' : 'w-[68px]',
           'border-r transition-all duration-300 ease-in-out transform hidden sm:flex h-full bg-accent',
         )}
+        suppressHydrationWarning
       >
         <aside className="flex h-full flex-col w-full break-words px-4 overflow-x-hidden columns-1">
           {/* Top */}
@@ -73,7 +84,7 @@ export default function SideNav() {
           </div>
           {/* Bottom */}
           <div className="sticky bottom-0 mt-auto whitespace-nowrap mb-4 transition duration-200 block">
-            <ThemeToggle isDropDown={true} />
+            {/* <ThemeToggle isDropDown={true} /> */}
             {navItems.map((item, idx) => {
               if (item.position === 'bottom') {
                 return (
@@ -129,6 +140,7 @@ export const SideNavItem: React.FC<{
               ? 'font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white'
               : 'hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white'
           }`}
+          suppressHydrationWarning
         >
           <div className="relative font-base text-sm py-1.5 px-2 flex flex-row items-center space-x-2 rounded-md duration-100">
             {icon}
@@ -146,6 +158,7 @@ export const SideNavItem: React.FC<{
                     ? 'font-base text-sm bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-white'
                     : 'hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white'
                 }`}
+                suppressHydrationWarning={true}
               >
                 <div className="relative font-base text-sm p-2 flex flex-row items-center space-x-2 rounded-md duration-100">
                   {icon}
