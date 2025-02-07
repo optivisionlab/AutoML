@@ -62,14 +62,6 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    
-    #Lấy ra danh sách id của model từ MôngDB
-    # client = get_database()
-    # db = client["AutoML"]
-    # model_collection = db["Classification_models"]
-    # document = model_collection.find_one(sort=[('_id', -1)])
-    # list_model_search = document['model_keys']
-
 
     models,metric_list  = get_model()
     return choose, list_feature, target, metric_list, metric_sort, models
@@ -94,7 +86,7 @@ def get_model():
     return models, metric_list
 
 
-def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọc model từ file models.yml
+def get_data_and_config_from_MongoDB():
     client = get_database()
     db = client["AutoML"]
     csv_collection = db["file_csv"]
@@ -113,42 +105,25 @@ def get_data_and_config_from_MongoDB(): #phần này vẫn chưa sửa là đọ
     
     choose = config['choose']
     list_feature = config['list_feature']
-    list_model_search = config['list_model_search']
     target = config['target']
-    metric_list = config['metric_list']
-    models = {}
-    for key, model_info in config['models'].items():
-        model_class = eval(model_info['model'])
-        params = model_info['params']
-        for param_key, param_value in params.items():
-            params[param_key] = [None if v is None else v for v in param_value]
-        models[key] = {
-            "model": model_class(),
-            "params": params 
-        }
-    return data, choose, list_model_search, list_feature, target,metric_list,models
+    metric_sort = config['metric_sort']
+
+    models,metric_list  = get_model()
+    return data, choose, list_feature, target, metric_list, metric_sort, models
 
 
 
-def get_data_config_from_json(file_content: Item):#phần này vẫn chưa sửa là đọc model từ file models.yml
+def get_data_config_from_json(file_content: Item):
     data = pd.DataFrame(file_content.data)
     config = file_content.config
     
     choose = config['choose']
-    list_model_search = config['list_model_search']
     list_feature = config['list_feature']
     target = config['target']
-    metric_list = config['metric_list']
+    metric_sort = config['metric_sort']
 
-    models = {}
-    for key, model_info in config['models'].items():
-        model_class = eval(model_info['model'])
-        params = model_info['params']
-        models[key] = {
-            "model": model_class(),
-            "params": params
-        }
-    return data, choose, list_model_search, list_feature, target,metric_list,models
+    models,metric_list  = get_model()
+    return data, choose, list_feature, target, metric_list, metric_sort, models
 
 
 def training(models, metric_list, metric_sort, X_train, y_train):
