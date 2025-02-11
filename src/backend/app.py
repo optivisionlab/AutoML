@@ -1,10 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form, Query
+from fastapi import FastAPI, UploadFile, File, Form, Query, Depends, Response, HTTPException, status
 from typing import List
 from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB,get_data_config_from_json
-from automl.engine import app_train_local
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB, get_data_config_from_json
 from automl.model import Item
 from users.engine import User
 from users.engine import user_helper
@@ -24,8 +23,18 @@ from users.engine import save_otp, send_otp, generate_otp
 import io, yaml, time, json, os, uvicorn, pathlib, base64
 from fastapi.responses import StreamingResponse
 from users.engine import check_time_otp 
-
-
+from users.engine import check_exits_email
+from users.engine import handleLogin
+from users.engine import handle_change_password
+from users.engine import handle_update_avatar
+from users.engine import handle_get_avatar
+from users.engine import handle_signup
+from users.engine import handle_delete_user
+from users.engine import handle_update_user
+import pathlib
+from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+from automl.engine import app_train_local
+from fastapi.middleware.cors import CORSMiddleware
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -49,6 +58,14 @@ oauth.register(
     }
 )
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"],  
+)
 
 @app.get("/home")
 def ping():
@@ -89,9 +106,12 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     } 
 
 
+
+
+from users.engine import get_current_admin
 #Lấy danh sách user
 from users.engine import get_list_user
-@app.get("/users")
+@app.get("/users", dependencies=[Depends(get_current_admin)])
 def get_users():
     list_user = get_list_user()
     return list_user
@@ -101,125 +121,62 @@ def get_users():
 @app.get("/users/")
 def get_user(username: str = Query(...)):
     if check_exits_username(username):
-        existing_user = users_collection.find_one({"username": username})
+        existing_user = check_exits_username(username)
         return user_helper(existing_user)
     else:
-        return {"message": f"Người dùng {username} không tồn tại"}
-
-
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Người dùng {username} không tồn tại"
+        )
+     
+    
 @app.post("/login")
-def login(request: LoginRequest):
+def login(request: LoginRequest, response: Response):
     username = request.username
     password = request.password
-    
-    if checkLogin(username, password):
-        user_username = users_collection.find_one({"username": username}) 
-        user_email = users_collection.find_one({"email": username})
-        user = user_username if user_username else user_email
-        if user['role'] == "Admin" :
-            message = "This is Admin"
-            role = user.get('role', 'Admin')
-            token = create_access_token(data={"sub": username, "role": role})
-            update_user = {"$set":{
-                "token": token
-            }}
-            users_collection.update_one({"username": username}, update_user)
-        else:
-            message = "This is User"
-            role = user.get('role', 'User')
-            token = create_access_token(data={"sub": username, "role": role})
-            update_user = {"$set":{
-                "token": token
-            }}
-            
-            users_collection.update_one({"username": username}, update_user)
-            
-        return {
-            "Hello": f"Xin chào {user['username']}",
-            "message": message,
-            "token": token
-        }
-    else:
-        return {"message": "Tài khoản mật khẩu không chính xác!"}
-
+    user = handleLogin(username, password)
+    # response.headers["Authorization"] = f"Bearer {user['token']}"
+    return user
+ 
 
 #Thêm user, đăng kí user mới
 @app.post("/signup")
 def singup(new_user : User):
-    if check_exits_username(new_user.username):
-        return {"message": f"Người dùng {new_user.username} đã tồn tại"}
-
-    result = users_collection.insert_one(new_user.dict())
-    # print(result)
-    if result.inserted_id:
-        return {'message': f'Đăng ký thành công user: {new_user.username}'}
-    else:
-        return {'message': 'Đã xảy ra lỗi khi thêm người dùng'}
+    message = handle_signup(new_user)
+    return message
 
 
 #Xóa user
 @app.delete("/delete/{username}")
 def delete_user(username):
-    result = users_collection.delete_one({"username": username })
-    # print(result)
-    if result.deleted_count > 0:
-        return {"message": f"Người dùng {username} đã xóa"}
-    else:
-        return {"message": f"Không thể xóa người dùng {username}. Người dùng không tồn tại hoặc đã xảy ra lỗi"}
+    message = handle_delete_user(username)
+    return message
 
 
 #update user
 @app.put("/update/{username}")
 def update_user(username: str, new_user: User):
-    if check_exits_username(username):
-        old_user = users_collection.find_one({"username": username})
-        new_value = {"$set": new_user.dict()}
-        result = users_collection.update_one({"_id": old_user["_id"]},new_value )
+    message = handle_update_user(username, new_user)
+    return message
 
-        if result.modified_count > 0:
-            return {'message': f'Thông tin người dùng {username} đã được cập nhật'}
-        else:
-            return {'message': f'Không thể cập nhật thông tin người dùng {username}'}
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
-
-
+from users.engine import handle_forgot_password
 @app.post("/forgot_password/{email}")
 def forgot_password(email: str):
-    user = users_collection.find_one({"email":email})
-    if user:
-        send_reset_password_email(email, user['password'])
-        return {"message": f"Password đã gửi về email: {email}"}
-    else:
-        return {"message": f"Người dùng {email} không tồn tại"}
+    message = handle_forgot_password(email)
+    return message
 
-
+from users.engine import handle_send_otp
+from users.engine import handle_verification_email
 @app.post("/send_email/{username}")
 def send_email(username: str):
-    user = users_collection.find_one({"username":username})
-    if user:
-        otp = generate_otp()
-        save_otp(username,otp )
-        send_otp(user['email'], otp)
-        return {"message": f"OTP đã gửi về email: {user['email']}"}
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
+    message = handle_send_otp(username)
+    return message
 
 
 @app.post("/verification_email/{username}")
 def verification_email(username: str, otp: str):
-    user = users_collection.find_one({"username":username})
-    if user:
-        if otp == user['otp']:
-            if check_time_otp(username):
-                return {"message": f"Xác thực email {user['email']} thành công"}
-            else:
-                return {"message": "OTP hết hiệu lực"}
-        else:
-            return {"message": "OTP không chính xác"}
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
-
+    message = handle_verification_email(username, otp)
+    return message
 
 
 @app.get('/')
@@ -299,53 +256,20 @@ def change_password(username: str, password: ChangePassword):
     pw = password.password
     new_pw1 = password.new1_password
     new_pw2 = password.new2_password
-    
-    user = users_collection.find_one({"username": username})
-    if user:
-        if pw == user['password']:
-            if new_pw1 == new_pw2:
-                value_set = {"$set":{
-                    "password": new_pw1
-                }}
-                users_collection.update_one({"_id": user["_id"]}, value_set)
-                return {"message": "Thay đổi mật khẩu thành công!"}
-            else:
-                return {"message": "Mật khẩu mới chưa trùng khớp!"}
-        else:
-            return {"message": "Mật khẩu không chính xác!"}
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
+    masage = handle_change_password(username, pw, new_pw1, new_pw2)
+    return masage
 
 
 @app.post('/update_avatar')
 def update_avarta(username: str, avatar: UploadFile = File(...)):
-    user = users_collection.find_one({"username": username})
-    if user:
-        # avatar_data = avatar.read()
-        avatar_data = avatar.file.read()
-        avatar_base64 = base64.b64encode(avatar_data).decode('utf-8') 
-        avatar_set = {"$set":{
-            "avatar": avatar_base64
-        }}
-        users_collection.update_one({"_id": user["_id"]}, avatar_set)
-        return {"message": "Avatar cập nhật thành công"}
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
+    message = handle_update_avatar(username, avatar)
+    return message
 
 
 @app.get('/get_avatar/{username}')
 def get_avatar(username: str):
-    user = users_collection.find_one({"username": username})
-    if user and "avatar":
-        avatar_base64 = user['avatar']
-        avatar_data = base64.b64decode(avatar_base64)
-        
-        return StreamingResponse(io.BytesIO(avatar_data), media_type="image/png")
-    else:
-        return {"message": f"Người dùng {username} không tồn tại"}
-
-
-
+    avatar = handle_get_avatar(username)
+    return avatar
 
 
 # Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
@@ -367,9 +291,9 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
 
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
+    data, choose, list_feature, target, metric_list, metric_sort, models = get_data_and_config_from_MongoDB()
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
+        data, choose, list_feature, target, metric_list, metric_sort, models)
 
     return {
         "best_model_id": best_model_id,
@@ -382,10 +306,10 @@ def api_train_mongo():
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item:Item):
-    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
+    data, choose, list_feature, target, metric_list, metric_sort, models = get_data_config_from_json(item)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
+        data, choose, list_feature, target, metric_list, metric_sort, models)
 
     return {
         "best_model_id": best_model_id,

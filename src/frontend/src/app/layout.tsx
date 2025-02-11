@@ -1,18 +1,20 @@
 import "./globals.css";
-import AppBar from "@/components/appbar/AppBar";
 import { ReactNode } from "react";
 import Providers from "@/redux/Provider";
-import ClientSessionProvider from "@/pages/api/auth/ClientSessionProvider";
+import ClientSessionProvider from "../pages/api/auth/ClientSessionProvider";
 import { Metadata } from "next";
-import { ThemeProvider } from "@/components/ui/theme-provider";
+import Header from "@/components/header/Header";
+import SideNav from "@/components/sideNav/SideNav";
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  title: "My Blog",
-  description: "This is a blog app",
+  title: "AutoML",
+  description: "This is a AutoML system, created by OptivisionLab",
 };
 
 interface IProps {
   children: ReactNode;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: any;
 }
 
@@ -22,15 +24,18 @@ export default function RootLayout({ children, session }: IProps) {
       <body>
         <ClientSessionProvider session={session}>
           <Providers>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              <AppBar />
-              <div>{children}</div>
-            </ThemeProvider>
+            <Header />
+            <div className="flex">
+              <SideNav />
+              <div className="w-full overflow-x-auto">
+                <div className="sm:h-[calc(99vh-60px)] overflow-auto ">
+                  <div className="w-full flex justify-center mx-auto overflow-auto h-[calc(100vh - 120px)] overflow-y-auto relative">
+                    <div className="w-full md:max-w-6xl">{children}</div>
+                    <Toaster />
+                  </div>
+                </div>
+              </div>
+            </div>
           </Providers>
         </ClientSessionProvider>
       </body>
