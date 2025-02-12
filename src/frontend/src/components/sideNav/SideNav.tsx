@@ -11,32 +11,11 @@ import {
 import { NavItems } from '@/config';
 import { cn } from '@/lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-// import { ThemeToggle } from '@/components/themeToggle/ThemeToggle';
-
 
 export default function SideNav() {
   const navItems = NavItems();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
-  // const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
-  //   if (typeof window !== 'undefined') {
-  //     const saved = window.localStorage.getItem('sidebarExpanded');
-  //     if (saved === null) {
-  //       return true;
-  //     }
-  //     return JSON.parse(saved);
-  //   }
-  //   return true; // default state if window is not defined
-  // });
-
-  // useEffect(() => {
-  //   if (typeof window !== 'undefined') {
-  //     window.localStorage.setItem(
-  //       'sidebarExpanded',
-  //       JSON.stringify(isSidebarExpanded),
-  //     );
-  //   }
-  // }, [isSidebarExpanded]);
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const saved = window.localStorage.getItem('sidebarExpanded');
@@ -84,7 +63,6 @@ export default function SideNav() {
           </div>
           {/* Bottom */}
           <div className="sticky bottom-0 mt-auto whitespace-nowrap mb-4 transition duration-200 block">
-            {/* <ThemeToggle isDropDown={true} /> */}
             {navItems.map((item, idx) => {
               if (item.position === 'bottom') {
                 return (

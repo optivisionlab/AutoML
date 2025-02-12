@@ -96,11 +96,12 @@ const RegisterForm = () => {
       toast({
         title: "Đăng ký thành công",
       })
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Đăng ký thất bại",
         variant: "destructive",
       })
+      console.error("Đăng ký thất bại", error);
     }
   };
 
