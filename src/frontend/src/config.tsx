@@ -26,9 +26,9 @@ export const NavItems = () => {
     },
     {
       name: 'Bộ dữ liệu',
-      href: '/dataset',
+      href: '/datasets',
       icon: <Database size={20} />,
-      active: pathname === '/dataset',
+      active: pathname === '/datasets',
       position: 'top',
     }
   ]
