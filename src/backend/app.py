@@ -35,6 +35,10 @@ import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
 from automl.engine import app_train_local
 from fastapi.middleware.cors import CORSMiddleware
+from data.uci import get_data_uci_where_id, format_data_automl
+from fastapi.responses import JSONResponse
+
+
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -291,9 +295,9 @@ def api_train_local(file_data: UploadFile, file_config : UploadFile):
 
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    data, choose, list_model_search, list_feature, target,matrix,models = get_data_and_config_from_MongoDB()
+    data, choose, list_feature, target, metric_list, metric_sort, models = get_data_and_config_from_MongoDB()
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
+        data, choose, list_feature, target, metric_list, metric_sort, models)
 
     return {
         "best_model_id": best_model_id,
@@ -306,10 +310,10 @@ def api_train_mongo():
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item:Item):
-    data, choose, list_model_search, list_feature, target, matrix, models = get_data_config_from_json(item)
+    data, choose, list_feature, target, metric_list, metric_sort, models = get_data_config_from_json(item)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_model_search, list_feature, target, matrix, models)
+        data, choose, list_feature, target, metric_list, metric_sort, models)
 
     return {
         "best_model_id": best_model_id,
@@ -318,7 +322,19 @@ def api_train_json(item:Item):
         "best_score": best_score,
         "orther_model_scores": model_scores
     }
-    
+
+
+@app.post('/get-data-from-uci')
+def get_data_from_uci(id_data: int):
+    df_uci, class_uci = get_data_uci_where_id(id=id_data)
+    output = format_data_automl(rows=df_uci.values, cols=df_uci.columns.to_list(), class_name=list(class_uci))
+    data = {
+        "data": output,
+        "list_feature": df_uci.columns.to_list()
+    }
+    return JSONResponse(content=data)
+
+
 
 if __name__ == "__main__":
     uvicorn.run('app:app', host=data['HOST'], port=data['PORT'], reload=True)
