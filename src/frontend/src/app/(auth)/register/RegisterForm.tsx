@@ -26,6 +26,7 @@ import styles from "./RegisterForm.module.scss";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "@/redux/store";
 import { registerAsync } from "@/redux/slices/registerSlice";
+import { useToast } from "@/hooks/use-toast";
 
 const registerSchema = z
   .object({
@@ -56,6 +57,8 @@ const registerSchema = z
   );
 
 const RegisterForm = () => {
+  const { toast} = useToast();
+
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -84,9 +87,22 @@ const RegisterForm = () => {
       avatar: "",
     };
 
-    await dispatch(registerAsync(newUser));
+    try {
+      await dispatch(registerAsync(newUser)).unwrap();
+      console.log("Đăng ký thành công");
 
-    form.reset();
+      form.reset();
+
+      toast({
+        title: "Đăng ký thành công",
+      })
+    } catch (error) {
+      toast({
+        title: "Đăng ký thất bại",
+        variant: "destructive",
+      })
+      console.error("Đăng ký thất bại", error);
+    }
   };
 
   return (
