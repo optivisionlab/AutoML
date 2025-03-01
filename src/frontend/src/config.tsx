@@ -1,27 +1,34 @@
 import { usePathname } from "next/navigation"
 
-import { Home, User } from "lucide-react";
+import { Home, User, Database } from "lucide-react";
 
 export const NavItems = () => {
   const pathname = usePathname();
 
-  function isNavItemActive(pathname: string, nav: string){
-    return pathname.includes(nav);
-  }
+  // function isNavItemActive(pathname: string, nav: string){
+  //   return pathname.includes(nav);
+  // }
 
   return [
     {
-      name: 'Home',
+      name: 'Trang chủ',
       href: '/',
       icon: <Home size={20} />,
       active: pathname === '/',
       position: 'top',
     },
     {
-      name: 'Profile',
+      name: 'Tài khoản',
       href: '/profile',
       icon: <User size={20} />,
-      active: isNavItemActive(pathname, '/profile'),
+      active: pathname === '/profile',
+      position: 'top',
+    },
+    {
+      name: 'Bộ dữ liệu',
+      href: '/datasets',
+      icon: <Database size={20} />,
+      active: pathname === '/datasets',
       position: 'top',
     }
   ]
