@@ -359,7 +359,7 @@ def get_data_from_uci(id_data: int):
 
 # Lấy danh sách data
 @app.get("/get-data-from-mongodb")
-def get_data():
+def get_data_from_mongodb():
     list_data = get_list_data()
     return list_data
 
