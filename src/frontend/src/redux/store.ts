@@ -1,9 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 import registerSlice from "./slices/registerSlice";
+import getDataUCISlice from "./slices/dataUCISlice";
 
 export const store = configureStore({
   reducer: {
-    register: registerSlice
+    register: registerSlice,
+    getDataUCI: getDataUCISlice,
   },
 })
 
