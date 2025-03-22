@@ -5,6 +5,7 @@ const DataSetPage = () => {
   const datasetSample = [
     {
       id: "001",
+      iduci: 53,
       dataName: "iris data",
       dataType: "table",
       role: "Admin",
@@ -18,23 +19,7 @@ const DataSetPage = () => {
         "petal_width",
       ],
       target: "class",
-    },
-    {
-      id: "002",
-      dataName: "flowers_datasets",
-      dataType: "image",
-      role: "Admin",
-      dataFile: "flowers_datasets.zip",
-      lastestUpdate: "2021-09-01",
-      createdDate: "2021-09-01",
-      attributes: [
-        "sepal_length",
-        "sepal_width",
-        "petal_length",
-        "petal_width",
-      ],
-      target: "class",
-    },
+    }
   ];
 
   return (

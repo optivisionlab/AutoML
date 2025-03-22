@@ -29,8 +29,8 @@ interface AvailableDatasetProps {
 const AvailableDataset: React.FC<AvailableDatasetProps> = ({ datasets }) => {
   // const [datasetID, setDatasetID] = useState<string>('001');
 
-  console.log(datasets);
-
+  // console.log(datasets);
+  
   return (
     <>
       <Table>
