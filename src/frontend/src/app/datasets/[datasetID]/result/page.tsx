@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import axios from "axios";
 import {
@@ -11,15 +11,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { getDataUCIAsync } from "@/redux/slices/dataUCISlice";
+import { AppDispatch } from "@/redux/store";
 
 const Result = () => {
   const data = useSelector((state: RootState) => state.getDataUCI); // Lấy data từ Redux
+  
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
+  
+  const dispatch = useDispatch<AppDispatch>();
 
-  const dataTrain = data.dataUCI.data;
+  const dataTrain = data?.dataUCI?.data || null;
+
+  useEffect(() => {
+    if(data.status == 'idle' && !data.dataUCI) {
+      dispatch(getDataUCIAsync())
+    }
+  }, [dispatch, data.dataUCI, data.status]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
