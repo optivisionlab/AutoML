@@ -4,6 +4,10 @@ from bson import ObjectId
 from datetime import datetime
 from database.database import get_database
 
+import base64
+import pandas as pd
+import io
+
 db = get_database()
 data_collection = db["tbl_Data"]
 
@@ -58,3 +62,22 @@ def get_list_data():
         item["_id"] = str(item["_id"])  # Chuyển ObjectId sang chuỗi trước khi trả về
         list_data.append(item)
     return list_data
+
+
+def encode_csv_to_base64(file_path):
+    with open(file_path, "rb") as file:
+        encoded_data = base64.b64encode(file.read()).decode("utf-8")
+    return encoded_data
+
+
+def decode_base64_to_dataframe(base64_string):
+    # Giai ma Base64 thanh du lieu nhi phan
+    decoded_bytes = base64.b64decode(base64_string)
+
+    # Chuyen du lieu nhi phan thanh doi tuong giong file (stringIO)
+    decoded_buffer = io.StringIO(decoded_bytes.decode("utf-8"))
+
+    # Doc du lieu vao DataFrame
+    df = pd.read_csv(decoded_buffer)
+
+    return df
