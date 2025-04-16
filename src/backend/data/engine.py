@@ -11,51 +11,8 @@ import io
 db = get_database()
 data_collection = db["tbl_Data"]
 
-
-# Giả lập dữ liệu
-class DataInfo(BaseModel):
-    _id: str
-    dataName: str
-    dataType: str
-    role: str
-    dataFile: str
-    latestUpdate: str
-    createDate: str
-    attributes: List[str]
-    target: str
-
-
-# Dữ liệu JSON giả lập
-data = {
-    "_id": str(ObjectId("67a63bde43fdecfc96c744e7")),
-    "dataName": "iris data",
-    "dataType": "table",
-    "role": "Admin",
-    "dataFile": "iris.data.csv",
-    "latestUpdate": "08/02/2025",
-    "createDate": "05/02/2025",
-    "attributes": ["sepal_length", "sepal_width", "petal_length", "petal_width"],
-    "target": "class",
-}
-
-
-# Hàm chuyển đổi objectID thành chuỗi
-def data_helper(data) -> dict:
-    return {
-        "_id": str(data["_id"]),
-        "dataName": str(data["dataName"]),
-        "dataType": str(data["dataType"]),
-        "role": str(data["role"]),
-        "dataFile": str(data["dataFile"]),
-        "latestUpdate": str(data["latestUpdate"]),
-        "createDate": str(data["createDate"]),
-        "attributes": str(data["attributes"]),
-        "target": str(data["target"]),
-    }
-
-
 # Hàm lấy danh sách data
-def get_list_data():
+def get_datas():
     data = data_collection.find()  # Sử dụng find() để lấy tất cả các bản ghi
     list_data = []
     for item in data:
@@ -63,14 +20,22 @@ def get_list_data():
         list_data.append(item)
     return list_data
 
+def get_data_base64(user_id):
+    try:
+        # Tìm document trong collection tbl_Data có trường userId trùng với user_id
+        data = data_collection.find_one({"userId": user_id})
 
-def encode_csv_to_base64(file_path):
-    with open(file_path, "rb") as file:
-        encoded_data = base64.b64encode(file.read()).decode("utf-8")
-    return encoded_data
+        if data and 'dataFile' in data:
+            return data['dataFile']
+        else:
+            return None
 
+    except Exception as e:
+        print(f"Đã xảy ra lỗi khi truy vấn MongoDB: {e}")
+        return None
 
-def decode_base64_to_dataframe(base64_string):
+def decode_base64_to_dataframe(user_id):
+    base64_string = get_data_base64(user_id=user_id)
     # Giai ma Base64 thanh du lieu nhi phan
     decoded_bytes = base64.b64decode(base64_string)
 
@@ -81,3 +46,9 @@ def decode_base64_to_dataframe(base64_string):
     df = pd.read_csv(decoded_buffer)
 
     return df
+
+def get_data_from_mongodb_by_userid(user_id):
+    df = decode_base64_to_dataframe(user_id=user_id)
+    class_names = df.iloc[:,-1].unique().tolist()
+    return df, class_names
+    
