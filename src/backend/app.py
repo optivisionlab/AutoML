@@ -52,7 +52,7 @@ from automl.engine import app_train_local
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
-from data.engine import get_datas, get_data_from_mongodb_by_userid
+from data.engine import get_datas, get_data_from_mongodb_by_id
 
 # default sync
 app = FastAPI()
@@ -367,7 +367,7 @@ def get_list_data():
 #Láy bộ dữ liệu từ mongodb
 @app.post("/get-data-from-mongodb")
 def get_data_from_mongodb(id: str):
-    df, class_data = get_data_from_mongodb_by_userid(user_id=id)
+    df, class_data = get_data_from_mongodb_by_id(id_data=id)
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
     )
