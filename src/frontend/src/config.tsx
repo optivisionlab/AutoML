@@ -5,10 +5,6 @@ import { Home, User, Database } from "lucide-react";
 export const NavItems = () => {
   const pathname = usePathname();
 
-  // function isNavItemActive(pathname: string, nav: string){
-  //   return pathname.includes(nav);
-  // }
-
   return [
     {
       name: 'Trang chủ',

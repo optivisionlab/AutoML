@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,19 +16,27 @@ import { Button } from "@/components/ui/button";
 import { signIn } from "next-auth/react";
 import styles from "./LoginForm.module.scss";
 import { Label } from "@/components/ui/label";
+import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation";
+
 
 // schema để validate form
-const loginSchema = z
-  .object({
-    username: z.string().min(5, {
-      message: "Username must be at least 5 characters",
-    }),
-    password: z.string().min(5, {
-      message: "Password must be at least 5 characters.",
-    }),
-  });
+const loginSchema = z.object({
+  username: z.string().min(5, {
+    message: "Username must be at least 5 characters",
+  }),
+  password: z.string().min(5, {
+    message: "Password must be at least 5 characters.",
+  }),
+});
 
 const LoginForm = () => {
+  const [showPassword, setShowPassword] = useState(false);
+  const { toast } = useToast();
+  const router = useRouter();
+
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -42,9 +50,27 @@ const LoginForm = () => {
     const res = await signIn("credentials", {
       username: values.username,
       password: values.password,
-      redirect: true,
+      redirect: false,
       callbackUrl: "/",
     });
+
+    if (res?.ok && !res.error) {
+      toast({
+        title: "Đăng nhập thành công",
+        className: "bg-green-100 text-green-800 border border-green-300",
+        duration: 3000,
+      });
+      setTimeout(() => {
+        router.push("/");
+      }, 1000);
+    } else {
+      toast({
+        title: "Đăng nhập thất bại",
+        duration: 3000,
+        description: "Tên đăng nhập hoặc mật khẩu không đúng.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -63,7 +89,7 @@ const LoginForm = () => {
                 <FormItem>
                   <FormLabel>Tên đăng nhập</FormLabel>
                   <FormControl>
-                    <Input {...field} type="text" placeholder="Nguyen Van A" />
+                    <Input {...field} type="text" placeholder="nguyenvana" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -74,21 +100,48 @@ const LoginForm = () => {
           <FormField
             control={form.control}
             name="password"
-            render={({ field }) => {
-              return (
-                <FormItem>
-                  <FormLabel>Mật khẩu</FormLabel>
-                  <FormControl>
-                    <Input {...field} type="password" placeholder="Password" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              );
-            }}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Mật khẩu</FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <Input
+                      {...field}
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Password"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? (
+                        <Eye className="w-5 h-5" />
+                      ) : (
+                        <EyeOff className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
 
+          <p className="text-center text-sm text-muted-foreground">
+            Chưa có tài khoản?{" "}
+            <Link
+              href="/register"
+              className="text-blue-600 hover:underline font-medium"
+            >
+              Đăng ký
+            </Link>
+          </p>
+
           <Button type="submit" className="w-full">
-            Submit
+            Đăng nhập
           </Button>
         </form>
       </Form>

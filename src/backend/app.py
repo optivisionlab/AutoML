@@ -115,7 +115,7 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
 from users.engine import get_current_admin
 #Lấy danh sách user
 from users.engine import get_list_user
-@app.get("/users", dependencies=[Depends(get_current_admin)])
+@app.get("/users")
 def get_users():
     list_user = get_list_user()
     return list_user

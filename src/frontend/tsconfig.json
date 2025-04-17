@@ -26,9 +26,11 @@
         "name": "next"
       }
     ],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "types": ["next-auth"]
   },
   "include": [
+    "types",
     "next-env.d.ts",
     ".next/types/**/*.ts",
     "**/*.ts",

@@ -50,10 +50,10 @@ export default function Header() {
           </DropdownMenuTrigger>
           {session && (
             <DropdownMenuContent>
-              <DropdownMenuLabel>{session.user?.name}</DropdownMenuLabel>
+              <DropdownMenuLabel>{session.user?.username}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => signOut()}>
-                Sign Out
+                Đăng xuất
               </DropdownMenuItem>
             </DropdownMenuContent>
           )}
