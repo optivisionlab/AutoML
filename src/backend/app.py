@@ -53,6 +53,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_datas, get_data_from_mongodb_by_id
+from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
 
 # default sync
 app = FastAPI()
@@ -374,6 +375,29 @@ def get_data_from_mongodb(id: str):
     )
     data = {"data": output, "list_feature": df.columns.to_list()}
     return JSONResponse(content=data)
+
+
+@app.post("/upload-dataset")
+def upload_dataset(
+    user_id: str = Form(...),
+    data_name: str = Form(...),
+    data_type: str = Form(...),
+    file_data: UploadFile = File(...),
+):
+
+    return upload_data(file_data, data_name, data_type, user_id)
+
+
+@app.put("/update-dataset/{dataset_id}")
+def update_dataset(
+    dataset_id: str, data_name: str = Form(None), file_data: UploadFile = File(None)
+):
+    return update_dataset_by_id(dataset_id, data_name, file_data)
+
+
+@app.delete("/delete-dataset/{dataset_id}")
+async def delete_dataset(dataset_id: str):
+    return delete_dataset_by_id(dataset_id)
 
 
 if __name__ == "__main__":

@@ -2,39 +2,17 @@ from pydantic import BaseModel
 from typing import List
 from database.database import get_database
 from bson.objectid import ObjectId
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from bson import ObjectId
 
 import base64
 import pandas as pd
 import io
+import time
 
 db = get_database()
 data_collection = db["tbl_Data"]
-
-
-class Data(BaseModel):
-    id: str
-    dataName: str
-    dataType: str
-    dataFile: str
-    lastestUpdate: str
-    createDate: str
-    list_feature: List[str]
-    target: str
-    userId: str
-
-
-def data_helper(data) -> dict:
-    return {
-        "_id": str(data.get("_id", "")),
-        "dataName": str(data["dataName"]),
-        "dataType": str(data["dataType"]),
-        "dataFile": str(data["dataFile"]),
-        "lastestUpdate": str(data["lastestUpdate"]),
-        "createDate": str(data["createDate"]),
-        "list_feature": list(data["list_feature"]),
-        "target": str(data["target"]),
-        "userId": str(data["userId"]),
-    }
 
 
 # Hàm lấy danh sách data
@@ -62,6 +40,12 @@ def get_data_base64(id_data):
         return None
 
 
+def encode_csv_to_base64(file_path):
+    contents = file_path.file.read()
+    encoded_data = base64.b64encode(contents).decode("utf-8")
+    return encoded_data
+
+
 def decode_base64_to_dataframe(id_data):
     base64_string = get_data_base64(id_data=id_data)
     # Giai ma Base64 thanh du lieu nhi phan
@@ -80,3 +64,71 @@ def get_data_from_mongodb_by_id(id_data):
     df = decode_base64_to_dataframe(id_data=id_data)
     class_names = df.iloc[:, -1].unique().tolist()
     return df, class_names
+
+
+def serialize_mongo_doc(doc):
+    doc["_id"] = str(doc["_id"])
+    return doc
+
+
+def upload_data(file_data, dataName, dataType, userId):
+    now = time.time()
+    encoded_file = encode_csv_to_base64(file_data)
+
+    data_to_insert = {
+        "dataName": dataName,
+        "dataType": dataType,
+        "dataFile": encoded_file,
+        "latestUpdate": now,
+        "createDate": now,
+        "list_feature": [],
+        "target": None,
+        "userId": userId,
+    }
+
+    result = data_collection.insert_one(data_to_insert)
+    if result.inserted_id:
+        serialize_mongo_doc(data_to_insert)
+        return JSONResponse(content=data_to_insert)
+    else:
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi thêm bộ dữ liệu")
+
+
+def update_dataset_by_id(dataset_id: str, dataName: str = None, file_data=None):
+    update_fields = {}
+
+    if dataName is not None:
+        update_fields["dataName"] = dataName
+
+    if file_data is not None:
+        encoded_file = encode_csv_to_base64(file_data)
+        update_fields["dataFile"] = encoded_file
+        update_fields["lastestUpdate"] = str(time.time())
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Không có dữ liệu nào để cập nhật")
+
+    result = data_collection.update_one(
+        {"_id": ObjectId(dataset_id)}, {"$set": update_fields}
+    )
+
+    if result.modified_count == 1:
+        return {"message": "Cập nhật thành công"}
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy bộ dữ liệu hoặc không có thay đổi nào",
+        )
+
+
+def delete_dataset_by_id(dataset_id: str):
+    try:
+        result = data_collection.delete_one({"_id": ObjectId(dataset_id)})
+        if result.deleted_count == 1:
+            return {"message": "Xóa bộ dữ liệu thành công"}
+        else:
+            raise HTTPException(
+                status_code=404, detail="Không tìm thấy bộ dữ liệu cần xóa"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lỗi khi xóa dữ liệu: {str(e)}")
