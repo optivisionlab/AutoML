@@ -44,8 +44,10 @@ const registerSchema = z
     }),
     gender: z.string().default("male"),
     date: z.string(),
-    number: z.string().length(10, {
-      message: "Số điện thoại gồm 10 ký tự",
+    number: z
+    .string()
+    .regex(/^(0[3|5|7|8|9])[0-9]{8}$/, {
+      message: "Số điện thoại không hợp lệ",
     }),
     password: z
       .string()
@@ -180,14 +182,14 @@ const RegisterForm = () => {
                     <FormControl>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || 'male'}
                       >
                         <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Giới tính" />
+                          <SelectValue/>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="male">Nam</SelectItem>
+                            <SelectItem value="male" defaultValue={"male"}>Nam</SelectItem>
                             <SelectItem value="female">Nữ</SelectItem>
                           </SelectGroup>
                         </SelectContent>

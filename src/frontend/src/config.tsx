@@ -1,31 +1,56 @@
-import { usePathname } from "next/navigation"
+import { Home, User, Database, Users, Folder } from "lucide-react";
 
-import { Home, User, Database } from "lucide-react";
-
-export const NavItems = () => {
-  const pathname = usePathname();
-
-  return [
+export function NavItems(role: string) {
+  const commonItems = [
     {
-      name: 'Trang chủ',
-      href: '/',
-      icon: <Home size={20} />,
-      active: pathname === '/',
-      position: 'top',
+      name: "Trang chủ",
+      icon: <Home size={18} />,
+      href: "/",
+      active: false,
+      position: "top",
+      role: ["user", "admin"],
+    },
+  ];
+
+  const userItems = [
+    {
+      name: "Tài khoản",
+      icon: <User size={18} />,
+      href: "/profile",
+      active: false,
+      position: "top",
+      role: ["user"],
     },
     {
-      name: 'Tài khoản',
-      href: '/profile',
-      icon: <User size={20} />,
-      active: pathname === '/profile',
-      position: 'top',
+      name: "Bộ dữ liệu",
+      icon: <Database size={18} />,
+      href: "/datasets",
+      active: false,
+      position: "top",
+      role: ["user"],
+    },
+  ];
+
+  const adminItems = [
+    {
+      name: "Quản lý tài khoản",
+      icon: <Users size={18} />,
+      href: "/admin/users",
+      active: false,
+      position: "top",
+      role: ["admin"],
     },
     {
-      name: 'Bộ dữ liệu',
-      href: '/datasets',
-      icon: <Database size={20} />,
-      active: pathname === '/datasets',
-      position: 'top',
-    }
-  ]
+      name: "Quản lý bộ dữ liệu",
+      icon: <Folder size={18} />,
+      href: "/admin/datasets",
+      active: false,
+      position: "top",
+      role: ["admin"],
+    },
+  ];
+
+  return [...commonItems, ...userItems, ...adminItems].filter((item) =>
+    item.role.includes(role)
+  );
 }

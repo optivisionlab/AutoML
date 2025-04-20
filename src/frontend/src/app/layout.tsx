@@ -23,7 +23,6 @@ interface IProps {
 export default async function RootLayout({ children }: IProps) {
   const session = await getServerSession(authOptions);
 
-  console.log(">> check login session:", session);
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
