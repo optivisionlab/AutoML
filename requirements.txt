@@ -3,11 +3,10 @@ ucimlrepo==0.0.7
 numpy==1.26.2
 pandas==2.2.2
 scikit-learn==1.5.1
-fastapi==0.111.1
+fastapi==0.115.12
 fastapi-cli==0.0.4
-numpy==1.26.2
 uvicorn==0.30.3
 opencv-python==4.10.0.84
 pymongo==4.10.1
-gradio==5.10.0
-ucimlrepo
+gradio==5.25.2
+pyyaml==6.0.2

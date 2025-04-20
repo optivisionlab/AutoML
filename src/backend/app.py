@@ -52,7 +52,7 @@ from automl.engine import app_train_local
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
-from data.engine import get_datas, get_data_from_mongodb_by_userid
+from data.engine import get_datas, get_data_from_mongodb_by_id
 
 # default sync
 app = FastAPI()
@@ -354,23 +354,27 @@ def get_data_from_uci(id_data: int):
     data = {"data": output, "list_feature": df_uci.columns.to_list()}
     return JSONResponse(content=data)
 
+
 # Đây là phần code của Ánh
 
+
 # Lấy danh sách data
-@app.get("/get-list-data")
-def get_list_data():
-    list_data = get_datas()
+@app.post("/get-list-data")
+def get_list_data(id: str):
+    list_data = get_datas(id_user=id)
     return list_data
 
-#Láy bộ dữ liệu từ mongodb
+
+# Lấy bộ dữ liệu từ mongodb
 @app.post("/get-data-from-mongodb")
 def get_data_from_mongodb(id: str):
-    df, class_data = get_data_from_mongodb_by_userid(user_id=id)
+    df, class_data = get_data_from_mongodb_by_id(id_data=id)
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
     )
-    data = {"data": output, "list_feature": df.columns.to_list()} 
+    data = {"data": output, "list_feature": df.columns.to_list()}
     return JSONResponse(content=data)
+
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
