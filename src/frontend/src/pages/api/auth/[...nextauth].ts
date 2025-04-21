@@ -35,8 +35,14 @@ export const authOptions: NextAuthOptions = {
           const user = await res.json();
 
           if (user) {
-            user.name = user.username;
-            return user;
+            // user.name = user.username;
+            // return user;
+            return {
+              id: user.id,
+              username: user.username,
+              email: user.email,
+              role: user.role,
+            }
           } else {
             return null;
           }
@@ -48,6 +54,29 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
+  callbacks: {
+    async jwt({ token, user }) {
+      // Gán role vào token khi đăng nhập lần đầu
+      if (user) {
+        token.username = user.username;
+        token.email = user.email;
+        token.id = user.id;
+        token.role = user.role;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      // Gán role từ token vào session.user
+      if (token && session.user) {
+        session.user.username = token.username as string;
+        session.user.email = token.email as string;
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
+  },
+  
   session: {
     strategy: "jwt",
   },

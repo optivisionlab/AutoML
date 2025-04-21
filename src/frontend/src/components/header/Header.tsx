@@ -16,6 +16,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { NavItems } from "@/config";
 import { Menu } from "lucide-react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { LogOut } from 'lucide-react';
 
 export default function Header() {
   const navItems = NavItems();
@@ -50,10 +51,10 @@ export default function Header() {
           </DropdownMenuTrigger>
           {session && (
             <DropdownMenuContent>
-              <DropdownMenuLabel>{session.user?.name}</DropdownMenuLabel>
+              <DropdownMenuLabel>{session.user?.username}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => signOut()}>
-                Sign Out
+                Đăng xuất <LogOut size={16} className="ml-2 text-red-600" />
               </DropdownMenuItem>
             </DropdownMenuContent>
           )}

@@ -1,20 +1,20 @@
-Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
 D:
 conda activate automl
 python app.py
 
 
-Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.demo_gradio
 
-Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.save_data_to_mongodb
 
-Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
+Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.create_json_files

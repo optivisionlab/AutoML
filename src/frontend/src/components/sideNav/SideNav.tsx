@@ -1,61 +1,51 @@
-'use client';
+"use client";
 
-import { Fragment, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { Fragment, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { NavItems } from '@/config';
-import { cn } from '@/lib/utils';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-// import { ThemeToggle } from '@/components/themeToggle/ThemeToggle';
-
+} from "@/components/ui/tooltip";
+import { NavItems } from "@/config";
+import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 export default function SideNav() {
-  const navItems = NavItems();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const { data: session, status } = useSession();
 
-  // const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
-  //   if (typeof window !== 'undefined') {
-  //     const saved = window.localStorage.getItem('sidebarExpanded');
-  //     if (saved === null) {
-  //       return true;
-  //     }
-  //     return JSON.parse(saved);
-  //   }
-  //   return true; // default state if window is not defined
-  // });
-
-  // useEffect(() => {
-  //   if (typeof window !== 'undefined') {
-  //     window.localStorage.setItem(
-  //       'sidebarExpanded',
-  //       JSON.stringify(isSidebarExpanded),
-  //     );
-  //   }
-  // }, [isSidebarExpanded]);
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('sidebarExpanded');
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("sidebarExpanded");
       if (saved !== null) {
         setIsSidebarExpanded(JSON.parse(saved));
       }
     }
   }, []);
 
+  // If session is not ready, render nothing
+  if (status === "loading") return null;
+
+  // If session is not null, render nothing
+  if (!session) return null;
+
   const toggleSidebar = () => {
     setIsSidebarExpanded(!isSidebarExpanded);
   };
+
+  const navItems = NavItems(session?.user.role || '');
+
+  console.log(" check session", session);
 
   return (
     <div className="pr-4" suppressHydrationWarning>
       <div
         className={cn(
-          isSidebarExpanded ? 'w-[200px]' : 'w-[68px]',
-          'border-r transition-all duration-300 ease-in-out transform hidden sm:flex h-full bg-accent',
+          isSidebarExpanded ? "w-[200px]" : "w-[68px]",
+          "border-r transition-all duration-300 ease-in-out transform hidden sm:flex h-full bg-accent"
         )}
         suppressHydrationWarning
       >
@@ -64,7 +54,7 @@ export default function SideNav() {
           <div className="mt-4 relative pb-2">
             <div className="flex flex-col space-y-1">
               {navItems.map((item, idx) => {
-                if (item.position === 'top') {
+                if (item.position === "top") {
                   return (
                     <Fragment key={idx}>
                       <div className="space-y-1">
@@ -84,9 +74,8 @@ export default function SideNav() {
           </div>
           {/* Bottom */}
           <div className="sticky bottom-0 mt-auto whitespace-nowrap mb-4 transition duration-200 block">
-            {/* <ThemeToggle isDropDown={true} /> */}
             {navItems.map((item, idx) => {
-              if (item.position === 'bottom') {
+              if (item.position === "bottom") {
                 return (
                   <Fragment key={idx}>
                     <div className="space-y-1">
@@ -111,9 +100,9 @@ export default function SideNav() {
             onClick={toggleSidebar}
           >
             {isSidebarExpanded ? (
-              <ChevronLeft size={16} className='stroke-foreground'/>
+              <ChevronLeft size={16} className="stroke-foreground" />
             ) : (
-              <ChevronRight size={16} className='stroke-foreground'/>
+              <ChevronRight size={16} className="stroke-foreground" />
             )}
           </button>
         </div>
@@ -137,8 +126,8 @@ export const SideNavItem: React.FC<{
           href={path}
           className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
             active
-              ? 'font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white'
-              : 'hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white'
+              ? "font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white"
+              : "hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           }`}
           suppressHydrationWarning
         >
@@ -155,8 +144,8 @@ export const SideNavItem: React.FC<{
                 href={path}
                 className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
                   active
-                    ? 'font-base text-sm bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-white'
-                    : 'hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white'
+                    ? "font-base text-sm bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-white"
+                    : "hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
                 }`}
                 suppressHydrationWarning={true}
               >

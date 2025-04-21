@@ -7,7 +7,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import React from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,23 +26,37 @@ import styles from "./RegisterForm.module.scss";
 import { useDispatch } from "react-redux";
 import { AppDispatch } from "@/redux/store";
 import { registerAsync } from "@/redux/slices/registerSlice";
+import { useToast } from "@/hooks/use-toast";
+import { Eye, EyeOff } from "lucide-react";
 
 const registerSchema = z
   .object({
-    username: z.string().min(5, {
-      message: "Tên đăng nhập phải có ít nhất 5 ký tự",
-    }),
+    username: z
+      .string()
+      .min(5, {
+        message: "Tên đăng nhập phải có ít nhất 5 ký tự",
+      })
+      .regex(/^\S+$/, {
+        message: "Tên đăng nhập không được chứa dấu cách",
+      }),
     email: z.string().email({
       message: "Nhập đúng định dạng email",
     }),
     gender: z.string().default("male"),
     date: z.string(),
-    number: z.string().length(10, {
-      message: "Số điện thoại gồm 10 ký tự",
+    number: z
+    .string()
+    .regex(/^(0[3|5|7|8|9])[0-9]{8}$/, {
+      message: "Số điện thoại không hợp lệ",
     }),
-    password: z.string().min(5, {
-      message: "Password must be at least 5 characters.",
-    }),
+    password: z
+      .string()
+      .min(8, {
+        message: "Password phải có ít nhất 8 ký tự",
+      })
+      .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/, {
+        message: "Password phải có chữ hoa, chữ thường, số và ký tự đặc biệt",
+      }),
     passwordConfirm: z.string(),
   })
   .refine(
@@ -50,12 +64,16 @@ const registerSchema = z
       return data.password === data.passwordConfirm;
     },
     {
-      message: "Password do not match",
+      message: "Xác nhận mật khẩu sai, vui lòng nhập lại",
       path: ["passwordConfirm"],
     }
   );
 
 const RegisterForm = () => {
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const { toast } = useToast();
+
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -71,7 +89,6 @@ const RegisterForm = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const onSubmit = async (values: z.infer<typeof registerSchema>) => {
-    console.log(">> check values:", values);
 
     const newUser = {
       username: values.username,
@@ -80,13 +97,29 @@ const RegisterForm = () => {
       gender: values.gender,
       date: values.date,
       number: values.number,
-      role: "User",
+      role: "user",
       avatar: "",
     };
 
-    await dispatch(registerAsync(newUser));
+    try {
+      await dispatch(registerAsync(newUser)).unwrap();
+      console.log("Đăng ký thành công");
 
-    form.reset();
+      form.reset();
+
+      toast({
+        title: "Đăng ký thành công",
+        className: "bg-green-100 text-green-800 border border-green-300",
+        description: "Bạn đã đăng ký thành công!"
+      });
+    } catch (error) {
+      toast({
+        title: "Đăng ký thất bại",
+        description: error.detail || "Lỗi không xác định",
+        variant: "destructive",
+      });
+      console.log("Đăng ký thất bại", error);
+    }
   };
 
   return (
@@ -149,14 +182,14 @@ const RegisterForm = () => {
                     <FormControl>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value}
+                        value={field.value || 'male'}
                       >
                         <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Giới tính" />
+                          <SelectValue/>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="male">Nam</SelectItem>
+                            <SelectItem value="male" defaultValue={"male"}>Nam</SelectItem>
                             <SelectItem value="female">Nữ</SelectItem>
                           </SelectGroup>
                         </SelectContent>
@@ -203,41 +236,68 @@ const RegisterForm = () => {
             <FormField
               control={form.control}
               name="password"
-              render={({ field }) => {
-                return (
-                  <FormItem>
-                    <FormLabel>Mật khẩu</FormLabel>
-                    <FormControl>
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Mật khẩu</FormLabel>
+                  <FormControl>
+                    <div className="relative">
                       <Input
                         {...field}
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         placeholder="Password"
+                        className="pr-10"
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? (
+                          <Eye className="w-5 h-5" />
+                        ) : (
+                          <EyeOff className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-
             <FormField
               control={form.control}
               name="passwordConfirm"
-              render={({ field }) => {
-                return (
-                  <FormItem>
-                    <FormLabel>Xác nhận mật khẩu</FormLabel>
-                    <FormControl>
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Xác nhận mật khẩu</FormLabel>
+                  <FormControl>
+                    <div className="relative">
                       <Input
                         {...field}
-                        type="password"
+                        type={showConfirmPassword ? "text" : "password"}
                         placeholder="Confirm password"
+                        className="pr-10"
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        tabIndex={-1}
+                      >
+                        {showConfirmPassword ? (
+                          <Eye className="w-5 h-5" />
+                        ) : (
+                          <EyeOff className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
           </div>
           <Button type="submit" className="w-full">

@@ -5,7 +5,9 @@ import ClientSessionProvider from "../pages/api/auth/ClientSessionProvider";
 import { Metadata } from "next";
 import Header from "@/components/header/Header";
 import SideNav from "@/components/sideNav/SideNav";
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 
 export const metadata: Metadata = {
   title: "AutoML",
@@ -15,10 +17,12 @@ export const metadata: Metadata = {
 interface IProps {
   children: ReactNode;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: any;
+  // session: any;
 }
 
-export default function RootLayout({ children, session }: IProps) {
+export default async function RootLayout({ children }: IProps) {
+  const session = await getServerSession(authOptions);
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
