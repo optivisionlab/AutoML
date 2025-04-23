@@ -462,48 +462,42 @@ def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
-def handle_contact(username: str, email: str, message: str):
-    user = users_collection.find_one({"username": username, "email": email})
-    if user:
-        smtp_server = "smtp.gmail.com"
-        port = 587
-        sender_email = "devweb3010@gmail.com"  # Thay bằng email thật
-        sender_password = "xkda ehrw nedr djqo"  # Thay bằng mật khẩu thật hoặc dùng App Password
-        receiver_email = "admin@gmail.com" # Thay email admin
+def handle_contact(fullname: str, email: str, message: str):
+    smtp_server = "smtp.gmail.com"
+    port = 587
+    sender_email = "devweb3010@gmail.com"  # Thay bằng email thật
+    sender_password = "xkda ehrw nedr djqo"  # Thay bằng mật khẩu thật hoặc dùng App Password
+    receiver_email = "admin@gmail.com" # Thay email admin
 
-        msg = MIMEText(f"Từ: {username}\nEmail: {email}\n\nNội dung:\n{message}")
-        msg["Subject"] = "Trợ giúp người dùng"
-        msg["From"] = sender_email
-        msg["To"] = receiver_email
+    msg = MIMEText(f"Từ: {fullname}\nEmail: {email}\n\nNội dung:\n{message}")
+    msg["Subject"] = "Trợ giúp người dùng"
+    msg["From"] = sender_email
+    msg["To"] = receiver_email
 
-        try:
-            # Gửi email
-            with smtplib.SMTP(smtp_server, port) as server:
-                server.starttls()
-                server.login(sender_email, sender_password)
-                server.sendmail(sender_email, receiver_email, msg.as_string())
+    try:
+        # Gửi email
+        with smtplib.SMTP(smtp_server, port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, receiver_email, msg.as_string())
 
-            # Lưu vào collection liên hệ
-            contact_data = {
-                "username": username,
-                "email": email,
-                "message": message,
-                "created_at": time.time()
-            }
-            contacts_collection.insert_one(contact_data)
+        # Lưu vào collection liên hệ
+        contact_data = {
+            "fullname": fullname,
+            "email": email,
+            "message": message,
+            "created_at": time.time()
+        }
+        contacts_collection.insert_one(contact_data)
 
-            return {
-                "status": "success",
-                "message": "Liên hệ đã được gửi và lưu thành công."
-            }
+        return {
+            "status": "success",
+            "message": "Liên hệ đã được gửi và lưu thành công."
+        }
 
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Lỗi khi gửi email hoặc lưu liên hệ: {str(e)}"
-            )
-    else:
+    except Exception as e:
         raise HTTPException(
-            status_code=404,
-            detail="Không tìm thấy người dùng với username và email đã cung cấp."
+            status_code=500,
+            detail=f"Lỗi khi gửi email hoặc lưu liên hệ: {str(e)}"
         )
+    

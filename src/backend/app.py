@@ -292,10 +292,10 @@ def get_avatar(username: str):
 
 
 @app.post("/contact")
-def contact_user(username: str = Form(...),
+def contact_user(fullname: str = Form(...),
     email: str = Form(...),
     message: str = Form(...)):
-    return handle_contact(username, email, message)
+    return handle_contact(fullname, email, message)
 
 # Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
 
