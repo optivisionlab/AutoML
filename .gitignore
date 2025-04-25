@@ -208,3 +208,4 @@ yarn-error.log*
 next-env.d.ts
 *.zip
 .gradio
+*.swp
