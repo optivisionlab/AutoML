@@ -57,7 +57,7 @@ def run_gradio_demo(desc):
             ["assets/iris.data.csv", "assets/config-data-iris.yaml"],
         ]
     )
-    interface.launch(debug=True, server_name="0.0.0.0")
+    interface.launch(debug=True, share=True, server_name="0.0.0.0")
 
 if __name__ == "__main__":
     desc_md = Path("assets/desc.md") #<-- Path to file with description written in Markdown
