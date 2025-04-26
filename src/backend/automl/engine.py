@@ -15,7 +15,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
 
 import yaml
-import json
+import os
 import pymongo
 import numpy as np
 import random
@@ -68,10 +68,9 @@ def get_config(file):
 
 
 def get_model():
-
-    base_dir = Path(__file__).resolve().parents[3]  
-    file_path = base_dir / "docs" / "data_automl" / "hethong" / "model.yml"
-    with file_path.open("r", encoding="utf-8") as file:
+    base_dir = "assets/system_models"
+    file_path = os.path.join(base_dir, "model.yml")
+    with open(file_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
     
     models = {}

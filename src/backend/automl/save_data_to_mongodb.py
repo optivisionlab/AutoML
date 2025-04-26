@@ -10,11 +10,9 @@ client = get_database()
 db = client["AutoML"]
 csv_collection = db["file_csv"]
 yml_collection = db["file_yaml"]
-
-current_file_path = Path(__file__).resolve()
-project_root = current_file_path.parents[3]
-csv_file_path = os.path.join(project_root,'docs' ,'data_automl', 'nguoidung', 'glass.csv')
-yml_file_path = os.path.join(project_root,'docs' ,'data_automl', 'nguoidung', 'config_glass_nguoi_dung_tai_len.yml')
+root_path = "assets/end_users"
+csv_file_path = os.path.join(root_path, 'glass.csv')
+yml_file_path = os.path.join(root_path, 'config_glass_nguoi_dung_tai_len.yml')
 
 df = pd.read_csv(csv_file_path)
 csv_data = df.to_dict(orient='records')
