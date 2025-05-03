@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  hautoml_nano:
+    image: hautoml-nano
+    container_name: hautoml_nano_v1
+    ports:
+      - "7860:7860"
+    command: python automl/demo_gradio.py
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
