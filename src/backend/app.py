@@ -21,6 +21,7 @@ from automl.engine import (
 )
 from automl.model import Item
 from users.engine import User
+from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import users_collection
 from users.engine import checkLogin
@@ -169,7 +170,7 @@ def delete_user(username):
 
 # update user
 @app.put("/update/{username}")
-def update_user(username: str, new_user: User):
+def update_user(username: str, new_user: UpdateUser):
     message = handle_update_user(username, new_user)
     return message
 
