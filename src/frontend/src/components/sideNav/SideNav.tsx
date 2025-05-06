@@ -38,14 +38,12 @@ export default function SideNav() {
 
   const navItems = NavItems(session?.user.role || '');
 
-  console.log(" check session", session);
-
   return (
-    <div className="pr-4" suppressHydrationWarning>
+    <div suppressHydrationWarning>
       <div
         className={cn(
-          isSidebarExpanded ? "w-[200px]" : "w-[68px]",
-          "border-r transition-all duration-300 ease-in-out transform hidden sm:flex h-full bg-accent"
+          isSidebarExpanded ? "w-[250px]" : "w-[68px]",
+          "border-r transition-all duration-300 ease-in-out transform hidden sm:flex h-full "
         )}
         suppressHydrationWarning
       >
@@ -127,7 +125,7 @@ export const SideNavItem: React.FC<{
           className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
             active
               ? "font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white"
-              : "hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
+              : "hover:bg-neutral-200 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
           }`}
           suppressHydrationWarning
         >

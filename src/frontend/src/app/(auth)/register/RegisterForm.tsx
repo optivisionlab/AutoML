@@ -31,6 +31,9 @@ import { Eye, EyeOff } from "lucide-react";
 
 const registerSchema = z
   .object({
+    fullName: z.string().min(5, {
+      message: "Họ tên phải có ít nhất 5 ký tự",
+    }),
     username: z
       .string()
       .min(5, {
@@ -44,11 +47,9 @@ const registerSchema = z
     }),
     gender: z.string().default("male"),
     date: z.string(),
-    number: z
-    .string()
-    .regex(/^(0[3|5|7|8|9])[0-9]{8}$/, {
+    number: z.string().regex(/^0(3|5|7|8|9)[0-9]{8}$/, {
       message: "Số điện thoại không hợp lệ",
-    }),
+    }),    
     password: z
       .string()
       .min(8, {
@@ -79,7 +80,7 @@ const RegisterForm = () => {
     defaultValues: {
       username: "",
       email: "",
-      gender: "",
+      gender: "male",
       date: "",
       number: "",
       password: "",
@@ -89,8 +90,8 @@ const RegisterForm = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const onSubmit = async (values: z.infer<typeof registerSchema>) => {
-
     const newUser = {
+      fullName: values.fullName,
       username: values.username,
       email: values.email,
       password: values.password,
@@ -110,7 +111,7 @@ const RegisterForm = () => {
       toast({
         title: "Đăng ký thành công",
         className: "bg-green-100 text-green-800 border border-green-300",
-        description: "Bạn đã đăng ký thành công!"
+        description: "Bạn đã đăng ký thành công!",
       });
     } catch (error) {
       toast({
@@ -129,9 +130,26 @@ const RegisterForm = () => {
           onSubmit={form.handleSubmit(onSubmit)}
           className="max-w-md w-full flex flex-col gap-4 flex-wrap"
         >
-          <Label className="text-center text-xl font-bold">Đăng ký</Label>
+          <Label className="text-center text-xl font-bold">
+            Đăng ký tài khoản
+          </Label>
 
           <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="fullName"
+              render={({ field }) => {
+                return (
+                  <FormItem>
+                    <FormLabel>Họ và tên</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="text" placeholder="Nguyễn Văn A" value={field.value ?? ""}/>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
+            />
             <FormField
               control={form.control}
               name="username"
@@ -140,11 +158,7 @@ const RegisterForm = () => {
                   <FormItem>
                     <FormLabel>Tên đăng nhập</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
-                        type="text"
-                        placeholder="Nguyen Van A"
-                      />
+                      <Input {...field} type="text" placeholder="nguyenvana" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -182,14 +196,16 @@ const RegisterForm = () => {
                     <FormControl>
                       <Select
                         onValueChange={field.onChange}
-                        value={field.value || 'male'}
+                        value={field.value ?? "male"}
                       >
                         <SelectTrigger className="w-[180px]">
-                          <SelectValue/>
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            <SelectItem value="male" defaultValue={"male"}>Nam</SelectItem>
+                            <SelectItem value="male" defaultValue={"male"}>
+                              Nam
+                            </SelectItem>
                             <SelectItem value="female">Nữ</SelectItem>
                           </SelectGroup>
                         </SelectContent>
