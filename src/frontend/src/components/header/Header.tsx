@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,16 +12,45 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { NavItems } from "@/config";
-import { Menu } from "lucide-react";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { LogOut } from 'lucide-react';
+import { LogOut, User2 } from "lucide-react";
+import Image from "next/image";
 
 export default function Header() {
-  const navItems = NavItems();
-  const [isOpen, setIsOpen] = useState(false);
   const { data: session } = useSession();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAvatar = async () => {
+      if (session?.user?.username) {
+        try {
+          const res = await fetch(
+            `http://127.0.0.1:9999/get_avatar/${session.user.username}`
+          );
+          if (!res.ok) throw new Error("Avatar fetch failed");
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          setAvatarUrl(url);
+        } catch (error) {
+          console.log("Avatar fetch error:", error);
+        }
+      }
+    };
+
+    fetchAvatar(); // Lấy avatar lần đầu khi component mount
+
+    const handleAvatarUpdate = () => {
+      fetchAvatar(); // Refetch lại avatar nếu có event cập nhật
+    };
+
+    window.addEventListener("avatar-updated", handleAvatarUpdate);
+
+    // Cleanup khi unmount
+    return () => {
+      window.removeEventListener("avatar-updated", handleAvatarUpdate);
+    };
+  }, [session?.user?.username]);
 
   return (
     <header className="flex items-center h-16 px-4 border-b shrink-0 md:px-6 justify-between">
@@ -30,22 +59,60 @@ export default function Header() {
         className="flex items-center gap-2 text-lg font-semibold md:text-base"
         prefetch={false}
       >
-        <span className="w-8 h-8 border bg-accent rounded-full" />
-        <span>AutoML</span>
+        <Image src="/image.png" priority width={150} height={150} alt="logo" />
       </Link>
+
+      {!session && (
+        <div className="md:flex items-center gap-10">
+          <Link
+            href="/"
+            className="text-sm font-medium text-black hover:text-[#3D6DF6]"
+          >
+            Trang chủ
+          </Link>
+          <Link
+            href="/"
+            className="text-sm font-medium text-black hover:text-[#3D6DF6]"
+          >
+            Giới thiệu
+          </Link>
+          <Link
+            href="/"
+            className="text-sm font-medium text-black hover:text-[#3D6DF6]"
+          >
+            Về chúng tôi
+          </Link>
+          <Link
+            href="/"
+            className="text-sm font-medium text-black hover:text-[#3D6DF6]"
+          >
+            Liên hệ
+          </Link>
+        </div>
+      )}
 
       <div className="ml-4 flex items-center gap-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             {session ? (
-              <Avatar>
-                <AvatarImage src="https://github.com/shadcn.png" alt="avatar" />
-                <AvatarFallback>CN</AvatarFallback>
+              <Avatar className="cursor-pointer">
+                <AvatarImage src={avatarUrl ?? undefined} alt="avatar" />
+                <AvatarFallback className=" bg-gray-100">
+                  <User2 className="w-6 h-6" />
+                </AvatarFallback>
               </Avatar>
             ) : (
-              <div className="flex space-x-4">
-                <Button onClick={() => signIn()}>Đăng nhập</Button>
-                <Button><Link href={"/register"}>Đăng ký</Link></Button>
+              <div className="flex items-center justify-center space-x-4">
+                <Button
+                  onClick={() => signIn()}
+                  className="bg-[#376FF9] text-white hover:bg-[#2F5ED6]"
+                >
+                  Đăng nhập
+                </Button>
+                <span className="text-black"> Hoặc</span>
+                <Button className="bg-[#376FF9] text-white hover:bg-[#2F5ED6]">
+                  <Link href={"/register"}>Đăng ký</Link>
+                </Button>
               </div>
             )}
           </DropdownMenuTrigger>
@@ -59,34 +126,6 @@ export default function Header() {
             </DropdownMenuContent>
           )}
         </DropdownMenu>
-
-        <button onClick={() => setIsOpen(true)} className="block sm:hidden">
-          <Menu size={24} />
-        </button>
-
-        <Sheet open={isOpen} onOpenChange={setIsOpen}>
-          <SheetContent side="right" className="block md:hidden">
-            <div className="pt-4  overflow-y-auto h-fit w-full flex flex-col gap-1">
-              {navItems.map((navItem, idx) => (
-                <Link
-                  key={idx}
-                  href={navItem.href}
-                  onClick={() => setIsOpen(false)}
-                  className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
-                    navItem.active
-                      ? "font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white"
-                      : "hover:bg-neutral-200  hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                  }`}
-                >
-                  <div className="relative font-base text-sm py-1.5 px-2 flex flex-row items-center space-x-2 rounded-md duration-100">
-                    {navItem.icon}
-                    <span>{navItem.name}</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
       </div>
     </header>
   );

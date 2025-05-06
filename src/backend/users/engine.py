@@ -15,8 +15,16 @@ class User(BaseModel):
     gender: str
     date: str
     number: str
-    role: Optional[str] = "User"
+    fullName: str
+    role: Optional[str] = "user"
     avatar: Optional[str] = None
+
+class UpdateUser(BaseModel):  # Dùng cho cập nhật thông tin người dùng
+    email: Optional[str]
+    gender: Optional[str]
+    date: Optional[str]
+    fullName: Optional[str]
+    number: Optional[str]
     
 # Định nghĩa mô hình cho dữ liệu đầu vào
 class LoginRequest(BaseModel):
@@ -38,16 +46,17 @@ def user_helper(user) -> dict:
         "gender": str(user["gender"]),
         "date": str(user["date"]),
         "number": str(user["number"]),
+        "fullName": str(user["fullName"]),
         "role": str(user["role"]),
         "avatar": str(user["avatar"])
     }
 
 #Hàm lấy danh sách user
 def get_list_user():
-    users_data = users_collection.find()  # Sử dụng find() để lấy tất cả các bản ghi
+    users_data = users_collection.find({"role": "user"})  # Lọc theo role
     list_user = []
     for user in users_data:
-        user['_id'] = str(user['_id'])  # Chuyển ObjectId sang chuỗi trước khi trả về
+        user['_id'] = str(user['_id'])  # Convert ObjectId to string
         list_user.append(user)
     return list_user
 
@@ -142,10 +151,11 @@ def handleLogin(username, password):
         user_login = {
             "username": user['username'],
             "email": user['email'],
+            "id": str(user['_id']),
             "gender": user['gender'],
             "date": user['date'],
             "number": user['number'],
-            "role": role
+            "role": role,
         }
         return user_login
     else:
@@ -279,8 +289,9 @@ def handle_update_avatar(username, avatar):
     if user:
         # avatar_data = avatar.read()
         avatar_data = avatar.file.read()
-        avatar_base64 = base64.b64encode(avatar_data).decode('utf-8') 
-        avatar_set = {"$set":{
+        avatar_base64 = base64.b64encode(avatar_data).decode('utf-8')
+        # avatar_with_prefix = f"data:image/jpeg;base64,{avatar_base64}"
+        avatar_set = {"$set": {
             "avatar": avatar_base64
         }}
         users_collection.update_one({"_id": user["_id"]}, avatar_set)
@@ -306,28 +317,7 @@ def handle_get_avatar(username):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Người dùng {username} không tồn tại"
         )
-    
-    
-# def handle_signup(new_user: User):
-#     if check_exits_username(new_user.username) or check_exits_email(new_user.email):
-#         raise HTTPException(
-#             status_code=status.HTTP_409_CONFLICT,
-#             detail="Người dùng đã tồn tại!"
-#         )
-
-#     result = users_collection.insert_one(new_user.dict())
-#     # print(result)
-#     if result.inserted_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_200_OK,
-#             detail=f"Đăng ký thành công user: {new_user.username}"
-#         )
-#     else:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail='Đã xảy ra lỗi khi thêm người dùng'
-#         )
-    
+        
 from fastapi.responses import JSONResponse   
 def handle_signup(new_user: User):
     if check_exits_username(new_user.username) or check_exits_email(new_user.email):
@@ -346,6 +336,7 @@ def handle_signup(new_user: User):
             "email": new_user.email,
             "gender": new_user.gender,
             "date": new_user.date,
+            "fullName": new_user.fullName,
             "number": new_user.number,
             "role": new_user.role,
             "avatar": new_user.avatar
@@ -373,26 +364,25 @@ def handle_delete_user(username):
             detail=f"Không thể xóa người dùng {username}. Người dùng không tồn tại hoặc đã xảy ra lỗi"
         )
 
-def handle_update_user(username, new_user: User):
+def handle_update_user(username: str, new_user: UpdateUser):
     if check_exits_username(username):
         old_user = users_collection.find_one({"username": username})
         new_value = {"$set": new_user.dict()}
-        result = users_collection.update_one({"_id": old_user["_id"]},new_value )
+        result = users_collection.update_one({"_id": old_user["_id"]}, new_value)
 
         if result.modified_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_200_OK,
-                detail=f'Thông tin người dùng {username} đã được cập nhật'
-            )
+            return {"message": f"✅ Thông tin người dùng {username} đã được cập nhật"}
+        elif result.matched_count > 0:
+            return {"message": f"⚠️ Thông tin người dùng {username} không có thay đổi nào"}
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'Không thể cập nhật thông tin người dùng {username}'
+                detail=f"❌ Không tìm thấy người dùng {username} để cập nhật"
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
+            detail=f"❌ Người dùng {username} không tồn tại"
         )
     
 def handle_forgot_password(email):
@@ -467,7 +457,7 @@ def handle_contact(fullname: str, email: str, message: str):
     port = 587
     sender_email = "devweb3010@gmail.com"  # Thay bằng email thật
     sender_password = "xkda ehrw nedr djqo"  # Thay bằng mật khẩu thật hoặc dùng App Password
-    receiver_email = "admin@gmail.com" # Thay email admin
+    receiver_email = "mykhanh03102003@gmail.com" # Thay email admin
 
     msg = MIMEText(f"Từ: {fullname}\nEmail: {email}\n\nNội dung:\n{message}")
     msg["Subject"] = "Trợ giúp người dùng"
