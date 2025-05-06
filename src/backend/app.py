@@ -21,6 +21,7 @@ from automl.engine import (
 )
 from automl.model import Item
 from users.engine import User
+from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import users_collection
 from users.engine import checkLogin
@@ -45,6 +46,7 @@ from users.engine import handle_update_avatar
 from users.engine import handle_get_avatar
 from users.engine import handle_signup
 from users.engine import handle_delete_user
+from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
@@ -168,7 +170,7 @@ def delete_user(username):
 
 # update user
 @app.put("/update/{username}")
-def update_user(username: str, new_user: User):
+def update_user(username: str, new_user: UpdateUser):
     message = handle_update_user(username, new_user)
     return message
 
@@ -290,6 +292,12 @@ def get_avatar(username: str):
     return avatar
 
 
+@app.post("/contact")
+def contact_user(fullname: str = Form(...),
+    email: str = Form(...),
+    message: str = Form(...)):
+    return handle_contact(fullname, email, message)
+
 # Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
 
 
@@ -379,7 +387,7 @@ def get_data_from_mongodb(id: str):
 
 @app.post("/upload-dataset")
 def upload_dataset(
-    user_id: str = Form(...),
+    user_id: str,
     data_name: str = Form(...),
     data_type: str = Form(...),
     file_data: UploadFile = File(...),

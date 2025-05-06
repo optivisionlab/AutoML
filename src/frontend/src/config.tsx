@@ -1,4 +1,4 @@
-import { Home, User, Database, Users, Folder } from "lucide-react";
+import { Home, User, Database, Users, DatabaseZap } from "lucide-react";
 
 export function NavItems(role: string) {
   const commonItems = [
@@ -22,9 +22,9 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Bộ dữ liệu",
+      name: "Bộ dữ liệu có sẵn",
       icon: <Database size={18} />,
-      href: "/datasets",
+      href: "/available-datasets",
       active: false,
       position: "top",
       role: ["user"],
@@ -41,13 +41,21 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Quản lý bộ dữ liệu",
-      icon: <Folder size={18} />,
-      href: "/admin/datasets",
+      name: "Bộ dữ liệu có sẵn",
+      icon: <Database size={18}/>,
+      href: "/admin/datasets/public",
       active: false,
       position: "top",
       role: ["admin"],
     },
+    {
+      name: "Bộ dữ liệu của người dùng",
+      icon: <DatabaseZap size={18} />,
+      href: "/admin/datasets/users",
+      active: false,
+      position: "top",
+      role: ["admin"],
+    }
   ];
 
   return [...commonItems, ...userItems, ...adminItems].filter((item) =>
