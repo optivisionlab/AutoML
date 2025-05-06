@@ -33,15 +33,15 @@ export const authOptions: NextAuthOptions = {
           }
 
           const user = await res.json();
+          console.log("User from API:", user);
 
           if (user) {
-            // user.name = user.username;
-            // return user;
             return {
               id: user.id,
               username: user.username,
               email: user.email,
               role: user.role,
+              avatar: user.avatar,
             }
           } else {
             return null;
@@ -62,6 +62,7 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email;
         token.id = user.id;
         token.role = user.role;
+        token.avatar = user.avatar;
       }
       return token;
     },
@@ -72,6 +73,7 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email as string;
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.avatar = token.avatar as string;
       }
       return session;
     },
