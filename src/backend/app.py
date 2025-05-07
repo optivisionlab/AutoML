@@ -54,7 +54,7 @@ from automl.engine import app_train_local
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
-from data.engine import get_datas, get_data_from_mongodb_by_id
+from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
 
 # default sync
@@ -368,15 +368,20 @@ def get_data_from_uci(id_data: int):
 
 
 # Lấy danh sách data
-@app.post("/get-list-data")
-def get_list_data(id: str):
-    list_data = get_datas(id_user=id)
+@app.post("/get-list-data-by-userid")
+def get_list_data_by_userid(id: str):
+    list_data = get_list_data(id_user=id)
     return list_data
 
+# Lấy 1 dataset
+@app.post("/get-data-info")
+def get_data_info(id: str):
+    data = get_one_data(id_data=id)
+    return data
 
 # Lấy bộ dữ liệu từ mongodb
-@app.post("/get-data-from-mongodb")
-def get_data_from_mongodb(id: str):
+@app.post("/get-data-from-mongodb-to-train")
+def get_data_from_mongodb_to_train(id: str):
     df, class_data = get_data_from_mongodb_by_id(id_data=id)
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
@@ -384,7 +389,7 @@ def get_data_from_mongodb(id: str):
     data = {"data": output, "list_feature": df.columns.to_list()}
     return JSONResponse(content=data)
 
-
+# Upload dataset
 @app.post("/upload-dataset")
 def upload_dataset(
     user_id: str,
@@ -395,18 +400,23 @@ def upload_dataset(
 
     return upload_data(file_data, data_name, data_type, user_id)
 
-
+# Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
-    dataset_id: str, data_name: str = Form(None), file_data: UploadFile = File(None)
+    dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    return update_dataset_by_id(dataset_id, data_name, file_data)
+    return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
 
-
+# Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
     return delete_dataset_by_id(dataset_id)
 
+# Lấy danh sách bộ dữ liệu của người dùng cho màn admin
+@app.get("/get-list-data-user")
+def get_list_data_user():
+    list_data = get_user_data_list()
+    return list_data
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
