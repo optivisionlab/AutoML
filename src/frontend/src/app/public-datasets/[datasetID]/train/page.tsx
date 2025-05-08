@@ -1,17 +1,52 @@
-import React from 'react';
+"use client";
 
-interface Props {
-  params: {
-    datasetID: string;
-  };
-}
+import { useEffect, useState } from "react";
+import TrainCard from "@/components/publicDatasetUser/TrainCard";
+import { useParams } from "next/navigation";
 
-const Page = ({ params }: Props) => {
-  return (
-    <div>
-      Huấn luyện dataset với ID: <b>{params.datasetID}</b>
-    </div>
+export default function Page() {
+  const params = useParams();
+  const datasetID = Array.isArray(params?.datasetID)
+    ? params.datasetID[0]
+    : params?.datasetID;
+
+  const [dataName, setDataName] = useState<string>("Đang tải...");
+
+  useEffect(() => {
+    sessionStorage.clear();
+    
+    const fetchData = async () => {
+      try {
+        const res = await fetch(
+          `http://127.0.0.1:9999/get-data-info?id=${datasetID}`,
+          {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+            },
+            body: "",
+            cache: "no-store",
+          }
+        );
+
+        if (!res.ok) throw new Error("Lỗi khi gọi API");
+
+        const data = await res.json();
+        setDataName(data.dataName || "Không rõ");
+      } catch (error) {
+        console.error("Lỗi lấy dữ liệu:", error);
+        setDataName("Không thể tải tên bộ dữ liệu");
+      }
+    };
+
+    if (datasetID) {
+      fetchData();
+    }
+  }, [datasetID]);
+
+  return datasetID ? (
+    <TrainCard datasetID={datasetID} datasetName={dataName} />
+  ) : (
+    <div>Không tìm thấy ID dataset</div>
   );
-};
-
-export default Page;
+}

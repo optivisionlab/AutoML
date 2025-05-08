@@ -37,7 +37,7 @@ const Page = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await fetch("http://127.0.0.1:9999/get-list-data?id=0", {
+        const res = await fetch("http://127.0.0.1:9999/get-list-data-by-userid?id=0", {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -57,8 +57,6 @@ const Page = () => {
 
     fetchData();
   }, []);
-
-  console.log("datasets", datasets);
 
   return (
     <Card className="max-w-6xl mx-auto mt-8 shadow-md">
