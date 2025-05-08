@@ -24,7 +24,15 @@ export function NavItems(role: string) {
     {
       name: "Bộ dữ liệu có sẵn",
       icon: <Database size={18} />,
-      href: "/available-datasets",
+      href: "/public-datasets",
+      active: false,
+      position: "top",
+      role: ["user"],
+    },
+    {
+      name: "Bộ dữ liệu của tôi",
+      icon: <DatabaseZap size={18} />,
+      href: "/my-datasets",
       active: false,
       position: "top",
       role: ["user"],

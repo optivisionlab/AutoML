@@ -1,9 +1,9 @@
 import React from 'react'
 
-const AvailableDataset = () => {
+const page = () => {
   return (
     <div>page</div>
   )
 }
 
-export default AvailableDataset;
+export default page
