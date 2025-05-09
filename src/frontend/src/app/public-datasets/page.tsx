@@ -75,7 +75,7 @@ const Page = () => {
                 <TableHead>Tên bộ dữ liệu</TableHead>
                 <TableHead>Kiểu DL</TableHead>
                 <TableHead>Ngày tạo</TableHead>
-                <TableHead>Lần cập nhật</TableHead>
+                <TableHead>Lần cập nhật mới nhất</TableHead>
                 <TableHead className="text-center">Chức năng</TableHead>
               </TableRow>
             </TableHeader>
