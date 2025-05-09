@@ -49,7 +49,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
       setLoading(true);
 
       const res = await fetch(
-        `http://127.0.0.1:9999/upload-dataset?user_id=${userId}`,
+        `http://10.100.200.119:9999/upload-dataset?user_id=${userId}`,
         {
           method: "POST",
           body: formData,

@@ -66,7 +66,7 @@ const Page = () => {
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:9999/get-list-data-by-userid?id=${session.user.id}`,
+        `http://10.100.200.119:9999/get-list-data-by-userid?id=${session.user.id}`,
         {
           method: "POST",
           headers: { Accept: "application/json" },
@@ -99,7 +99,7 @@ const Page = () => {
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:9999/delete-dataset/${datasetIdToDelete}`,
+        `http://10.100.200.119:9999/delete-dataset/${datasetIdToDelete}`,
         {
           method: "DELETE",
           headers: { Accept: "application/json" },

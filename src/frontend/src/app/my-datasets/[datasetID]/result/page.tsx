@@ -54,7 +54,7 @@ const ResultPage = ({ params }: Props) => {
       setIsLoading(true);
       try {
         const response = await fetch(
-          `http://127.0.0.1:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
+          `http://10.100.200.119:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
           {
             method: "POST",
             headers: { accept: "application/json" },
@@ -127,7 +127,7 @@ const ResultPage = ({ params }: Props) => {
         setIsLoading(true);
         try {
           const response = await fetch(
-            "http://127.0.0.1:9999/train-from-requestbody-json/",
+            "http://10.100.200.119:9999/train-from-requestbody-json/",
             {
               method: "POST",
               headers: {

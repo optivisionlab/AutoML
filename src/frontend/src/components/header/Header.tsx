@@ -25,7 +25,7 @@ export default function Header() {
       if (session?.user?.username) {
         try {
           const res = await fetch(
-            `http://127.0.0.1:9999/get_avatar/${session.user.username}`
+            `http://10.100.200.119:9999/get_avatar/${session.user.username}`
           );
           if (!res.ok) throw new Error("Avatar fetch failed");
 

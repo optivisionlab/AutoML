@@ -71,7 +71,7 @@ export default function AddUserForm({
 
   const onSubmit = async (data: AddUserFormValues) => {
     try {
-      const res = await fetch("http://127.0.0.1:9999/signup", {
+      const res = await fetch("http://10.100.200.119:9999/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
