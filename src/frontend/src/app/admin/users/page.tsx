@@ -194,7 +194,7 @@ const UserManagementPage = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:9999/users");
+      const res = await fetch("http://10.100.200.119:9999/users");
       const data = await res.json();
       setUsers(data);
     } catch (error) {
@@ -231,7 +231,7 @@ const UserManagementPage = () => {
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:9999/update/${editingUser.username}`,
+        `http://10.100.200.119:9999/update/${editingUser.username}`,
         {
           method: "PUT",
           headers: {
@@ -272,7 +272,7 @@ const UserManagementPage = () => {
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:9999/delete/${userToDelete.username}`,
+        `http://10.100.200.119:9999/delete/${userToDelete.username}`,
         {
           method: "DELETE",
         }

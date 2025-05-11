@@ -92,14 +92,14 @@ const Profile = () => {
       if (!username) return;
 
       const res = await axios.get(
-        `http://127.0.0.1:9999/users/?username=${username}`,
+        `http://10.100.200.119:9999/users/?username=${username}`,
         { headers: { accept: "application/json" } }
       );
       setUser(res.data);
       setEditFormData(res.data);
 
       const avatar = await axios.get(
-        `http://127.0.0.1:9999/get_avatar/${username}`,
+        `http://10.100.200.119:9999/get_avatar/${username}`,
         { responseType: "blob" }
       );
       const url = URL.createObjectURL(avatar.data);
@@ -162,7 +162,7 @@ const Profile = () => {
         formData.append("avatar", file);
 
         await axios.post(
-          `http://127.0.0.1:9999/update_avatar?username=${username}`,
+          `http://10.100.200.119:9999/update_avatar?username=${username}`,
           formData,
           {
             headers: {
@@ -177,7 +177,7 @@ const Profile = () => {
       console.log("editFormData", editFormData);
 
       await axios.put(
-        `http://127.0.0.1:9999/update/${username}`,
+        `http://10.100.200.119:9999/update/${username}`,
         editFormData,
         {
           headers: {

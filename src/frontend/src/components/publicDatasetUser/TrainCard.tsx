@@ -26,7 +26,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        `http://127.0.0.1:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
+        `http://10.100.200.119:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
         {
           method: "POST",
           headers: { accept: "application/json" },
