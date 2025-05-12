@@ -199,6 +199,7 @@ from bson import ObjectId
 # MongoDB setup
 db = get_database()
 job_collection = db["tbl_Job"]
+data_collection = db["tbl_Data"]
 
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
@@ -212,6 +213,12 @@ def train_json(item: Item, userId, id_data):
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
+    
+    dataset = data_collection.find_one({"_id":ObjectId(id_data)})
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+    data_name = dataset.get("dataName")
+    
     job = {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
@@ -220,6 +227,7 @@ def train_json(item: Item, userId, id_data):
         "other_model_scores": model_scores,
         "config": item.config,
         "data_id":id_data,
+        "data_name": data_name,
         "user_id": userId,
         "create_at": time.time(),
         "status": 1
