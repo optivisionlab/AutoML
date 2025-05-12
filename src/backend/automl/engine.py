@@ -190,3 +190,66 @@ def app_train_local(file_data, file_config):
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
     return best_model_id, best_model, best_score, best_params, model_scores
+
+from database.database import get_database
+from fastapi.responses import JSONResponse
+from fastapi import HTTPException
+import time
+from bson import ObjectId
+# MongoDB setup
+db = get_database()
+job_collection = db["tbl_Job"]
+
+def serialize_mongo_doc(doc):
+    doc["_id"] = str(doc["_id"])
+    return doc
+
+def train_json(item: Item, userId, id_data):
+    data, choose, list_feature, target, metric_list, metric_sort, models = (
+        get_data_config_from_json(item)
+    )
+
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_feature, target, metric_list, metric_sort, models
+    )
+    job = {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "other_model_scores": model_scores,
+        "config": item.config,
+        "data_id":id_data,
+        "user_id": userId,
+        "create_at": time.time(),
+        "status": 1
+    }
+
+    result = job_collection.insert_one(job)
+    if result.inserted_id:
+        serialize_mongo_doc(job)
+        return JSONResponse(content=job)
+    else:
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
+
+def get_jobs(user_id):
+    try:
+        query = {}
+        if user_id:
+            query["user_id"] = user_id
+        
+        jobs = list(job_collection.find(query))
+        for job in jobs:
+            job["_id"] = str(job["_id"])  # Chuyển ObjectId thành string
+        return JSONResponse(content=jobs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+def get_one_job(id_job: str):
+    try:
+        job = job_collection.find_one({"_id": ObjectId(id_job)})
+        if not job:
+            raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
+        return JSONResponse(content=serialize_mongo_doc(job))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")

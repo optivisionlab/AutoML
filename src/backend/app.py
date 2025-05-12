@@ -14,10 +14,11 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 from automl.engine import (
-    get_config,
     train_process,
     get_data_and_config_from_MongoDB,
-    get_data_config_from_json,
+    train_json,
+    get_jobs,
+    get_one_job
 )
 from automl.model import Item
 from users.engine import User
@@ -76,14 +77,14 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": "http://localhost:9999/auth",
+        "redirect_url": "http://10.100.200.119:9999/auth",
     },
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_origins=["http://10.100.200.119:3000", "http://10.100.200.119:3002"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -334,25 +335,18 @@ def api_train_mongo():
         "orther_model_scores": model_scores,
     }
 
-
 @app.post("/train-from-requestbody-json/")
-def api_train_json(item: Item):
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
-        get_data_config_from_json(item)
-    )
+def api_train_json(item: Item, userId: str, id_data:str):
+    return train_json(item, userId, id_data)
 
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
-    )
+@app.post("/get-list-job-by-userId")
+def api_get_list_job(user_id: str):
+    return get_jobs(user_id)
 
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
-    }
-
+@app.post("/get-job-info")
+def get_job_info(id: str):
+    job = get_one_job(id_job=id)
+    return job
 
 @app.post("/get-data-from-uci")
 def get_data_from_uci(id_data: int):
@@ -362,9 +356,6 @@ def get_data_from_uci(id_data: int):
     )
     data = {"data": output, "list_feature": df_uci.columns.to_list()}
     return JSONResponse(content=data)
-
-
-# Đây là phần code của Ánh
 
 
 # Lấy danh sách data
@@ -419,5 +410,5 @@ def get_list_data_user():
     return list_data
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
+    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)
     pass
