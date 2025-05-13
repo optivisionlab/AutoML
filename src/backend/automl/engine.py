@@ -206,47 +206,52 @@ def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
-def train_json(item: Item, userId, id_data):
+def train_json_from_job(job):
+    item = job["item"]
+    user_id = job["user_id"]
+    data_id = job["data_id"]
+
     data, choose, list_feature, target, metric_list, metric_sort, models = (
-        get_data_config_from_json(item)
+        get_data_config_from_json(Item(**item))
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
     
-    dataset = data_collection.find_one({"_id":ObjectId(id_data)})
+    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
     if not dataset:
         raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
     data_name = dataset.get("dataName")
-    
-    user = user_collection.find_one({"_id":ObjectId(userId)})
+
+    user = user_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
     user_name = user.get("username")
-    job = {
+
+    job_doc = {
+        "job_id": job["job_id"],
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
-        "config": item.config,
+        "config": item["config"],
         "data": {
-            "id": id_data,
+            "id": data_id,
             "name": data_name
         },
         "user": {
-            "id": userId,
+            "id": user_id,
             "name": user_name
         },
         "create_at": time.time(),
         "status": 1
     }
 
-    result = job_collection.insert_one(job)
+    result = job_collection.insert_one(job_doc)
     if result.inserted_id:
-        serialize_mongo_doc(job)
-        return JSONResponse(content=job)
+        return JSONResponse(content=serialize_mongo_doc(job_doc))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
 
@@ -271,3 +276,53 @@ def get_one_job(id_job: str):
         return JSONResponse(content=serialize_mongo_doc(job))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
+
+# Push and get Kafka
+from kafka import KafkaProducer
+from kafka import KafkaConsumer
+from uuid import uuid4
+import json
+
+
+producer = KafkaProducer(
+    bootstrap_servers="localhost:9092",
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
+def push_train_job(item: Item, user_id, data_id):
+    job_id = str(uuid4())
+    payload = {
+        "job_id": job_id,
+        "item": item.dict(),
+        "user_id": user_id,
+        "data_id": data_id,
+        "status": 0
+    }
+    producer.send("train-job-topic", value=payload)
+    producer.flush()
+    return {"message": "Pushed job to Kafka", "job_id": job_id, "status": 0}
+
+# Kafka consumer setup
+consumer = KafkaConsumer(
+    "train-job-topic",
+    bootstrap_servers="localhost:9092",
+    value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+    group_id="train-consumer-group",
+    auto_offset_reset="earliest",
+    enable_auto_commit=True
+)
+
+def run_train_consumer():
+    print("Kafka consumer is running...")
+
+    for msg in consumer:
+        try:
+            job = msg.value
+            print(f"[Kafka] Received job: {job['job_id']}")
+
+            train_json_from_job(job)
+
+            print(f"[Kafka] Completed and saved job {job['job_id']} to MongoDB")
+
+        except Exception as e:
+            print(f"[Kafka] Error processing job: {e}")

@@ -16,9 +16,10 @@ from users.engine import checkLogin
 from automl.engine import (
     train_process,
     get_data_and_config_from_MongoDB,
-    train_json,
     get_jobs,
-    get_one_job
+    get_one_job,
+    push_train_job,
+    run_train_consumer
 )
 from automl.model import Item
 from users.engine import User
@@ -57,7 +58,6 @@ from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
-
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -408,6 +408,17 @@ async def delete_dataset(dataset_id: str):
 def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
+
+# API push kafka
+@app.post("/api-push-kafka")
+def api_push_kafka(item: Item, user_id: str, data_id: str):
+    return push_train_job(item, user_id, data_id)
+
+#Api get kafka to train
+@app.get("/get-kafka-train-json")
+def train_and_return():
+    result = run_train_consumer()
+    return result
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)
