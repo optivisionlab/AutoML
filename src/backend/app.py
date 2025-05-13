@@ -19,7 +19,8 @@ from automl.engine import (
     get_jobs,
     get_one_job,
     push_train_job,
-    run_train_consumer
+    run_train_consumer,
+    train_json
 )
 from automl.model import Item
 from users.engine import User

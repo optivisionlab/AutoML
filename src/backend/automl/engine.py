@@ -206,6 +206,53 @@ def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
+# Không dùng kafka
+def train_json(item: Item, userId, id_data):
+    data, choose, list_feature, target, metric_list, metric_sort, models = (
+        get_data_config_from_json(item)
+    )
+
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_feature, target, metric_list, metric_sort, models
+    )
+    
+    dataset = data_collection.find_one({"_id":ObjectId(id_data)})
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+    data_name = dataset.get("dataName")
+    
+    user = user_collection.find_one({"_id":ObjectId(userId)})
+    if not user:
+        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+    user_name = user.get("username")
+    job = {
+        "job_id" : str(uuid4()),
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores,
+        "config": item.config,
+        "data": {
+            "id": id_data,
+            "name": data_name
+        },
+        "user": {
+            "id": userId,
+            "name": user_name
+        },
+        "create_at": time.time(),
+        "status": 1
+    }
+
+    result = job_collection.insert_one(job)
+    if result.inserted_id:
+        serialize_mongo_doc(job)
+        return JSONResponse(content=job)
+    else:
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
+    
+# Dùng với kafka
 def train_json_from_job(job):
     item = job["item"]
     user_id = job["user_id"]
