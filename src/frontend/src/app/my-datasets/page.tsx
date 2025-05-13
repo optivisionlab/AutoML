@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
-// import { CirclePlus } from "lucide-react";
+import { CirclePlus } from "lucide-react";
 
 type Dataset = {
   _id: string;
@@ -36,7 +36,6 @@ type Dataset = {
   latestUpdate?: number;
   lastestUpdate?: number;
   userId: string;
-  username: string;
 };
 
 const formatDate = (timestamp?: number): string => {
@@ -66,10 +65,13 @@ const Page = () => {
     setLoading(true);
 
     try {
-      const res = await fetch(`http://10.100.200.119:9999/get-list-data-user`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      });
+      const res = await fetch(
+        `http://10.100.200.119:9999/get-list-data-by-userid?id=${session.user.id}`,
+        {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        }
+      );
 
       if (!res.ok) throw new Error("Lỗi khi gọi API");
 
@@ -131,17 +133,17 @@ const Page = () => {
       <Card className="max-w-6xl mx-auto mt-8 shadow-md">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
-            Quản lý bộ dữ liệu của người dùng
+            Bộ dữ liệu của tôi
           </CardTitle>
 
-          {/* <div className="flex justify-end mt-4">
+          <div className="flex justify-end mt-4">
             <Button
               className="bg-[#1e8449] text-white hover:bg-[#196f3d] px-6 py-2 rounded-md"
               onClick={() => setAddDialogOpen(true)}
             >
-              <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
+               <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
             </Button>
-          </div> */}
+          </div>
         </CardHeader>
 
         <CardContent>
@@ -155,36 +157,23 @@ const Page = () => {
                   <TableHead>Kiểu dữ liệu</TableHead>
                   <TableHead>Ngày tạo</TableHead>
                   <TableHead>Lần cập nhật mới nhất</TableHead>
-                  <TableHead className="text-center">Người dùng</TableHead>
                   <TableHead className="text-center">Chức năng</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {datasets.map((dataset) => (
-                  <TableRow
-                    key={dataset._id}
-                    className="hover:bg-muted/50 transition"
-                  >
-                    <TableCell className="py-3 px-4 font-medium text-gray-800">
-                      {dataset.dataName || "Không có tên"}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-gray-700">
-                      {dataset.dataType || "Chưa rõ"}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-gray-600">
-                      {formatDate(dataset.createDate)}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-gray-600">
+                  <TableRow key={dataset._id}>
+                    <TableCell>{dataset.dataName || "Không có tên"}</TableCell>
+                    <TableCell>{dataset.dataType || "Chưa rõ"}</TableCell>
+                    <TableCell>{formatDate(dataset.createDate)}</TableCell>
+                    <TableCell>
                       {formatDate(
                         dataset.latestUpdate || dataset.lastestUpdate
                       )}
                     </TableCell>
-                    <TableCell className="py-3 px-4 text-gray-700">
-                      {dataset.username}
-                    </TableCell>
-                    <TableCell className="py-3 px-4 text-center space-x-2">
+                    <TableCell className="text-center space-x-2">
                       <Button
-                        className="bg-[#3a6df4] hover:bg-[#5b85f7] text-white text-sm px-4 py-2 rounded-md"
+                        className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
                         onClick={() =>
                           router.push(`/my-datasets/${dataset._id}/train`)
                         }
@@ -192,13 +181,13 @@ const Page = () => {
                         Huấn luyện
                       </Button>
                       <Button
-                        className="bg-yellow-500 hover:bg-yellow-600 text-white text-sm px-4 py-2 rounded-md"
+                        className="bg-yellow-500 text-white hover:bg-yellow-600"
                         onClick={() => handleOpenEdit(dataset)}
                       >
                         Sửa
                       </Button>
                       <Button
-                        className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-md"
+                        className="bg-red-500 text-white hover:bg-red-600"
                         onClick={() => {
                           setDatasetIdToDelete(dataset._id);
                           setDeleteDialogOpen(true);

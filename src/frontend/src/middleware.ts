@@ -34,6 +34,8 @@ export const config = {
   matcher: [
     "/profile/:path*",
     "/datasets/:path*",
+    "/public-datasets/:path*",
+    "/my-datasets/:path*",
     "/available-datasets/:path*",
     "/admin/users/:path*",
     "/admin/datasets/:path*",

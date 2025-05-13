@@ -14,10 +14,13 @@ from io import BytesIO
 import pandas as pd
 from users.engine import checkLogin
 from automl.engine import (
-    get_config,
     train_process,
     get_data_and_config_from_MongoDB,
-    get_data_config_from_json,
+    get_jobs,
+    get_one_job,
+    push_train_job,
+    run_train_consumer,
+    train_json
 )
 from automl.model import Item
 from users.engine import User
@@ -54,9 +57,8 @@ from automl.engine import app_train_local
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
-from data.engine import get_datas, get_data_from_mongodb_by_id
+from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
-
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -76,14 +78,14 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": "http://localhost:9999/auth",
+        "redirect_url": "http://10.100.200.119:9999/auth",
     },
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_origins=["http://10.100.200.119:3000", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -334,25 +336,18 @@ def api_train_mongo():
         "orther_model_scores": model_scores,
     }
 
-
 @app.post("/train-from-requestbody-json/")
-def api_train_json(item: Item):
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
-        get_data_config_from_json(item)
-    )
+def api_train_json(item: Item, userId: str, id_data:str):
+    return train_json(item, userId, id_data)
 
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
-    )
+@app.post("/get-list-job-by-userId")
+def api_get_list_job(user_id: str):
+    return get_jobs(user_id)
 
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
-    }
-
+@app.post("/get-job-info")
+def get_job_info(id: str):
+    job = get_one_job(id_job=id)
+    return job
 
 @app.post("/get-data-from-uci")
 def get_data_from_uci(id_data: int):
@@ -364,19 +359,21 @@ def get_data_from_uci(id_data: int):
     return JSONResponse(content=data)
 
 
-# Đây là phần code của Ánh
-
-
 # Lấy danh sách data
-@app.post("/get-list-data")
-def get_list_data(id: str):
-    list_data = get_datas(id_user=id)
+@app.post("/get-list-data-by-userid")
+def get_list_data_by_userid(id: str):
+    list_data = get_list_data(id_user=id)
     return list_data
 
+# Lấy 1 dataset
+@app.post("/get-data-info")
+def get_data_info(id: str):
+    data = get_one_data(id_data=id)
+    return data
 
 # Lấy bộ dữ liệu từ mongodb
-@app.post("/get-data-from-mongodb")
-def get_data_from_mongodb(id: str):
+@app.post("/get-data-from-mongodb-to-train")
+def get_data_from_mongodb_to_train(id: str):
     df, class_data = get_data_from_mongodb_by_id(id_data=id)
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
@@ -384,7 +381,7 @@ def get_data_from_mongodb(id: str):
     data = {"data": output, "list_feature": df.columns.to_list()}
     return JSONResponse(content=data)
 
-
+# Upload dataset
 @app.post("/upload-dataset")
 def upload_dataset(
     user_id: str,
@@ -395,19 +392,35 @@ def upload_dataset(
 
     return upload_data(file_data, data_name, data_type, user_id)
 
-
+# Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
-    dataset_id: str, data_name: str = Form(None), file_data: UploadFile = File(None)
+    dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    return update_dataset_by_id(dataset_id, data_name, file_data)
+    return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
 
-
+# Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
     return delete_dataset_by_id(dataset_id)
 
+# Lấy danh sách bộ dữ liệu của người dùng cho màn admin
+@app.get("/get-list-data-user")
+def get_list_data_user():
+    list_data = get_user_data_list()
+    return list_data
+
+# API push kafka
+@app.post("/api-push-kafka")
+def api_push_kafka(item: Item, user_id: str, data_id: str):
+    return push_train_job(item, user_id, data_id)
+
+#Api get kafka to train
+@app.get("/get-kafka-train-json")
+def train_and_return():
+    result = run_train_consumer()
+    return result
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
+    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)
     pass

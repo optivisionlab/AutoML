@@ -18,13 +18,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useToast } from "@/hooks/use-toast";
+import AddUserForm from "@/components/addUserForm/AddUserForm";
+import { Plus } from "lucide-react";
 
+// Types
 type User = {
   _id: string;
   username: string;
@@ -53,12 +67,17 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-const UserManagementPage = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-
-  const { setValue } = useForm<FormData>({
+// Form Component
+const UserForm = ({
+  editingUser,
+  onSubmit,
+  onClose,
+}: {
+  editingUser: User | null;
+  onSubmit: (data: FormData) => void;
+  onClose: () => void;
+}) => {
+  const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
   });
 
@@ -66,14 +85,116 @@ const UserManagementPage = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
-  });
+  } = form;
+
+  useEffect(() => {
+    if (editingUser) {
+      reset({
+        email: editingUser.email,
+        fullName: editingUser.fullName,
+        gender: editingUser.gender as "male" | "female",
+        date: editingUser.date,
+        number: editingUser.number,
+      });
+    }
+  }, [editingUser, reset]);
+
+  return (
+    <DialogContent>
+      <DialogHeader className="flex flex-col items-center text-center">
+        <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
+      </DialogHeader>
+
+      <form className="grid gap-4 mt-2" onSubmit={handleSubmit(onSubmit)}>
+        <div>
+          <Label>Email</Label>
+          <Input {...register("email")} />
+          {errors.email && (
+            <p className="text-red-500 text-sm">{errors.email.message}</p>
+          )}
+        </div>
+        <div>
+          <Label>Họ tên</Label>
+          <Input {...register("fullName")} />
+          {errors.fullName && (
+            <p className="text-red-500 text-sm">{errors.fullName.message}</p>
+          )}
+        </div>
+        <div>
+          <Label>Giới tính</Label>
+          <RadioGroup
+            className="flex gap-4"
+            defaultValue={editingUser?.gender}
+            onValueChange={(val) =>
+              setValue("gender", val as "male" | "female")
+            }
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="male" id="male" />
+              <Label htmlFor="male">Nam</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="female" id="female" />
+              <Label htmlFor="female">Nữ</Label>
+            </div>
+          </RadioGroup>
+          {errors.gender && (
+            <p className="text-red-500 text-sm">{errors.gender.message}</p>
+          )}
+        </div>
+        <div>
+          <Label>Ngày sinh</Label>
+          <Input type="date" {...register("date")} />
+          {errors.date && (
+            <p className="text-red-500 text-sm">{errors.date.message}</p>
+          )}
+        </div>
+        <div>
+          <Label>Số điện thoại</Label>
+          <Input {...register("number")} />
+          {errors.number && (
+            <p className="text-red-500 text-sm">{errors.number.message}</p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className=" w-20 text-black px-4 py-2 rounded-md"
+          >
+            Hủy
+          </Button>
+          <Button
+            type="submit"
+            className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+          >
+            Lưu
+          </Button>
+        </div>
+      </form>
+    </DialogContent>
+  );
+};
+
+// Main Page Component
+const UserManagementPage = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<FormData | null>(null);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  const { toast } = useToast();
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:9999/users");
+      const res = await fetch("http://10.100.200.119:9999/users");
       const data = await res.json();
       setUsers(data);
     } catch (error) {
@@ -87,18 +208,12 @@ const UserManagementPage = () => {
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    reset({
-      fullName: user.fullName,
-      email: user.email,
-      gender: user.gender as "male" | "female",
-      date: user.date,
-      number: user.number,
-    });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    console.log("Delete:", id);
+  const handleDelete = (user: User) => {
+    setUserToDelete(user);
+    setIsDeleteDialogOpen(true);
   };
 
   const handleDialogClose = () => {
@@ -106,41 +221,110 @@ const UserManagementPage = () => {
     setIsDialogOpen(false);
   };
 
-  const onSubmit = async (data: FormData) => {
-    console.log("Submit:", data);
-    if (!editingUser) return;
+  const onSubmit = (data: FormData) => {
+    setPendingFormData(data);
+    setIsConfirmDialogOpen(true);
+  };
+
+  const handleConfirmUpdate = async () => {
+    if (!editingUser || !pendingFormData) return;
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:9999/update/${editingUser.username}`,
+        `http://10.100.200.119:9999/update/${editingUser.username}`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(data),
+          body: JSON.stringify(pendingFormData),
         }
       );
 
-      if (!res.ok) throw new Error("Failed to update user");
+      if (!res.ok) {
+        toast({
+          title: "Cập nhật thất bại",
+          description: "Đã xảy ra lỗi khi cập nhật.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        throw new Error("Failed to update user");
+      }
 
-      await fetchUsers(); // refresh list
+      toast({
+        title: "Cập nhật thành công!",
+        description: "Thông tin người dùng đã được cập nhật.",
+        className:
+          "bg-green-50 border border-green-300 text-green-700 [&>div>h3]:text-lg [&>div>h3]:font-semibold",
+        duration: 3000,
+      });
+
+      await fetchUsers();
+      setIsConfirmDialogOpen(false);
       handleDialogClose();
     } catch (error) {
-      console.error("Update error:", error);
+      console.log("Update error:", error);
     }
   };
 
-  console.log("editingUser", editingUser);
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+
+    try {
+      const res = await fetch(
+        `http://10.100.200.119:9999/delete/${userToDelete.username}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      if (!res.ok) {
+        toast({
+          title: "Xóa thất bại",
+          description: "Đã xảy ra lỗi khi xóa người dùng.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        throw new Error("Failed to delete user");
+      }
+
+      toast({
+        title: "Xóa thành công!",
+        description: `Người dùng ${userToDelete.username} đã được xóa.`,
+        className:
+          "bg-green-50 border border-green-300 text-green-700 [&>div>h3]:text-lg [&>div>h3]:font-semibold",
+        duration: 3000,
+      });
+
+      await fetchUsers(); // refresh list
+    } catch (error) {
+      console.error("Delete error:", error);
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setUserToDelete(null);
+    }
+  };
 
   return (
     <div className="p-6">
       <Card className="shadow-lg">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5]">
+        <CardHeader className="px-4">
+          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
             Quản lý tài khoản người dùng
           </CardTitle>
+          <div className="flex justify-end w-full mt-2">
+            <Button
+              onClick={() => setIsAddDialogOpen(true)}
+              className="flex gap-2 bg-blue-500 text-white px-3 py-2 text-sm hover:bg-blue-600"
+            >
+              <span className="w-5 h-5 rounded-full bg-white text-blue-500 flex items-center justify-center">
+                <Plus size={14} />
+              </span>
+              Thêm mới
+            </Button>
+          </div>
         </CardHeader>
+
         <CardContent className="overflow-auto">
           <Table>
             <TableHeader>
@@ -162,7 +346,7 @@ const UserManagementPage = () => {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.fullName}</TableCell>
                   <TableCell>{user.password}</TableCell>
-                  <TableCell>{user.gender}</TableCell>
+                  <TableCell>{user.gender === "male" ? "Nam" : "Nữ"}</TableCell>
                   <TableCell>{user.date}</TableCell>
                   <TableCell>{user.number}</TableCell>
                   <TableCell>
@@ -177,7 +361,7 @@ const UserManagementPage = () => {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => handleDelete(user._id)}
+                        onClick={() => handleDelete(user)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -192,77 +376,80 @@ const UserManagementPage = () => {
 
       {/* Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
-          </DialogHeader>
-          <form className="grid gap-4 mt-2" onSubmit={handleSubmit(onSubmit)}>
-            <div>
-              <Label>Email</Label>
-              <Input {...register("email")} />
-              {errors.email && (
-                <p className="text-red-500 text-sm">{errors.email.message}</p>
-              )}
-            </div>
-            <div>
-              <Label>Họ tên</Label>
-              <Input {...register("fullName")} />
-              {errors.fullName && (
-                <p className="text-red-500 text-sm">
-                  {errors.fullName.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>Giới tính</Label>
-              <RadioGroup
-                className="flex gap-4"
-                defaultValue={editingUser?.gender}
-                onValueChange={(val) => {
-                  setValue("gender", val as "male" | "female");
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="male" id="male" />
-                  <Label htmlFor="male">Nam</Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="female" id="female" />
-                  <Label htmlFor="female">Nữ</Label>
-                </div>
-              </RadioGroup>
-              {errors.gender && (
-                <p className="text-red-500 text-sm">{errors.gender.message}</p>
-              )}
-            </div>
-            <div>
-              <Label>Ngày sinh</Label>
-              <Input type="date" {...register("date")} />
-              {errors.date && (
-                <p className="text-red-500 text-sm">{errors.date.message}</p>
-              )}
-            </div>
-            <div>
-              <Label>Số điện thoại</Label>
-              <Input {...register("number")} />
-              {errors.number && (
-                <p className="text-red-500 text-sm">{errors.number.message}</p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDialogClose}
-              >
-                Hủy
-              </Button>
-              <Button type="submit">Lưu</Button>
-            </div>
-          </form>
-        </DialogContent>
+        <UserForm
+          editingUser={editingUser}
+          onSubmit={onSubmit}
+          onClose={handleDialogClose}
+        />
       </Dialog>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog
+        open={isConfirmDialogOpen}
+        onOpenChange={setIsConfirmDialogOpen}
+      >
+        <AlertDialogContent className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white shadow-xl p-6 rounded-xl w-full max-w-md">
+          <AlertDialogHeader className="text-center space-y-2">
+            <AlertDialogTitle className="text-xl font-semibold text-center">
+              XÁC NHẬN
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600 text-center">
+              Bạn có chắc chắn muốn cập nhật thông tin người dùng này không?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className=" flex !justify-center gap-4">
+            <AlertDialogCancel
+              onClick={() => setIsConfirmDialogOpen(false)}
+              className="bg-red-600 w-20 text-white hover:bg-red-500 hover:text-white px-4 py-2 rounded-md"
+            >
+              Hủy
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmUpdate}
+              className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+            >
+              Cập nhật
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white shadow-xl p-6 rounded-xl w-full max-w-md">
+          <AlertDialogHeader className="text-center space-y-2">
+            <AlertDialogTitle className="text-xl font-semibold text-center">
+              XÁC NHẬN XOÁ
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600 text-center">
+              {`Bạn có chắc chắn muốn xóa người dùng ${userToDelete?.username}?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex !justify-center gap-4">
+            <AlertDialogCancel
+              onClick={() => setIsDeleteDialogOpen(false)}
+              className="bg-gray-300 w-20 text-black hover:bg-gray-400 px-4 py-2 rounded-md"
+            >
+              Hủy
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-red-600 w-20 text-white hover:bg-red-500 px-4 py-2 rounded-md"
+            >
+              Xoá
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AddUserForm
+        open={isAddDialogOpen}
+        onClose={() => setIsAddDialogOpen(false)}
+        onSuccess={() => fetchUsers()}
+      />
     </div>
   );
 };
