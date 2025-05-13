@@ -200,6 +200,7 @@ from bson import ObjectId
 db = get_database()
 job_collection = db["tbl_Job"]
 data_collection = db["tbl_Data"]
+user_collection = db["tbl_User"]
 
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
@@ -219,6 +220,10 @@ def train_json(item: Item, userId, id_data):
         raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
     data_name = dataset.get("dataName")
     
+    user = user_collection.find_one({"_id":ObjectId(userId)})
+    if not user:
+        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+    user_name = user.get("username")
     job = {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
@@ -226,9 +231,14 @@ def train_json(item: Item, userId, id_data):
         "best_score": best_score,
         "other_model_scores": model_scores,
         "config": item.config,
-        "data_id":id_data,
-        "data_name": data_name,
-        "user_id": userId,
+        "data": {
+            "id": id_data,
+            "name": data_name
+        },
+        "user": {
+            "id": userId,
+            "name": user_name
+        },
         "create_at": time.time(),
         "status": 1
     }
