@@ -84,7 +84,7 @@ oauth.register(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://10.100.200.119:3000", "http://10.100.200.119:3002"],
+    allow_origins=["http://10.100.200.119:3000", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

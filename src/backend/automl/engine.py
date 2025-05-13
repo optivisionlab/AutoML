@@ -229,7 +229,7 @@ def train_json(item: Item, userId, id_data):
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "other_model_scores": model_scores,
+        "orther_model_scores": model_scores,
         "config": item.config,
         "data": {
             "id": id_data,

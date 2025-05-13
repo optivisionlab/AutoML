@@ -17,6 +17,8 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
+import { useSession } from "next-auth/react";
+import React from "react";
 
 type Props = {
   params: Promise<{
@@ -32,6 +34,7 @@ const ResultPage = ({ params }: Props) => {
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const { data: session } = useSession();
 
   const [showChart, setShowChart] = useState(false);
 
@@ -113,45 +116,56 @@ const ResultPage = ({ params }: Props) => {
   // Gửi dataTrain và config tới API tiếp theo
   useEffect(() => {
     const trainModel = async () => {
-      if (dataTrain.length && config) {
-        const requestBody = {
-          data: dataTrain,
-          config: {
-            choose: config.choose,
-            metric_sort: config.metric_sort,
-            list_feature: config.list_feature,
-            target: config.target,
-          },
-        };
-
-        setIsLoading(true);
-        try {
-          const response = await fetch(
-            "http://10.100.200.119:9999/train-from-requestbody-json/",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(requestBody),
-            }
-          );
-          const resultData = await response.json();
-          setResult(resultData); 
-        } catch (err) {
-          console.error("Lỗi khi gọi API train:", err);
-        } finally {
-          setIsLoading(false);
+      // Kiểm tra đầy đủ trước khi gọi API
+      if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
+        return;
+      }
+  
+      const requestBody = {
+        data: dataTrain,
+        config: {
+          choose: config.choose,
+          metric_sort: config.metric_sort,
+          list_feature: config.list_feature,
+          target: config.target,
+        },
+      };
+  
+      setIsLoading(true);
+      setError(null); // Reset lỗi trước khi gọi mới
+  
+      try {
+        const response = await fetch(
+          `http://10.100.200.119:9999/train-from-requestbody-json/?userId=${session.user.id}&id_data=${datasetID}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          }
+        );
+  
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Lỗi API: ${response.status} - ${errorText}`);
         }
+  
+        const resultData = await response.json();
+        setResult(resultData);
+      } catch (err: any) {
+        console.error("Lỗi khi gọi API train:", err);
+        setError("Có lỗi xảy ra khi huấn luyện mô hình.");
+      } finally {
+        setIsLoading(false);
       }
     };
-
+  
     trainModel();
-  }, [dataTrain, config]);
-
-  if (error) {
-    return <div>{error}</div>;
-  }
+  }, [dataTrain, config, session?.user?.id, datasetID]);
+  
+  
 
   // Chart data
   const chartData = result?.orther_model_scores?.map((model: any) => ({
