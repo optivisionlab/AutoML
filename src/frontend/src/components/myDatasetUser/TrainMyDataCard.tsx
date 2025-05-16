@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useSession } from "next-auth/react";
 
 interface TrainMyDataCardProps {
   datasetID?: string;
@@ -22,7 +23,8 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   const [listFeature, setListFeature] = useState<string[]>([]);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
-
+  const { data: session } = useSession();
+  console.log("session", session);
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
@@ -55,7 +57,11 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
 
   const handleBack = () => {
     if (step === 1) {
-      router.push("/my-datasets");
+      if (session?.user?.role === "admin") {
+        router.push("/admin/datasets/users")
+      } else {
+        router.push("/my-datasets");
+      }
     } else {
       setStep((prev) => prev - 1);
     }

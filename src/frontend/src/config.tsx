@@ -71,7 +71,15 @@ export function NavItems(role: string) {
       active: false,
       position: "top",
       role: ["admin"],
-    }
+    },
+        {
+      name: "Xem lịch sử huấn luyện",
+      icon: <History size={18} />,
+      href: "/training-history",
+      active: false,
+      position: "top",
+      role: ["admin"],
+    },
   ];
 
   return [...commonItems, ...userItems, ...adminItems].filter((item) =>

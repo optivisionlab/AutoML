@@ -19,6 +19,7 @@ import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
 import React from "react";
+import { useRouter } from "next/navigation";
 
 type Props = {
   params: Promise<{
@@ -35,6 +36,7 @@ const ResultPage = ({ params }: Props) => {
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { data: session } = useSession();
+  const router = useRouter();
 
   const [showChart, setShowChart] = useState(false);
 
@@ -106,7 +108,6 @@ const ResultPage = ({ params }: Props) => {
       };
 
       setConfig(formattedConfig);
-      console.log(">> Check formatted config: ", formattedConfig);
     } catch (err) {
       console.log(err);
       setError("Lỗi khi parse dữ liệu từ sessionStorage.");
@@ -164,21 +165,27 @@ const ResultPage = ({ params }: Props) => {
     trainModel();
   }, [dataTrain, config]);
 
-if (error) {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-muted/50 px-4">
-      <Card className="w-full max-w-md shadow-lg border border-red-300">
-        <CardHeader className="flex flex-row items-center gap-3">
-          <AlertCircle className="text-red-500" />
-          <CardTitle className="text-red-600 text-lg">Đã xảy ra lỗi</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-700">{error}</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen ">
+        <Card className="w-full max-w-md shadow-md border border-red-300 bg-white">
+          <CardHeader className="flex flex-row items-center gap-3 border-b border-red-100 pb-2">
+            <AlertCircle className="text-red-500 w-5 h-5" />
+            <CardTitle className="text-red-600 text-base font-semibold">Đã xảy ra lỗi</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-4">
+            <p className="text-sm text-gray-700 leading-relaxed">{error}</p>
+            <button
+              onClick={() => router.back()}
+              className="inline-block px-4 py-2 bg-blue-100 text-blue-600 text-sm rounded hover:bg-blue-200 transition"
+            >
+              ← Quay lại trang trước
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Chart data
   const chartData = result?.orther_model_scores?.map((model: any) => ({
