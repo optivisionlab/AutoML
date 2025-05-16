@@ -24,11 +24,11 @@ import { useRouter } from "next/navigation";
 
 // schema để validate form
 const loginSchema = z.object({
-  username: z.string().min(5, {
-    message: "Username must be at least 5 characters",
+  username: z.string().min(3, {
+    message: "Tên đăng nhập phải có ít nhất 3 ký tự",
   }),
   password: z.string().min(5, {
-    message: "Password must be at least 5 characters.",
+    message: "Mật khẩu phải có ít nhất 5 ký tự",
   }),
 });
 

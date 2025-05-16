@@ -1,4 +1,4 @@
-import { Home, User, Database, Users, DatabaseZap } from "lucide-react";
+import { Home, User, Database, Users, DatabaseZap, History } from "lucide-react";
 
 export function NavItems(role: string) {
   const commonItems = [
@@ -33,6 +33,14 @@ export function NavItems(role: string) {
       name: "Bộ dữ liệu của tôi",
       icon: <DatabaseZap size={18} />,
       href: "/my-datasets",
+      active: false,
+      position: "top",
+      role: ["user"],
+    },
+    {
+      name: "Xem lịch sử huấn luyện",
+      icon: <History size={18} />,
+      href: "/training-history",
       active: false,
       position: "top",
       role: ["user"],

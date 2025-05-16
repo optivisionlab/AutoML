@@ -1,5 +1,5 @@
 "use client";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useEffect, useState, useCallback } from "react";
-import { LoaderCircle } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChartContainer } from "@/components/ui/chart";
@@ -61,7 +61,7 @@ const ResultPage = ({ params }: Props) => {
           {
             method: "POST",
             headers: { accept: "application/json" },
-            body: "", // empty body if not needed
+            body: "",
           }
         );
         const { data } = await response.json();
@@ -119,7 +119,7 @@ const ResultPage = ({ params }: Props) => {
       if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
         return;
       }
-  
+
       const requestBody = {
         data: dataTrain,
         config: {
@@ -129,10 +129,10 @@ const ResultPage = ({ params }: Props) => {
           target: config.target,
         },
       };
-  
+
       setIsLoading(true);
       setError(null);
-  
+
       try {
         const response = await fetch(
           `http://10.100.200.119:9999/train-from-requestbody-json/?userId=${session.user.id}&id_data=${datasetID}`,
@@ -145,17 +145,17 @@ const ResultPage = ({ params }: Props) => {
             body: JSON.stringify(requestBody),
           }
         );
-  
+
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`Lỗi API: ${response.status} - ${errorText}`);
         }
-  
+
         const resultData = await response.json();
         setResult(resultData);
       } catch (err: any) {
-        console.error("Lỗi khi gọi API train:", err);
-        setError("Có lỗi xảy ra khi huấn luyện mô hình.");
+        console.log("Lỗi khi gọi API train:", err);
+        setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
       } finally {
         setIsLoading(false);
       }
@@ -164,9 +164,21 @@ const ResultPage = ({ params }: Props) => {
     trainModel();
   }, [dataTrain, config]);
 
-  if (error) {
-    return <div>{error}</div>;
-  }
+if (error) {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-muted/50 px-4">
+      <Card className="w-full max-w-md shadow-lg border border-red-300">
+        <CardHeader className="flex flex-row items-center gap-3">
+          <AlertCircle className="text-red-500" />
+          <CardTitle className="text-red-600 text-lg">Đã xảy ra lỗi</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-700">{error}</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
   // Chart data
   const chartData = result?.orther_model_scores?.map((model: any) => ({
