@@ -66,7 +66,6 @@ const LoginForm = () => {
     } else {
       toast({
         title: "Đăng nhập thất bại",
-        duration: 3000,
         description: "Tên đăng nhập hoặc mật khẩu không đúng.",
         variant: "destructive",
       });
