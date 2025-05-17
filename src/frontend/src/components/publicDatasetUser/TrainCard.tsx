@@ -231,7 +231,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
                 }}
                 className="grid grid-cols-2 gap-4"
               >
-                {["accuracy", "precision", "recall", "f1-score"].map(
+                {["accuracy", "precision", "recall", "f1"].map(
                   (metric) => (
                     <div
                       key={metric}
