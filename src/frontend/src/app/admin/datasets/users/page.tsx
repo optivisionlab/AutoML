@@ -134,14 +134,6 @@ const Page = () => {
             Quản lý bộ dữ liệu của người dùng
           </CardTitle>
 
-          {/* <div className="flex justify-end mt-4">
-            <Button
-              className="bg-[#1e8449] text-white hover:bg-[#196f3d] px-6 py-2 rounded-md"
-              onClick={() => setAddDialogOpen(true)}
-            >
-              <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
-            </Button>
-          </div> */}
         </CardHeader>
 
         <CardContent>

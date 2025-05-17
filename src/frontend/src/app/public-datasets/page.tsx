@@ -73,7 +73,7 @@ const Page = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Tên bộ dữ liệu</TableHead>
-                <TableHead>Kiểu DL</TableHead>
+                <TableHead>Kiểu dữ liệu</TableHead>
                 <TableHead>Ngày tạo</TableHead>
                 <TableHead>Lần cập nhật mới nhất</TableHead>
                 <TableHead className="text-center">Chức năng</TableHead>

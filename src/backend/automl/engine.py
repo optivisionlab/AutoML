@@ -306,7 +306,7 @@ def get_jobs(user_id):
     try:
         query = {}
         if user_id:
-            query["user_id"] = user_id
+            query["user.id"] = user_id
         
         jobs = list(job_collection.find(query))
         for job in jobs:
