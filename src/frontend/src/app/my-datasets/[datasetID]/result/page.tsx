@@ -1,5 +1,5 @@
 "use client";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useEffect, useState, useCallback } from "react";
-import { LoaderCircle } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChartContainer } from "@/components/ui/chart";
@@ -18,6 +18,7 @@ import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import React from "react";
 
 type Props = {
@@ -37,6 +38,7 @@ const ResultPage = ({ params }: Props) => {
   const { data: session } = useSession();
 
   const [showChart, setShowChart] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setIsClient(true); // Đảm bảo code chạy trên client
@@ -67,7 +69,8 @@ const ResultPage = ({ params }: Props) => {
         const { data } = await response.json();
         setDataTrain(data);
       } catch (err) {
-        console.log("Lỗi khi fetch:", err);
+        console.log("Lỗi khi gọi API train:", err);
+        setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
       } finally {
         setIsLoading(false);
       }
@@ -77,6 +80,7 @@ const ResultPage = ({ params }: Props) => {
   useEffect(() => {
     fetchDataTrain();
   }, [datasetID, fetchDataTrain]);
+
 
   // Lấy cấu hình từ sessionStorage và chuẩn bị config
   useEffect(() => {
@@ -120,7 +124,7 @@ const ResultPage = ({ params }: Props) => {
       if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
         return;
       }
-  
+
       const requestBody = {
         data: dataTrain,
         config: {
@@ -130,10 +134,10 @@ const ResultPage = ({ params }: Props) => {
           target: config.target,
         },
       };
-  
+
       setIsLoading(true);
       setError(null); // Reset lỗi trước khi gọi mới
-  
+
       try {
         const response = await fetch(
           `http://10.100.200.119:9999/train-from-requestbody-json/?userId=${session.user.id}&id_data=${datasetID}`,
@@ -146,26 +150,46 @@ const ResultPage = ({ params }: Props) => {
             body: JSON.stringify(requestBody),
           }
         );
-  
+
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`Lỗi API: ${response.status} - ${errorText}`);
         }
-  
+
         const resultData = await response.json();
         setResult(resultData);
       } catch (err: any) {
-        console.error("Lỗi khi gọi API train:", err);
-        setError("Có lỗi xảy ra khi huấn luyện mô hình.");
+        console.log("Lỗi khi gọi API train:", err);
+        setError("Có lỗi xảy ra khi huấn luyện mô hình, vui lòng xem lại cấu hình thuộc tính.");
       } finally {
         setIsLoading(false);
       }
     };
-  
+
     trainModel();
   }, [dataTrain, config, session?.user?.id, datasetID]);
-  
-  
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen ">
+        <Card className="w-full max-w-md shadow-md border border-red-300 bg-white">
+          <CardHeader className="flex flex-row items-center gap-3 border-b border-red-100 pb-2">
+            <AlertCircle className="text-red-500 w-5 h-5" />
+            <CardTitle className="text-red-600 text-base font-semibold">Đã xảy ra lỗi</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-4">
+            <p className="text-sm text-gray-700 leading-relaxed">{error}</p>
+            <button
+              onClick={() => router.back()}
+              className="inline-block px-4 py-2 bg-blue-100 text-blue-600 text-sm rounded hover:bg-blue-200 transition"
+            >
+              ← Quay lại trang trước
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Chart data
   const chartData = result?.orther_model_scores?.map((model: any) => ({

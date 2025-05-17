@@ -5,8 +5,8 @@ from pathlib import Path
 import os
 
 project_root = "assets/end_users"
-csv_file_path = os.path.join(project_root, 'glass.csv')
-yml_file_path = os.path.join(project_root, 'config_glass_nguoi_dung_tai_len.yml')
+csv_file_path = os.path.join(project_root, 'online_shoppers_intention.csv')
+yml_file_path = os.path.join(project_root, 'config-data-pka.yaml')
 
 df = pd.read_csv(csv_file_path)
 csv_data = df.to_dict(orient='records')

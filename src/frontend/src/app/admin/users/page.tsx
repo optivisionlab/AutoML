@@ -329,7 +329,7 @@ const UserManagementPage = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Username</TableHead>
+                <TableHead>Tên đăng nhập</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Họ tên</TableHead>
                 <TableHead>Mật khẩu</TableHead>
