@@ -89,14 +89,7 @@ export default function AddUserForm({
     if (!open) reset();
   }, [open, reset]);
 
-  const onSubmit = (data: AddUserFormValues) => {
-    setPendingData(data);
-    setShowConfirm(true);
-  };
-
-  const handleConfirmSubmit = async () => {
-    if (!pendingData) return;
-
+  const onSubmit = async (data: AddUserFormValues) => {
     try {
       const { confirmPassword, ...submitData } = data;
 
@@ -221,19 +214,8 @@ export default function AddUserForm({
                       <RadioGroupItem value="male" id="male" />
                       <Label htmlFor="male">Nam</Label>
                     </div>
-                  </RadioGroup>
-                )}
-              />
-              {errors.gender && (
-                <p className="text-red-500">{errors.gender.message}</p>
-              )}
-            </div>
-
-            <div>
-              <Label>Ngày sinh</Label>
-              <Input type="date" {...register("date")} />
-              {errors.date && (
-                <p className="text-red-500">{errors.date.message}</p>
+                  </div>
+                </RadioGroup>
               )}
             />
             {errors.gender && (
@@ -290,13 +272,10 @@ export default function AddUserForm({
 
             <Button type="button" variant="secondary" onClick={onClose}>
               Hủy
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmSubmit}>
-              Xác nhận
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
