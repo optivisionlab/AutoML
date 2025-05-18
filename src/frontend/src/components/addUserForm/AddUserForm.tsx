@@ -16,33 +16,40 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Eye, EyeOff } from "lucide-react";
 import {
   AlertDialog,
+  AlertDialogTrigger,
   AlertDialogContent,
   AlertDialogHeader,
-  AlertDialogFooter,
   AlertDialogTitle,
+  AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const addUserSchema = z.object({
-  username: z.string().min(1, "Không được để trống"),
-  email: z.string().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu ít nhất 6 ký tự"),
-  gender: z.enum(["male", "female"], {
-    required_error: "Vui lòng chọn giới tính",
-  }),
-  date: z.string().min(1, "Vui lòng chọn ngày sinh"),
-  number: z
-    .string()
-    .min(9, "Số điện thoại không hợp lệ")
-    .max(12, "Số điện thoại không hợp lệ"),
-  fullName: z.string().min(1, "Không được để trống"),
-  role: z.literal("user").default("user"),
-  avatar: z.string().optional().default(""),
-});
+const addUserSchema = z
+  .object({
+    username: z.string().min(1, "Không được để trống"),
+    email: z.string().email("Email không hợp lệ"),
+    password: z.string().min(5, "Mật khẩu ít nhất 5 ký tự"),
+    confirmPassword: z.string().min(5, "Xác nhận mật khẩu ít nhất 5 ký tự"),
+    gender: z.enum(["male", "female"], {
+      required_error: "Vui lòng chọn giới tính",
+    }),
+    date: z.string().min(1, "Vui lòng chọn ngày sinh"),
+    number: z
+      .string()
+      .min(9, "Số điện thoại không hợp lệ")
+      .max(12, "Số điện thoại không hợp lệ"),
+    fullName: z.string().min(1, "Không được để trống"),
+    role: z.literal("user").default("user"),
+    avatar: z.string().optional().default(""),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Mật khẩu xác nhận không khớp",
+    path: ["confirmPassword"],
+  });
 
 type AddUserFormValues = z.infer<typeof addUserSchema>;
 
@@ -58,8 +65,10 @@ export default function AddUserForm({
   onSuccess,
 }: AddUserFormProps) {
   const { toast } = useToast();
-  const [pendingData, setPendingData] = useState<AddUserFormValues | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [formData, setFormData] = useState<AddUserFormValues | null>(null);
 
   const {
     register,
@@ -89,10 +98,12 @@ export default function AddUserForm({
     if (!pendingData) return;
 
     try {
+      const { confirmPassword, ...submitData } = data;
+
       const res = await fetch("http://10.100.200.119:9999/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pendingData),
+        body: JSON.stringify(submitData),
       });
 
       if (!res.ok) {
@@ -115,75 +126,100 @@ export default function AddUserForm({
         description: err.message || "Không thể thêm người dùng.",
         variant: "destructive",
       });
-    } finally {
-      setShowConfirm(false);
-      setPendingData(null);
+      console.log(err);
     }
   };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Thêm người dùng mới</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <Input placeholder="Username" {...register("username")} />
-              {errors.username && (
-                <p className="text-red-500">{errors.username.message}</p>
-              )}
-            </div>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="text-center">Thêm người dùng mới</DialogTitle>
+        </DialogHeader>
+        <form className="space-y-4">
+          <div>
+            <Input placeholder="Username" {...register("username")} />
+            {errors.username && (
+              <p className="text-red-500">{errors.username.message}</p>
+            )}
+          </div>
 
-            <div>
-              <Input placeholder="Họ và tên" {...register("fullName")} />
-              {errors.fullName && (
-                <p className="text-red-500">{errors.fullName.message}</p>
-              )}
-            </div>
+          <div>
+            <Input placeholder="Họ và tên" {...register("fullName")} />
+            {errors.fullName && (
+              <p className="text-red-500">{errors.fullName.message}</p>
+            )}
+          </div>
 
-            <div>
-              <Input placeholder="Email" {...register("email")} />
-              {errors.email && (
-                <p className="text-red-500">{errors.email.message}</p>
-              )}
-            </div>
+          <div>
+            <Input placeholder="Email" {...register("email")} />
+            {errors.email && (
+              <p className="text-red-500">{errors.email.message}</p>
+            )}
+          </div>
 
-            <div>
-              <Input placeholder="Số điện thoại" {...register("number")} />
-              {errors.number && (
-                <p className="text-red-500">{errors.number.message}</p>
-              )}
-            </div>
+          <div>
+            <Input placeholder="Số điện thoại" {...register("number")} />
+            {errors.number && (
+              <p className="text-red-500">{errors.number.message}</p>
+            )}
+          </div>
 
-            <div>
-              <Input
-                type="password"
-                placeholder="Mật khẩu"
-                {...register("password")}
-              />
-              {errors.password && (
-                <p className="text-red-500">{errors.password.message}</p>
-              )}
-            </div>
+          {/* Mật khẩu */}
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              placeholder="Mật khẩu"
+              {...register("password")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              tabIndex={-1}
+            >
+              {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+            {errors.password && (
+              <p className="text-red-500">{errors.password.message}</p>
+            )}
+          </div>
 
-            <div>
-              <Label>Giới tính</Label>
-              <Controller
-                control={control}
-                name="gender"
-                render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} value={field.value}>
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="female" id="female" />
-                        <Label htmlFor="female">Nữ</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="male" id="male" />
-                        <Label htmlFor="male">Nam</Label>
-                      </div>
+          {/* Xác nhận mật khẩu */}
+          <div className="relative">
+            <Input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Xác nhận mật khẩu"
+              {...register("confirmPassword")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              tabIndex={-1}
+            >
+              {showConfirmPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+            {errors.confirmPassword && (
+              <p className="text-red-500">{errors.confirmPassword.message}</p>
+            )}
+          </div>
+
+          <div>
+            <Label>Giới tính</Label>
+            <Controller
+              control={control}
+              name="gender"
+              render={({ field }) => (
+                <RadioGroup onValueChange={field.onChange} value={field.value}>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="female" id="female" />
+                      <Label htmlFor="female">Nữ</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="male" id="male" />
+                      <Label htmlFor="male">Nam</Label>
                     </div>
                   </RadioGroup>
                 )}
@@ -199,27 +235,60 @@ export default function AddUserForm({
               {errors.date && (
                 <p className="text-red-500">{errors.date.message}</p>
               )}
-            </div>
+            />
+            {errors.gender && (
+              <p className="text-red-500">{errors.gender.message}</p>
+            )}
+          </div>
 
-            <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
-                Thêm
-              </Button>
-              <Button type="button" variant="secondary" onClick={onClose}>
-                Hủy
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          <div>
+            <Label>Ngày sinh</Label>
+            <Input type="date" {...register("date")} />
+            {errors.date && (
+              <p className="text-red-500">{errors.date.message}</p>
+            )}
+          </div>
 
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Bạn có chắc muốn thêm người dùng này?</AlertDialogTitle>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowConfirm(false)}>
+          <DialogFooter>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                  onClick={handleSubmit((data) => {
+                    setFormData(data);
+                    setConfirmOpen(true);
+                  })}
+                  disabled={isSubmitting}
+                >
+                  Thêm
+                </Button>
+              </AlertDialogTrigger>
+
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Bạn có chắc muốn thêm người dùng mới?
+                  </AlertDialogTitle>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                    onClick={() => {
+                      if (formData) {
+                        onSubmit(formData);
+                        setConfirmOpen(false);
+                      }
+                    }}
+                  >
+                    Xác nhận
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <Button type="button" variant="secondary" onClick={onClose}>
               Hủy
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmSubmit}>

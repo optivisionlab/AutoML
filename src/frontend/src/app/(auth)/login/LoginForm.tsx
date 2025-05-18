@@ -62,12 +62,13 @@ const LoginForm = () => {
       });
       setTimeout(() => {
         router.push("/");
-      }, 1000);
+      }, 100);
     } else {
       toast({
         title: "Đăng nhập thất bại",
         description: "Tên đăng nhập hoặc mật khẩu không đúng.",
         variant: "destructive",
+        duration: 3000,
       });
     }
   };
