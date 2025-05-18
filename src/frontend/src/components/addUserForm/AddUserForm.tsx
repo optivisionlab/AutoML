@@ -1,7 +1,6 @@
-// components/AddUserForm.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,23 +16,40 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Eye, EyeOff } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 
-const addUserSchema = z.object({
-  username: z.string().min(1, "Không được để trống"),
-  email: z.string().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu ít nhất 6 ký tự"),
-  gender: z.enum(["male", "female"], {
-    required_error: "Vui lòng chọn giới tính",
-  }),
-  date: z.string().min(1, "Vui lòng chọn ngày sinh"),
-  number: z
-    .string()
-    .min(9, "Số điện thoại không hợp lệ")
-    .max(12, "Số điện thoại không hợp lệ"),
-  fullName: z.string().min(1, "Không được để trống"),
-  role: z.literal("user").default("user"),
-  avatar: z.string().optional().default(""),
-});
+const addUserSchema = z
+  .object({
+    username: z.string().min(1, "Không được để trống"),
+    email: z.string().email("Email không hợp lệ"),
+    password: z.string().min(5, "Mật khẩu ít nhất 5 ký tự"),
+    confirmPassword: z.string().min(5, "Xác nhận mật khẩu ít nhất 5 ký tự"),
+    gender: z.enum(["male", "female"], {
+      required_error: "Vui lòng chọn giới tính",
+    }),
+    date: z.string().min(1, "Vui lòng chọn ngày sinh"),
+    number: z
+      .string()
+      .min(9, "Số điện thoại không hợp lệ")
+      .max(12, "Số điện thoại không hợp lệ"),
+    fullName: z.string().min(1, "Không được để trống"),
+    role: z.literal("user").default("user"),
+    avatar: z.string().optional().default(""),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Mật khẩu xác nhận không khớp",
+    path: ["confirmPassword"],
+  });
 
 type AddUserFormValues = z.infer<typeof addUserSchema>;
 
@@ -49,6 +65,10 @@ export default function AddUserForm({
   onSuccess,
 }: AddUserFormProps) {
   const { toast } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [formData, setFormData] = useState<AddUserFormValues | null>(null);
 
   const {
     register,
@@ -66,15 +86,17 @@ export default function AddUserForm({
   });
 
   useEffect(() => {
-    if (!open) reset(); // reset form khi đóng
+    if (!open) reset();
   }, [open, reset]);
 
   const onSubmit = async (data: AddUserFormValues) => {
     try {
+      const { confirmPassword, ...submitData } = data;
+
       const res = await fetch("http://10.100.200.119:9999/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(submitData),
       });
 
       if (!res.ok) {
@@ -97,7 +119,7 @@ export default function AddUserForm({
         description: err.message || "Không thể thêm người dùng.",
         variant: "destructive",
       });
-      console.error(err);
+      console.log(err);
     }
   };
 
@@ -105,9 +127,9 @@ export default function AddUserForm({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Thêm người dùng mới</DialogTitle>
+          <DialogTitle className="text-center">Thêm người dùng mới</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form className="space-y-4">
           <div>
             <Input placeholder="Username" {...register("username")} />
             {errors.username && (
@@ -136,14 +158,43 @@ export default function AddUserForm({
             )}
           </div>
 
-          <div>
+          {/* Mật khẩu */}
+          <div className="relative">
             <Input
-              type="password"
+              type={showPassword ? "text" : "password"}
               placeholder="Mật khẩu"
               {...register("password")}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              tabIndex={-1}
+            >
+              {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
             {errors.password && (
               <p className="text-red-500">{errors.password.message}</p>
+            )}
+          </div>
+
+          {/* Xác nhận mật khẩu */}
+          <div className="relative">
+            <Input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Xác nhận mật khẩu"
+              {...register("confirmPassword")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              tabIndex={-1}
+            >
+              {showConfirmPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+            {errors.confirmPassword && (
+              <p className="text-red-500">{errors.confirmPassword.message}</p>
             )}
           </div>
 
@@ -181,9 +232,44 @@ export default function AddUserForm({
           </div>
 
           <DialogFooter>
-            <Button type="submit" disabled={isSubmitting}>
-              Thêm
-            </Button>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                  onClick={handleSubmit((data) => {
+                    setFormData(data);
+                    setConfirmOpen(true);
+                  })}
+                  disabled={isSubmitting}
+                >
+                  Thêm
+                </Button>
+              </AlertDialogTrigger>
+
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Bạn có chắc muốn thêm người dùng mới?
+                  </AlertDialogTitle>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                    onClick={() => {
+                      if (formData) {
+                        onSubmit(formData);
+                        setConfirmOpen(false);
+                      }
+                    }}
+                  >
+                    Xác nhận
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
             <Button type="button" variant="secondary" onClick={onClose}>
               Hủy
             </Button>
