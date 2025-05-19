@@ -35,7 +35,6 @@ def preprocess_data(list_feature, target, data):
     
     X = data[list_feature]
     y = data[target]
-    
     scaler = StandardScaler() 
     X_scaled = scaler.fit_transform(X)
     
@@ -56,8 +55,6 @@ def choose_model_version(choose):
 def get_config(file):
     
     config = yaml.safe_load(file)
-
-    # Trích xuất các thông tin cần thiết từ file config
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
