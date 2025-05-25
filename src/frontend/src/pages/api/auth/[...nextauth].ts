@@ -33,7 +33,6 @@ export const authOptions: NextAuthOptions = {
           }
 
           const user = await res.json();
-          console.log("User from API:", user);
 
           if (user) {
             return {

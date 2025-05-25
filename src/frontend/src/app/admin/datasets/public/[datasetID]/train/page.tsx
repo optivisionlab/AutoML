@@ -34,7 +34,7 @@ export default function Page() {
         const data = await res.json();
         setDataName(data.dataName || "Không rõ");
       } catch (error) {
-        console.error("Lỗi lấy dữ liệu:", error);
+        console.log("Lỗi lấy dữ liệu:", error);
         setDataName("Không thể tải tên bộ dữ liệu");
       }
     };
