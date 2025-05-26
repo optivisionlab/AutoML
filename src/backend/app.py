@@ -18,7 +18,7 @@ from automl.engine import (
     get_data_and_config_from_MongoDB,
     get_jobs,
     get_one_job,
-    push_train_job,
+    # push_train_job,
     train_json
 )
 from automl.model import Item
@@ -299,45 +299,6 @@ def contact_user(fullname: str = Form(...),
     message: str = Form(...)):
     return handle_contact(fullname, email, message)
 
-# Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
-
-
-@app.post("/training-file-local")
-def api_train_local(file_data: UploadFile, file_config: UploadFile):
-
-    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(
-        file_data, file_config
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
-    }
-
-
-@app.post("/training-file-mongodb")
-def api_train_mongo():
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
-        get_data_and_config_from_MongoDB()
-    )
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
-    }
-
-@app.post("/train-from-requestbody-json/")
-def api_train_json(item: Item, userId: str, id_data:str):
-    return train_json(item, userId, id_data)
 
 @app.post("/get-list-job-by-userId")
 def api_get_list_job(user_id: str):
@@ -409,10 +370,50 @@ def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
 
-# API push kafka
-@app.post("/api-push-kafka")
-def api_push_kafka(item: Item, user_id: str, data_id: str):
-    return push_train_job(item, user_id, data_id)
+# # API push kafka
+# @app.post("/api-push-kafka")
+# def api_push_kafka(item: Item, user_id: str, data_id: str):
+#     return push_train_job(item, user_id, data_id)
+
+# Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
+
+
+@app.post("/training-file-local")
+def api_train_local(file_data: UploadFile, file_config: UploadFile):
+
+    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(
+        file_data, file_config
+    )
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores,
+    }
+
+
+@app.post("/training-file-mongodb")
+def api_train_mongo():
+    data, choose, list_feature, target, metric_list, metric_sort, models = (
+        get_data_and_config_from_MongoDB()
+    )
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+        data, choose, list_feature, target, metric_list, metric_sort, models
+    )
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_params": best_params,
+        "best_score": best_score,
+        "orther_model_scores": model_scores,
+    }
+
+@app.post("/train-from-requestbody-json/")
+def api_train_json(item: Item, userId: str, id_data:str):
+    return train_json(item, userId, id_data)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)

@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, 
 
 import yaml
 import os
+import pickle
 import pymongo
 import numpy as np
 import random
@@ -166,6 +167,8 @@ def training(models, metric_list, metric_sort, X_train, y_train):
             best_score = grid_search.best_score_
             best_params = grid_search.best_params_
 
+    
+
     return best_model_id, best_model ,best_score, best_params, model_results
 
 
@@ -198,6 +201,7 @@ db = get_database()
 job_collection = db["tbl_Job"]
 data_collection = db["tbl_Data"]
 user_collection = db["tbl_User"]
+model_collection = db["tbl_Modle"]
 
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
@@ -222,8 +226,9 @@ def train_json(item: Item, userId, id_data):
     if not user:
         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
     user_name = user.get("username")
+    job_id = str(uuid4())
     job = {
-        "job_id" : str(uuid4()),
+        "job_id" : job_id,
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "best_params": best_params,
@@ -241,11 +246,31 @@ def train_json(item: Item, userId, id_data):
         "create_at": time.time(),
         "status": 1
     }
+    model_data = pickle.dumps(best_model)
+    model = {
+        "job_id" : job_id,
+        "user": {
+            "id": userId,
+            "name": user_name
+        },
+        "model": model_data,
+        "config": item.config,
+        "create_at": time.time()
+    }
 
-    result = job_collection.insert_one(job)
-    if result.inserted_id:
+    job_result = job_collection.insert_one(job)
+    model_result = model_collection.insert_one(model)
+    
+    result = {
+        "job": job,
+        "model":model
+    }
+
+    if job_result.inserted_id and model_result.inserted_id:
+
         serialize_mongo_doc(job)
-        return JSONResponse(content=job)
+        serialize_mongo_doc(model)
+        return JSONResponse(content= result)
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
     
@@ -313,52 +338,52 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-# Push and get Kafka
-from kafka import KafkaProducer
-from uuid import uuid4
-import json
+# # Push and get Kafka
+# from kafka import KafkaProducer
+# from uuid import uuid4
+# import json
 
 
-producer = KafkaProducer(
-    bootstrap_servers="localhost:9092",
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
+# producer = KafkaProducer(
+#     bootstrap_servers="localhost:9092",
+#     value_serializer=lambda v: json.dumps(v).encode('utf-8')
+# )
 
-def push_train_job(item: Item, user_id, data_id):
-    job_id = str(uuid4())
+# def push_train_job(item: Item, user_id, data_id):
+#     job_id = str(uuid4())
     
-    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
-    data_name = dataset.get("dataName")
+#     dataset = data_collection.find_one({"_id": ObjectId(data_id)})
+#     if not dataset:
+#         raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+#     data_name = dataset.get("dataName")
 
-    user = user_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
-    user_name = user.get("username")
+#     user = user_collection.find_one({"_id": ObjectId(user_id)})
+#     if not user:
+#         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+#     user_name = user.get("username")
 
-    job_doc = {
-        "job_id": job_id,
-        "item": item.dict(),
-        "data": {
-            "id": data_id,
-            "name": data_name
-        },
-        "user": {
-            "id": user_id,
-            "name": user_name
-        },
-        "status": 0,
-        "created_at": time.time()
-    }
-    # Gửi vào Kafka
-    producer.send("train-job-topic", value=job_doc)
-    producer.flush()
+#     job_doc = {
+#         "job_id": job_id,
+#         "item": item.dict(),
+#         "data": {
+#             "id": data_id,
+#             "name": data_name
+#         },
+#         "user": {
+#             "id": user_id,
+#             "name": user_name
+#         },
+#         "status": 0,
+#         "created_at": time.time()
+#     }
+#     # Gửi vào Kafka
+#     producer.send("train-job-topic", value=job_doc)
+#     producer.flush()
 
-    # Lưu vào MongoDB
-    result = job_collection.insert_one(job_doc)
-    if not result.inserted_id:
-        raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
+#     # Lưu vào MongoDB
+#     result = job_collection.insert_one(job_doc)
+#     if not result.inserted_id:
+#         raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
 
-    return JSONResponse(content=serialize_mongo_doc(job_doc))
+#     return JSONResponse(content=serialize_mongo_doc(job_doc))
 
