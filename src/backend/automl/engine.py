@@ -349,7 +349,7 @@ def push_train_job(item: Item, user_id, data_id):
             "name": user_name
         },
         "status": 0,
-        "created_at": time.time()
+        "create_at": time.time()
     }
     # Gửi vào Kafka
     producer.send("train-job-topic", value=job_doc)

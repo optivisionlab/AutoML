@@ -58,6 +58,8 @@ from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
+import threading
+from kafka_consumer import run_train_consumer
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -90,6 +92,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def startup_event():
+    print("Starting Kafka consumer thread...")
+    kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
+    kafka_thread.start()
+  
+@app.get("/")
+def read_root():
+    return {"message": "FastAPI is running with Kafka consumer"}
 
 @app.get("/home")
 def ping():
@@ -337,7 +348,7 @@ def api_train_mongo():
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item: Item, userId: str, id_data:str):
-    return train_json(item, userId, id_data)
+    return push_train_job(item, userId, id_data)
 
 @app.post("/get-list-job-by-userId")
 def api_get_list_job(user_id: str):
@@ -415,5 +426,5 @@ def api_push_kafka(item: Item, user_id: str, data_id: str):
     return push_train_job(item, user_id, data_id)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)
+    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
     pass
