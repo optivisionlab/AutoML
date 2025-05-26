@@ -19,7 +19,6 @@ from automl.engine import (
     get_jobs,
     get_one_job,
     push_train_job,
-    run_train_consumer,
     train_json
 )
 from automl.model import Item
@@ -414,12 +413,6 @@ def get_list_data_user():
 @app.post("/api-push-kafka")
 def api_push_kafka(item: Item, user_id: str, data_id: str):
     return push_train_job(item, user_id, data_id)
-
-#Api get kafka to train
-@app.get("/get-kafka-train-json")
-def train_and_return():
-    result = run_train_consumer()
-    return result
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=False)

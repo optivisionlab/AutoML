@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-
 import { Eye, EyeOff } from "lucide-react";
 import {
   AlertDialog,
@@ -27,7 +26,6 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-
 } from "@/components/ui/alert-dialog";
 
 const addUserSchema = z
@@ -67,7 +65,6 @@ export default function AddUserForm({
   onSuccess,
 }: AddUserFormProps) {
   const { toast } = useToast();
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -92,14 +89,7 @@ export default function AddUserForm({
     if (!open) reset();
   }, [open, reset]);
 
-  const onSubmit = (data: AddUserFormValues) => {
-    setPendingData(data);
-    setShowConfirm(true);
-  };
-
-  const handleConfirmSubmit = async () => {
-    if (!pendingData) return;
-
+  const onSubmit = async (data: AddUserFormValues) => {
     try {
       const { confirmPassword, ...submitData } = data;
 
@@ -224,19 +214,8 @@ export default function AddUserForm({
                       <RadioGroupItem value="male" id="male" />
                       <Label htmlFor="male">Nam</Label>
                     </div>
-                  </RadioGroup>
-                )}
-              />
-              {errors.gender && (
-                <p className="text-red-500">{errors.gender.message}</p>
-              )}
-            </div>
-
-            <div>
-              <Label>Ngày sinh</Label>
-              <Input type="date" {...register("date")} />
-              {errors.date && (
-                <p className="text-red-500">{errors.date.message}</p>
+                  </div>
+                </RadioGroup>
               )}
             />
             {errors.gender && (
@@ -293,13 +272,10 @@ export default function AddUserForm({
 
             <Button type="button" variant="secondary" onClick={onClose}>
               Hủy
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmSubmit}>
-              Xác nhận
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -20,7 +20,7 @@ import pymongo
 import numpy as np
 import random
 from database.database import get_database
-from .model import Item
+from automl.model import Item
 from pathlib import Path
 
 np.random.seed(42)
@@ -35,7 +35,6 @@ def preprocess_data(list_feature, target, data):
     
     X = data[list_feature]
     y = data[target]
-    
     scaler = StandardScaler() 
     X_scaled = scaler.fit_transform(X)
     
@@ -56,8 +55,6 @@ def choose_model_version(choose):
 def get_config(file):
     
     config = yaml.safe_load(file)
-
-    # Trích xuất các thông tin cần thiết từ file config
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
@@ -254,9 +251,17 @@ def train_json(item: Item, userId, id_data):
     
 # Dùng với kafka
 def train_json_from_job(job):
+    job_id = job["job_id"]
+
+    # Kiểm tra xem job đã tồn tại và trạng thái
+    existing_job = job_collection.find_one({"job_id": job_id})
+    if not existing_job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job")
+
+    if existing_job.get("status") == 1:
+        return JSONResponse(content={"message": "Job đã được train", "job_id": job_id})
+
     item = job["item"]
-    user_id = job["user_id"]
-    data_id = job["data_id"]
 
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_config_from_json(Item(**item))
@@ -265,42 +270,26 @@ def train_json_from_job(job):
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
-    
-    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
-    data_name = dataset.get("dataName")
 
-    user = user_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
-    user_name = user.get("username")
-
-    job_doc = {
-        "job_id": job["job_id"],
+    update_doc = {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
         "config": item["config"],
-        "data": {
-            "id": data_id,
-            "name": data_name
-        },
-        "user": {
-            "id": user_id,
-            "name": user_name
-        },
-        "create_at": time.time(),
-        "status": 1
+        "status": 1  # Đã train xong
     }
+    result = job_collection.update_one(
+        {"job_id": job_id},
+        {"$set": update_doc}
+    )
 
-    result = job_collection.insert_one(job_doc)
-    if result.inserted_id:
-        return JSONResponse(content=serialize_mongo_doc(job_doc))
+    if result.modified_count == 1:
+        updated_job = job_collection.find_one({"job_id": job_id})
+        return JSONResponse(content=serialize_mongo_doc(updated_job))
     else:
-        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi cập nhật job")
 
 def get_jobs(user_id):
     try:
@@ -326,7 +315,6 @@ def get_one_job(id_job: str):
 
 # Push and get Kafka
 from kafka import KafkaProducer
-from kafka import KafkaConsumer
 from uuid import uuid4
 import json
 
@@ -338,38 +326,39 @@ producer = KafkaProducer(
 
 def push_train_job(item: Item, user_id, data_id):
     job_id = str(uuid4())
-    payload = {
+    
+    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+    data_name = dataset.get("dataName")
+
+    user = user_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+    user_name = user.get("username")
+
+    job_doc = {
         "job_id": job_id,
         "item": item.dict(),
-        "user_id": user_id,
-        "data_id": data_id,
-        "status": 0
+        "data": {
+            "id": data_id,
+            "name": data_name
+        },
+        "user": {
+            "id": user_id,
+            "name": user_name
+        },
+        "status": 0,
+        "created_at": time.time()
     }
-    producer.send("train-job-topic", value=payload)
+    # Gửi vào Kafka
+    producer.send("train-job-topic", value=job_doc)
     producer.flush()
-    return {"message": "Pushed job to Kafka", "job_id": job_id, "status": 0}
 
-# Kafka consumer setup
-consumer = KafkaConsumer(
-    "train-job-topic",
-    bootstrap_servers="localhost:9092",
-    value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-    group_id="train-consumer-group",
-    auto_offset_reset="earliest",
-    enable_auto_commit=True
-)
+    # Lưu vào MongoDB
+    result = job_collection.insert_one(job_doc)
+    if not result.inserted_id:
+        raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
 
-def run_train_consumer():
-    print("Kafka consumer is running...")
+    return JSONResponse(content=serialize_mongo_doc(job_doc))
 
-    for msg in consumer:
-        try:
-            job = msg.value
-            print(f"[Kafka] Received job: {job['job_id']}")
-
-            train_json_from_job(job)
-
-            print(f"[Kafka] Completed and saved job {job['job_id']} to MongoDB")
-
-        except Exception as e:
-            print(f"[Kafka] Error processing job: {e}")
