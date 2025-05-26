@@ -7,9 +7,9 @@ from sklearn.preprocessing import LabelEncoder
 
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parents[3]
-csv_file_path = os.path.join(project_root,'docs' ,'data_automl', 'nguoidung', 'glass.csv')
-yml_file_path = os.path.join(project_root,'docs' ,'data_automl', 'nguoidung', 'config_glass_nguoi_dung_tai_len.yml')
-
+csv_file_path = os.path.join(project_root,'src' ,'backend', 'assets', 'end_users', 'online_shoppers_intention.csv')
+yml_file_path = os.path.join(project_root,'src' ,'backend', 'assets', 'end_users', 'config-data-pka.yaml')
+json_file_path = os.path.join(project_root,'src' ,'backend', 'assets', 'end_users', 'input_json_file_osi.json')
 df = pd.read_csv(csv_file_path)
 
 for column in df.columns:
