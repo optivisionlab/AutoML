@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, 
 
 import yaml
 import os
+import pickle
 import pymongo
 import numpy as np
 import random
@@ -25,6 +26,17 @@ from pathlib import Path
 
 np.random.seed(42)
 random.seed(42)
+
+from database.database import get_database
+from fastapi.responses import JSONResponse
+from fastapi import HTTPException
+import time
+from bson import ObjectId
+# MongoDB setup
+db = get_database()
+job_collection = db["tbl_Job"]
+data_collection = db["tbl_Data"]
+user_collection = db["tbl_User"]
 
 # Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn. 
 def preprocess_data(list_feature, target, data):
@@ -188,17 +200,7 @@ def app_train_local(file_data, file_config):
     )
     return best_model_id, best_model, best_score, best_params, model_scores
 
-from database.database import get_database
-from fastapi.responses import JSONResponse
-from fastapi import HTTPException
-import time
-from bson import ObjectId
-# MongoDB setup
-db = get_database()
-job_collection = db["tbl_Job"]
-data_collection = db["tbl_Data"]
-user_collection = db["tbl_User"]
-
+# chuyển đổi ObjectId sang string để trả về cho client
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
@@ -222,10 +224,14 @@ def train_json(item: Item, userId, id_data):
     if not user:
         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
     user_name = user.get("username")
+
+    model_data = pickle.dumps(best_model)
+    job_id = str(uuid4())
     job = {
-        "job_id" : str(uuid4()),
+        "job_id" : job_id,
         "best_model_id": best_model_id,
         "best_model": str(best_model),
+        "model": model_data,
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
@@ -242,26 +248,23 @@ def train_json(item: Item, userId, id_data):
         "status": 1
     }
 
-    result = job_collection.insert_one(job)
-    if result.inserted_id:
-        serialize_mongo_doc(job)
-        return JSONResponse(content=job)
+    job_result = job_collection.insert_one(job)
+    if job_result.inserted_id:
+        job.pop("model")
+        return JSONResponse(content=serialize_mongo_doc(job))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
     
 # Dùng với kafka
 def train_json_from_job(job):
     job_id = job["job_id"]
-
-    # Kiểm tra xem job đã tồn tại và trạng thái
+    item = job["item"]
     existing_job = job_collection.find_one({"job_id": job_id})
     if not existing_job:
         raise HTTPException(status_code=404, detail="Không tìm thấy job")
 
     if existing_job.get("status") == 1:
         return JSONResponse(content={"message": "Job đã được train", "job_id": job_id})
-
-    item = job["item"]
 
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_config_from_json(Item(**item))
@@ -271,42 +274,48 @@ def train_json_from_job(job):
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
 
+    model_data = pickle.dumps(best_model)
+
     update_doc = {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
+        "model": model_data,
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
         "config": item["config"],
-        "status": 1  # Đã train xong
+        "status": 1
     }
+
     result = job_collection.update_one(
         {"job_id": job_id},
         {"$set": update_doc}
     )
 
     if result.modified_count == 1:
-        updated_job = job_collection.find_one({"job_id": job_id})
+        updated_job = job_collection.find_one({"job_id": job_id}, {"model": 0})
         return JSONResponse(content=serialize_mongo_doc(updated_job))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi cập nhật job")
 
+# Lấy danh sách job
 def get_jobs(user_id):
     try:
         query = {}
         if user_id:
             query["user.id"] = user_id
         
-        jobs = list(job_collection.find(query))
+        jobs = list(job_collection.find(query, {"model": 0, "item": 0}))
         for job in jobs:
             job["_id"] = str(job["_id"])  # Chuyển ObjectId thành string
         return JSONResponse(content=jobs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+# Lấy job theo job_id
 def get_one_job(id_job: str):
     try:
-        job = job_collection.find_one({"_id": ObjectId(id_job)})
+        job = job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
         return JSONResponse(content=serialize_mongo_doc(job))
@@ -349,7 +358,7 @@ def push_train_job(item: Item, user_id, data_id):
             "name": user_name
         },
         "status": 0,
-        "created_at": time.time()
+        "create_at": time.time()
     }
     # Gửi vào Kafka
     producer.send("train-job-topic", value=job_doc)
