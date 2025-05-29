@@ -13,7 +13,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
-
 import yaml
 import os
 import pickle
@@ -32,6 +31,11 @@ from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import time
 from bson import ObjectId
+# Push and get Kafka
+from uuid import uuid4
+import json
+
+
 # MongoDB setup
 db = get_database()
 job_collection = db["tbl_Job"]
@@ -322,18 +326,8 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-# Push and get Kafka
-from kafka import KafkaProducer
-from uuid import uuid4
-import json
 
-
-producer = KafkaProducer(
-    bootstrap_servers="localhost:9092",
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-def push_train_job(item: Item, user_id, data_id):
+def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
     
     dataset = data_collection.find_one({"_id": ObjectId(data_id)})

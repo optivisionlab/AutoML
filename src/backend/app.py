@@ -60,6 +60,12 @@ from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data
 from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
 import threading
 from kafka_consumer import run_train_consumer
+from users.engine import get_current_admin
+# Lấy danh sách user
+from users.engine import get_list_user
+from kafka import KafkaProducer
+
+
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
@@ -79,18 +85,25 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": "http://10.100.200.119:9999/auth",
+        "redirect_url": f"http://{data['HOST_BACK_END']}:{data['HOST_BACK_END']}/auth",
     },
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://10.100.200.119:3000", "http://localhost:3000"],
+    allow_origins=[f"http://{data['HOST_FRONT_END']}:{data['PORT_FRONT_END']}", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+producer = KafkaProducer(
+    bootstrap_servers=data["KAFKA_SERVER"],
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
 
 @app.on_event("startup")
 def startup_event():
@@ -98,9 +111,16 @@ def startup_event():
     kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
     kafka_thread.start()
   
+
 @app.get("/")
 def read_root():
-    return {"message": "FastAPI is running with Kafka consumer"}
+    return {
+        "HAutoML": "Open-Source for Automated Machine Learning",
+        "Authors": "Đỗ Mạnh Quang, Chử Thị Ánh, Ngọ Công Bình, Bùi Huy Nam, Nguyễn Thị Mỹ Khánh, Nguyễn Thị Minh",
+        "Lab": "OptiVisionLab",
+        "University": "School of Information and Communications Technology, Hanoi University of Industry"
+    }
+
 
 @app.get("/home")
 def ping():
@@ -134,10 +154,6 @@ def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
     return {"data_list": data_list, "files_list": files_list}
 
 
-from users.engine import get_current_admin
-
-# Lấy danh sách user
-from users.engine import get_list_user
 @app.get("/users")
 def get_users():
     list_user = get_list_user()
@@ -336,11 +352,13 @@ def get_list_data_by_userid(id: str):
     list_data = get_list_data(id_user=id)
     return list_data
 
+
 # Lấy 1 dataset
 @app.post("/get-data-info")
 def get_data_info(id: str):
     data = get_one_data(id_data=id)
     return data
+
 
 # Lấy bộ dữ liệu từ mongodb
 @app.post("/get-data-from-mongodb-to-train")
@@ -351,6 +369,7 @@ def get_data_from_mongodb_to_train(id: str):
     )
     data = {"data": output, "list_feature": df.columns.to_list()}
     return JSONResponse(content=data)
+
 
 # Upload dataset
 @app.post("/upload-dataset")
@@ -363,6 +382,7 @@ def upload_dataset(
 
     return upload_data(file_data, data_name, data_type, user_id)
 
+
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
@@ -370,10 +390,12 @@ def update_dataset(
 ):
     return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
 
+
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
     return delete_dataset_by_id(dataset_id)
+
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
@@ -381,12 +403,11 @@ def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
 
+
 # API push kafka
 @app.post("/api-push-kafka")
 def api_push_kafka(item: Item, user_id: str, data_id: str):
-    return push_train_job(item, user_id, data_id)
-
-# Đây là phần của Bình. AE code thì viết lên trên, đừng viết xuống dưới này nhé. Cho dễ tìm :'(
+    return push_train_job(item, user_id, data_id, producer)
 
 
 @app.post("/training-file-local")
@@ -422,10 +443,12 @@ def api_train_mongo():
         "orther_model_scores": model_scores,
     }
 
+
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item: Item, userId: str, id_data:str):
     return train_json(item, userId, id_data)
 
+
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST"], port=data["PORT"], reload=True)
+    uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
     pass
