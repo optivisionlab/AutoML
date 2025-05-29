@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 
 type TrainingJob = {
   _id: string;
+  job_id: string;
   data: {
     name: string;
   };
@@ -130,7 +131,7 @@ const TrainingHistory = () => {
                       variant="default"
                       className="bg-[#3a6df4] text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
                       onClick={() =>
-                        router.push(`/training-history/${job._id}`)
+                        router.push(`/training-history/${job.job_id}`)
                       }
                     >
                       Xem chi tiết
