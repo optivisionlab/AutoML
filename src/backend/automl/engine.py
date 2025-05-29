@@ -259,6 +259,28 @@ def train_json(item: Item, userId, id_data):
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
     
+def inference_model(job_id, file_data):
+    stored_model = job_collection.find_one({"job_id": job_id})
+    model = pickle.loads(stored_model["model"])
+    list_feature = stored_model["config"]["list_feature"]
+
+    contents = file_data.file.read()
+    data_file = BytesIO(contents)
+    data = pd.read_csv(data_file)
+
+    for column in data.columns:
+        if data[column].dtype == 'object':
+            le = LabelEncoder()
+            data[column] = le.fit_transform(data[column])
+    
+    X = data[list_feature]
+    y = model.predict(X)
+    data["predict"] = y
+    data_json = data.to_dict(orient="records")
+    return data_json
+
+
+
 # Dùng với kafka
 def train_json_from_job(job):
     job_id = job["job_id"]
