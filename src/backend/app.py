@@ -52,7 +52,7 @@ from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
 from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
-from automl.engine import app_train_local
+from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
@@ -448,6 +448,9 @@ def api_train_mongo():
 def api_train_json(item: Item, userId: str, id_data:str):
     return train_json(item, userId, id_data)
 
+@app.post("/inference-model/")
+def api_inference_model(job_id, file_data: UploadFile):
+    return inference_model(job_id, file_data)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
