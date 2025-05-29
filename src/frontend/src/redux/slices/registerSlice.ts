@@ -18,7 +18,7 @@ export const registerAsync = createAsyncThunk(
   async (payload: IUser, thunkAPI) => {
     try {
       const response = await axios.post(
-        `http://10.100.200.119:9999/signup`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/signup`,
         payload
       );
       return response.data;

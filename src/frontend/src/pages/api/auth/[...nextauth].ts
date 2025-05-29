@@ -17,7 +17,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const { username, password } = credentials as any;
 
-          const res = await fetch(`http://10.100.200.119:9999/login`, {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/login`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

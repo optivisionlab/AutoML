@@ -56,7 +56,7 @@ const TrainingHistory = () => {
       setLoading(true);
       try {
         const response = await fetch(
-          `http://10.100.200.119:9999/get-list-job-by-userId?user_id=${session.user.id}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/get-list-job-by-userId?user_id=${session.user.id}`,
           {
             method: "POST",
             headers: {

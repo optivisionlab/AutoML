@@ -25,7 +25,7 @@ export default function Header() {
       if (session?.user?.username) {
         try {
           const res = await fetch(
-            `http://10.100.200.119:9999/get_avatar/${session.user.username}`
+            `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${session.user.username}`
           );
           if (!res.ok) throw new Error("Avatar fetch failed");
 

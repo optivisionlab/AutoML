@@ -78,7 +78,7 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": "http://10.100.200.119:9999/auth",
+        "redirect_url": "${process.env.NEXT_PUBLIC_BASE_API}/auth",
     },
 )
 
