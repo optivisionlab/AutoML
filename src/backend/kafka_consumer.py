@@ -2,12 +2,19 @@
 import json
 from kafka import KafkaConsumer
 from automl.engine import train_json_from_job
+import yaml
+
+
+file_path = "temp.config.yml"
+with open(file_path, "r") as f:
+    data = yaml.safe_load(f)
+
 consumer = KafkaConsumer(
     "train-job-topic",
-    bootstrap_servers="localhost:9092",
+    bootstrap_servers=data['KAFKA_SERVER'],
     value_deserializer=lambda m: json.loads(m.decode("utf-8")),
     group_id="train-consumer-group",
-    auto_offset_reset="earliest",
+    auto_offset_reset="earliest", # earliest <-> begin đọc từ đầu & latest <=> tail đọc từ đoạn mới mất
     enable_auto_commit=True
 )
 

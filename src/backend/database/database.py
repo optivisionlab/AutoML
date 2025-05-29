@@ -1,6 +1,11 @@
 from pymongo import MongoClient
+import yaml
 
-connection_string = "mongodb://localhost:27017/"
+
+file_path = "temp.config.yml"
+with open(file_path, "r") as f:
+    data = yaml.safe_load(f)
+connection_string = data['MONGODB_CONNECT']
 
 def get_database(): 
     try:
