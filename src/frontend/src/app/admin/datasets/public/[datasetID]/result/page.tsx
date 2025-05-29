@@ -127,7 +127,7 @@ const ResultPage = ({ params }: Props) => {
         setIsLoading(true);
         try {
           const response = await fetch(
-            "${process.env.NEXT_PUBLIC_BASE_API}/train-from-requestbody-json/",
+            `${process.env.NEXT_PUBLIC_BASE_API}/train-from-requestbody-json/`,
             {
               method: "POST",
               headers: {
