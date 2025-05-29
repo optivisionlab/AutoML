@@ -58,7 +58,7 @@ const ResultPage = ({ params }: Props) => {
           {
             method: "POST",
             headers: { accept: "application/json" },
-            body: "", // empty body if not needed
+            body: "", 
           }
         );
         const { data } = await response.json();

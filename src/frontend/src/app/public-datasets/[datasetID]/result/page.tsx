@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useEffect, useState, useCallback } from "react";
-import { AlertCircle, LoaderCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, LoaderCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChartContainer } from "@/components/ui/chart";
@@ -36,6 +36,7 @@ const ResultPage = ({ params }: Props) => {
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { data: session } = useSession();
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
   const router = useRouter();
 
   const [showChart, setShowChart] = useState(false);
@@ -136,7 +137,7 @@ const ResultPage = ({ params }: Props) => {
 
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/train-from-requestbody-json/?userId=${session.user.id}&id_data=${datasetID}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/api-push-kafka/?user_id=${session.user.id}&data_id=${datasetID}`,
           {
             method: "POST",
             headers: {
@@ -154,6 +155,7 @@ const ResultPage = ({ params }: Props) => {
 
         const resultData = await response.json();
         setResult(resultData);
+        setJobStatus(resultData.status || null);
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
         setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
@@ -216,20 +218,26 @@ const ResultPage = ({ params }: Props) => {
     },
   } satisfies ChartConfig;
 
+  console.log("result", result);
+
   return (
     <div className="relative p-6">
       {/* Hiển thị loading bao trùm toàn màn hình */}
       {isLoading && (
-        <div className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 bg-white/80 p-4">
-          <div className="flex items-center gap-2 text-blue-700">
-            <LoaderCircle className="w-6 h-6 animate-spin" />
-            <span className="text-lg font-medium">Đang tải...</span>
-          </div>
+        <div className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
+          <Card className="w-[360px] bg-white shadow-2xl rounded-3xl border-0">
+            <CardContent className="flex items-center gap-4 p-6 text-blue-700">
+              <LoaderCircle className="h-6 w-6 animate-spin text-blue-700" />
+              <span className="text-base font-semibold tracking-wide">
+                Đang tải dữ liệu vào hàng chờ...
+              </span>
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* Card chứa kết quả huấn luyện */}
-      {result && (
+      {jobStatus === '1' ? (
         <Card className="mb-6 text-center p-6">
           <h2 className="text-xl font-semibold text-[#3a6df4]">
             Kết quả huấn luyện
@@ -335,6 +343,30 @@ const ResultPage = ({ params }: Props) => {
             )}
           </div>
         </Card>
+      ) : (
+        <div className="flex items-center justify-center min-h-screen">
+          <Card className="w-full max-w-md bg-white border border-green-200 shadow-lg rounded-xl">
+            <CardHeader className="flex items-center gap-3 border-b border-green-100 py-3 px-4">
+              <CheckCircle className="text-green-500 w-5 h-5" />
+              <CardTitle className="text-green-600 text-base font-semibold">
+                Đã tải dữ liệu vào hàng chờ thành công
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 py-5 px-4">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {error}
+              </p>
+              <button
+                onClick={() => {
+                  router.push("/training-history")
+                }}
+                className="w-full text-center py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition duration-200"
+              >
+                ← Về trang lịch sử huấn luyện
+              </button>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

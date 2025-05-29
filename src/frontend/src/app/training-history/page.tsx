@@ -36,12 +36,15 @@ type TrainingJob = {
 const formatDate = (timestamp?: number): string => {
   if (!timestamp) return "Không có dữ liệu";
   const date = new Date(timestamp * 1000);
-  return date.toLocaleDateString("vi-VN", {
+  return date.toLocaleString("vi-VN", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 };
+
 
 const TrainingHistory = () => {
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
@@ -129,10 +132,16 @@ const TrainingHistory = () => {
                   <TableCell className="text-center">
                     <Button
                       variant="default"
-                      className="bg-[#3a6df4] text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
-                      onClick={() =>
-                        router.push(`/training-history/${job.job_id}`)
-                      }
+                      className={`px-4 py-2 rounded-md text-white ${job.status === 1
+                          ? "bg-[#3a6df4] hover:bg-[#5b85f7]"
+                          : "bg-gray-400 cursor-not-allowed"
+                        }`}
+                      onClick={() => {
+                        if (job.status === 1) {
+                          router.push(`/training-history/${job.job_id}`);
+                        }
+                      }}
+                      disabled={job.status !== 1}
                     >
                       Xem chi tiết
                     </Button>
