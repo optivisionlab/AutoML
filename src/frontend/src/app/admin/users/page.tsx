@@ -194,7 +194,7 @@ const UserManagementPage = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("http://10.100.200.119:9999/users");
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/users`);
       const data = await res.json();
       setUsers(data);
     } catch (error) {
@@ -231,7 +231,7 @@ const UserManagementPage = () => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/update/${editingUser.username}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/update/${editingUser.username}`,
         {
           method: "PUT",
           headers: {
@@ -272,7 +272,7 @@ const UserManagementPage = () => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/delete/${userToDelete.username}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/delete/${userToDelete.username}`,
         {
           method: "DELETE",
         }

@@ -55,7 +55,7 @@ const ResultPage = ({ params }: Props) => {
       setIsLoading(true);
       try {
         const response = await fetch(
-          `http://10.100.200.119:9999/get-job-info?id=${datasetID}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/get-job-info?id=${datasetID}`,
           {
             method: "POST",
             headers: { accept: "application/json" },
@@ -79,8 +79,6 @@ const ResultPage = ({ params }: Props) => {
   useEffect(() => {
     fetchDataResult();
   }, [datasetID, fetchDataResult]);
-
-  console.log("Kết quả từ API:", result);
 
 
   if (error) {
