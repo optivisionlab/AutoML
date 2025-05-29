@@ -1,7 +1,3 @@
-// export { default } from "next-auth/middleware"
-
-// export const config = { matcher: ["/profile/:path*", "/datasets/:path*"] }
-
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 

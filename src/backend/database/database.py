@@ -1,6 +1,6 @@
 from pymongo import MongoClient
 
-connection_string = "mongodb://localhost:27017/"
+connection_string = "mongodb://10.100.200.119:27017"
 
 def get_database(): 
     try:
