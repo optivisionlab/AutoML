@@ -59,6 +59,7 @@ const Page = () => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const { toast } = useToast();
+  console.log(process.env.NEXT_PUBLIC_BASE_API);
 
   const fetchDatasets = async () => {
     if (!session?.user?.id) return;
@@ -66,7 +67,7 @@ const Page = () => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/get-list-data-by-userid?id=0`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-by-userid?id=0`,
         {
           method: "POST",
           headers: { Accept: "application/json" },
@@ -99,7 +100,7 @@ const Page = () => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/delete-dataset/${datasetIdToDelete}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/delete-dataset/${datasetIdToDelete}`,
         {
           method: "DELETE",
           headers: { Accept: "application/json" },

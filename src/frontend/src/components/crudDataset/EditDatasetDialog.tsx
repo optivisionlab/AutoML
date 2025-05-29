@@ -57,7 +57,7 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/update-dataset/${dataset._id}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/update-dataset/${dataset._id}`,
         {
           method: "PUT",
           headers: { Accept: "application/json" },

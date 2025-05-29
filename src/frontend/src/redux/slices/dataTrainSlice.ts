@@ -24,7 +24,7 @@ export const fetchTrainData = createAsyncThunk(
     try {
       // Thực hiện gọi API để lấy dữ liệu
       const response = await axios.post(
-        `http://10.100.200.119:9999/get-data-from-mongodb-to-train?id=${datasetID}`
+        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`
       );
       return response.data;
     } catch (error: any) {
