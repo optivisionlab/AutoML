@@ -1,20 +1,25 @@
-Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
 D:
 conda activate automl
 python app.py
 
-
-Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.demo_gradio
 
-Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.save_data_to_mongodb
 
-Cd D:\ScientificResearch\2024-2025\AutoML\src\backend
+Cd D:\Hoc\LAB\AutoML\AutoML\src\backend
 D:
 conda activate automl
 python -m automl.create_json_files
+
+
+
+GIỜI ƠI!!!!! CÁI PHẦN BÊN TRÊN KIA CỦA MÁY TUI. AI MUỐN VIẾT SANG MÁY MÌNH THÌ TẠO BÊN DƯỚI ĐI ĐỪNG SỬA ĐƯỜNG DẪN NỮA :)))))))))
+
+

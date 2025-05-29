@@ -7,6 +7,17 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogDescription,
+} from "@/components/ui/alert-dialog";
 
 interface TrainCardProps {
   datasetID?: string;
@@ -26,7 +37,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        `http://10.100.200.119:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
         {
           method: "POST",
           headers: { accept: "application/json" },
@@ -107,8 +118,8 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               className="grid grid-cols-2 gap-4"
             >
               {[
-                { value: "new-model", label: "Mô hình mới" },
-                { value: "new-version", label: "Version mới" },
+                { value: "new_model", label: "Mô hình mới" },
+                { value: "new_version", label: "Version mới" },
               ].map(({ value, label }) => (
                 <div
                   key={value}
@@ -242,7 +253,9 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
                         value={metric}
                         className="mr-3"
                       />
-                      <Label htmlFor={metric}>{metric}</Label>
+                      <Label htmlFor={metric}>
+                        {metric.charAt(0).toUpperCase() + metric.slice(1)}
+                      </Label>
                     </div>
                   )
                 )}
@@ -253,12 +266,27 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại
               </Button>
-              <Button
-                onClick={handleStartTraining}
-                className="bg-[#3a6df4] text-white"
-              >
-                Bắt đầu huấn luyện
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button className="bg-[#3a6df4] text-white">
+                    Bắt đầu huấn luyện
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu hình đã chọn không?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Hủy</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white">
+                      Đồng ý
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         )}

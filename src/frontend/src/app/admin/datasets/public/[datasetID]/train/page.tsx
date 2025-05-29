@@ -18,7 +18,7 @@ export default function Page() {
     const fetchData = async () => {
       try {
         const res = await fetch(
-          `http://10.100.200.119:9999/get-data-info?id=${datasetID}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/get-data-info?id=${datasetID}`,
           {
             method: "POST",
             headers: {
@@ -34,7 +34,7 @@ export default function Page() {
         const data = await res.json();
         setDataName(data.dataName || "Không rõ");
       } catch (error) {
-        console.error("Lỗi lấy dữ liệu:", error);
+        console.log("Lỗi lấy dữ liệu:", error);
         setDataName("Không thể tải tên bộ dữ liệu");
       }
     };

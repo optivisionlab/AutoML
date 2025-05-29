@@ -1,14 +1,17 @@
 choose: "new_model"
 metric_sort: accuracy
 list_feature:
-  - "RI"
-  - "Na"
-  - "Mg"
-  - "Al"
-  - "Si"
-  - "K"
-  - "Ca"
-  - "Ba"
-  - "Fe"
-target: "Type"
+  - "Administrative_Duration"
+  - "ProductRelated"
+  - "ProductRelated_Duration"
+  - "BounceRates"
+  - "ExitRates"
+  - "PageValues"
+  - "SpecialDay"
+  - "Browser"
+  - "TrafficType"
+  - "VisitorType"
+  - "Weekend"
+
+target: "Revenue"
 

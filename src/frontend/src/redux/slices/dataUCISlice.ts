@@ -18,8 +18,7 @@ export const getDataUCIAsync = createAsyncThunk(
   "uciData/getData",
   async (_, thunkAPI) => {
     try {
-      // const response = await axios.post("http://10.100.200.119:9999/get-data-from-uci", { id_data: id_data });
-      const response = await axios.post(`http://10.100.200.119:9999/get-data-from-uci?id_data=53`);
+      const response = await axios.post(`${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-uci?id_data=53`);
       return response.data;
     } catch (error: any) {
       const message = error.response?.data?.message || "Lỗi khi lấy dữ liệu UCI";

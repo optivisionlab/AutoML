@@ -8,6 +8,18 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSession } from "next-auth/react";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+  AlertDialogDescription,
+} from "@/components/ui/alert-dialog";
+
 
 interface TrainMyDataCardProps {
   datasetID?: string;
@@ -24,11 +36,11 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const { data: session } = useSession();
-  console.log("session", session);
+
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        `http://10.100.200.119:9999/get-data-from-mongodb-to-train?id=${datasetID}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
         {
           method: "POST",
           headers: { accept: "application/json" },
@@ -113,8 +125,8 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
               className="grid grid-cols-2 gap-4"
             >
               {[
-                { value: "new-model", label: "Mô hình mới" },
-                { value: "new-version", label: "Version mới" },
+                { value: "new_model", label: "Mô hình mới" },
+                { value: "new_version", label: "Version mới" },
               ].map(({ value, label }) => (
                 <div
                   key={value}
@@ -237,21 +249,22 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
                 }}
                 className="grid grid-cols-2 gap-4"
               >
-                {["accuracy", "precision", "recall", "f1"].map(
-                  (metric) => (
-                    <div
-                      key={metric}
-                      className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                    >
-                      <RadioGroupItem
-                        id={metric}
-                        value={metric}
-                        className="mr-3"
-                      />
-                      <Label htmlFor={metric}>{metric}</Label>
-                    </div>
-                  )
-                )}
+                {["accuracy", "precision", "recall", "f1"].map((metric) => (
+                  <div
+                    key={metric}
+                    className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
+                  >
+                    <RadioGroupItem
+                      id={metric}
+                      value={metric}
+                      className="mr-3"
+                    />
+                    <Label htmlFor={metric}>
+                      {metric.charAt(0).toUpperCase() + metric.slice(1)}
+                    </Label>
+                  </div>
+                ))}
+
               </RadioGroup>
             </div>
 
@@ -259,12 +272,27 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại
               </Button>
-              <Button
-                onClick={handleStartTraining}
-                className="bg-[#3a6df4] text-white"
-              >
-                Bắt đầu huấn luyện
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button className="bg-[#3a6df4] text-white">
+                    Bắt đầu huấn luyện
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu hình đã chọn không?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Hủy</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white">
+                      Đồng ý
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         )}

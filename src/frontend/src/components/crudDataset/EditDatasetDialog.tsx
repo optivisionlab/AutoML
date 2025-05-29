@@ -35,12 +35,15 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
   const [file, setFile] = useState<File | null>(null);
   const { toast } = useToast();
 
+  // State quản lý dialog confirm sửa
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   // Cập nhật dữ liệu mỗi khi dataset thay đổi
   useEffect(() => {
     if (dataset) {
       setDataName(dataset.dataName);
       setDataType(dataset.dataType);
-      setFile(null); // reset file nếu có
+      setFile(null);
     }
   }, [dataset]);
 
@@ -54,7 +57,7 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
 
     try {
       const res = await fetch(
-        `http://10.100.200.119:9999/update-dataset/${dataset._id}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/update-dataset/${dataset._id}`,
         {
           method: "PUT",
           headers: { Accept: "application/json" },
@@ -69,6 +72,7 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
+      setConfirmOpen(false);
       onOpenChange(false);
     } catch (error) {
       toast({
@@ -81,50 +85,82 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-center w-full">
-            Chỉnh sửa dữ liệu
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>Tên dữ liệu</Label>
-            <Input
-              value={dataName}
-              onChange={(e) => setDataName(e.target.value)}
-            />
+    <>
+      {/* Dialog chỉnh sửa dữ liệu */}
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-center w-full">
+              Chỉnh sửa dữ liệu
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tên dữ liệu</Label>
+              <Input
+                value={dataName}
+                onChange={(e) => setDataName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Loại dữ liệu</Label>
+              <Select value={dataType} onValueChange={setDataType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn kiểu" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="table">Table</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Chọn file dữ liệu (.csv)</Label>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+              {!file && (
+                <p className="text-sm text-muted-foreground">
+                  Nếu không chọn file mới, dữ liệu hiện tại sẽ được giữ nguyên.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-center mt-4 space-x-4">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="w-20 px-4 py-2 rounded-md"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={() => setConfirmOpen(true)}
+                className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+              >
+                Lưu
+              </Button>
+            </div>
           </div>
-          <div>
-            <Label>Loại dữ liệu</Label>
-            <Select value={dataType} onValueChange={setDataType}>
-              <SelectTrigger>
-                <SelectValue placeholder="Chọn kiểu" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="table">Table</SelectItem>
-                <SelectItem value="image">Image</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Chọn file dữ liệu (.csv)</Label>
-            <Input
-              type="file"
-              accept=".csv"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-            {!file && (
-              <p className="text-sm text-muted-foreground">
-                Nếu không chọn file mới, dữ liệu hiện tại sẽ được giữ nguyên.
-              </p>
-            )}
-          </div>
-          <div className="flex justify-center mt-4 space-x-4">
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog confirm trước khi cập nhật */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold text-center w-full">
+              Xác nhận chỉnh sửa
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-center mb-6">
+            Bạn có chắc chắn muốn sửa bộ dữ liệu này?
+          </p>
+          <div className="flex justify-center space-x-4">
             <Button
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              onClick={() => setConfirmOpen(false)}
               className="w-20 px-4 py-2 rounded-md"
             >
               Hủy
@@ -133,12 +169,12 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
               onClick={handleUpdate}
               className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
             >
-              Lưu
+              Đồng ý
             </Button>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

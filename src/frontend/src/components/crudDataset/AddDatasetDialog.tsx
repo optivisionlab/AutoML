@@ -49,7 +49,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
       setLoading(true);
 
       const res = await fetch(
-        `http://10.100.200.119:9999/upload-dataset?user_id=${userId}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/upload-dataset?user_id=${userId}`,
         {
           method: "POST",
           body: formData,
