@@ -15,6 +15,7 @@ import {
 import { signIn, signOut, useSession } from "next-auth/react";
 import { LogOut, User2 } from "lucide-react";
 import Image from "next/image";
+import ModeToggle from "@/components/mode-toggle";
 
 export default function Header() {
   const { data: session } = useSession();
@@ -92,6 +93,7 @@ export default function Header() {
       )}
 
       <div className="ml-4 flex items-center gap-3">
+        <ModeToggle/>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             {session ? (
