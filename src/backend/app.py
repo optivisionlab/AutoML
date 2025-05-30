@@ -19,7 +19,8 @@ from automl.engine import (
     get_jobs,
     get_one_job,
     push_train_job,
-    train_json
+    train_json,
+    update_activate_model
 )
 from automl.model import Item
 from users.engine import User
@@ -451,6 +452,11 @@ def api_train_json(item: Item, userId: str, id_data:str):
 @app.post("/inference-model/")
 def api_inference_model(job_id, file_data: UploadFile):
     return inference_model(job_id, file_data)
+
+
+@app.post("/activate-model")
+def api_activate_model(job_id, activate=0):
+    return update_activate_model(job_id, activate)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
