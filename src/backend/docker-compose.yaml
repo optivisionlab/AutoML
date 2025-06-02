@@ -4,6 +4,7 @@ services:
   hautoml_nano:
     image: hautoml-nano
     container_name: hautoml_nano_v1
+    network_mode: host
     ports:
       - "7860:7860"
     expose:
@@ -18,6 +19,7 @@ services:
   hautoml_toolkit:
     image: hautoml-toolkit
     container_name: hautoml_toolkit_v1
+    network_mode: host
     ports:
       - "9999:9999"
     expose:
@@ -32,6 +34,7 @@ services:
   kafka:
     image: apache/kafka:latest
     container_name: kafka
+    network_mode: host
     ports:
       - "9092:9092"
     expose:
@@ -41,3 +44,20 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  
+  mongo:
+    image: mongo:latest
+    container_name: mongodb
+    network_mode: host
+    ports:
+      - "27017:27017"
+    expose:
+      - '27017'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: root
+    #   MONGO_INITDB_ROOT_PASSWORD: example
