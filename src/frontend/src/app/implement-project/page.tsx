@@ -113,8 +113,6 @@ const ImplementProject = () => {
   };
 
 
-  console.log("Training jobs:", jobs);
-
   return (
     <Card className="max-w-6xl mx-auto mt-8 shadow-md">
       <CardHeader>
@@ -188,7 +186,7 @@ const ImplementProject = () => {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Bạn có chắc chắn muốn triển khai mô hình này không?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Hành động này sẽ chuyển bạn đến trang triển khai. Vui lòng xác nhận để tiếp tục.
+                            Hành động này sẽ kích hoạt mô hình được chọn. Vui lòng xác nhận để tiếp tục.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
