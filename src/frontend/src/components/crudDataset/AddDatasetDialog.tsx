@@ -15,6 +15,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 
 type Props = {
   open: boolean;
@@ -30,6 +41,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
   const [dataType, setDataType] = useState("table");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const handleSubmit = async () => {
     if (!dataName || !file) {
@@ -127,13 +139,37 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
         <DialogFooter className="mt-6 flex justify-end">
           <Button
             disabled={loading}
-            onClick={handleSubmit}
+            onClick={() => setShowConfirmDialog(true)}
             className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
           >
             {loading ? "Đang tải lên..." : "Tải lên"}
           </Button>
+
         </DialogFooter>
       </DialogContent>
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận tải lên</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc chắn muốn tải lên bộ dữ liệu này không?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <Button
+              disabled={loading}
+              onClick={() => {
+                setShowConfirmDialog(false);
+                handleSubmit();
+              }}
+              className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+            >
+              Đồng ý
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };

@@ -105,7 +105,7 @@ const ImplementProject = () => {
 
       router.push(`/implement-project/${selectedJobId}`);
     } catch (error) {
-      console.error("Lỗi khi kích hoạt mô hình:", error);
+      console.log("Lỗi khi kích hoạt mô hình:", error);
       alert("Không thể triển khai mô hình. Vui lòng thử lại.");
     } finally {
       setSelectedJobId(null);

@@ -5,16 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Copy } from "lucide-react";
+import { useParams } from "next/navigation";
 
 const ProjectImplementation = () => {
   const { toast } = useToast();
+  const params = useParams();
+  const jobID = Array.isArray(params?.jobID) ? params.jobID[0] : params?.jobID;
 
   const JOB_ID = "<JOB_ID>";
   const URL_API = "<URL_API>";
   const curlCommand = `curl --location '${URL_API}/inference-model/?job_id=${JOB_ID}' \\
 --header 'accept: application/json' \\
 --form 'file_data=@"/path/to/file"'`;
-const pythonCode = `import requests
+  const pythonCode = `import requests
 
 url = "<URL_API>/inference-model/?job_id=<JOB_ID>"
 
@@ -77,7 +80,7 @@ print(response.text)`
           <div className="flex items-start gap-2">
             <span className="text-green-600">✔</span>
             <span>
-              <strong>JOB_ID:</strong> mã định danh model được cấp
+              <strong>JOB_ID:</strong>{jobID ? jobID : "job ID sẽ được cung cấp"}
             </span>
           </div>
 
@@ -105,7 +108,6 @@ print(response.text)`
 
 
           <div className="flex items-start gap-2">
-
             <span>
               <strong>Code python minh họa:</strong>
             </span>
