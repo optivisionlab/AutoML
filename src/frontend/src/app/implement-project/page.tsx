@@ -76,7 +76,7 @@ const ImplementProject = () => {
         const data = await response.json();
         setJobs(data || []);
       } catch (error) {
-        console.error("Lỗi khi lấy lịch sử huấn luyện:", error);
+        console.log("Lỗi khi lấy lịch sử huấn luyện:", error);
       } finally {
         setLoading(false);
       }
@@ -90,7 +90,7 @@ const ImplementProject = () => {
 
     try {
       const response = await fetch(
-        `http://10.100.200.119:9999/activate-model?job_id=${selectedJobId}&activate=1`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/activate-model?job_id=${selectedJobId}&activate=1`,
         {
           method: "POST",
           headers: {
