@@ -261,23 +261,29 @@ def train_json(item: Item, userId, id_data):
     
 def inference_model(job_id, file_data):
     stored_model = job_collection.find_one({"job_id": job_id})
-    model = pickle.loads(stored_model["model"])
-    list_feature = stored_model["config"]["list_feature"]
+    if 'activate' in stored_model.keys():
+        if stored_model['activate'] == 1:
+            model = pickle.loads(stored_model["model"])
+            list_feature = stored_model["config"]["list_feature"]
 
-    contents = file_data.file.read()
-    data_file = BytesIO(contents)
-    data = pd.read_csv(data_file)
+            contents = file_data.file.read()
+            data_file = BytesIO(contents)
+            data = pd.read_csv(data_file)
 
-    for column in data.columns:
-        if data[column].dtype == 'object':
-            le = LabelEncoder()
-            data[column] = le.fit_transform(data[column])
-    
-    X = data[list_feature]
-    y = model.predict(X)
-    data["predict"] = y
-    data_json = data.to_dict(orient="records")
-    return data_json
+            for column in data.columns:
+                if data[column].dtype == 'object':
+                    le = LabelEncoder()
+                    data[column] = le.fit_transform(data[column])
+            
+            X = data[list_feature]
+            y = model.predict(X)
+            data["predict"] = y
+            data_json = data.to_dict(orient="records")
+            return data_json
+    return {
+        "job_id": job_id,
+        "message": "model is deactivate"
+    }
 
 
 
@@ -374,6 +380,7 @@ def push_train_job(item: Item, user_id, data_id, producer):
             "name": user_name
         },
         "status": 0,
+        "activate": 0,
         "create_at": time.time()
     }
     # Gửi vào Kafka
@@ -387,3 +394,17 @@ def push_train_job(item: Item, user_id, data_id, producer):
 
     return JSONResponse(content=serialize_mongo_doc(job_doc))
 
+
+def update_activate_model(job_id, activate=0):
+    result = job_collection.update_one(
+        {"job_id": job_id},
+        { "$set": {"activate": int(activate)} }
+    )
+    return JSONResponse(
+        content={
+            "job_id": job_id,
+            "message": "cập nhập trạng thái mô hình thành công",
+            "activate": int(activate)
+        }, 
+        status_code=200
+    )
