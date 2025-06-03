@@ -76,7 +76,7 @@ const ImplementProject = () => {
         const data = await response.json();
         setJobs(data || []);
       } catch (error) {
-        console.error("Lỗi khi lấy lịch sử huấn luyện:", error);
+        console.log("Lỗi khi lấy lịch sử huấn luyện:", error);
       } finally {
         setLoading(false);
       }
@@ -90,7 +90,7 @@ const ImplementProject = () => {
 
     try {
       const response = await fetch(
-        `http://10.100.200.119:9999/activate-model?job_id=${selectedJobId}&activate=1`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/activate-model?job_id=${selectedJobId}&activate=1`,
         {
           method: "POST",
           headers: {
@@ -105,15 +105,13 @@ const ImplementProject = () => {
 
       router.push(`/implement-project/${selectedJobId}`);
     } catch (error) {
-      console.error("Lỗi khi kích hoạt mô hình:", error);
+      console.log("Lỗi khi kích hoạt mô hình:", error);
       alert("Không thể triển khai mô hình. Vui lòng thử lại.");
     } finally {
       setSelectedJobId(null);
     }
   };
 
-
-  console.log("Training jobs:", jobs);
 
   return (
     <Card className="max-w-6xl mx-auto mt-8 shadow-md">
@@ -188,7 +186,7 @@ const ImplementProject = () => {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Bạn có chắc chắn muốn triển khai mô hình này không?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Hành động này sẽ chuyển bạn đến trang triển khai. Vui lòng xác nhận để tiếp tục.
+                            Hành động này sẽ kích hoạt mô hình được chọn. Vui lòng xác nhận để tiếp tục.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

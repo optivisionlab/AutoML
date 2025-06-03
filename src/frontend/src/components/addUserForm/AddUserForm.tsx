@@ -93,7 +93,7 @@ export default function AddUserForm({
     try {
       const { confirmPassword, ...submitData } = data;
 
-      const res = await fetch("${process.env.NEXT_PUBLIC_BASE_API}/signup", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(submitData),
