@@ -32,6 +32,7 @@ export const config = {
     "/datasets/:path*",
     "/public-datasets/:path*",
     "/my-datasets/:path*",
+    "/implement-project/:path*",
     "/training-history/:path*",
     "/available-datasets/:path*",
     "/admin/users/:path*",

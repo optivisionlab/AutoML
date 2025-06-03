@@ -46,7 +46,7 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Triển khai dự án",
+      name: "Triển khai mô hình",
       icon: <RocketIcon size={18} />,
       href: "/implement-project",
       active: false,
@@ -84,6 +84,14 @@ export function NavItems(role: string) {
       name: "Xem lịch sử huấn luyện",
       icon: <History size={18} />,
       href: "/training-history",
+      active: false,
+      position: "top",
+      role: ["admin"],
+    },
+    {
+      name: "Triển khai mô hình",
+      icon: <RocketIcon size={18} />,
+      href: "/implement-project",
       active: false,
       position: "top",
       role: ["admin"],
