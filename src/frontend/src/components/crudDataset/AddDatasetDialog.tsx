@@ -1,5 +1,3 @@
-// components/crudDataset/AddDatasetDialog.tsx
-
 "use client";
 
 import {
@@ -15,17 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-
 
 type Props = {
   open: boolean;
@@ -41,13 +28,20 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
   const [dataType, setDataType] = useState("table");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const handleSubmit = async () => {
+  const resetForm = () => {
+    setDataName("");
+    setDataType("table");
+    setFile(null);
+  };
+
+  const handleUpload = async () => {
     if (!dataName || !file) {
       toast({
         title: "Vui lòng nhập đầy đủ thông tin",
         variant: "destructive",
+        duration: 3000,
       });
       return;
     }
@@ -68,7 +62,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
         }
       );
 
-      if (!res.ok) throw new Error("Tải lên thất bại");
+      if (!res.ok) throw new Error("Upload failed");
 
       toast({
         title: "Tải lên thành công!",
@@ -76,101 +70,101 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
         duration: 3000,
       });
 
-      onOpenChange(false);
+      resetForm();
+      setConfirmOpen(false); // đóng dialog xác nhận
+      onOpenChange(false); // đóng dialog chính
       onSuccess?.();
-      setDataName("");
-      setFile(null);
     } catch (err) {
+      console.error("Upload error:", err);
       toast({
         title: "Có lỗi xảy ra",
         description: "Không thể tải lên dữ liệu.",
         variant: "destructive",
       });
-      console.log("Lỗi tải lên:", err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader className="text-center flex flex-col items-center">
-          <DialogTitle className="text-center">Thêm bộ dữ liệu</DialogTitle>
-          <DialogDescription className="text-center">
-            Nhập thông tin và chọn file để tải lên.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="flex flex-col items-center text-center">
+            <DialogTitle>Thêm bộ dữ liệu</DialogTitle>
+            <DialogDescription>
+              Nhập thông tin và chọn file để tải lên.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4">
-          <div>
-            <Label>Tên bộ dữ liệu</Label>
-            <Input
-              type="text"
-              value={dataName}
-              onChange={(e) => setDataName(e.target.value)}
-              placeholder="Nhập tên bộ dữ liệu"
-            />
+          <div className="space-y-4">
+            <div>
+              <Label>Tên bộ dữ liệu</Label>
+              <Input
+                value={dataName}
+                onChange={(e) => setDataName(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label>Kiểu dữ liệu</Label>
+              <select
+                value={dataType}
+                onChange={(e) => setDataType(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              >
+                <option value="table">Bảng</option>
+                <option value="image">Hình ảnh</option>
+                <option value="text">Văn bản</option>
+              </select>
+            </div>
+
+            <div>
+              <Label>Chọn file</Label>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+            </div>
           </div>
 
-          <div>
-            <Label>Kiểu dữ liệu</Label>
-            <select
-              value={dataType}
-              onChange={(e) => setDataType(e.target.value)}
-              className="w-full border border-gray-300 rounded-md px-3 py-2"
-            >
-              <option value="table">Bảng</option>
-              <option value="image">Hình ảnh</option>
-              <option value="text">Văn bản</option>
-            </select>
-          </div>
-
-          <div>
-            <Label>Chọn file</Label>
-            <Input
-              type="file"
-              accept=".csv"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-          </div>
-        </div>
-
-        <DialogFooter className="mt-6 flex justify-end">
-          <Button
-            disabled={loading}
-            onClick={() => setShowConfirmDialog(true)}
-            className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
-          >
-            {loading ? "Đang tải lên..." : "Tải lên"}
-          </Button>
-
-        </DialogFooter>
-      </DialogContent>
-      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận tải lên</AlertDialogTitle>
-            <AlertDialogDescription>
-              Bạn có chắc chắn muốn tải lên bộ dữ liệu này không?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
+          <DialogFooter className="mt-6">
             <Button
               disabled={loading}
-              onClick={() => {
-                setShowConfirmDialog(false);
-                handleSubmit();
-              }}
+              onClick={() => setConfirmOpen(true)}
               className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
             >
-              Đồng ý
+              {loading ? "Đang tải..." : "Tải lên"}
             </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Dialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog xác nhận đơn giản */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Xác nhận</DialogTitle>
+            <DialogDescription>
+              Bạn có chắc chắn muốn tải lên bộ dữ liệu này?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              disabled={loading}
+              onClick={handleUpload}
+              className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+            >
+              {loading ? "Đang tải..." : "Xác nhận"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

@@ -218,8 +218,6 @@ const ResultPage = ({ params }: Props) => {
     },
   } satisfies ChartConfig;
 
-  console.log("result", result);
-
   return (
     <div className="relative p-6">
       {/* Hiển thị loading bao trùm toàn màn hình */}

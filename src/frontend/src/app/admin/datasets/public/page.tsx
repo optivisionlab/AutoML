@@ -59,7 +59,6 @@ const Page = () => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const { toast } = useToast();
-  console.log(process.env.NEXT_PUBLIC_BASE_API);
 
   const fetchDatasets = async () => {
     if (!session?.user?.id) return;

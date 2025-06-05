@@ -111,7 +111,6 @@ const ResultPage = ({ params }: Props) => {
       };
 
       setConfig(formattedConfig);
-      console.log(">> Check formatted config: ", formattedConfig);
     } catch (err) {
       console.log(err);
       setError("Lỗi khi parse dữ liệu từ sessionStorage.");
