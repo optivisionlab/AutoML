@@ -126,13 +126,13 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
             >
               {[
                 { value: "new_model", label: "Mô hình mới" },
-                { value: "new_version", label: "Version mới" },
-              ].map(({ value, label }) => (
+                { value: "new_version", label: "Version mới", disabled: true },
+              ].map(({ value, label, disabled }) => (
                 <div
                   key={value}
                   className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
                 >
-                  <RadioGroupItem id={value} value={value} className="mr-3" />
+                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
                   <Label htmlFor={value}>{label}</Label>
                 </div>
               ))}
@@ -163,13 +163,13 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
             >
               {[
                 { value: "auto", label: "Auto" },
-                { value: "custom", label: "Custom" },
-              ].map(({ value, label }) => (
+                { value: "custom", label: "Custom", disabled: true },
+              ].map(({ value, label, disabled }) => (
                 <div
                   key={value}
                   className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
                 >
-                  <RadioGroupItem id={value} value={value} className="mr-3" />
+                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
                   <Label htmlFor={value}>{label}</Label>
                 </div>
               ))}
