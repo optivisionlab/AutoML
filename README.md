@@ -17,31 +17,29 @@ cd src/backend
 python app.py
 ```
 ## Quick start frontend
-- Yêu cầu hệ thống
-+ Node.js 18.18 or later.
-+ NPM (cài được node thì máy sẽ tự động cài được npm thôi :v)
-+ macOS, Windows (including WSL), and Linux are supported.
-
-- docs hướng dẫn cài đặt nodejs và NPM: https://www.geeksforgeeks.org/how-to-install-node-run-npm-in-vs-code/
-
-- di chuyển vào thư mục frontend:
-```
+```bash
+# Trong trường hợp chưa clone dự án:
+# 1. Di chuyển vào thư mục frontend
 cd src/frontend
-```
 
--  Nếu có thư mục node module, file components.json -> xóa đi
-- gõ lệnh để install các package cần thiết
-```
-npm i
-```
-- Khởi tạo dự án với shadcn UI: 
-```
+# 2. Nếu có thư mục node_modules hoặc file components.json, xóa đi
+rm -rf node_modules
+rm components.json
+
+# 3. Cài đặt các package cần thiết
+npm i --force
+
+# 4. Khởi tạo dự án với shadcn UI
 npx shadcn@latest init
-```
-- Nếu chưa cài đặt tailwind -> cài (do shadcn ui chạy dựa trên thư viện tailwind)
-docs: https://tailwindcss.com/docs/guides/nextjs
 
-- chạy dự án trên môi trường dev
-```
+# Nếu chưa cài Tailwind CSS, cài theo hướng dẫn (shadcn UI dựa trên Tailwind)
+# Link hướng dẫn: https://tailwindcss.com/docs/guides/nextjs
+
+# 5. Chạy dự án trên môi trường phát triển
 npm run dev
-```
+
+# Trong trường hợp đã clone dự án:
+# 1. Di chuyển vào thư mục frontend
+cd src/frontend
+# 2. Chạy dự án trên môi trường phát triển
+npm run dev
