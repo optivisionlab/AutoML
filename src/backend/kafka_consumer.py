@@ -5,7 +5,7 @@ from automl.engine import train_json_from_job
 import yaml
 
 
-file_path = "temp.config.yml"
+file_path = ".config.yml"
 with open(file_path, "r") as f:
     data = yaml.safe_load(f)
 
