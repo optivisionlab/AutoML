@@ -209,3 +209,4 @@ next-env.d.ts
 *.zip
 .gradio
 *.swp
+src/frontend/components.json
