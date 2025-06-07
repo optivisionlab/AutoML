@@ -1,7 +1,7 @@
 # HAutoML
 ## Dự án nghiên cứu khoa học về HAutoML
 
-## Quick start backend
+## Quick start Backend
 ```bash
 # COPY FILE 
 # copy ra file riêng nếu update thì sửa file temp.config.yml
@@ -23,7 +23,8 @@ python app.py
 python automl/demo_gradio.py
 
 ```
-## Quick start frontend
+
+## Quick start Frontend
 ```bash
 # Trong trường hợp chưa clone dự án:
 # 1. Di chuyển vào thư mục frontend
@@ -39,3 +40,11 @@ bash install-nodejs.sh
 # 4. Chạy dự án trên môi trường phát triển
 cp temp.env .env
 npm run dev
+```
+
+## Quick start Docker
+```bash
+# run docker compose
+# workdir automl
+docker-compose up -d
+```
