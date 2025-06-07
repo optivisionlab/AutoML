@@ -70,7 +70,7 @@ from kafka import KafkaProducer
 # default sync
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
-file_path = "temp.config.yml"
+file_path = ".config.yml"
 with open(file_path, "r") as f:
     data = yaml.safe_load(f)
 
