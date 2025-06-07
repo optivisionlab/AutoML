@@ -1,0 +1,17 @@
+version: '3.3'
+
+services:
+  hautoml_frontend:
+    image: hautoml-frontend:latest
+    container_name: hautoml-frontend
+    network_mode: host
+    ports:
+      - "3000:3000"
+    expose:
+      - '3000'
+    command: npm run dev
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
