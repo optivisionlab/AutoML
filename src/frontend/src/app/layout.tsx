@@ -11,6 +11,9 @@ import { ThemeProvider } from "@/components/theme-provider";
 export const metadata: Metadata = {
   title: "AutoML",
   description: "This is an AutoML system, created by OptivisionLab",
+  icons: {
+    icon: "/logoHautoMLNotext.png",
+  },
 };
 
 interface IProps {
