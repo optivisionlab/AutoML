@@ -13,9 +13,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { LogOut, Menu, User2, X } from "lucide-react";
+import { GithubIcon, LogOut, Menu, User2, X } from "lucide-react";
 import Image from "next/image";
 import ModeToggle from "@/components/mode-toggle";
+import { FaGithub } from "react-icons/fa";
 
 export default function Header() {
   const { data: session } = useSession();
@@ -70,6 +71,14 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-3">
+        <Link
+          href="https://github.com/optivisionlab/AutoML"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors"
+        >
+          <FaGithub className="w-8 h-8" />
+        </Link>
         <ModeToggle />
 
         <DropdownMenu>

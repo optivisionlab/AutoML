@@ -54,7 +54,7 @@ export default function Home() {
             <p>
               HAutoML là viết tắt của{" "}
               <strong className="text-blue-600 dark:text-blue-400">
-                Hyper-processor Automated Machine Learning
+                HYPER-PROCESSOR AUTOMATED MACHINE LEARNING
               </strong>
               . Đây là dự án nghiên cứu khoa học của sinh viên trường Công nghệ
               thông tin và truyền thông, Đại học Công nghiệp Hà Nội. Hệ thống
@@ -74,7 +74,7 @@ export default function Home() {
             <p>
               Với sự phát triển mạnh mẽ của xu hướng{" "}
               <strong className="text-blue-600 dark:text-blue-400">
-                No-code và Low-code
+                NO-CODE VÀ LOW-CODE
               </strong>
               , hệ thống HAutoML mang đến một giải pháp giúp người dùng không
               chuyên về công nghệ cũng có thể dễ dàng xây dựng và sử dụng các mô
