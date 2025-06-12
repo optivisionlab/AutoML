@@ -14,54 +14,64 @@ import {
 const MemberLab = () => {
   const members = [
     {
-      name: "Đỗ Mạnh Quang",
-      position: "AI Engineer",
-      image: "/lab-members/image.png",
+      name: "Đỗ Mạnh Quang (Founder)",
+      position: "Lecturer at Department of Computer Science, SICT, HaUI",
+      image: "/lab-members/quang.png",
+    },
+    {
+      name: "Nguyễn Thị Lan",
+      position: "PQA at NTQ Solution JSC",
+      image: "/lab-members/nguyenlan.jpg",
     },
     {
       name: "Nguyễn Thị Mỹ Khánh",
-      position: "Frontend Developer",
-      image: "/lab-members/z6692141262592_ea51456266918a25bc972e863afa5bab.jpg",
+      position: "BA/Frontend Developer at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/mykhanh.jpg",
     },
     {
       name: "Nguyễn Thanh Long",
-      position: "Backend Developer",
-      image: "/lab-members/z6682145384171_dae66d654815c5ce4a45835767ad2670.jpg",
+      position: "BrSE/AI Enginner at FPT Software",
+      image: "/lab-members/thanhlong.jpg",
     },
     {
       name: "Nguyễn Thị Minh",
-      position: "Backend Developer",
-      image: "/lab-members/Nguyen Thi Minh.JPG",
+      position: "BA/Backend Developer at FPT Telecom",
+      image: "/lab-members/nguyenminh.JPG",
     },
     {
       name: "Chử Thị Ánh",
-      position: "Backend Developer",
-      image: "/lab-members/LeVanAnh.jpg",
+      position: "Data Engineer at Samsung R&D Vietnam",
+      image: "/lab-members/chuanh.jpg",
     },
     {
       name: "Ngọ Công Bình",
-      position: "Backend Developer",
-      image: "/lab-members/TKL00076.jpeg",
+      position: "Backend Developer at Samsung Vietnam",
+      image: "/lab-members/binh.jpeg",
     },
     {
       name: "Bùi Huy Nam",
-      position: "AI Engineer",
+      position: "BrSE/Backend Developer at FPT Software",
       image: "/lab-members/BuiHuyNam.jpg",
     },
     {
       name: "Phan Đại Cương",
-      position: "AI Engineer",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
       image: "/lab-members/PhanDaiCuong.jpg",
     },
     {
       name: "Lê Văn Anh",
-      position: "Backend Developer",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
       image: "/lab-members/LeVanAnh.jpg",
     },
     {
-      name: "Nguyễn Quỳnh :v ????",
-      position: "Backend Developer",
-      image: "/lab-members/z6684553307085_268e1622168024729862855303cd6ee7.jpg",
+      name: "Nguyễn Thị Hải Quỳnh",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/haiquynh.jpg",
+    },
+    {
+      name: "Nguyễn Khánh Ly",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/khanhly.jpg",
     },
   ]
 

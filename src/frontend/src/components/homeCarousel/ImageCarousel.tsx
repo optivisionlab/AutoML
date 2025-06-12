@@ -6,11 +6,9 @@ import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carouse
 import Autoplay from "embla-carousel-autoplay";
 
 const images = [
-  "/lab-carousel/background.png",
-  "/lab-carousel/lab4.jpg",
-  "/lab-carousel/lab2.jpg",
-  "/lab-carousel/lab1.jpg",
   "/lab-carousel/t77503.jpg",
+  "/lab-carousel/lab1.jpg",
+  "/lab-carousel/background.png",
 ];
 
 export default function ImageCarousel() {
