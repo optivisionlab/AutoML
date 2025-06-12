@@ -54,7 +54,7 @@ export default function Header() {
 
       <div className="hidden md:flex items-center gap-10">
         {!session &&
-          ["Trang chủ", "Giới thiệu", "Về chúng tôi", "Liên hệ"].map((item, idx) => {
+          ["TRANG CHỦ", "GIỚI THIỆU", "VỀ CHÚNG TÔI", "LIÊN HỆ"].map((item, idx) => {
             const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
             return (
               <Link
@@ -62,7 +62,7 @@ export default function Header() {
                 href={hrefs[idx]}
                 scroll={true}
                 onClick={() => setMobileMenuOpen(false)}
-                className="block text-sm font-medium text-center py-3 text-foreground hover:text-[#376FF9] transition-colors duration-200"
+                className="block text-base font-medium text-center py-3 text-foreground hover:text-[#376FF9] transition-colors duration-200"
               >
                 {item}
               </Link>
@@ -94,13 +94,13 @@ export default function Header() {
               <div className="hidden md:flex items-center space-x-4">
                 <Button
                   onClick={() => signIn()}
-                  className="bg-[#376FF9] text-white hover:bg-[#2F5ED6]"
+                  className="bg-[#376FF9] text-white hover:bg-[#2F5ED6] text-base"
                 >
-                  Đăng nhập
+                  ĐĂNG NHẬP
                 </Button>
-                <span >Hoặc</span>
+                {/* <span >Hoặc</span> */}
                 <Button className="bg-[#376FF9] text-white hover:bg-[#2F5ED6]">
-                  <Link href={"/register"}>Đăng ký</Link>
+                  <Link href={"/register"} className="text-base">ĐĂNG KÝ</Link>
                 </Button>
               </div>
             )}
