@@ -129,7 +129,7 @@ export default function Home() {
               <div className="flex items-start text-sm text-gray-800 dark:text-gray-200 mb-2">
                 <MapPin className="w-4 h-4 mt-0.5 mr-2" />
                 <span>
-                  Số 298 đường Cầu Diễn, phường Minh Khai, quận Bắc Từ Liêm, Hà Nội
+                  Đại Học Công Nghiệp Hà Nội, Số 298 đường Cầu Diễn, phường Minh Khai, quận Bắc Từ Liêm, Hà Nội
                 </span>
               </div>
               <div className="flex items-start text-sm text-orange-500 mb-4">
