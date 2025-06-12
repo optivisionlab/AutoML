@@ -115,7 +115,7 @@ const Page = () => {
       });
       fetchDatasets();
     } catch (err) {
-      console.log("Lỗi xoá:", err);
+      console.error("Lỗi xoá:", err);
       toast({
         title: "Xóa thất bại",
         description: "Có lỗi xảy ra khi xoá bộ dữ liệu.",
@@ -141,7 +141,7 @@ const Page = () => {
               className="bg-[#1e8449] text-white hover:bg-[#196f3d] px-6 py-2 rounded-md"
               onClick={() => setAddDialogOpen(true)}
             >
-               <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
+              <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
             </Button>
           </div>
         </CardHeader>
@@ -216,19 +216,18 @@ const Page = () => {
       )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader className="text-center space-y-2">
-            <AlertDialogTitle className="text-lg font-semibold text-center">
+        <AlertDialogContent className="bg-white dark:bg-[#171717] text-gray-900 dark:text-gray-100 shadow-xl p-6 rounded-xl w-full max-w-md">
+          <AlertDialogHeader className="space-y-2">
+            <AlertDialogTitle className="text-lg font-semibold">
               Bạn có chắc chắn muốn xoá?
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-center text-gray-500">
-              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi
-              hệ thống.
+            <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
+              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi hệ thống.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <AlertDialogFooter className="flex justify-center gap-4 mt-4">
-            <AlertDialogCancel className="px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-100">
+            <AlertDialogCancel className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800">
               Hủy
             </AlertDialogCancel>
             <AlertDialogAction

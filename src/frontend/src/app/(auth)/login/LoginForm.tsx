@@ -140,7 +140,7 @@ const LoginForm = () => {
             </Link>
           </p>
 
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]">
             Đăng nhập
           </Button>
         </form>

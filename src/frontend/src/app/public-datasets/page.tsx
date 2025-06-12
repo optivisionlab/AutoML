@@ -59,7 +59,7 @@ const Page = () => {
   }, []);
 
   return (
-    <Card className="max-w-6xl mx-auto mt-8 shadow-md">
+    <Card className="max-w-6xl mx-auto mt-8 shadow-md dark:bg-[#171717]">
       <CardHeader>
         <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
           Bộ dữ liệu có sẵn

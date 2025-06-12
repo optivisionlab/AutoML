@@ -140,7 +140,7 @@ const ResultPage = ({ params }: Props) => {
 
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/api-push-kafka/?user_id=${session.user.id}&data_id=${datasetID}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/api-push-kafka?user_id=${session.user.id}&data_id=${datasetID}`,
           {
             method: "POST",
             headers: {

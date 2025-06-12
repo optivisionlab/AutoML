@@ -88,7 +88,7 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
     <>
       {/* Dialog chỉnh sửa dữ liệu */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        <DialogContent className="dark:bg-[#171717]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-center w-full">
               Chỉnh sửa dữ liệu

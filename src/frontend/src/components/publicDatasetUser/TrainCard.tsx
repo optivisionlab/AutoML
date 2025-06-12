@@ -28,7 +28,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   const router = useRouter();
 
   const [step, setStep] = useState(1);
-  const [selectedOption, setSelectedOption] = useState("new-model");
+  const [selectedOption, setSelectedOption] = useState("");
   const [method, setMethod] = useState("");
   const [listFeature, setListFeature] = useState<string[]>([]);
   const [selectedTarget, setSelectedTarget] = useState("");
@@ -48,7 +48,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
           setListFeature(list_feature);
         })
         .catch((err) => {
-          console.log("Lỗi khi gọi API:", err);
+          console.error("Lỗi khi gọi API:", err);
           alert("Không thể tải dữ liệu huấn luyện.");
         });
     }
@@ -98,7 +98,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   };
 
   return (
-    <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
+    <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl dark:bg-[#171717]">
       <CardHeader className="text-center text-xl font-semibold text-[#3b6cf5]">
         Huấn luyện cho bộ dữ liệu: {datasetName}
       </CardHeader>
@@ -134,7 +134,11 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại
               </Button>
-              <Button onClick={handleNext} className="bg-[#3a6df4] text-white">
+              <Button
+                onClick={handleNext}
+                disabled={!selectedOption}
+                className="bg-[#3a6df4] text-white disabled:opacity-50 dark:hover:bg-[#2f5ed6]"
+              >
                 Tiếp theo
               </Button>
             </div>
@@ -174,7 +178,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               <Button
                 onClick={handleNext}
                 disabled={!method}
-                className="bg-[#3a6df4] text-white disabled:opacity-50"
+                className="bg-[#3a6df4] text-white disabled:opacity-50 dark:hover:bg-[#2f5ed6]"
               >
                 Tiếp theo
               </Button>
@@ -185,7 +189,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
         {step === 3 && (
           <div className="space-y-6 mt-6">
             <div>
-              <Label className="block font-medium text-gray-700 mb-2">
+              <Label className="block font-medium text-gray-700 mb-2 dark:text-white">
                 Thuộc tính mục tiêu:
               </Label>
               <RadioGroup
@@ -210,7 +214,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
             </div>
 
             <div>
-              <Label className="block font-medium text-gray-700 mb-2">
+              <Label className="block font-medium text-gray-700 mb-2 dark:text-white">
                 Thuộc tính đưa vào huấn luyện:
               </Label>
               <div className="grid grid-cols-2 gap-3">
@@ -232,7 +236,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
 
             {/* Chỉ số đánh giá */}
             <div>
-              <Label className="block font-medium text-gray-700 mb-2">
+              <Label className="block font-medium text-gray-700 mb-2 dark:text-white">
                 Chỉ số đánh giá:
               </Label>
               <RadioGroup
@@ -268,11 +272,11 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button className="bg-[#3a6df4] text-white">
+                  <Button className="bg-[#3a6df4] text-white dark:hover:bg-[#2f5ed6]">
                     Bắt đầu huấn luyện
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent className="dark:bg-[#171717]">
                   <AlertDialogHeader>
                     <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
                     <AlertDialogDescription>
@@ -281,7 +285,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Hủy</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white">
+                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white dark:hover:bg-[#2f5ed6]">
                       Đồng ý
                     </AlertDialogAction>
                   </AlertDialogFooter>
