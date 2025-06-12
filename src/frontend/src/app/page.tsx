@@ -1,30 +1,19 @@
 import Image from "next/image";
 import MemberLab from "@/components/memberLab/MemberLab";
-import { Mail, MapPin} from "lucide-react";
+import { Mail, MapPin } from "lucide-react";
 import { FaFacebook, FaYoutube, FaLinkedin } from "react-icons/fa";
 import Link from "next/link";
+import ImageCarousel from "@/components/homeCarousel/ImageCarousel";
 
 
 export default function Home() {
+
 
   return (
     <>
       {/* Header Section */}
       <section id="home" className="w-full relative">
-        <div className="relative w-full h-[60vh] sm:h-[70vh] md:h-[90vh]">
-          <Image
-            src="/Chung-chi-PCI-DSS-04.png"
-            alt="Nền"
-            layout="fill"
-            objectFit="cover"
-            className="z-0"
-          />
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center px-4 text-center">
-            <div className="text-white font-semibold whitespace-nowrap text-[4.5vw] sm:text-[3vw] md:text-[2.5vw] lg:text-[2.5vw]">
-              Chúng tôi cung cấp giải pháp tốt nhất cho <br /> Tự động hóa học máy
-            </div>
-          </div>
-        </div>
+        <ImageCarousel /> {/* Sử dụng carousel */}
       </section>
 
       {/* Introduction Section */}

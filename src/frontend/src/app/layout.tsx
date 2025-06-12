@@ -9,10 +9,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
-  title: "AutoML",
+  title: "HAutoML",
   description: "This is an AutoML system, created by OptivisionLab",
   icons: {
-    icon: "/logoHautoMLNotext.png",
+    icon: "favicon_io/favicon.ico",
+    apple: "favicon_io/apple-touch-icon.png",
+    shortcut: "favicon_io/favicon-32x32.png",
   },
 };
 
