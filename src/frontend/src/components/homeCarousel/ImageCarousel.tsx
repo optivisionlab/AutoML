@@ -6,17 +6,16 @@ import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carouse
 import Autoplay from "embla-carousel-autoplay";
 
 const images = [
-  "/lab-carousel/Chung-chi-PCI-DSS-04.png",
-  "/lab-carousel/background.png", 
-  "/lab-carousel/lab4.jpg", 
-  "/lab-carousel/lab3.jpg",
+  "/lab-carousel/background.png",
+  "/lab-carousel/lab4.jpg",
   "/lab-carousel/lab2.jpg",
   "/lab-carousel/lab1.jpg",
+  "/lab-carousel/t77503.jpg",
 ];
 
 export default function ImageCarousel() {
   const plugin = React.useRef(
-    Autoplay({ delay: 2000, stopOnInteraction: false }) // Chuyển ảnh sau 2 giây
+    Autoplay({ delay: parseInt(process.env.NEXT_PUBLIC_TIMEOUT_CAROUSEL || "10000", 10), stopOnInteraction: false })
   );
 
   return (
