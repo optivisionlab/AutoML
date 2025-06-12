@@ -20,6 +20,13 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 type TrainingJob = {
   _id: string;
@@ -30,7 +37,7 @@ type TrainingJob = {
   best_model?: string;
   best_score?: number;
   create_at?: number;
-  status: number; // 0 = đang training, 1 = đã hoàn thành
+  status: number;
 };
 
 const formatDate = (timestamp?: number): string => {
@@ -45,12 +52,15 @@ const formatDate = (timestamp?: number): string => {
   });
 };
 
-
 const TrainingHistory = () => {
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
   const { data: session } = useSession();
   const router = useRouter();
+
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 5;
 
   useEffect(() => {
     const fetchTrainingJobs = async () => {
@@ -82,6 +92,21 @@ const TrainingHistory = () => {
     fetchTrainingJobs();
   }, [session?.user?.id]);
 
+  const handleSortByDate = () => {
+    const sortedJobs = [...jobs].sort((a, b) => {
+      const timeA = a.create_at || 0;
+      const timeB = b.create_at || 0;
+      return sortAsc ? timeA - timeB : timeB - timeA;
+    });
+
+    setJobs(sortedJobs);
+    setSortAsc(!sortAsc);
+  };
+
+  const totalPages = Math.ceil(jobs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentJobs = jobs.slice(startIndex, startIndex + itemsPerPage);
+
   return (
     <Card className="max-w-6xl mx-auto mt-8 shadow-md">
       <CardHeader>
@@ -97,59 +122,124 @@ const TrainingHistory = () => {
             Không có lịch sử huấn luyện nào.
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tên bộ dữ liệu</TableHead>
-                <TableHead>Mô hình tốt nhất</TableHead>
-                <TableHead>Độ chính xác</TableHead>
-                <TableHead>Ngày huấn luyện</TableHead>
-                <TableHead>Trạng thái</TableHead>
-                <TableHead className="text-center">Hành động</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobs.map((job) => (
-                <TableRow key={job._id}>
-                  <TableCell>{job.data?.name || "Không rõ"}</TableCell>
-                  <TableCell>
-                    {job.status === 1
-                      ? job.best_model || "Không rõ"
-                      : "Đang xử lý"}
-                  </TableCell>
-                  <TableCell>
-                    {job.status === 1 && job.best_score !== undefined
-                      ? `${(job.best_score * 100).toFixed(2)}%`
-                      : "Đang xử lý"}
-                  </TableCell>
-                  <TableCell>{formatDate(job.create_at)}</TableCell>
-                  <TableCell>
-                    {job.status === 1 ? <Badge variant="outline" className="bg-green-100 text-green-800">Đã hoàn thành</Badge>
-                      : <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-                        Đang training
-                      </Badge>}
-                  </TableCell>
-                  <TableCell className="text-center">
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tên bộ dữ liệu</TableHead>
+                  <TableHead>Mô hình tốt nhất</TableHead>
+                  <TableHead>Độ chính xác</TableHead>
+                  <TableHead>
                     <Button
-                      variant="default"
-                      className={`px-4 py-2 rounded-md text-white ${job.status === 1
+                      variant="ghost"
+                      className="flex items-center gap-1 p-0 hover:bg-transparent text-sm text-gray-700"
+                      onClick={handleSortByDate}
+                    >
+                      Ngày huấn luyện {sortAsc ? "↑" : "↓"}
+                    </Button>
+                  </TableHead>
+                  <TableHead>Trạng thái</TableHead>
+                  <TableHead className="text-center">Hành động</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentJobs.map((job) => (
+                  <TableRow key={job._id}>
+                    <TableCell>{job.data?.name || "Không rõ"}</TableCell>
+                    <TableCell>
+                      {job.status === 1
+                        ? job.best_model || "Không rõ"
+                        : "Đang xử lý"}
+                    </TableCell>
+                    <TableCell>
+                      {job.status === 1 && job.best_score !== undefined
+                        ? `${(job.best_score * 100).toFixed(2)}%`
+                        : "Đang xử lý"}
+                    </TableCell>
+                    <TableCell>{formatDate(job.create_at)}</TableCell>
+                    <TableCell>
+                      {job.status === 1 ? (
+                        <Badge
+                          variant="outline"
+                          className="bg-green-100 text-green-800"
+                        >
+                          Đã hoàn thành
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="secondary"
+                          className="bg-yellow-100 text-yellow-800"
+                        >
+                          Đang training
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        variant="default"
+                        className={`px-4 py-2 rounded-md text-white ${job.status === 1
                           ? "bg-[#3a6df4] hover:bg-[#5b85f7]"
                           : "bg-gray-400 cursor-not-allowed"
-                        }`}
-                      onClick={() => {
-                        if (job.status === 1) {
-                          router.push(`/training-history/${job.job_id}`);
-                        }
-                      }}
-                      disabled={job.status !== 1}
-                    >
-                      Xem chi tiết
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                          }`}
+                        onClick={() => {
+                          if (job.status === 1) {
+                            router.push(`/training-history/${job.job_id}`);
+                          }
+                        }}
+                        disabled={job.status !== 1}
+                      >
+                        Xem chi tiết
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination className="mt-4 justify-center">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                      className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                    />
+                  </PaginationItem>
+
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <PaginationItem key={i}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setCurrentPage(i + 1)}
+                        className={`px-3 ${currentPage === i + 1
+                            ? "bg-white border border-gray-300 text-black" // trang hiện tại
+                            : ""
+                          }`}
+                      >
+                        {i + 1}
+                      </Button>
+                    </PaginationItem>
+                  ))}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={() =>
+                        setCurrentPage((prev) =>
+                          Math.min(prev + 1, totalPages)
+                        )
+                      }
+                      className={
+                        currentPage === totalPages
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

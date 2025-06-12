@@ -89,7 +89,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md dark:bg-[#171717]">
           <DialogHeader className="flex flex-col items-center text-center">
             <DialogTitle>Thêm bộ dữ liệu</DialogTitle>
             <DialogDescription>
