@@ -69,7 +69,7 @@ const MemberLab = () => {
       image: "/lab-members/haiquynh.jpg",
     },
     {
-      name: "Nguyễn Khánh Ly",
+      name: "Nguyễn Thị Khánh Ly",
       position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
       image: "/lab-members/khanhly.jpg",
     },
@@ -80,9 +80,10 @@ const MemberLab = () => {
       <CarouselContent>
         {members.map((member, index) => (
           <CarouselItem key={index} className="md:basis-1/2 lg:basis-1/3">
-            <div className="p-4">
-              <Card className="overflow-hidden rounded-xl shadow-md transition hover:shadow-lg">
-                <CardContent className="p-0">
+            <div className="p-4 h-full">
+              <Card className="h-full overflow-hidden rounded-xl shadow-md transition hover:shadow-lg flex flex-col">
+                <CardContent className="p-0 flex flex-col h-full">
+                  {/* Image */}
                   <Image
                     src={member.image}
                     alt={member.name}
@@ -90,7 +91,8 @@ const MemberLab = () => {
                     height={300}
                     className="w-full h-60 object-cover"
                   />
-                  <div className="p-4 text-center">
+                  {/* Text */}
+                  <div className="p-4 text-center flex-1 flex flex-col justify-between">
                     <h3 className="text-lg font-semibold">{member.name}</h3>
                     <p className="text-sm text-muted-foreground">{member.position}</p>
                   </div>

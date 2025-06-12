@@ -25,6 +25,34 @@ export default function Home() {
           Giới thiệu
         </h2>
 
+        {/* Video + Poem Block */}
+        <div className="flex flex-col md:flex-row gap-8 md:gap-12 mb-20">
+          {/* Poem */}
+          <div className="w-full md:w-1/3 flex items-center justify-center md:justify-start text-center md:text-left text-gray-800 dark:text-gray-200">
+            <div>
+              <p className="text-xl leading-relaxed italic mb-4">
+                "Không có việc gì khó<br />
+                Chỉ sợ lòng không bền<br />
+                Đào núi và lấp biển<br />
+                Quyết chí ắt làm nên"
+              </p>
+              <p className="font-semibold">– Chủ tịch Hồ Chí Minh</p>
+            </div>
+          </div>
+
+          {/* Video */}
+          <div className="w-full md:w-2/3 aspect-video">
+            <iframe
+              className="w-full h-full rounded-lg shadow-md border-0"
+              src="https://www.youtube.com/embed/WoIaAo9LLLM?si=PIShGb5HHVV_HJ0n"
+              title="Hệ thống HAutoML - Giới thiệu"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            ></iframe>
+          </div>
+        </div>
+
         {/* Block 1 */}
         <div className="flex flex-col md:flex-row items-center gap-8 mb-16">
           <div className="flex-shrink-0">
