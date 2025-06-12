@@ -124,9 +124,9 @@ const Profile = () => {
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
-  
+
     const allowedTypes = ["image/jpeg", "image/png"];
-  
+
     if (!allowedTypes.includes(selectedFile.type)) {
       toast({
         title: "Định dạng ảnh không hợp lệ",
@@ -136,13 +136,13 @@ const Profile = () => {
       });
       return;
     }
-  
+
     if (selectedFile && isEditing) {
       setFile(selectedFile);
       setAvatarUrl(URL.createObjectURL(selectedFile));
     }
   };
-  
+
 
   useEffect(() => {
     if (!isEditing) {
@@ -174,8 +174,6 @@ const Profile = () => {
         window.dispatchEvent(new Event("avatar-updated"));
       }
 
-      console.log("editFormData", editFormData);
-
       await axios.put(
         `${process.env.NEXT_PUBLIC_BASE_API}/update/${username}`,
         editFormData,
@@ -198,7 +196,7 @@ const Profile = () => {
       setIsEditing(false);
       setIsAlertDialogOpen(false);
     } catch (error) {
-      console.log("❌ Lỗi cập nhật thông tin:", error);
+      console.error("❌ Lỗi cập nhật thông tin:", error);
       toast({
         title: "Cập nhật thất bại",
         description: "Đã xảy ra lỗi khi cập nhật.",
@@ -274,34 +272,34 @@ const Profile = () => {
     );
   }
 
-  const InfoRow = ({
-    icon: Icon,
-    label,
-    value,
-  }: {
-    icon: any;
-    label: string;
-    value: string;
-  }) => (
-    <div className="flex items-start gap-4 p-4 border rounded-lg shadow-sm">
-      <div className="flex-shrink-0 mt-1">
-        <div className="bg-[#dbeafe] text-[#3c6df7] rounded-full p-2 flex items-center justify-center w-10 h-10">
-          <Icon className="w-6 h-6" />
-        </div>
-      </div>
-      <div className="flex flex-col">
-        <Label className="text-sm text-muted-foreground">{label}</Label>
-        <span className="text-base font-medium">{value}</span>
+const InfoRow = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+}) => (
+  <div className="flex items-start gap-4 p-4 border rounded-lg shadow-sm bg-white dark:bg-[#1e1e1e]">
+    <div className="flex-shrink-0 mt-1">
+      <div className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 rounded-full p-2 flex items-center justify-center w-10 h-10">
+        <Icon className="w-6 h-6" />
       </div>
     </div>
-  );
+    <div className="flex flex-col">
+      <Label className="text-sm text-muted-foreground">{label}</Label>
+      <span className="text-base font-medium text-gray-900 dark:text-gray-100">{value}</span>
+    </div>
+  </div>
+);
 
   return (
     <>
       <Card className="w-[800px] mx-auto mt-10 p-4">
         <CardHeader className="space-y-4">
           <div className="flex justify-between items-center">
-            <h1 className="text-xl font-semibold text-[#191919]">
+            <h1 className="text-xl font-semibold text-[#191919] dark:text-white">
               Thông tin cá nhân
             </h1>
             {!isEditing && (
@@ -346,8 +344,8 @@ const Profile = () => {
           {/* Tên hiển thị */}
           <CardTitle className="text-center text-lg">
             {user?.fullName}
-            <span className="block text-gray-800 opacity-70 text-sm">
-              {user?.username}
+            <span className="block text-gray-800 opacity-70 text-sm dark:text-white">
+              @{user?.username}
             </span>
           </CardTitle>
         </CardHeader>
@@ -465,18 +463,18 @@ const Profile = () => {
                   <AlertDialogOverlay className="fixed inset-0 bg-black/60 z-40" />
 
                   {/* Alert dialog xác nhận */}
-                  <AlertDialogContent className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white shadow-xl p-6 rounded-xl w-full max-w-md">
+                  <AlertDialogContent className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-[#1e1e1e] shadow-xl p-6 rounded-xl w-full max-w-md">
                     <AlertDialogHeader className="text-center space-y-2">
-                      <AlertDialogTitle className="text-xl font-semibold text-center">
+                      <AlertDialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                         XÁC NHẬN
                       </AlertDialogTitle>
-                      <AlertDialogDescription className="text-gray-600 text-center">
+                      <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
                         Bạn có chắc chắn muốn lưu các thay đổi này không?
                       </AlertDialogDescription>
                     </AlertDialogHeader>
 
-                    <AlertDialogFooter className="mt-6 flex !justify-center gap-4">
-                      <AlertDialogCancel className="bg-red-600 w-20 text-white hover:bg-red-500 hover:text-white px-4 py-2 rounded-md">
+                    <AlertDialogFooter className="mt-6 flex w-full justify-center gap-4">
+                      <AlertDialogCancel className="bg-red-600 w-20 text-white hover:bg-red-500 px-4 py-2 rounded-md">
                         Hủy
                       </AlertDialogCancel>
                       <AlertDialogAction
@@ -515,8 +513,8 @@ const Profile = () => {
                   user?.gender === "male"
                     ? "Nam"
                     : user?.gender === "female"
-                    ? "Nữ"
-                    : "Khác"
+                      ? "Nữ"
+                      : "Khác"
                 }
               />
               <InfoRow

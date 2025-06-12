@@ -108,16 +108,17 @@ print(response.text)`;
 
   return (
     <div className="max-w-4xl mx-auto mt-10 px-4">
-      <Card className="shadow-md border border-border">
+      <Card className="shadow-md border border-border bg-white dark:bg-[#1e1e1e] text-gray-900 dark:text-gray-100">
         <CardHeader className="space-y-2">
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
+          <CardTitle className="text-2xl font-bold text-[#3b6cf5] dark:text-[#6587f5] text-center w-full">
             Thông tin tích hợp mô hình
           </CardTitle>
+
           <div className="flex justify-end gap-2">
             {modelActivated ? (
               <Button
                 variant="destructive"
-                className="bg-red-600 hover:bg-red-700"
+                className="bg-red-600 hover:bg-red-700 text-white"
                 onClick={() => setActionType("disable")}
               >
                 Hủy kích hoạt
@@ -125,42 +126,41 @@ print(response.text)`;
             ) : (
               <Button
                 variant="default"
-                className="bg-green-600 hover:bg-green-700"
+                className="bg-green-600 hover:bg-green-700 text-white"
                 onClick={() => setActionType("enable")}
               >
                 Kích hoạt
               </Button>
             )}
           </div>
-
         </CardHeader>
 
         <CardContent className="space-y-3 text-sm">
           <span>
             <strong>Trạng thái mô hình:</strong>{" "}
             {modelActivated ? (
-              <span className="text-green-600 font-medium">Đã kích hoạt</span>
+              <span className="text-green-500 font-medium">Đã kích hoạt</span>
             ) : (
-              <span className="text-yellow-600 font-medium">Chưa kích hoạt</span>
+              <span className="text-yellow-500 font-medium">Chưa kích hoạt</span>
             )}
           </span>
 
           <div className="flex items-start gap-2">
-            <span className="text-green-600">✔</span>
+            <span className="text-green-500">✔</span>
             <span><strong>file_data:</strong> là file dữ liệu cần thử nghiệm</span>
           </div>
 
           <div className="flex items-start gap-2">
-            <span className="text-green-600">✔</span>
+            <span className="text-green-500">✔</span>
             <span><strong>JOB_ID:</strong> {jobID || "job ID sẽ được cung cấp"}</span>
           </div>
 
           <div className="flex items-start gap-2">
-            <span className="text-green-600">✔</span>
+            <span className="text-green-500">✔</span>
             <span><strong>URL_API:</strong> Đường dẫn API sẽ được cung cấp</span>
           </div>
 
-          <div className="relative bg-gray-100 border border-muted rounded-lg p-4">
+          <div className="relative bg-gray-100 dark:bg-[#2a2a2a] border border-muted rounded-lg p-4">
             <pre className="whitespace-pre-wrap text-xs md:text-sm font-mono text-foreground">
               <code>{curlCommand}</code>
             </pre>
@@ -179,7 +179,7 @@ print(response.text)`;
             <span><strong>Code python minh họa:</strong></span>
           </div>
 
-          <div className="relative bg-gray-100 border border-muted rounded-lg p-4">
+          <div className="relative bg-gray-100 dark:bg-[#2a2a2a] border border-muted rounded-lg p-4">
             <pre className="whitespace-pre-wrap text-xs md:text-sm font-mono text-foreground">
               <code>{pythonCode}</code>
             </pre>
@@ -200,23 +200,24 @@ print(response.text)`;
         <AlertDialogTrigger asChild>
           <span />
         </AlertDialogTrigger>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-white dark:bg-[#171717] text-gray-900 dark:text-gray-100">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {actionType === "enable"
                 ? "Bạn có chắc chắn muốn kích hoạt mô hình này không?"
                 : "Bạn có chắc chắn muốn hủy kích hoạt mô hình này không?"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
               Hành động này sẽ cập nhật trạng thái hoạt động của mô hình.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogCancel className="border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800">
+              Hủy
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                handleToggleModel(actionType === "enable" ? 1 : 0);
-              }}
+              onClick={() => handleToggleModel(actionType === "enable" ? 1 : 0)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               Xác nhận
             </AlertDialogAction>

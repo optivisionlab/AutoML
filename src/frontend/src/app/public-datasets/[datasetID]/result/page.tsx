@@ -342,23 +342,23 @@ const ResultPage = ({ params }: Props) => {
           </div>
         </Card>
       ) : (
-        <div className="flex items-center justify-center min-h-screen">
-          <Card className="w-full max-w-md bg-white border border-green-200 shadow-lg rounded-xl">
-            <CardHeader className="flex items-center gap-3 border-b border-green-100 py-3 px-4">
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-[#0f0f0f]">
+          <Card className="w-full max-w-md bg-white dark:bg-[#171717] border border-green-200 dark:border-green-800 shadow-lg rounded-xl">
+            <CardHeader className="flex items-center gap-3 border-b border-green-100 dark:border-green-800 py-3 px-4">
               <CheckCircle className="text-green-500 w-5 h-5" />
-              <CardTitle className="text-green-600 text-base font-semibold">
+              <CardTitle className="text-green-600 dark:text-green-400 text-base font-semibold">
                 Đã tải dữ liệu vào hàng chờ thành công
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 py-5 px-4">
-              <p className="text-sm text-gray-700 leading-relaxed">
+              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                 {error}
               </p>
               <button
                 onClick={() => {
-                  router.push("/training-history")
+                  router.push("/training-history");
                 }}
-                className="w-full text-center py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition duration-200"
+                className="w-full text-center py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition duration-200"
               >
                 ← Về trang lịch sử huấn luyện
               </button>
