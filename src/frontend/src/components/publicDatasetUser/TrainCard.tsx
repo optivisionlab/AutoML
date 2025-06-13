@@ -33,6 +33,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   const [listFeature, setListFeature] = useState<string[]>([]);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (step === 3 && datasetID) {
@@ -90,12 +91,15 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
     sessionStorage.setItem("list_feature", JSON.stringify(updated));
   };
 
-  const handleStartTraining = () => {
-    if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
+const handleStartTraining = () => {
+  if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
 
-    // Chuyển sang trang kết quả
+  setIsLoading(true);
+
+  setTimeout(() => {
     router.push(`/public-datasets/${datasetID}/result`);
-  };
+  }, 100); 
+};
 
   return (
     <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl dark:bg-[#171717]">

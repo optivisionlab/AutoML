@@ -58,8 +58,10 @@ export default function Header() {
             const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
             return (
               <Link
-                key={idx}
-                href={hrefs[idx]}
+                href={{
+                  pathname: "/",
+                  hash: hrefs[idx].replace("#", ""),
+                }}
                 scroll={true}
                 onClick={() => setMobileMenuOpen(false)}
                 className="block text-base font-medium text-center py-3 text-foreground hover:text-[#376FF9] transition-colors duration-200"

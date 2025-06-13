@@ -72,7 +72,7 @@ export default function ImageCarousel() {
             MỞ TÀI KHOẢN ĐỂ TRẢI NGHIỆM DÙNG THỬ MIỄN PHÍ
           </div>
           <div className="text-[5vw] sm:text-[3.5vw] md:text-[2.5vw] lg:text-[2vw] leading-tight font-normal">
-            HAUTOML - GIẢI PHÁP TỐT NHẤT CHO QUY TRÌNH TỰ ĐỘNG HÓA HỌC MÁY
+            HAUTOML - MÃ NGUỒN MỞ TUYỆT VỜI CHO QUY TRÌNH TỰ ĐỘNG HÓA HỌC MÁY
           </div>
 
           {!session?.user?.id && (
