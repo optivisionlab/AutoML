@@ -7,6 +7,7 @@ import Header from "@/components/header/Header";
 import SideNav from "@/components/sideNav/SideNav";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
+import TopLoader from "@/components/top-loader";
 
 export const metadata: Metadata = {
   title: "HAutoML",
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: IProps) {
           <ClientSessionProvider>
             <Providers>
               <Header />
+              <TopLoader/>
               <div className="flex">
                 <SideNav />
                 <div className="w-full overflow-x-auto">
