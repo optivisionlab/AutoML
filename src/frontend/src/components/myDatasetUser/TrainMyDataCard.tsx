@@ -36,6 +36,7 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const { data: session } = useSession();
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (step === 3 && datasetID) {
@@ -98,11 +99,14 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   };
 
   const handleStartTraining = () => {
-    if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
+  if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
 
-    // Chuyển sang trang kết quả
-    router.push(`/my-datasets/${datasetID}/result`);
-  };
+  setIsLoading(true);
+
+  setTimeout(() => {
+    router.push(`/public-datasets/${datasetID}/result`);
+  }, 100); 
+};
 
   return (
     <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl">

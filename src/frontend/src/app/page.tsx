@@ -13,7 +13,7 @@ export default function Home() {
     <>
       {/* Header Section */}
       <section id="home" className="w-full relative">
-        <ImageCarousel /> {/* Sử dụng carousel */}
+        <ImageCarousel />
       </section>
 
       {/* Introduction Section */}
@@ -44,7 +44,7 @@ export default function Home() {
           <div className="w-full md:w-2/3 aspect-video">
             <iframe
               className="w-full h-full rounded-lg shadow-md border-0"
-              src="https://www.youtube.com/embed/WoIaAo9LLLM?si=PIShGb5HHVV_HJ0n"
+              src="https://www.youtube.com/embed/WoIaAo9LLLM?autoplay=1&mute=1"
               title="Hệ thống HAutoML - Giới thiệu"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               referrerPolicy="strict-origin-when-cross-origin"

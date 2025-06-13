@@ -54,6 +54,7 @@ print(response.text)`;
       toast({
         title: "Đã sao chép!",
         description: "Lệnh đã được sao chép vào clipboard.",
+        className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
     } catch {
