@@ -1,10 +1,4 @@
-import pymongo
-import pandas as pd
-import yaml
-from pathlib import Path
-import os
 from database.database import get_database
-
 
 
 client = get_database()
