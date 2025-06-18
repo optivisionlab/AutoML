@@ -16,7 +16,7 @@ class User(BaseModel):
     date: str
     number: str
     fullName: str
-    role: Optional[str] = "user"
+    role: Optional[str] = None
     avatar: Optional[str] = None
 
 class UpdateUser(BaseModel):  # Dùng cho cập nhật thông tin người dùng
@@ -325,28 +325,43 @@ def handle_signup(new_user: User):
             status_code=status.HTTP_409_CONFLICT,
             detail="Người dùng đã tồn tại!"
         )
+        
+    
+    user_data = {
+        "username": new_user.username,
+        "email": new_user.email,
+        "fullName": new_user.fullName,
+        "password": new_user.password,
+        "gender": new_user.gender,
+        "number": new_user.number,
+        "date": new_user.date,
+        "role": "user", 
+        "avatar": None
+    }
 
-    result = users_collection.insert_one(new_user.dict())
+    result = users_collection.insert_one(user_data)
     # print(result)
     if result.inserted_id:
         return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
-            "username": new_user.username,
-            "email": new_user.email,
-            "gender": new_user.gender,
-            "date": new_user.date,
-            "fullName": new_user.fullName,
-            "number": new_user.number,
-            "role": new_user.role,
-            "avatar": new_user.avatar
+            "username": user_data["username"],
+            "email": user_data["email"],
+            "fullName": user_data["fullName"],
+            "gender": user_data["gender"],
+            "date": user_data["date"],
+            "number": user_data["number"],
+            "role": user_data["role"],
+            "avatar": user_data["avatar"]
         }
+
     )
     else:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Đã xảy ra lỗi khi thêm người dùng'
         )
+    
     
     
     
