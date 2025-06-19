@@ -29,6 +29,11 @@ const MemberLab = () => {
       image: "/lab-members/mykhanh.jpg",
     },
     {
+      name: "Nguyễn Hồng Quân",
+      position: "Application Security Engineer at Techcombank",
+      image: "/lab-members/NguyenHongQuan.jpg",
+    },
+    {
       name: "Nguyễn Thanh Long",
       position: "BrSE/AI Enginner at FPT Software",
       image: "/lab-members/thanhlong.jpg",
@@ -54,9 +59,24 @@ const MemberLab = () => {
       image: "/lab-members/BuiHuyNam.jpg",
     },
     {
+      name: "Trần Xuân Đức",
+      position: "Mobile/Backend Developer at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/TranXuanDuc_MobileDev.jpg",
+    },
+    {
+      name: "Lưu Hoàng Phúc",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/LuuHoangPhuc.jpg",
+    },
+    {
       name: "Phan Đại Cương",
       position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
       image: "/lab-members/PhanDaiCuong.jpg",
+    },
+    {
+      name: "Vũ Xuân Đông",
+      position: "Student Research Assistant at OptiVisionLab, SICT, HaUI",
+      image: "/lab-members/VuXuanDong.jpg",
     },
     {
       name: "Lê Văn Anh",
