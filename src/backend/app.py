@@ -458,6 +458,63 @@ def api_inference_model(job_id, file_data: UploadFile):
 def api_activate_model(job_id, activate=0):
     return update_activate_model(job_id, activate)
 
+
+# New API
+from automl.distributed import process, InputRequest, get_models, split_models, train_jsons
+
+@app.post("/distributed")
+def distributed(request: InputRequest):
+    """
+    Train model with distributed configuration
+    """
+    try:
+
+        futures = process(request)
+
+        # Wait result
+        results = []
+        for future in futures:
+            try:
+                result = future.result() # blocking call de doi ket qua
+                if result.get("success"):
+                    results.extend(result.get("results", []))
+
+            except Exception as e:
+                print(f"Error processing future: {str(e)}")
+
+        if not results:
+            raise HTTPException(
+                status_code=400,
+                detail="All workers failed to process models"
+            )
+            
+        return {
+            "success": True,
+            "results": results,
+            "processed_workers": len(futures),
+            "successful_workers": sum(1 for f in futures if not f.exception())
+        }
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/try")
+def try_train(request: InputRequest):
+    best_model_id, best_model, best_score, best_params, model_scores = train_jsons(request)
+
+    return {
+        "best_model_id": best_model_id,
+        "best_model": str(best_model),
+        "best_score": best_score,
+        "best_params": best_params,
+        "model_scores": model_scores
+    }
+    
+
+
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
     pass
