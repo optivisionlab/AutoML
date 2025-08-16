@@ -460,7 +460,7 @@ def api_activate_model(job_id, activate=0):
 
 
 # New API
-from automl.distributed import process, InputRequest, get_models, split_models, train_jsons
+from automl.distributed import process, InputRequest, train_jsons
 
 @app.post("/distributed")
 def distributed(request: InputRequest):
@@ -469,30 +469,13 @@ def distributed(request: InputRequest):
     """
     try:
 
-        futures = process(request)
-
-        # Wait result
-        results = []
-        for future in futures:
-            try:
-                result = future.result() # blocking call de doi ket qua
-                if result.get("success"):
-                    results.extend(result.get("results", []))
-
-            except Exception as e:
-                print(f"Error processing future: {str(e)}")
-
-        if not results:
-            raise HTTPException(
-                status_code=400,
-                detail="All workers failed to process models"
-            )
+        results, response_worker = process(request)
             
         return {
             "success": True,
             "results": results,
-            "processed_workers": len(futures),
-            "successful_workers": sum(1 for f in futures if not f.exception())
+            "processed_workers": len(response_worker),
+            "successful_workers": sum(1 for f in response_worker if not f.exception())
         }
         
     except ValueError as ve:
@@ -500,6 +483,7 @@ def distributed(request: InputRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+
 
 @app.post("/try")
 def try_train(request: InputRequest):

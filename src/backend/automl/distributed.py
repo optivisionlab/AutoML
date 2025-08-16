@@ -1,11 +1,18 @@
 from pydantic import BaseModel
 import pandas as pd
 import os, yaml
-import numpy as np
-import asyncio
 import httpx
-import requests
 from concurrent.futures import ThreadPoolExecutor
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
+from sklearn.discriminant_analysis import StandardScaler
+from sklearn.calibration import LabelEncoder
 
 from automl.engine import train_process
 
@@ -16,8 +23,8 @@ from automl.engine import train_process
 # Map: Ánh xạ mỗi model/config thành một task training riêng
 # Reduce: Tổng hợp kết quả (model có điểm số tốt nhất)
 workers = [
-    "http://0.0.0.0:4002",
-    "http://0.0.0.0:4001"
+    "http://0.0.0.0:4001",
+    "http://0.0.0.0:4002"
 ]
 
 class InputRequest(BaseModel):
@@ -52,21 +59,6 @@ def get_data_config_from_json_distribute(file_content: InputRequest):
         metric_list,
         models
     ) 
-
-
-
-# def reduce_function (results):
-#     """Tổng hợp kết quả và chọn model tốt nhất"""
-#     best_score = -1
-#     best_result = None
-
-#     for result in results:
-#         _, _, score, _, _ = result
-#         if score > best_score:
-#             best_score = score
-#             best_result = result
-    
-#     return best_result, results # Model tot nhat va toan bo ket qua. Chua dung toi
 
 
 
@@ -147,15 +139,72 @@ def run_mapreduce(data, config, metric_list, models):
             futures.append(future)
         
         return futures
+    
 
 
+def reduce_function(model_trains):
+    """Tổng hợp kết quả và chọn model tốt nhất"""
+    """
+    Args:
+        model_trains: Danh sách các đối tượng model đã train từ các worker
+        
+    Returns:
+        dict: Kết quả tổng hợp gồm best model và tất cả model_scores
+    """
+    results = []
+    for model in model_trains:
+        try:
+            result = model.result() # blocking call
+            if result.get("success"):
+                results.extend(result.get("results", []))
 
+        except Exception as e:
+            print(f"Error processing: {str(e)}")
+            continue
+    
+    if not results:
+        raise ValueError("No valid results found")
+
+    all_model_scores = []
+    model_id_counter = 0
+
+    # Gộp và đánh lại ID cho tất cả model
+    for model in results:
+        for model_score in model.get("model_scores", []):
+            if not isinstance(model_score, dict):
+                continue
+
+            model_score = model_score.copy()
+            model_score["model_id"] = model_id_counter
+            all_model_scores.append(model_score)
+            model_id_counter += 1
+    
+    if not all_model_scores:
+        raise ValueError("No valid model scores found")
+
+    # Chọn model tốt nhất theo accuracy
+    best_model_info = max(all_model_scores, key=lambda x: x["scores"]["accuracy"])
+    
+
+    return {
+        "best_model_id": str(best_model_info["model_id"]),
+        "best_model": best_model_info['model_name'],
+        "best_score": best_model_info["scores"]["accuracy"],
+        "best_params": best_model_info.get("best_params", {}),
+        "model_scores": all_model_scores
+    }
+
+
+# Quy trinh Map Reduce
 def process (file_content):
     data, config, metric_list, models = get_data_config_from_json_distribute(file_content)
 
-    futures = run_mapreduce(data, config, metric_list, models)
+    respone_worker = run_mapreduce(data, config, metric_list, models)
 
-    return futures
+    results = reduce_function(respone_worker)
+
+    return results, respone_worker
+
 
 
 # Xu ly tai mot server API http://localhost:9999/distributed
@@ -165,6 +214,10 @@ def train_jsons(item: InputRequest):
     data, config, metric_list, models = (
         get_data_config_from_json_distribute(item)
     )
+
+    data = pd.DataFrame(data)
+    for id, content in models.items():
+        content['model'] = eval(content['model'])()
 
     choose = config['choose']
     list_feature = config['list_feature']
