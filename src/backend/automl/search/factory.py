@@ -94,7 +94,7 @@ class SearchStrategyFactory:
         }
 
     @classmethod
-    def _auto_discover_strategies(cls):
+    def _auto_discover_strategies(cls) -> None:
         """Automatically discover and register strategies in automl.search.strategies"""
         if cls._initialized:
             return
@@ -131,3 +131,8 @@ class SearchStrategyFactory:
         strategy_name = strategy_config['name']
         config = {k: v for k, v in strategy_config.items() if k != 'name'}
         return self.get_strategy(strategy_name, **config)
+
+    @classmethod
+    def discover_strategies(cls):
+        """Discover and register strategies in automl.search.strategies"""
+        cls._auto_discover_strategies()
