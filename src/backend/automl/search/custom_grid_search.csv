@@ -1,13 +1,13 @@
 Method,C,kernel,gamma,Accuracy,Precision,Recall,F1-Score
-GridSearchCV,0.1,linear,auto,0.872,0.8726,0.872,0.8719
-GridSearchCV,0.1,linear,scale,0.872,0.8726,0.872,0.8719
-GridSearchCV,0.1,rbf,auto,0.854,0.8612,0.854,0.8533
-GridSearchCV,0.1,rbf,scale,0.853,0.8605,0.853,0.8522
-GridSearchCV,1.0,linear,auto,0.874,0.8744,0.874,0.874
-GridSearchCV,1.0,linear,scale,0.874,0.8744,0.874,0.874
-GridSearchCV,1.0,rbf,auto,0.862,0.8635,0.862,0.8619
-GridSearchCV,1.0,rbf,scale,0.862,0.8634,0.862,0.8619
-GridSearchCV,10.0,linear,auto,0.873,0.8737,0.873,0.8729
-GridSearchCV,10.0,linear,scale,0.873,0.8737,0.873,0.8729
-GridSearchCV,10.0,rbf,auto,0.822,0.8233,0.822,0.8218
-GridSearchCV,10.0,rbf,scale,0.822,0.8233,0.822,0.8218
+Custom Grid Search,0.1,linear,auto,0.873,0.874,0.873,0.8729
+Custom Grid Search,0.1,linear,scale,0.873,0.874,0.873,0.8729
+Custom Grid Search,0.1,rbf,auto,0.856,0.8635,0.856,0.8552
+Custom Grid Search,0.1,rbf,scale,0.856,0.8635,0.856,0.8552
+Custom Grid Search,1.0,linear,auto,0.869,0.8699,0.869,0.8689
+Custom Grid Search,1.0,linear,scale,0.869,0.8699,0.869,0.8689
+Custom Grid Search,1.0,rbf,auto,0.857,0.8581,0.857,0.8569
+Custom Grid Search,1.0,rbf,scale,0.857,0.8581,0.857,0.8569
+Custom Grid Search,10.0,linear,auto,0.87,0.8708,0.87,0.8699
+Custom Grid Search,10.0,linear,scale,0.87,0.8708,0.87,0.8699
+Custom Grid Search,10.0,rbf,auto,0.822,0.8236,0.822,0.8218
+Custom Grid Search,10.0,rbf,scale,0.822,0.8236,0.822,0.8218

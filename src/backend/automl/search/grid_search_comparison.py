@@ -40,23 +40,23 @@ sklearn_results = []
 custom_results = []
 
 print("Processing Custom Grid Search results...")
-for i, params in enumerate(grid_search_sklearn.cv_results_['params']):
+for i, params in enumerate(cv_results_custom['params']):
     row = {
-        "Method" : "GridSearchCV",
+        "Method" : "Custom Grid Search",
         'C': params['C'],
         'kernel': params['kernel'],
         'gamma': params['gamma'],
-        'Accuracy': round(grid_search_sklearn.cv_results_['mean_test_accuracy'][i], 4),
-        'Precision': round(grid_search_sklearn.cv_results_['mean_test_precision_macro'][i], 4),
-        'Recall': round(grid_search_sklearn.cv_results_['mean_test_recall_macro'][i], 4),
-        'F1-Score': round(grid_search_sklearn.cv_results_['mean_test_f1_macro'][i], 4)
+        'Accuracy': round(cv_results_custom['mean_test_accuracy'][i], 4),
+        'Precision': round(cv_results_custom['mean_test_precision'][i], 4),
+        'Recall': round(cv_results_custom['mean_test_recall'][i], 4),
+        'F1-Score': round(cv_results_custom['mean_test_f1'][i], 4)
     }
     custom_results.append(row)
 
 print("Processing Sklean Library results...")
 for i, params in enumerate(grid_search_sklearn.cv_results_['params']):
     row = {
-        "Method" : "Custom Grid Search",
+        "Method" : "Sklearn Grid Search CSV",
         'C': params['C'],
         'kernel': params['kernel'],
         'gamma': params['gamma'],
