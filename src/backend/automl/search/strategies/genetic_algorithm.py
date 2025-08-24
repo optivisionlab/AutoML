@@ -1,0 +1,208 @@
+from typing import List, Dict, Any, Tuple
+import numpy as np
+from sklearn.base import BaseEstimator
+from sklearn.model_selection import cross_val_score
+from ..base import SearchStrategy
+import random
+import copy
+
+class GeneticAlgorithm(SearchStrategy):
+    """Genetic Algorithm implementation for hyperparameter optimization"""
+
+    @staticmethod
+    def get_default_config() -> Dict[str, Any]:
+        config = SearchStrategy.get_default_config()
+        config.update({
+            'population_size': 50,
+            'generation': 20,
+            'mutation_rate': 0.1,
+            'crossover_rate': 0.8,
+            'elite_size': 5,
+            'tournament_size': 3,
+        })
+        return config
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.param_bounds = {}
+        self.param_types = {}
+
+    def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
+        """Encode parameter grid for genetic algorithm."""
+        encoded_grid = {}
+
+        for param_name, param_values in param_grid.items():
+            if isinstance(param_values,list):
+                encoded_grid[param_name] = list(range(len(param_values)))
+                self.param_bounds[param_name] = (0, len(param_values) - 1)
+                self.param_types[param_name] = ('categorical', param_values)
+            elif isinstance(param_values,tuple) and len(param_values) == 2:
+                min_val, max_val = param_values
+                encoded_grid[param_name] = (min_val, max_val)
+                self.param_bounds[param_name] = (min_val, max_val)
+                if isinstance(min_val, int) and isinstance(max_val, int):
+                    self.param_types[param_name] = ('integer', None)
+                else:
+                    self.param_types[param_name] = ('continuous', None)
+            else:
+                raise ValueError(f"Unsupported parameter type for {param_name}: {type(param_values)}")
+
+        return encoded_grid
+
+    def _decode_individual(self, individual: Dict[str, float]) -> Dict[str, Any]:
+        """Decode individual from genetic representation to actual parameter values."""
+        decoded = {}
+
+        for param_name, value in individual.items():
+            param_type, param_values = self.param_types[param_name]
+
+            if param_type == 'categorical':
+                index = int(round(value))
+                index = max(0, min(index, len(param_values) - 1))
+                decoded[param_name] = param_values[index]
+            elif param_type == 'integer':
+                decoded[param_name] = int(round(value))
+            else:
+                decoded[param_name] = float(value)
+
+        return decoded
+
+    def _create_individual(self) -> Dict[str, float]:
+        """Create an individual for genetic algorithm."""
+        individual = {}
+
+        for param_name, (min_val, max_val) in self.param_bounds.items():
+            individual[param_name] = random.uniform(min_val, max_val)
+
+        return individual
+
+    def _evaluate_individual(self, individual: Dict[str, float], model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> float:
+        """Evaluate an individual using cross-validation."""
+        try:
+            params = self._decode_individual(individual)
+
+            model.set_params(**params)
+
+            scores = cross_val_score(
+                model, X, y,
+                cv= self.config['cv'],
+                scoring=self.config['scoring'],
+                n_jobs=self.config['n_jobs'],
+                error_score=self.config['error_score']
+            )
+
+            return scores.mean()
+
+        except Exception:
+            return 0.0
+
+    def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores: List[float]) -> Dict[str, float]:
+        """Select an individual using tournament selection."""
+        tournament_indices = random.sample(range(len(population)), min(self.config['tournament_size'], len(population)))
+        tournament_fitness = [fitness_scores[i] for i in tournament_indices]
+        winner_index = tournament_indices[np.argmax(tournament_fitness)]
+        return copy.deepcopy(population[winner_index])
+
+    def _crossover(self, parent1: Dict[str, float], parent2: Dict[str, float]) -> Tuple[Dict[str, float], Dict[str, float]]:
+        """Perform a crossover between two individuals."""
+        if random.random() > self.config['crossover_rate']:
+            return copy.deepcopy(parent1), copy.deepcopy(parent2)
+
+        child1 = copy.deepcopy(parent1)
+        child2 = copy.deepcopy(parent2)
+
+        for param_name in parent1.keys():
+            if random.random() < 0.5:
+                child1[param_name], child2[param_name] = child2[param_name], child1[param_name]
+
+        return child1, child2
+
+    def _mutate(self, individual: Dict[str, float]) -> Dict[str, float]:
+        """Mutate an individual."""
+        mutated = copy.deepcopy(individual)
+
+        for param_name in mutated.keys():
+            if random.random() < self.config['mutation_rate']:
+                min_val, max_val = self.param_bounds[param_name]
+
+                current_val = mutated[param_name]
+                mutation_strength = (max_val - min_val) * 0.1
+                new_val = current_val + random.gauss(0, mutation_strength)
+
+                mutated[param_name] = max(min_val, min(new_val, max_val))
+
+        return mutated
+
+    def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
+        """Execute genetic algorithm search.
+
+               Args:
+                   model: The estimator to search over
+                   param_grid: Dictionary with parameters names as keys and ranges/lists as values
+                   X: Training data features
+                   y: Training data targets
+                   **kwargs: Additional configuration parameters
+
+               Returns:
+                   tuple: (best_params, best_score, cv_results)
+        """
+        self.set_config(**{k:v for k, v in kwargs.items() if k in self.config})
+
+        encoded_grid = self._encode_parameters(param_grid)
+        population = [self._create_individual() for _ in range(self.config['population_size'])]
+
+        all_individuals = []
+        all_scores = []
+
+        best_individual = None
+        best_score = float('-inf')
+
+        for generation in range(self.config['generations']):
+            fitness_scores = []
+
+            for individual in population:
+                score = self._evaluate_individual(individual, model, X, y)
+                fitness_scores.append(score)
+
+                all_individuals.append(self._decode_individual(individual))
+                all_scores.append(score)
+
+                if score > best_score:
+                    best_score = score
+                    best_individual = copy.deepcopy(individual)
+
+            new_population = []
+
+            elite_indices = np.argsort(fitness_scores)[-self.config['elite_size']:]
+            for idx in elite_indices:
+                new_population.append(copy.deepcopy(population[idx]))
+
+            while len(new_population) < self.config['population_size']:
+                parent1 = self._tournament_selection(population, fitness_scores)
+                parent2 = self._tournament_selection(population, fitness_scores)
+
+                child1, child2 = self._crossover(parent1, parent2)
+                child1 = self._mutate(child1)
+                child2 = self._mutate(child2)
+
+                new_population.extend([child1, child2])
+
+            population = new_population[:self.config['population_size']]
+
+        best_params = self._decode_individual(best_individual) if best_individual else {}
+
+        cv_results = {
+            'params': all_individuals,
+            'mean_test_score': all_scores,
+            'std_test_score': [0.0] * len(all_scores),
+            'rank_test_score': self._compute_ranks(all_scores)
+        }
+
+        return best_params, best_score, cv_results
+
+    def _compute_ranks(self, scores: List[float]) -> List[int]:
+        """Compute ranks for scores (1 = best)."""
+        sorted_indices = np.argsort(scores)[::-1]
+        ranks = np.empty_like(sorted_indices)
+        ranks[sorted_indices] = np.arange(1, len(scores) + 1)
+        return ranks.tolist()
