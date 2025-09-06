@@ -7,6 +7,26 @@ import numpy as np
 
 def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metric_sort='accuracy',
                 return_train_score=False):
+    """
+    Performs a grid search with cross-validation.
+
+    Args:
+        param_grid (dict): Dictionary with parameters to try.
+        model_func (callable): A function that returns an untrained model.
+        data (array-like): Feature data.
+        targets (array-like): Target data.
+        cv (int, optional): Number of cross-validation folds. Defaults to 5.
+        scoring (dict, optional): Scoring metrics. Defaults to accuracy, precision, recall, and f1-score.
+        metric_sort (str, optional): The metric to sort results by. Defaults to 'accuracy'.
+        return_train_score (bool, optional): If True, include training scores. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing best_params, best_score, best_all_scores, and cv_results_.
+
+    Raises:
+        ValueError: If `metric_sort` is not a key in `scoring`.
+    """
+
     if scoring is None:
         scoring = {
             'accuracy': accuracy_score,
@@ -54,6 +74,8 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
     keys = param_grid.keys()
     combinations = list(itertools.product(*(param_grid[key] for key in keys)))
 
+    # Processes each hyperparameter combination one by one, keeping track of its index.
+    # Inside the loop, a model is trained and evaluated using that specific combination.
     for idx, combination in enumerate(combinations):
         params = dict(zip(keys, combination))
         cv_results_['params'].append(params)
@@ -63,13 +85,16 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
         fit_times = []
         score_times = []
 
+        # StratifiedKFold is used to ensure that each fold has a representative distribution of classes.
         kf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
 
+        # For each fold, get the training and testing indices from the stratified k-fold split
         for fold, (train_index, test_index) in enumerate(kf.split(data, targets)):
             train_data, test_data = data[train_index], data[test_index]
             train_targets, test_targets = targets[train_index], targets[test_index]
 
             model_params = params.copy()
+            # If the model is SVC, set a fixed random_state for reproducibility
             if model_func.__name__ == 'SVC':
                 model_params['random_state'] = 42
 
@@ -84,6 +109,7 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
             score_time = time.time() - start_time
             score_times.append(score_time)
 
+            # Calculate test scores for each metric using the current fold's predictions
             for metric_name, metric_func in scoring.items():
                 score = metric_func(test_targets, predictions)
                 metric_scores[metric_name].append(score)
@@ -91,9 +117,10 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
 
                 if return_train_score:
                     train_predictions = model.predict(train_data)
-                    for metric_name, metric_func in scoring.items():
-                        score = metric_func(train_targets, train_predictions)
-                        train_scores[metric_name].append(score)
+                    # Calculate training scores for each metric using the current fold's training predictions
+                    for train_metric_name, train_metric_func in scoring.items():
+                        score = train_metric_func(train_targets, train_predictions)
+                        train_scores[train_metric_name].append(score)
 
         average_score = {metric: np.mean(scores) for metric, scores in metric_scores.items()}
         std_score = {metric: np.std(scores) for metric, scores in metric_scores.items()}
