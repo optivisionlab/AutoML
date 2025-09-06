@@ -5,12 +5,14 @@ from sklearn.base import BaseEstimator
 
 from sklearn.model_selection import GridSearchCV
 from ..base import SearchStrategy
+from ...search.search_algorithms import grid_search as CustomGridSearch
 
 class GridSearchStrategy(SearchStrategy):
     """Grid Search implementation"""
 
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
+        """Return a default configuration for this strategy"""
         config = super().get_default_config()
         config.update({
             'pre_dispatch': '2*n_jobs',
@@ -20,20 +22,30 @@ class GridSearchStrategy(SearchStrategy):
         return config
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
+        """
+        Perform grid search hyperparameter optimization.
+
+        Args:
+            model: The estimator to optimize
+            param_grid: Dictionary with parameters names as keys and lists of parameter settings to try
+            X: Training feature data
+            y: Training target data
+            **kwargs: Additional configuration parameters
+
+        Returns:
+            tuple: (best_params, best_score, cv_results)
+        """
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
 
-        grid_search = GridSearchCV(
-            estimator=model,
+        best_params, best_score, cv_results = CustomGridSearch(
             param_grid=param_grid,
-            cv = self.config['cv'],
-            scoring = self.config['scoring'],
-            refit=self.config['metric_sort'],
-            n_jobs=self.config['n_jobs'],
-            verbose=self.config['verbose'],
-            error_score=self.config['error_score'],
-            pre_dispatch=self.config['pre_dispatch'],
+            model_func=model,
+            data=X,
+            targets=y,
+            cv=self.config['cv'],
+            scoring=self.config['scoring'],
+            metric_sort=self.config['metric_sort'],
             return_train_score=self.config['return_train_score']
         )
 
-        grid_search.fit(X, y)
-        return grid_search.best_params_, grid_search.best_score_, grid_search.cv_results_
+        return best_params, best_score, cv_results
