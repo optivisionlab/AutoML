@@ -5,8 +5,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import numpy as np
 
 
-def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metric_sort='accuracy',
-                return_train_score=False):
+def grid_search(param_grid, model_func, data, targets, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
+                scoring=None, metric_sort='accuracy', return_train_score=False):
     """
     Performs a grid search with cross-validation.
 
@@ -15,7 +15,7 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
         model_func (callable): A function that returns an untrained model.
         data (array-like): Feature data.
         targets (array-like): Target data.
-        cv (int, optional): Number of cross-validation folds. Defaults to 5.
+        cv (int, optional): Number of cross-validation folds.
         scoring (dict, optional): Scoring metrics. Defaults to accuracy, precision, recall, and f1-score.
         metric_sort (str, optional): The metric to sort results by. Defaults to 'accuracy'.
         return_train_score (bool, optional): If True, include training scores. Defaults to False.
@@ -95,11 +95,19 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
 
             model_params = params.copy()
             # If the model is SVC, set a fixed random_state for reproducibility
-            if model_func.__name__ == 'SVC':
+            model_class_name = model_func.__class__.__name__ if hasattr(model_func, '__class__') else model_func.__name__
+            if model_class_name == 'SVC':
                 model_params['random_state'] = 42
 
             start_time = time.time()
-            model = model_func(**model_params)
+            # Handle both class and instance cases
+            if callable(model_func):
+                # model_func is a class or callable
+                model = model_func(**model_params)
+            else:
+                # model_func is an instance, get its class and create a new instance
+                model_class = model_func.__class__
+                model = model_class(**model_params)
             model.fit(train_data, train_targets)
             fit_time = time.time() - start_time
             fit_times.append(fit_time)
@@ -111,7 +119,13 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
 
             # Calculate test scores for each metric using the current fold's predictions
             for metric_name, metric_func in scoring.items():
-                score = metric_func(test_targets, predictions)
+                # Handle both sklearn scorers and regular functions
+                try:
+                    # Try sklearn scorer format first (estimator, X, y_true)
+                    score = metric_func(model, test_data, test_targets)
+                except TypeError:
+                    # Fall back to the regular function format (y_true, y_pred)
+                    score = metric_func(test_targets, predictions)
                 metric_scores[metric_name].append(score)
                 cv_results_[f'split{fold}_test_score'].append(score)
 
@@ -119,7 +133,13 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
                     train_predictions = model.predict(train_data)
                     # Calculate training scores for each metric using the current fold's training predictions
                     for train_metric_name, train_metric_func in scoring.items():
-                        score = train_metric_func(train_targets, train_predictions)
+                        # Handle both sklearn scorers and regular functions
+                        try:
+                            # Try sklearn scorer format first (estimator, X, y_true)
+                            score = train_metric_func(model, train_data, train_targets)
+                        except TypeError:
+                            # Fall back to the regular function format (y_true, y_pred)
+                            score = train_metric_func(train_targets, train_predictions)
                         train_scores[train_metric_name].append(score)
 
         average_score = {metric: np.mean(scores) for metric, scores in metric_scores.items()}
@@ -155,7 +175,14 @@ def grid_search(param_grid, model_func, data, targets, cv=5, scoring=None, metri
             best_all_scores = average_score
             best_index = idx
 
-    test_scores = cv_results_['mean_test_score']
+    # Create rankings for each metric
+    for metric in scoring.keys():
+        test_scores = cv_results_[f'mean_test_{metric}']
+        ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
+        cv_results_[f'rank_test_{metric}'] = ranks.tolist()
+    
+    # Also create an overall ranking based on the sorting metric
+    test_scores = cv_results_[f'mean_test_{metric_sort}']
     ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
     cv_results_['rank_test_score'] = ranks.tolist()
 

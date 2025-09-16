@@ -138,79 +138,200 @@ def get_data_config_from_json(file_content: Item):
     models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models
 
-
-def training(models, metric_list, metric_sort, X_train, y_train):
+def training(models, metric_list, metric_sort, X_train, y_train, algorithm_name='grid_search'):
+    """
+    Table-driven training function that uses different search algorithms based on algorithm_name
+    
+    Args:
+        models: Dictionary of models with their parameters
+        metric_list: List of metrics to evaluate
+        metric_sort: Primary metric for sorting results
+        X_train: Training features
+        y_train: Training labels
+        algorithm_name: Name of the search algorithm to use ('grid_search', 'genetic_algorithm')
+    
+    Returns:
+        tuple: (best_model_id, best_model, best_score, best_params, model_results)
+    """
+    import csv
+    import os
+    from datetime import datetime
+    from automl.search.factory import SearchStrategyFactory
+    
+    # Algorithm mapping table
+    ALGORITHM_TABLE = {
+        'grid_search': {
+            'strategy_name': 'gridsearchstrategy',
+            'config': {
+                'cv': 5,
+                'return_train_score': True,
+                'error_score': 'raise'
+            }
+        },
+        'genetic_algorithm': {
+            'strategy_name': 'geneticalgorithm', 
+            'config': {
+                'population_size': 30,
+                'generation': 15,  # Changed from 'generations' to 'generation' to match GA class
+                'mutation_rate': 0.1,
+                'crossover_rate': 0.8,
+                'elite_size': 3,
+                'cv': 5,
+                'scoring': 'accuracy',
+                'n_jobs': -1,
+                'error_score': 0.0
+            }
+        }
+    }
+    
+    # Validate algorithm name
+    if algorithm_name not in ALGORITHM_TABLE:
+        available_algorithms = list(ALGORITHM_TABLE.keys())
+        raise ValueError(f"Algorithm '{algorithm_name}' not supported. Available: {available_algorithms}")
+    
+    # Get algorithm configuration
+    algo_config = ALGORITHM_TABLE[algorithm_name]
+    strategy_name = algo_config['strategy_name']
+    strategy_config = algo_config['config'].copy()
+    
+    # Setup scoring for genetic algorithm
+    if algorithm_name == 'genetic_algorithm':
+        strategy_config['scoring'] = metric_sort
+    else:
+        # Setup scoring for grid search
+        scoring = {}
+        for metric in metric_list:
+            if metric == 'accuracy':
+                scoring[metric] = make_scorer(accuracy_score)
+            else:
+                scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
+        
+        strategy_config.update({
+            'scoring': scoring,
+            'metric_sort': metric_sort
+        })
+    
+    # Create strategy instance
+    try:
+        strategy = SearchStrategyFactory.get_strategy(strategy_name, **strategy_config)
+    except Exception as e:
+        raise ValueError(f"Failed to create strategy '{strategy_name}': {str(e)}")
+    
     best_model_id = None
     best_model = None
     best_score = -1
     best_params = {}
     model_results = []
-
-    scoring = {}
-    for metric in metric_list:
-        if metric == 'accuracy':
-            scoring[metric] = make_scorer(accuracy_score)
-        else:
-            scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
-
-    # Create a GridSearchStrategy instance
-    grid_strategy = GridSearchStrategy()
-
-    # Configure the strategy
-    grid_strategy.set_config(
-        cv=5,
-        scoring=scoring,
-        metric_sort=metric_sort,
-        error_score="raise",
-        return_train_score=True
-    )
-
-    for model_id in range(len(models)):
-        model_info = models[model_id]
-        model = model_info['model']
-        param_grid = model_info['params']
-
-        best_params_model, best_score_model, cv_results = grid_strategy.search(
-            model=model,
-            param_grid=param_grid,
-            X=X_train,
-            y=y_train
-        )
-
-        # Get the best estimator with the best parameters
-        best_estimator = model.set_params(**best_params_model)
-        best_estimator.fit(X_train, y_train)
-
-        # Extract scores from cv_results
-        results = {
-            "model_id": model_id,
-            "model_name": model.__class__.__name__,
-            "best_params": best_params_model,
-            "scores": {
-                metric: cv_results[f"mean_test_{metric}"][cv_results['rank_test_' + metric_sort].argmin()] for metric in
-                metric_list
-            }
-        }
-
-        model_results.append(results)
-
-        if best_score_model > best_score:
-            best_model_id = model_id
-            best_model = best_estimator
-            best_score = best_score_model
-            best_params = best_params_model
-
+    
+    # Prepare CSV logging
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"training_results_{algorithm_name}_{timestamp}.csv"
+    csv_path = os.path.join("results", csv_filename)
+    
+    # Create results directory if it doesn't exist
+    os.makedirs("results", exist_ok=True)
+    
+    # CSV headers matching your format
+    csv_headers = ['model', 'run_type', 'best_params', 'accuracy', 'precision', 'recall', 'f1']
+    
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(csv_headers)
+        
+        # Train each model
+        for model_id in range(len(models)):
+            model_info = models[model_id]
+            model = model_info['model']
+            param_grid = model_info['params']
+            
+            try:
+                # Perform search
+                best_params_model, best_score_model, cv_results = strategy.search(
+                    model=model,
+                    param_grid=param_grid,
+                    X=X_train,
+                    y=y_train
+                )
+                
+                # Create best estimator and fit
+                best_estimator = model.set_params(**best_params_model)
+                best_estimator.fit(X_train, y_train)
+                
+                # Calculate all metrics on training data for consistent evaluation
+                y_pred = best_estimator.predict(X_train)
+                
+                scores = {
+                    'accuracy': accuracy_score(y_train, y_pred),
+                    'precision': precision_score(y_train, y_pred, average='macro', zero_division=0),
+                    'recall': recall_score(y_train, y_pred, average='macro', zero_division=0),
+                    'f1': f1_score(y_train, y_pred, average='macro', zero_division=0)
+                }
+                
+                # Store results
+                results = {
+                    "model_id": model_id,
+                    "model_name": model.__class__.__name__,
+                    "best_params": best_params_model,
+                    "scores": scores
+                }
+                model_results.append(results)
+                
+                # Format parameters for CSV (clean string representation)
+                params_str = str(best_params_model).replace("'", '"')
+                
+                # Write to CSV in the exact format you specified
+                csv_row = [
+                    model.__class__.__name__,
+                    algorithm_name,
+                    params_str,
+                    f"{scores['accuracy']:.8f}",
+                    f"{scores['precision']:.7f}",
+                    f"{scores['recall']:.6f}",
+                    f"{scores['f1']:.6f}"
+                ]
+                
+                writer.writerow(csv_row)
+                
+                # Update best model based on the primary metric
+                primary_score = scores.get(metric_sort, best_score_model)
+                if primary_score > best_score:
+                    best_model_id = model_id
+                    best_model = best_estimator
+                    best_score = primary_score
+                    best_params = best_params_model
+                    
+            except Exception as e:
+                print(f"Error training model {model.__class__.__name__}: {str(e)}")
+                # Write error row to CSV
+                error_row = [
+                    model.__class__.__name__,
+                    algorithm_name,
+                    f"ERROR: {str(e)}",
+                    "0.00000000",
+                    "0.0000000", 
+                    "0.000000",
+                    "0.000000"
+                ]
+                writer.writerow(error_row)
+                continue
+    
+    print(f"Training results saved to: {csv_path}")
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
+
+
+
+
+
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_name='grid_search'):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train)
+                                                                                X_train, y_train, algorithm_name)
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
-def app_train_local(file_data, file_config):
+def app_train_local(file_data, file_config, algorithm_name='grid_search'):
     contents = file_data.file.read()
     data_file = BytesIO(contents)
     data = pd.read_csv(data_file)
@@ -219,7 +340,7 @@ def app_train_local(file_data, file_config):
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_name
     )
     return best_model_id, best_model, best_score, best_params, model_scores
 
@@ -231,13 +352,13 @@ def serialize_mongo_doc(doc):
 
 
 # Không dùng kafka
-def train_json(item: Item, userId, id_data):
+def train_json(item: Item, userId, id_data, algorithm_name='grid_search'):
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_config_from_json(item)
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_name
     )
 
     dataset = data_collection.find_one({"_id": ObjectId(id_data)})
@@ -309,7 +430,7 @@ def inference_model(job_id, file_data):
 
 
 # Dùng với kafka
-def train_json_from_job(job):
+def train_json_from_job(job, algorithm_name='grid_search'):
     job_id = job["job_id"]
     item = job["item"]
     existing_job = job_collection.find_one({"job_id": job_id})
@@ -324,7 +445,7 @@ def train_json_from_job(job):
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_name
     )
 
     model_data = pickle.dumps(best_model)

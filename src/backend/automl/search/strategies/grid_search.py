@@ -13,7 +13,7 @@ class GridSearchStrategy(SearchStrategy):
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
         """Return a default configuration for this strategy"""
-        config = super().get_default_config()
+        config = SearchStrategy.get_default_config()
         config.update({
             'pre_dispatch': '2*n_jobs',
             'return_train_score': False
@@ -37,7 +37,7 @@ class GridSearchStrategy(SearchStrategy):
         """
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
 
-        best_params, best_score, cv_results = CustomGridSearch(
+        best_params, best_score, best_all_scores, cv_results = CustomGridSearch(
             param_grid=param_grid,
             model_func=model,
             data=X,

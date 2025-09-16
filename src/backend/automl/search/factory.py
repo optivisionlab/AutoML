@@ -58,7 +58,7 @@ class SearchStrategyFactory:
             cls._auto_discover_strategies()
 
         strategy_name = name.lower()
-        if strategy_name not in cls._strategies[strategy_name]:
+        if strategy_name not in cls._strategies:
             available = list(cls._strategies.keys())
             raise ValueError(f"Strategy {name} not found. Available strategies: {available}")
 
