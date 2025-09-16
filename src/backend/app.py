@@ -361,10 +361,11 @@ def get_data_info(id: str):
     return data
 
 
-# Lấy bộ dữ liệu từ mongodb
+# Lấy bộ dữ liệu từ mongodb - yêu cầu đầu vào chuẩn
 @app.post("/get-data-from-mongodb-to-train")
 def get_data_from_mongodb_to_train(id: str):
     df, class_data = get_data_from_mongodb_by_id(id_data=id)
+    
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
     )
@@ -426,9 +427,10 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "orther_model_scores": model_scores,
     }
 
-
+import time
 @app.post("/training-file-mongodb")
 def api_train_mongo():
+    start = time.time()
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_and_config_from_MongoDB()
     )
@@ -436,18 +438,25 @@ def api_train_mongo():
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
 
+    end = time.time()
     return {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
+        "executed_time": end - start
     }
 
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item: Item, userId: str, id_data:str):
-    return train_json(item, userId, id_data)
+    start = time.time()
+    train_json(item, userId, id_data)
+    end = time.time()
+    return {
+        "executed_time": end - start
+    }
 
 @app.post("/inference-model/")
 def api_inference_model(job_id, file_data: UploadFile):
@@ -459,43 +468,8 @@ def api_activate_model(job_id, activate=0):
     return update_activate_model(job_id, activate)
 
 
-# New API
-from automl.distributed import process, InputRequest, train_jsons
-
-@app.post("/distributed")
-def distributed(request: InputRequest):
-    """
-    Train model with distributed configuration
-    """
-    try:
-
-        results, response_worker = process(request)
-            
-        return {
-            "success": True,
-            "results": results,
-            "processed_workers": len(response_worker),
-            "successful_workers": sum(1 for f in response_worker if not f.exception())
-        }
-        
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
-
-@app.post("/try")
-def try_train(request: InputRequest):
-    best_model_id, best_model, best_score, best_params, model_scores = train_jsons(request)
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_score": best_score,
-        "best_params": best_params,
-        "model_scores": model_scores
-    }
+from experiment import exp
+app.include_router(exp)
     
 
 

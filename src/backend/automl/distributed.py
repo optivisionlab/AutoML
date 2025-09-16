@@ -1,20 +1,12 @@
-from pydantic import BaseModel
-import pandas as pd
+# Standard Libraries
 import os, yaml
-import httpx
-from concurrent.futures import ThreadPoolExecutor
+import base64
+import pickle
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
-from sklearn.discriminant_analysis import StandardScaler
-from sklearn.calibration import LabelEncoder
+# Third-party Libraries
+import httpx, asyncio
+from dotenv import load_dotenv
 
-from automl.engine import train_process
 
 # Xử lý map reduce
 # định nghĩa hàm Map (xử lý từng cặp khóa/giá trị đầu vào)
@@ -22,14 +14,16 @@ from automl.engine import train_process
 # mỗi model có thể được train độc lập trên cùng dataset
 # Map: Ánh xạ mỗi model/config thành một task training riêng
 # Reduce: Tổng hợp kết quả (model có điểm số tốt nhất)
+
+# load from environment
+load_dotenv()
+
+
 workers = [
-    "http://0.0.0.0:4001",
-    "http://0.0.0.0:4002"
+    f"http://{os.getenv("HOST", "0.0.0.0")}:{int(os.getenv("PORT", 8001))}",
+    f"http://{os.getenv("HOST", "0.0.0.0")}:{int(os.getenv("PORT2", 8002))}",
 ]
 
-class InputRequest(BaseModel):
-    data: list[dict] 
-    config: dict
 
 def get_models():
     base_dir = "assets/system_models"
@@ -40,7 +34,7 @@ def get_models():
     models = {}
     for key, model_info in data['Classification_models'].items():
         models[key] = {
-            "model": model_info["model"], # không thể gửi kiểu dữ liệu phức tạp qua json eval(model_info["model"])()
+            "model": model_info["model"],
             "params": model_info['params']
         }
 
@@ -48,194 +42,182 @@ def get_models():
     return models, metric_list 
 
 
-def get_data_config_from_json_distribute(file_content: InputRequest):
-    data = file_content.data 
-    config = file_content.config
-    models, metric_list = get_models()
-    
-    return (
-        data,
-        config,
-        metric_list,
-        models
-    ) 
-
-
 
 def split_models(models, n_workers=2):
-    """Chia đều model thành n phần và đánh số lại ID từ 0"""
     """
+    Chia đều model thành n phần và đánh số lại ID từ 0
     Lý do đánh số lại vì hàm training lấy model theo id, mà id lại duyệt vòng for range(len(models))
     """
+    if n_workers <= 0:
+        raise ValueError("Number of workers must be a positive integer")
+    
     model_items = list(models.items())
     
-    # Chia thành n phần
-    splits = [model_items[i::n_workers] for i in range(n_workers)]
+    # Chia thành n phần bằng list comprehension
+    splits = (model_items[i::n_workers] for i in range(n_workers))
     
     # Đánh số lại ID và tạo dict mới
-    result = []
-    for split in splits:
-        new_dict = {}
-        for new_id, (old_id, model_data) in enumerate(split):
-            new_dict[int(new_id)] = model_data  # Chuyển ID mới thành int
-        result.append(new_dict)
+    result = [
+        {
+            new_id: model_data
+            for new_id, (old_id, model_data) in enumerate(split)
+        }
+        for split in splits
+    ]
     
     return result
 
 
 
-def send_to_worker(worker_url, models_part, data, config, metric_list):
+# ------------------------------------------------------------------------------------
+"""Xử lý bất đồng bộ cùng với chỉ gửi models_part qua api"""
+async def send_to_worker_async(worker_url, models_part, metric_list, id_data, config, client):
+    """
+    Hàm bất đồng bộ gửi yêu cầu post với dữ liệu đến một server
+    """
     payload = {
-        "data": data,
-        "config": config,
         "metrics": metric_list,
-        "models": models_part
+        "models": models_part,
+        "id_data": id_data,
+        "config": config
     }
 
-    # lay du lieu de gui den cac worker. Y/c du lieu co ban
     try:
-        with httpx.Client() as client:
-            response = client.post(
-                f"{worker_url}/train",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
-            
-            response.raise_for_status()
-            return response.json()
-            
-    except httpx.HTTPError as e:
-        print(f"Error contacting worker {worker_url}: {str(e)}")
+        response = await client.post(
+            f"{worker_url}/train",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=5000
+        )
+
+        response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
+        return response.json()
+    
+    except httpx.HTTPError as exc:
+        print(f"Error contacting worker {worker_url}: {str(exc)}")
         return {
             "success": False,
-            "error": str(e),
-            "results": []
-        }
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
+            "error": str(exc),
             "results": []
         }
 
+    except httpx.RequestError as exc:
+        print(f"Unexpected error: {str(exc)}")
+        return {
+            "success": False,
+            "error": str(exc),
+            "results": []
+        }
+    
 
-def run_mapreduce(data, config, metric_list, models):
-    models_split = split_models(models, len(workers))
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        for worker, models_part in zip(workers, models_split):
-            
-            future = executor.submit(
-                send_to_worker,
-                worker,
-                models_part,
-                data,
-                config,
-                metric_list
+
+async def run_mapreduce_async(metric_list, models, workers, id_data, config):
+    """
+    Điều phối bất đồng bộ để gửi request đến các worker song song
+    """
+    models_splits = split_models(models, len(workers))
+
+    # AsyncClient để tái sử dụng kết nối
+    async with httpx.AsyncClient() as client:
+        # Các tác vụ bất đồng bộ
+        tasks = []
+        for worker, models_part in zip(workers, models_splits):
+            task = asyncio.create_task(
+                send_to_worker_async(
+                    worker_url=worker,
+                    models_part=models_part,
+                    metric_list=metric_list,
+                    id_data = id_data,
+                    config = config,
+                    client=client
+                )
             )
+            tasks.append(task)
 
-            futures.append(future)
-        
-        return futures
-    
+        # Chạy tất cả các tác vụ và đồng thời trả về kết quả
+        # Chờ đợi tất cả các tác vụ hoàn thành (none-blocking)
+        # return_exceptions=True để không bị dừng nếu có task bị lỗi
+        return await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def reduce_function(model_trains):
-    """Tổng hợp kết quả và chọn model tốt nhất"""
+
+async def reduce_async(worker_responses):
+    """Tổng hợp kết quả bất đồng bộ và chọn model tốt nhất"""
     """
-    Args:
-        model_trains: Danh sách các đối tượng model đã train từ các worker
-        
-    Returns:
-        dict: Kết quả tổng hợp gồm best model và tất cả model_scores
+    all_responses: Danh sách từ các worker
     """
-    results = []
-    for model in model_trains:
-        try:
-            result = model.result() # blocking call
-            if result.get("success"):
-                results.extend(result.get("results", []))
+    combined_results = []
 
-        except Exception as e:
-            print(f"Error processing: {str(e)}")
-            continue
+    best_model_base64 = None
+    best_overall_score = -1.0 
+
+    for response in worker_responses:
+        if isinstance(response, Exception):
+            print(f"Error processing a worker response: {response}")
+            continue  
+
+        if response.get("success"):
+            combined_results.extend(response.get("model_scores", []))
+                    
+            # Lấy thông tin từ phản hồi của worker
+            current_best_score = response.get("best_score", -1.0)
+            current_best_model_base64 = response.get("best_model")
+
+            # So sánh và cập nhật mô hình tốt nhất
+            if current_best_score > best_overall_score:
+                best_overall_score = current_best_score
+                best_model_base64 = current_best_model_base64
     
-    if not results:
+    if best_model_base64 is None:
+        raise ValueError("No valid results found to determine the best model")
+    
+    if not combined_results:
         raise ValueError("No valid results found")
-
-    all_model_scores = []
+    
+    model_bytes = base64.b64decode(best_model_base64)
+    
+    # Đánh số thứ tự danh sách model
+    final_model_scores = []
     model_id_counter = 0
 
-    # Gộp và đánh lại ID cho tất cả model
-    for model in results:
-        for model_score in model.get("model_scores", []):
-            if not isinstance(model_score, dict):
-                continue
+    for model_score in combined_results:
+        if not isinstance(model_score, dict):
+            continue
 
-            model_score = model_score.copy()
-            model_score["model_id"] = model_id_counter
-            all_model_scores.append(model_score)
-            model_id_counter += 1
-    
-    if not all_model_scores:
+        model_score = model_score.copy()
+        model_score["model_id"] = model_id_counter
+        final_model_scores.append(model_score)
+        model_id_counter += 1
+
+    if not final_model_scores:
         raise ValueError("No valid model scores found")
-
-    # Chọn model tốt nhất theo accuracy
-    best_model_info = max(all_model_scores, key=lambda x: x["scores"]["accuracy"])
     
+    best_model_info = max(final_model_scores, key=lambda x: x["scores"]["accuracy"])
 
     return {
         "best_model_id": str(best_model_info["model_id"]),
         "best_model": best_model_info['model_name'],
+        "model": model_bytes, # Thể hiện của mô hình, dùng khi cần model đã train, đã được tuần tự hóa bằng pickle.dumps()
         "best_score": best_model_info["scores"]["accuracy"],
         "best_params": best_model_info.get("best_params", {}),
-        "model_scores": all_model_scores
+        "model_scores": final_model_scores
     }
+   
 
 
-# Quy trinh Map Reduce
-def process (file_content):
-    data, config, metric_list, models = get_data_config_from_json_distribute(file_content)
+async def process_async(id_data: str, config: dict):
 
-    respone_worker = run_mapreduce(data, config, metric_list, models)
+    models, metric_list = await asyncio.to_thread(get_models)
 
-    results = reduce_function(respone_worker)
+    # Giai đoạn Map: Gửi request bất đồng bộ và nhận lại các phản hồi
+    worker_responses = await run_mapreduce_async(metric_list, models, workers, id_data, config)
 
-    return results, respone_worker
+    # Đếm số worker thành công dựa trên kết quả
+    successful_workers_count = sum(1 for res in worker_responses if isinstance(res, dict) and res.get("success"))
 
+    # Giai đoạn Reduce: Tổng hợp kết quả từ các phản hồi
+    results = await reduce_async(worker_responses)
 
-
-# Xu ly tai mot server API http://localhost:9999/distributed
-
-# Xu ly tai mot server API http://localhost:9999/try
-def train_jsons(item: InputRequest):
-    data, config, metric_list, models = (
-        get_data_config_from_json_distribute(item)
-    )
-
-    data = pd.DataFrame(data)
-    for id, content in models.items():
-        content['model'] = eval(content['model'])()
-
-    choose = config['choose']
-    list_feature = config['list_feature']
-    target = config['target']
-    metric_sort = config['metric_sort']
-
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
-    )
-
-    return best_model_id, best_model, best_score, best_params, model_scores
-
-
-
-
-if __name__ == "__main__":
-    models, metric_list = get_models()
-    print(models)
-    print("------------------------------")
-    print(metric_list)
+    # Trả về cả kết quả tổng hợp và danh sách các phản hồi
+    return results, len(worker_responses), successful_workers_count
 

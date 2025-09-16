@@ -137,7 +137,6 @@ def get_data_config_from_json(file_content: Item):
     models,metric_list  = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models
 
-
 def training(models, metric_list, metric_sort, X_train, y_train):
     best_model_id = None
     best_model = None
@@ -157,7 +156,6 @@ def training(models, metric_list, metric_sort, X_train, y_train):
         model = model_info['model']
         param_grid = model_info['params']
         
-        
         grid_search = GridSearchCV(
             model,
             param_grid,
@@ -166,6 +164,7 @@ def training(models, metric_list, metric_sort, X_train, y_train):
             refit=metric_sort,
             error_score="raise"
         )
+
         grid_search.fit(X_train, y_train)
 
         results = {
@@ -174,6 +173,7 @@ def training(models, metric_list, metric_sort, X_train, y_train):
             "best_params": grid_search.best_params_,
             "scores": {metric: grid_search.cv_results_[f"mean_test_{metric}"][grid_search.best_index_] for metric in metric_list}
         }
+
         model_results.append(results)
         
         if grid_search.best_score_ > best_score:
@@ -189,6 +189,7 @@ def training(models, metric_list, metric_sort, X_train, y_train):
 def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model ,best_score, best_params, model_scores = training(models, metric_list, metric_sort, X_train, y_train)
+
     return best_model_id, best_model ,best_score, best_params, model_scores
 
 def app_train_local(file_data, file_config):
