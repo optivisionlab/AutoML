@@ -14,7 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import EditDatasetDialog from "@/components/crudDataset/EditDatasetDialog";
-import DialogForm from "../../users/Dialog";
+import DialogForm from "../../../../components/dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
 import { CirclePlus } from "lucide-react";
@@ -216,7 +216,7 @@ const Page = () => {
         description="Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi hệ thống."
         canceltext="Hủy"
         actionText="Xoá"
-        onConfirm={() => confirmDelete}
+        onConfirm={confirmDelete}
       />
 
       {session?.user?.id && (

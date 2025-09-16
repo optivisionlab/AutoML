@@ -19,6 +19,8 @@ import {
   AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
 
+import StepModel from "./StepChooseModel";
+
 interface TrainCardProps {
   datasetID?: string;
   datasetName: string;
@@ -30,9 +32,11 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   const [step, setStep] = useState(1);
   const [selectedOption, setSelectedOption] = useState("");
   const [method, setMethod] = useState("");
+
   const [listFeature, setListFeature] = useState<string[]>([]);
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -91,15 +95,15 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
     sessionStorage.setItem("list_feature", JSON.stringify(updated));
   };
 
-const handleStartTraining = () => {
-  if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
+  const handleStartTraining = () => {
+    if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
 
-  setIsLoading(true);
+    setIsLoading(true);
 
-  setTimeout(() => {
-    router.push(`/public-datasets/${datasetID}/result`);
-  }, 100); 
-};
+    setTimeout(() => {
+      router.push(`/public-datasets/${datasetID}/result`);
+    }, 100);
+  };
 
   return (
     <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl dark:bg-[#171717]">
@@ -109,89 +113,44 @@ const handleStartTraining = () => {
 
       <CardContent>
         {step === 1 && (
-          <div className="space-y-6 mt-6">
-            <Label className="text-base font-medium">
-              Chọn mô hình huấn luyện:
-            </Label>
-            <RadioGroup
-              value={selectedOption}
-              onValueChange={(val) => {
-                setSelectedOption(val);
-                sessionStorage.setItem("choose", val);
-              }}
-              className="grid grid-cols-2 gap-4"
-            >
-              {[
-                { value: "new_model", label: "Mô hình mới" },
-                { value: "new_version", label: "Version mới", disabled: true },
-              ].map(({ value, label, disabled }) => (
-                <div
-                  key={value}
-                  className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                >
-                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
-                  <Label htmlFor={value}>{label}</Label>
-                </div>
-              ))}
-            </RadioGroup>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={handleBack}>
-                Quay lại
-              </Button>
-              <Button
-                onClick={handleNext}
-                disabled={!selectedOption}
-                className="bg-[#3a6df4] text-white disabled:opacity-50 dark:hover:bg-[#2f5ed6]"
-              >
-                Tiếp theo
-              </Button>
-            </div>
-          </div>
+          <StepModel
+            title="Chọn mô hình huấn luyện:"
+            options={[
+              { value: "new_model", label: "Mô hình mới" },
+              { value: "new_version", label: "Version mới", disabled: true },
+            ]}
+            value={selectedOption}
+            onChange={(val) => {
+              setSelectedOption(val);
+              sessionStorage.setItem("choose", val);
+            }}
+            onBack={handleBack}
+            onNext={handleNext}
+            nextDisabled={!selectedOption}
+          />
         )}
 
         {step === 2 && (
-          <div className="space-y-6 mt-6">
-            <Label className="text-base font-medium">
-              Chọn phương thức huấn luyện:
-            </Label>
-            <RadioGroup
-              value={method}
-              onValueChange={(val) => {
-                setMethod(val);
-                sessionStorage.setItem("method", val);
-              }}
-              className="grid grid-cols-2 gap-4"
-            >
-              {[
-                { value: "auto", label: "Auto" },
-                { value: "custom", label: "Custom", disabled: true },
-              ].map(({ value, label, disabled }) => (
-                <div
-                  key={value}
-                  className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                >
-                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
-                  <Label htmlFor={value}>{label}</Label>
-                </div>
-              ))}
-            </RadioGroup>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={handleBack}>
-                Quay lại
-              </Button>
-              <Button
-                onClick={handleNext}
-                disabled={!method}
-                className="bg-[#3a6df4] text-white disabled:opacity-50 dark:hover:bg-[#2f5ed6]"
-              >
-                Tiếp theo
-              </Button>
-            </div>
-          </div>
+          <StepModel
+            title="Chọn phương thức huấn luyện:"
+            options={[
+              { value: "auto", label: "Auto" },
+              { value: "custom", label: "Custom", disabled: true },
+            ]}
+            value={method}
+            onChange={(val) => {
+              setMethod(val);
+              sessionStorage.setItem("method", val);
+            }}
+            onBack={handleBack}
+            onNext={handleNext}
+            nextDisabled={!selectedOption}
+          />
         )}
 
         {step === 3 && (
           <div className="space-y-6 mt-6">
+            {/* Thuộc tính mục tiêu */}
             <div>
               <Label className="block font-medium text-gray-700 mb-2 dark:text-white">
                 Thuộc tính mục tiêu:
@@ -217,6 +176,7 @@ const handleStartTraining = () => {
               </RadioGroup>
             </div>
 
+            {/* Thuộc tính đưa vào huấn luyện */}
             <div>
               <Label className="block font-medium text-gray-700 mb-2 dark:text-white">
                 Thuộc tính đưa vào huấn luyện:
@@ -250,23 +210,21 @@ const handleStartTraining = () => {
                 }}
                 className="grid grid-cols-2 gap-4"
               >
-                {["accuracy", "precision", "recall", "f1"].map(
-                  (metric) => (
-                    <div
-                      key={metric}
-                      className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                    >
-                      <RadioGroupItem
-                        id={metric}
-                        value={metric}
-                        className="mr-3"
-                      />
-                      <Label htmlFor={metric}>
-                        {metric.charAt(0).toUpperCase() + metric.slice(1)}
-                      </Label>
-                    </div>
-                  )
-                )}
+                {["accuracy", "precision", "recall", "f1"].map((metric) => (
+                  <div
+                    key={metric}
+                    className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
+                  >
+                    <RadioGroupItem
+                      id={metric}
+                      value={metric}
+                      className="mr-3"
+                    />
+                    <Label htmlFor={metric}>
+                      {metric.charAt(0).toUpperCase() + metric.slice(1)}
+                    </Label>
+                  </div>
+                ))}
               </RadioGroup>
             </div>
 
@@ -274,6 +232,7 @@ const handleStartTraining = () => {
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại
               </Button>
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button className="bg-[#3a6df4] text-white dark:hover:bg-[#2f5ed6]">
@@ -284,12 +243,16 @@ const handleStartTraining = () => {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu hình đã chọn không?
+                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu
+                      hình đã chọn không?
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Hủy</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white dark:hover:bg-[#2f5ed6]">
+                    <AlertDialogAction
+                      onClick={handleStartTraining}
+                      className="bg-[#3a6df4] text-white dark:hover:bg-[#2f5ed6]"
+                    >
                       Đồng ý
                     </AlertDialogAction>
                   </AlertDialogFooter>

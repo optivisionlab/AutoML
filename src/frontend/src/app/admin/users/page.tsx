@@ -14,7 +14,7 @@ import UserTable from "./UserTable";
 import UserForm from "./UserForm";
 import { User } from "@/hooks/useUsers";
 import useUsers from "@/hooks/useUsers";
-import DialogForm from "./Dialog";
+import DialogForm from "../../../components/dialog";
 
 // Main Page Component
 const UserManagementPage = () => {

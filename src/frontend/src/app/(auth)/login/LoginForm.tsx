@@ -18,9 +18,8 @@ import styles from "./LoginForm.module.scss";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
-
 
 // schema để validate form
 const loginSchema = z.object({
@@ -140,9 +139,21 @@ const LoginForm = () => {
             </Link>
           </p>
 
-          <Button type="submit" className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]">
+          <Button
+            type="submit"
+            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+          >
             Đăng nhập
           </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            <Link
+              href="/forgot-pw"
+              className="text-blue-600 hover:underline font-medium"
+            >
+              Bạn quên mật khẩu?
+            </Link>
+          </p>
         </form>
       </Form>
     </div>
