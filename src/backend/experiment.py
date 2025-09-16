@@ -44,7 +44,7 @@ class InputRequest(BaseModel):
     }
 
 @exp.get("/features")
-async def get_features_of_dataset(id_data: str):
+async def get_features_of_dataset(id_data: str): 
     try:
         data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
         dataset.get_data_and_features(id_data)
