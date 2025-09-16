@@ -427,10 +427,9 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "orther_model_scores": model_scores,
     }
 
-import time
+
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    start = time.time()
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_and_config_from_MongoDB()
     )
@@ -438,14 +437,12 @@ def api_train_mongo():
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
 
-    end = time.time()
     return {
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "orther_model_scores": model_scores,
-        "executed_time": end - start
+        "orther_model_scores": model_scores
     }
 
 
