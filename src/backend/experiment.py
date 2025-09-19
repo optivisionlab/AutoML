@@ -1,7 +1,6 @@
 # Standard Libraries
 import time
 from uuid import uuid4
-import pickle
 
 # Third-party Libraries
 from fastapi import status, HTTPException

@@ -2,8 +2,6 @@
 import pickle
 import base64
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
 
 # Third-party Libraries
 from fastapi import FastAPI, Request, HTTPException
@@ -38,20 +36,7 @@ MODEL_MAPPING = {
 }
 
 
-# Sử dụng lifespan events thay cho on_event
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Khởi động - Chạy trước khi worker nhận request
-    print("Server starting up...")
-    app.state.executor = ThreadPoolExecutor(max_workers=8)
-    yield
-
-    # Tắt - Chạy khi ứng dụng ngừng nhận request
-    print("Server shutting down...")
-    app.state.executor.shutdown(wait=True)
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 # Load environment
 load_dotenv()
 
@@ -65,9 +50,6 @@ async def train_models(request: Request):
     try:
         payload = await request.json()
 
-        # Lấy executor từ app.state
-        executor = app.state.executor
-
         # Process data
         try:
             metric_list = payload["metrics"]
@@ -78,9 +60,7 @@ async def train_models(request: Request):
             target = config.get("target")
             metric_sort = config.get("metric_sort")
 
-            data, features = await asyncio.get_running_loop().run_in_executor(
-                executor, dataset.get_data_and_features, payload["id_data"]
-            )
+            data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"])
             
         except Exception as e:
             raise HTTPException(
@@ -96,8 +76,7 @@ async def train_models(request: Request):
 
         try:
             # Tác vụ huấn luyện sử dụng nhóm luồng
-            best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.get_running_loop().run_in_executor(
-                executor,
+            best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.to_thread(
                 train_process,
                 data,
                 choose,
