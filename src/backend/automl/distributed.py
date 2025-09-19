@@ -1,7 +1,6 @@
 # Standard Libraries
 import os, yaml
 import base64
-import pickle
 
 # Third-party Libraries
 import httpx, asyncio
@@ -18,11 +17,11 @@ from dotenv import load_dotenv
 # load from environment
 load_dotenv()
 
+HOST = os.getenv('HOST', '0.0.0.0')
+PORT = int(os.getenv('PORT', 8000))
+NUMBER_WORKERS = int(os.getenv('NUMBER_WORKERS', 1))
 
-workers = [
-    f"http://{os.getenv("HOST", "0.0.0.0")}:{int(os.getenv("PORT", 8001))}",
-    f"http://{os.getenv("HOST", "0.0.0.0")}:{int(os.getenv("PORT2", 8002))}",
-]
+WORKERS = [f"http://{HOST}:{PORT + i}" for i in range(NUMBER_WORKERS)]
 
 
 def get_models():
@@ -43,7 +42,7 @@ def get_models():
 
 
 
-def split_models(models, n_workers=2):
+def split_models(models, n_workers=1):
     """
     Chia đều model thành n phần và đánh số lại ID từ 0
     Lý do đánh số lại vì hàm training lấy model theo id, mà id lại duyệt vòng for range(len(models))
@@ -210,7 +209,7 @@ async def process_async(id_data: str, config: dict):
     models, metric_list = await asyncio.to_thread(get_models)
 
     # Giai đoạn Map: Gửi request bất đồng bộ và nhận lại các phản hồi
-    worker_responses = await run_mapreduce_async(metric_list, models, workers, id_data, config)
+    worker_responses = await run_mapreduce_async(metric_list, models, WORKERS, id_data, config)
 
     # Đếm số worker thành công dựa trên kết quả
     successful_workers_count = sum(1 for res in worker_responses if isinstance(res, dict) and res.get("success"))
