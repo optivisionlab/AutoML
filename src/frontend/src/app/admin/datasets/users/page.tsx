@@ -14,10 +14,19 @@ import {
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import EditDatasetDialog from "@/components/crudDataset/EditDatasetDialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
 // import { CirclePlus } from "lucide-react";
-import DialogForm from "../../users/Dialog";
 
 type Dataset = {
   _id: string;
@@ -57,13 +66,10 @@ const Page = () => {
     setLoading(true);
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-user`,
-        {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        }
-      );
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-user`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
 
       if (!res.ok) throw new Error("Lỗi khi gọi API");
 
@@ -127,6 +133,7 @@ const Page = () => {
           <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
             Quản lý bộ dữ liệu của người dùng
           </CardTitle>
+
         </CardHeader>
 
         <CardContent>
@@ -211,16 +218,31 @@ const Page = () => {
         />
       )}
 
-      {/* Form Dialog */}
-      <DialogForm
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        title="XÁC NHẬN XOÁ"
-        description="Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi hệ thống."
-        canceltext="Hủy"
-        actionText="Xoá"
-        onConfirm={() => confirmDelete}
-      />
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader className="text-center space-y-2">
+            <AlertDialogTitle className="text-lg font-semibold text-center">
+              Bạn có chắc chắn muốn xoá?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-gray-500">
+              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi
+              hệ thống.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter className="flex justify-center gap-4 mt-4">
+            <AlertDialogCancel className="px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-100">
+              Hủy
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-md"
+            >
+              Xoá
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {session?.user?.id && (
         <AddDatasetDialog
