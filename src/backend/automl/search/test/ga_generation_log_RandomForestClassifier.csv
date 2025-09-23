@@ -1,0 +1,11 @@
+model,run_type,best_params,accuracy,precision,recall,f1
+RandomForestClassifier,genetic_algorithm_gen_1,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 10, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_2,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_3,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_4,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_5,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_6,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 10, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_7,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_8,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_9,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
+RandomForestClassifier,genetic_algorithm_gen_10,"{'n_estimators': 50, 'max_depth': 7, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.9733333333333333,0.9759584145549058,0.9726307189542484,0.9731193139795291
