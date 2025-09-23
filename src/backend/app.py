@@ -361,10 +361,11 @@ def get_data_info(id: str):
     return data
 
 
-# Lấy bộ dữ liệu từ mongodb
+# Lấy bộ dữ liệu từ mongodb - yêu cầu đầu vào chuẩn
 @app.post("/get-data-from-mongodb-to-train")
 def get_data_from_mongodb_to_train(id: str):
     df, class_data = get_data_from_mongodb_by_id(id_data=id)
+    
     output = format_data_automl(
         rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
     )
@@ -441,13 +442,14 @@ def api_train_mongo():
         "best_model": str(best_model),
         "best_params": best_params,
         "best_score": best_score,
-        "orther_model_scores": model_scores,
+        "orther_model_scores": model_scores
     }
 
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item: Item, userId: str, id_data:str):
     return train_json(item, userId, id_data)
+
 
 @app.post("/inference-model/")
 def api_inference_model(job_id, file_data: UploadFile):
@@ -457,6 +459,12 @@ def api_inference_model(job_id, file_data: UploadFile):
 @app.post("/activate-model")
 def api_activate_model(job_id, activate=0):
     return update_activate_model(job_id, activate)
+
+
+from experiment import exp
+app.include_router(exp)
+    
+
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
