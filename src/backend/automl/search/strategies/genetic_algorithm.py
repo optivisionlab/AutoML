@@ -32,6 +32,10 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
         """Encode parameter grid for genetic algorithm."""
+        # Clear previous parameter bounds and types to avoid cross-contamination between models
+        self.param_bounds.clear()
+        self.param_types.clear()
+
         encoded_grid = {}
 
         for param_name, param_values in param_grid.items():
@@ -181,22 +185,15 @@ class GeneticAlgorithm(SearchStrategy):
         best_individual = None
         best_score = float('-inf')
 
-        # Create a directory to store log files for each generation if it doesn't already exist.
-        log_dir = 'ga_logs'
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
         # Execute the genetic algorithm.
         for generation in range(self.config['generation']):
-            # Lists to store the fitness scores  and detailed evaluation for the current generation.
+            # Lists to store the fitness scores for the current generation.
             fitness_scores = []
-            evaluate_individuals = []
 
             # Evaluate each individual in the current population.
             for individual in population:
                 # Calculate performance metrics (accuracy, precision, recall, f1, ...) for the current individual.
                 scores = self._evaluate_individual(individual, model, X, y)
-                evaluate_individuals.append(scores)
 
                 # Determine the primary metric for fitness evaluation. (e.g., accuracy, f1, ...)
                 primary_metric = self.config.get('scoring', 'f1').replace('_macro', '')
@@ -212,35 +209,6 @@ class GeneticAlgorithm(SearchStrategy):
                 if score > best_score:
                     best_score = score
                     best_individual = copy.deepcopy(individual)
-
-            # --- Logging for the current generation ----
-            generation_log_data = []
-
-            # Prepare data for the CSV file
-            for i in range(len(population)):
-                params = self._decode_individual(population[i])
-                scores = evaluate_individuals[i]
-                log_entry = {
-                    'model': model.__class__.__name__,
-                    'run_type': 'GA',
-                    'best_params': str(params),
-                    'accuracy': scores.get('accuracy', 0.0),
-                    'precision': scores.get('precision', 0.0),
-                    'recall': scores.get('recall', 0.0),
-                    'f1': scores.get('f1', 0.0)
-                }
-                generation_log_data.append(log_entry)
-
-            # Create a pandas dataframe from the log data
-            df = pd.DataFrame(generation_log_data)
-            # Ensure columns are in the desired order.
-            df = df[['model', 'run_type', 'best_params', 'accuracy', 'precision', 'recall', 'f1']]
-            #Sort the results by the primary metric in descending order
-            primary_metric = self.config.get('scoring', 'f1').replace('_macro', '')
-            df = df.sort_values(by=primary_metric, ascending=False)
-            # Define the filename and save the dataframe to a CSV file
-            log_filename = os.path.join(log_dir, f'gen_{generation + 1}.csv')
-            df.to_csv(log_filename, index=False)
 
             # --- Create the next generation ---
             new_population = []
