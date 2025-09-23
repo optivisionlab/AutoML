@@ -2,6 +2,7 @@
 import pickle
 import base64
 import asyncio
+import os
 
 # Third-party Libraries
 from fastapi import FastAPI, Request, HTTPException
@@ -15,6 +16,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.calibration import LabelEncoder
+import uvicorn
 
 # Local Modules
 from automl.engine import train_process
@@ -123,7 +125,9 @@ async def health_check() -> dict[str, str]:
 
 
 
-import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run("worker:app", host="0.0.0.0", port=8000, reload=True)
+    HOST = os.getenv('HOST', '0.0.0.0')
+    PORT = int(os.getenv('PORT', 8000))
+    
+    uvicorn.run("worker:app", host=HOST, port=PORT, reload=True)
