@@ -448,12 +448,8 @@ def api_train_mongo():
 
 @app.post("/train-from-requestbody-json/")
 def api_train_json(item: Item, userId: str, id_data:str):
-    start = time.time()
-    train_json(item, userId, id_data)
-    end = time.time()
-    return {
-        "executed_time": end - start
-    }
+    return train_json(item, userId, id_data)
+
 
 @app.post("/inference-model/")
 def api_inference_model(job_id, file_data: UploadFile):
