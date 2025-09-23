@@ -16,12 +16,18 @@ class GeneticAlgorithm(SearchStrategy):
     def get_default_config() -> Dict[str, Any]:
         config = SearchStrategy.get_default_config()
         config.update({
-            'population_size': 50,
-            'generation': 20,
-            'mutation_rate': 0.1,
+            # Kích thước quần thể dùng để search
+            'population_size': 100,  # Increased for better exploration
+            # Số thế hệ (số lần thuật toán sẽ tiến hóa quần thể)
+            'generation': 50,        # More generations to allow evolution
+            # Tý lệ đột biến (Xác suất mỗi tham số cá thể bị thay đổi ngẫu nhiên)
+            'mutation_rate': 0.5,    # Higher rate for more diversity
+            # Tỷ lệ lai ghép (Xác suất hai cá thể cha mẹ sẽ trao đổi gen để tạo ra con)
             'crossover_rate': 0.8,
-            'elite_size': 5,
-            'tournament_size': 3,
+            # Số lượng cá thể được giữ lại không qua lai ghép, đột biến
+            'elite_size': 2,
+            # Kích thước giải đấu (Số cá thể tham gia mỗi vòng chọn lọc để làm cha mẹ)
+            'tournament_size': 5,    # Larger tournament for better selection
         })
         return config
 
@@ -147,12 +153,17 @@ class GeneticAlgorithm(SearchStrategy):
         for param_name in mutated.keys():
             if random.random() < self.config['mutation_rate']:
                 min_val, max_val = self.param_bounds[param_name]
+                param_type, param_values = self.param_types[param_name]
 
-                current_val = mutated[param_name]
-                mutation_strength = (max_val - min_val) * 0.1
-                new_val = current_val + random.gauss(0, mutation_strength)
-
-                mutated[param_name] = max(min_val, min(new_val, max_val))
+                if param_type == 'categorical':
+                    # For categorical parameters, randomly select a new value
+                    mutated[param_name] = random.uniform(min_val, max_val)
+                else:
+                    # For continuous/integer parameters, use stronger mutation
+                    current_val = mutated[param_name]
+                    mutation_strength = (max_val - min_val) * 0.3
+                    new_val = current_val + random.gauss(0, mutation_strength)
+                    mutated[param_name] = max(min_val, min(new_val, max_val))
 
         return mutated
 
@@ -181,6 +192,9 @@ class GeneticAlgorithm(SearchStrategy):
         all_individuals = []
         all_scores = []
 
+        # List to store the history of all generations.
+        generation_history = []
+
         # Initialize variables to keep track of the best solution found so far.
         best_individual = None
         best_score = float('-inf')
@@ -189,11 +203,13 @@ class GeneticAlgorithm(SearchStrategy):
         for generation in range(self.config['generation']):
             # Lists to store the fitness scores for the current generation.
             fitness_scores = []
+            all_scores_in_generation = []
 
             # Evaluate each individual in the current population.
             for individual in population:
                 # Calculate performance metrics (accuracy, precision, recall, f1, ...) for the current individual.
                 scores = self._evaluate_individual(individual, model, X, y)
+                all_scores_in_generation.append(scores)
 
                 # Determine the primary metric for fitness evaluation. (e.g., accuracy, f1, ...)
                 primary_metric = self.config.get('scoring', 'f1').replace('_macro', '')
@@ -210,6 +226,22 @@ class GeneticAlgorithm(SearchStrategy):
                     best_score = score
                     best_individual = copy.deepcopy(individual)
 
+            best_idx_in_generation = np.argmax(fitness_scores)
+            best_individual_in_generation = population[best_idx_in_generation]
+            best_params_in_generation = self._decode_individual(best_individual_in_generation)
+            best_score_in_generation = all_scores_in_generation[best_idx_in_generation]
+
+            generation_log_entry = {
+                 'model': model.__class__.__name__,
+                'run_type': f'genetic_algorithm_gen_{generation + 1}',
+                'best_params': str(best_params_in_generation),
+                'accuracy': best_score_in_generation['accuracy'],
+                'precision': best_score_in_generation['precision'],
+                'recall': best_score_in_generation['recall'],
+                'f1': best_score_in_generation['f1']
+            }
+            generation_history.append(generation_log_entry)
+
             # --- Create the next generation ---
             new_population = []
 
@@ -218,7 +250,7 @@ class GeneticAlgorithm(SearchStrategy):
             for idx in elite_indices:
                 new_population.append(copy.deepcopy(population[idx]))
 
-            # Fill the rest of the new population using selection, crossover, and mutation.
+            # Fill the rest with the new population using selection, crossover, and mutation.
             while len(new_population) < self.config['population_size']:
                 # Select two parent individuals from the old population.
                 parent1 = self._tournament_selection(population, fitness_scores)
@@ -246,6 +278,13 @@ class GeneticAlgorithm(SearchStrategy):
             'std_test_score': [0.0] * len(all_scores),  # Std deviation is not calculated in this setup.
             'rank_test_score': self._compute_ranks(all_scores)
         }
+
+        if generation_history:
+            model_name = model.__class__.__name__
+            output_file = f'ga_generation_log_{model_name}.csv'
+            df_generation_history = pd.DataFrame(generation_history)
+            df_generation_history.to_csv(output_file, index=False)
+            print(f"\nAll generation log saved to: {output_file}")
 
         # Return the best parameters, the best score, and the comprehensive results.
         return best_params, best_score, cv_results
