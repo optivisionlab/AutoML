@@ -67,8 +67,6 @@ from users.engine import get_list_user
 from kafka import KafkaProducer
 
 
-# default sync
-app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key="!secret")
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -105,13 +103,20 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
+from contextlib import asynccontextmanager
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
     print("Starting Kafka consumer thread...")
     kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
     kafka_thread.start()
-  
+    yield
+    # Shutdown logic (if needed)
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 @app.get("/")
 def read_root():
