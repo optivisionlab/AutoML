@@ -11,7 +11,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import cross_validate
 
-from automl.search.strategies.genetic_algorithm import GeneticAlgorithm
+from automl.search.strategies.bayesian_search import BayesianSearchStrategy
 
 
 def load_iris_data():
@@ -39,7 +39,7 @@ def run_genetic_test_with_iris():
     X, y = load_iris_data()
 
     # Initialize the genetic algorithm
-    ga = GeneticAlgorithm(
+    ga = BayesianSearchStrategy(
         population_size=20,  # Smaller for faster testing
         generation=10,  # Fewer generations for faster testing
         mutation_rate=0.1,
