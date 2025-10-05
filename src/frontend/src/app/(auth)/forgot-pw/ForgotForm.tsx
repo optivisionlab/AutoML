@@ -31,7 +31,6 @@ const forgotSchema = z.object({
 type FormValues = z.infer<typeof forgotSchema>;
 
 const ForgotForm = () => {
-  const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
@@ -45,13 +44,17 @@ const ForgotForm = () => {
   // Submit
   const onSubmit = (data: FormValues) => {
     startTransition(async () => {
-      console.log(data.email);
       const res = await forgotPassword(data.email);
 
       if (res.ok) {
         toast({
           title: "Thành công!",
           description: "Đã gửi mật khẩu về gmail của bạn",
+          variant: "default",
+          style: {
+            backgroundColor: "#22c55e", // xanh lá Tailwind green-500
+            color: "white",
+          },
         });
       } else {
         toast({
@@ -64,8 +67,11 @@ const ForgotForm = () => {
   };
 
   return (
-    <div className={styles["forgot-form"]}>
+    <div className="border border-solid border-[#ddd] p-[45px] rounded-xl">
       <Form {...form}>
+        <h1 className="text-2xl text-center text-blue-600 mb-[20px] font-bold">
+          Lấy lại mật khẩu
+        </h1>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
           className="max-w-md w-full flex flex-col gap-4"
@@ -76,7 +82,7 @@ const ForgotForm = () => {
             name="email"
             render={({ field }) => (
               <FormItem>
-                <Label className="text-center text-xl font-bold">
+                <Label className="text-center font-bold">
                   Nhập email cần lấy lại
                 </Label>
                 <FormControl>
@@ -93,12 +99,22 @@ const ForgotForm = () => {
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
+            <div></div>
             <Link
               href="/login"
               className="text-blue-600 hover:underline font-medium"
             >
               Quay về đăng nhập
             </Link>
+            <div></div>
+            {!isPending && (
+              <Link
+                href="/change-pw"
+                className="text-blue-600 hover:underline font-medium"
+              >
+                Thay đổi mật khẩu
+              </Link>
+            )}
           </p>
         </form>
       </Form>

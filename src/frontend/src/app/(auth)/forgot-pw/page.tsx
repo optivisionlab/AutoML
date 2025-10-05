@@ -3,7 +3,7 @@ import ForgotForm from "./ForgotForm";
 
 const page = () => {
   return (
-    <div className="max-w-[50%] mx-auto my-0 p-[5px] ">
+    <div className="max-w-[25%] mx-auto mt-[150px] p-[5px] ">
       <ForgotForm />
     </div>
   );
