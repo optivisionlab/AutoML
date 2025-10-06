@@ -92,7 +92,7 @@ def save_job(input: InputRequest, models_info) -> dict:
             "model": models_info["model"],
             "best_params": models_info["best_params"],
             "best_score": models_info["best_score"],
-            "other_model_scores": models_info["model_scores"],
+            "orther_model_scores": models_info["model_scores"],
             "config": input.config,
             "data": {
                 "id": input.id_data,
@@ -133,6 +133,9 @@ async def distributed_mongodb(input: InputRequest):
         save_job_result.update({
             "processed_workers": processed_workers,
             "successful_workers": successful_workers,
+            "best_model": results["best_model"],
+            "best_score": results["best_score"],
+            "best_params": results["best_params"],
             "executed_time": time.time() - start
         })
 

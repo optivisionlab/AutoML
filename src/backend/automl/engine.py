@@ -212,6 +212,7 @@ def serialize_mongo_doc(doc):
 
 # Không dùng kafka
 def train_json(item: Item, userId, id_data):
+    start = time.time()
     data, choose, list_feature, target, metric_list, metric_sort, models = (
         get_data_config_from_json(item)
     )
@@ -256,6 +257,7 @@ def train_json(item: Item, userId, id_data):
     job_result = job_collection.insert_one(job)
     if job_result.inserted_id:
         job.pop("model")
+        job.update({"executed_time": time.time() - start})
         return JSONResponse(content=serialize_mongo_doc(job))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
