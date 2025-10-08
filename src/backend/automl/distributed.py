@@ -203,7 +203,6 @@ async def reduce_async(worker_responses):
     }
    
 
-
 async def process_async(id_data: str, config: dict):
 
     models, metric_list = await asyncio.to_thread(get_models)

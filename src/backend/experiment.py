@@ -7,11 +7,13 @@ from fastapi import status, HTTPException
 from fastapi.routing import APIRouter
 from pydantic import BaseModel
 import asyncio
-from bson.objectid import ObjectId
+from bson import ObjectId
 
 # Local Modules
-from automl.distributed import process_async
 from database.get_dataset import dataset, get_database
+from kafka_consumer import get_producer
+from kafka_consumer import data
+from automl.distributed import process_async
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
@@ -42,6 +44,7 @@ class InputRequest(BaseModel):
         }
     }
 
+# API lấy ra danh sách đặc trưng của dataset 
 @exp.get("/features")
 async def get_features_of_dataset(id_data: str): 
     try:
@@ -60,10 +63,23 @@ async def get_features_of_dataset(id_data: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-    
 
 
-def save_job(input: InputRequest, models_info) -> dict:
+
+async def send_message(topic: str, key: str, message: dict):
+    try:
+        producer = get_producer()
+    except RuntimeError:
+        raise ConnectionError("Kafka Producer not initialized in the lifespan.")
+
+    await producer.send_and_wait(
+        topic=topic, 
+        key=key.encode('utf-8'), 
+        value=message
+    )
+
+
+def save_job_mongo(input: InputRequest, models_info) -> dict:
     db = get_database()
     user_collection = db["tbl_User"]
     job_collection = db["tbl_Job"]
@@ -102,8 +118,9 @@ def save_job(input: InputRequest, models_info) -> dict:
                 "id": input.id_user,
                 "name": user_name
             },
+            "status": 1,
+            "activate": 0,
             "create_at": time.time(),
-            "status": 1
         }
 
         # Chèn bản ghi job vào collection
@@ -119,8 +136,7 @@ def save_job(input: InputRequest, models_info) -> dict:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
-
+# API training model = client ==> server (dùng cho test)
 @exp.post("/distributed/mongodb")
 async def distributed_mongodb(input: InputRequest):
     try:
@@ -128,14 +144,11 @@ async def distributed_mongodb(input: InputRequest):
 
         results, processed_workers, successful_workers = await process_async(input.id_data, input.config)
         # Lưu vào database 
-        save_job_result:dict = await asyncio.to_thread(save_job, input, results)
+        save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, results)
 
         save_job_result.update({
             "processed_workers": processed_workers,
             "successful_workers": successful_workers,
-            "best_model": results["best_model"],
-            "best_score": results["best_score"],
-            "best_params": results["best_params"],
             "executed_time": time.time() - start
         })
 
@@ -151,3 +164,80 @@ async def distributed_mongodb(input: InputRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+
+def save_job(input: InputRequest) -> str:
+    db = get_database()
+    user_collection = db["tbl_User"]
+    job_collection = db["tbl_Job"]
+    data_collection = db["tbl_Data"]
+    
+    # Tìm tên người dùng
+    user_doc = user_collection.find_one({"_id": ObjectId(input.id_user)}, {"username": 1})
+
+    if not user_doc:
+        raise ValueError("User not found")
+    user_name = user_doc.get("username")
+
+    # Tìm tên dữ liệu
+    data_doc = data_collection.find_one({"_id": ObjectId(input.id_data)}, {"dataName": 1})
+    if not data_doc:
+        raise ValueError("Data not found")
+    data_name = data_doc.get("dataName")
+
+    job_id = str(uuid4())
+
+    # Tạo một bản ghi job mới
+    new_job = {
+        "job_id": job_id,
+        "config": input.config,
+        "data": {
+            "id": input.id_data,
+            "name": data_name
+        },
+        "user": {
+            "id": input.id_user,
+            "name": user_name
+        },
+        "status": 0,
+        "activate": 0,
+        "create_at": time.time()
+    }
+
+    msg_job = {
+        "id_data": input.id_data,
+        "config": input.config
+    }
+
+    try:
+        job_collection.insert_one(new_job)
+
+    except Exception as e:
+        raise Exception(f"{str(e)}")
+    
+    return job_id, msg_job
+
+
+# API huấn luyện model ==> Client -> Kafka -> Server
+@exp.post("/jobs/training")
+async def distributed_training(input: InputRequest):
+    """Gửi message vào Kafka và huấn luyện model"""
+
+    try:
+        job_id, msg_job = await asyncio.to_thread(save_job, input)
+
+        await send_message(data['KAFKA_TOPIC'], job_id, msg_job)
+
+        # Trả về kết quả thành công
+        return {
+            "status": "success",
+            "message": "Training job initiated successfully",
+            "job_id": job_id
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}")
