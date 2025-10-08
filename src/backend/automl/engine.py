@@ -356,44 +356,44 @@ def get_one_job(id_job: str):
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
 # Không dùng được nữa => Đổi từ kafka-python --> aiokafka.
-# def push_train_job(item: Item, user_id, data_id, producer):
-#     job_id = str(uuid4())
+def push_train_job(item: Item, user_id, data_id, producer):
+    job_id = str(uuid4())
     
-#     dataset = data_collection.find_one({"_id": ObjectId(data_id)})
-#     if not dataset:
-#         raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
-#     data_name = dataset.get("dataName")
+    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+    data_name = dataset.get("dataName")
 
-#     user = user_collection.find_one({"_id": ObjectId(user_id)})
-#     if not user:
-#         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
-#     user_name = user.get("username")
+    user = user_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+    user_name = user.get("username")
 
-#     job_doc = {
-#         "job_id": job_id,
-#         "item": item.dict(),
-#         "data": {
-#             "id": data_id,
-#             "name": data_name
-#         },
-#         "user": {
-#             "id": user_id,
-#             "name": user_name
-#         },
-#         "status": 0,
-#         "activate": 0,
-#         "create_at": time.time()
-#     }
-#     # Gửi vào Kafka
-#     producer.send("train-job-topic", value=job_doc)
-#     producer.flush()
+    job_doc = {
+        "job_id": job_id,
+        "item": item.dict(),
+        "data": {
+            "id": data_id,
+            "name": data_name
+        },
+        "user": {
+            "id": user_id,
+            "name": user_name
+        },
+        "status": 0,
+        "activate": 0,
+        "create_at": time.time()
+    }
+    # Gửi vào Kafka
+    producer.send("train-job-topic", value=job_doc)
+    producer.flush()
 
-#     # Lưu vào MongoDB
-#     result = job_collection.insert_one(job_doc)
-#     if not result.inserted_id:
-#         raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
+    # Lưu vào MongoDB
+    result = job_collection.insert_one(job_doc)
+    if not result.inserted_id:
+        raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
 
-#     return JSONResponse(content=serialize_mongo_doc(job_doc))
+    return JSONResponse(content=serialize_mongo_doc(job_doc))
 
 
 def update_activate_model(job_id, activate=0):
