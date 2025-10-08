@@ -7,7 +7,7 @@ from database.get_dataset import get_database
 import asyncio
 
 # Local Modules
-from automl.distributed import process_async
+from automl.v2.distributed import process_async
 
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -69,6 +69,8 @@ async def kafka_consumer_process():
             tp = TopicPartition(message.topic, message.partition)
 
             try:
+                import time
+                start = time.time()
                 results, processed_workers, successful_workers = await process_async(id_data, config)
 
                 def update_success():
@@ -88,20 +90,12 @@ async def kafka_consumer_process():
                     job_collection.update_one({"job_id": job_id}, update_data)
 
                 await asyncio.to_thread(update_success)
-
-                print(f"[Consumer Task] Completed job {job_id}")
+                end = time.time()
+                print(f"[Consumer Task] Completed job {job_id}: {end-start}")
             except Exception as e:
                 # Lỗi từ quá trình huấn luyện
-                error_msg = f"Training failure: {str(e)}"
+                error_msg = f"Training failure: {str(e)} {end-start}"
                 print(f"[JOB {job_id}] {error_msg}")
-
-                # Cập nhật trạng thái FAILED (-1)
-                def update_failure():
-                    db = get_database()
-                    job_collection = db["tbl_Job"]
-                    job_collection.update_one({"job_id": job_id}, {"$set": {"status": -1}})
-                
-                await asyncio.to_thread(update_failure)
             
             finally:
                 await consumer.commit({
