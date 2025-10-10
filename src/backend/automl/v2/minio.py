@@ -64,20 +64,20 @@ class MinIOStorage:
         if not self.__client.bucket_exists(bucket_name):
             self.__client.make_bucket(bucket_name)
 
-            try:
-                self.__client.put_object(
-                    bucket_name,
-                    object_name,
-                    data=parquet_buffer,
-                    length=len(parquet_buffer.getvalue()),
-                    content_type='application/octet-stream'
-                )
-                print(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
-            except S3Error as e:
-                # Ghi log lỗi chi tiết hơn
-                raise Exception(f"MinIO upload error (S3Error) for {object_name}: {e}")
-            except Exception as e:
-                raise Exception(f"MinIO upload error for {object_name}: {e}")
+        try:
+            self.__client.put_object(
+                bucket_name,
+                object_name,
+                data=parquet_buffer,
+                length=len(parquet_buffer.getvalue()),
+                content_type='application/octet-stream'
+            )
+            print(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
+        except S3Error as e:
+            # Ghi log lỗi chi tiết hơn
+            raise Exception(f"MinIO upload error (S3Error) for {object_name}: {e}")
+        except Exception as e:
+            raise Exception(f"MinIO upload error for {object_name}: {e}")
 
 
     def get_object(self, bucket_name: str, object_name: str):
