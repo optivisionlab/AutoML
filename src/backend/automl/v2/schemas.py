@@ -36,16 +36,16 @@ class DataInfo(BaseModel):
     name: str
 
 class JobResponse(BaseModel):
-    _id: str
-    job_id: str
-    data: DataInfo
-    user: UserInfo
-    best_model_id: int 
-    best_params: dict
-    best_score: float
-    orther_model_scores: list
-    status: int
-    create_at: float
+    _id: str | None
+    job_id: str | None
+    data: DataInfo | None
+    user: UserInfo | None
+    best_model_id: int | None
+    best_params: dict | None
+    best_score: float | None
+    orther_model_scores: list | None
+    status: int | None
+    create_at: float | None
 
     model_config = {
         "json_schema_extra": {
