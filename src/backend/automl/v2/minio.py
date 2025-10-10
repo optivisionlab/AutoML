@@ -89,7 +89,7 @@ class MinIOStorage:
         except S3Error as e:
             raise Exception(f"MinIO upload error (S3Error) for {object_name}: {e}")
         except Exception as e:
-            raise Exception(f"MinIO upload error for {object_name}: {e}")
+            raise Exception(f"MinIO upload error for {object_name}: {e}") 
 
 
     def get_object(self, bucket_name: str, object_name: str):
