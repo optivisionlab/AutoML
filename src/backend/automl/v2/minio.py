@@ -90,6 +90,22 @@ class MinIOStorage:
         except Exception as e:
             raise Exception(f"{str(e)}")
 
+
+    def remove_object(self, bucket_name: str, object_name: str):
+        try:
+            self.__client.remove_object(
+                bucket_name,
+                object_name
+            )
+            return True
+        except S3Error as e:
+            if e.code == 'NoSuchKey':
+                print(f"Object don't exists, skip: {object_name}")
+                return True
+            raise Exception(f"Error when remove object: {e}")
+        except Exception as e:
+            raise Exception(f"Unspecified error when remove object: {e}")
+
         
     def get_url(self, bucket_name: str, object_name: str):
         try:

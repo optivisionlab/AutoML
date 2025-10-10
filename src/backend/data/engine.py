@@ -175,7 +175,9 @@ def upload_data_to_minio(file_data, dataName, dataType, userId):
 
 
 def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):
+    parquet_stream = None
     try:
+
         # Lấy bản ghi hiện tại để so sánh
         current_data = data_collection.find_one({"_id": ObjectId(dataset_id)})
         if not current_data:
@@ -231,6 +233,39 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
     except Exception as e:
         parquet_stream.close() if parquet_stream else None
         raise Exception(f"Error: {str(e)}")
+
+
+def delete_dataset_at_minio_by_id(dataset_id: str):
+    dataset = data_collection.find_one({"_id": ObjectId(dataset_id)}, {"data_link": 1})
+    if not dataset:
+        raise Exception(f"Not found dataset")
+    
+    data_link = dataset.get("data_link", {})
+    bucket_name = data_link.get("bucket_name")
+    object_name = data_link.get("object_name")
+
+    if not (bucket_name and object_name):
+        data_collection.delete_one({{"_id": ObjectId(dataset_id)}})
+        return True
+    
+    try:
+        dataset_minio_success = minIOStorage.remove_object(
+            bucket_name=bucket_name,
+            object_name=object_name
+        )
+        
+        if dataset_minio_success:
+            dataset_mongo_result = data_collection.delete_one({"_id": ObjectId(dataset_id)})
+            
+            if dataset_mongo_result.deleted_count == 1:
+                return True
+            else:
+                raise Exception("Removed MinIO file, but error when removing MongoDB metadata")
+        else:
+            raise Exception("Remove MinIO file failure")
+
+    except Exception as e:
+        raise Exception(f"Error when removing: {str(e)}")
 
 
 def update_dataset_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):

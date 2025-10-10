@@ -123,12 +123,12 @@ async def get_model_by_path(
 ):
     # model mới có dạng dict, những dữ liệu được training trước đó sẽ xảy ra lỗi.
     bucket_name, object_name = get_model(_id)
-
+    model_stream = None
     try:
         # Lấy luồng byte từ MinIO
         model_stream = minIOStorage.get_object(bucket_name, object_name)
         model = pickle.load(model_stream)
-        
+
         # Đóng luồng
         model_stream.close()
 
