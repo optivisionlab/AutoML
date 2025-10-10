@@ -5,14 +5,15 @@ import time
 from fastapi import status, HTTPException, Query
 from fastapi.routing import APIRouter
 import asyncio
+import pickle
 
 # Local Modules
 from database.get_dataset import dataset
 from kafka_consumer import data
 from automl.v2.distributed import process_async
 from automl.v2.schemas import InputRequest, JobResponse
-from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message
-
+from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
+from automl.v2.minio import minIOStorage
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
@@ -112,3 +113,44 @@ async def get_jobs_offset(
             "prev_page": page - 1 if page > 1 else None
         }
     }
+
+
+# API lấy model để sử dụng (mongodb + minio)
+@exp.get('jobs/prediction/{id}')
+async def get_model_by_path(
+    _id: str
+):
+    # model mới có dạng dict, những dữ liệu được training trước đó sẽ xảy ra lỗi.
+    bucket_name, object_name = get_model(_id)
+
+    local_path = f"/data/model_registry/{bucket_name}/{object_name}"
+
+    model_local_path = None
+    model = None
+    data = [1,2,3]
+
+    try:
+        model_local_path = minIOStorage.download_model(bucket_name, object_name, local_path)
+
+        is_pickle = model_local_path.lower().endswith(".pkl")
+        is_joblib = model_local_path.lower().endswith(".joblib")
+
+        if is_pickle:
+            def load_pickle(path):
+                with open(path, 'rb') as f:
+                    return pickle.load(f)
+            
+            model = await asyncio.to_thread(load_pickle, model_local_path)
+
+        else:
+            raise ValueError(f"Unsupported file format for model")
+
+        prediction = model.predict(data)
+
+        return {
+            "_id": _id,
+            "prediction": prediction.tolist()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process model: {str(e)}")
+

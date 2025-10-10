@@ -8,6 +8,7 @@ import asyncio
 
 # Local Modules
 from automl.v2.distributed import process_async
+from automl.v2.minio import minIOStorage
 
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -64,6 +65,7 @@ async def kafka_consumer_process():
         async for message in consumer:
             job_id = message.key.decode('utf-8')
             id_data = message.value.get('id_data')
+            id_user = message.value.get('id_user')
             config = message.value.get('config')
 
             tp = TopicPartition(message.topic, message.partition)
@@ -72,6 +74,15 @@ async def kafka_consumer_process():
                 import time
                 start = time.time()
                 results, processed_workers, successful_workers = await process_async(id_data, config)
+                
+                version = 1
+
+                await asyncio.to_thread(
+                    minIOStorage.uploaded_object,
+                    bucket_name=f"{id_user}",
+                    object_name=f"{job_id}/{results["best_model"]}_{version}.pkl",
+                    model_bytes=results["model"]
+                )
 
                 def update_success():
                     db = get_database()
@@ -80,7 +91,10 @@ async def kafka_consumer_process():
                         "$set": {
                             "best_model_id": results["best_model_id"],
                             "best_model": results["best_model"],
-                            "model": results["model"],
+                            "model": {
+                                "bucket_name": f"{id_user}",
+                                "object_name": f"{job_id}/{results["best_model"]}_{version}.pkl"
+                            },
                             "best_params": results["best_params"],
                             "best_score": results["best_score"],
                             "orther_model_scores": results["model_scores"],

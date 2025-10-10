@@ -122,7 +122,8 @@ def save_job(input: InputRequest) -> str:
 
     msg_job = {
         "id_data": input.id_data,
-        "config": input.config
+        "config": input.config,
+        "id_user": input.id_user
     }
 
     try:
@@ -179,3 +180,18 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     jobs_list_raw = [convert_mongodb_document(job) for job in jobs_cursor]
 
     return jobs_list_raw, total_pages, total_jobs
+
+
+def get_model(id: str) -> dict:
+    db = get_database()
+    job_collection = db["tbl_Job"]
+
+    model_doc = job_collection.find_one({"_id": ObjectId(id)}, {"model": 1})
+
+    if not model_doc:
+        raise ValueError("Data not found")
+    
+    bucket_name = model_doc.get("bucket_name")
+    object_name = model_doc.get("object_name")
+
+    return bucket_name, object_name
