@@ -52,8 +52,8 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
 
         await asyncio.to_thread(
             minIOStorage.uploaded_model,
-            bucket_name=f"{id_user}",
-            object_name=f"{job_id}/{results['best_model']}_{version}.pkl",
+            bucket_name="models",
+            object_name=f"{id_user}/{job_id}/{results['best_model']}_{version}.pkl",
             model_bytes=results["model"]
         )
 
@@ -65,7 +65,7 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
                     "best_model_id": results["best_model_id"],
                     "best_model": results["best_model"],
                     "model": {
-                        "bucket_name": f"models",
+                        "bucket_name": "models",
                         "object_name": f"{id_user}/{job_id}/{results['best_model']}_{version}.pkl"
                     },
                     "best_params": results["best_params"],

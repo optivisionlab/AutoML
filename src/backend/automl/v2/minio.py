@@ -132,6 +132,11 @@ class MinIOStorage:
             raise Exception(f"MinIO download drror (S3Error): {e}")
         except Exception as e:
             raise Exception(f"MinIO download error: {e}")
+
+    def list_objects(self, bucket_name: str):
+        for obj in self.__client.list_objects(bucket_name, recursive=True):
+            print(obj.object_name)
         
         
 minIOStorage = MinIOStorage(endpoint=MINIO_ENDPOINT, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY)
+
