@@ -191,7 +191,8 @@ def get_model(id: str) -> dict:
     if not model_doc:
         raise ValueError("Data not found")
     
-    bucket_name = model_doc.get("bucket_name")
-    object_name = model_doc.get("object_name")
+    model = model_doc.get("model", {})
+    bucket_name = model.get("bucket_name")
+    object_name = model.get("object_name")
 
     return bucket_name, object_name

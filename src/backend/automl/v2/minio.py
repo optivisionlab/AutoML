@@ -70,7 +70,7 @@ class MinIOStorage:
                     object_name,
                     data=parquet_buffer,
                     length=len(parquet_buffer.getvalue()),
-                    content_type='application/x-parquet'
+                    content_type='application/octet-stream'
                 )
                 print(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
             except S3Error as e:

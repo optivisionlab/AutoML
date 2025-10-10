@@ -118,7 +118,7 @@ def upload_data(file_data, dataName, dataType, userId):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi thêm bộ dữ liệu")
 
 
-def upload_data_to_minio(file_data, dataName, dataType, userId):
+def upload_data_to_minio(file_data, dataName: str, dataType, userId):
     now = time.time()
 
     try:
@@ -135,9 +135,13 @@ def upload_data_to_minio(file_data, dataName, dataType, userId):
         df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
 
+        data_name_copy = dataName.strip().replace(' ', '_')
+        from uuid import uuid4
+        data_id = str(uuid4())
+
         minIOStorage.uploaded_dataset(
-            bucket_name=f"{userId}",
-            object_name=f"dataset/{dataName}.parquet",
+            bucket_name=f"dataset",
+            object_name=f"{userId}/{data_id}/{data_name_copy}.parquet",
             parquet_buffer=parquet_buffer
         )
 
@@ -149,6 +153,7 @@ def upload_data_to_minio(file_data, dataName, dataType, userId):
             userId = "0"
 
         data_to_insert = {
+            "_id": data_id,
             "dataName": dataName,
             "dataType": dataType,
             "data_link": {
