@@ -40,7 +40,7 @@ class JobResponse(BaseModel):
     job_id: str
     data: DataInfo
     user: UserInfo
-    best_model_id: int
+    best_model_id: int 
     best_params: dict
     best_score: float
     orther_model_scores: list
