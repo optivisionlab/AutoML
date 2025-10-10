@@ -8,7 +8,7 @@ from bson.objectid import ObjectId
 # Local Modules
 from database.get_dataset import get_database
 from kafka_consumer import get_producer
-from automl.v2.schemas import InputRequest, JobResponse
+from automl.v2.schemas import InputRequest
 
 
 async def send_message(topic: str, key: str, message: dict):
@@ -166,7 +166,7 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     # Projection để lấy các trường cần thiết, tránh tải dữ liệu lớn
     projection_fields = {
         # Các trường loại bỏ
-        "best_model": 0, "model": 0, "config": 0, "activate": 0 
+        "best_model": 0, "model": 0, "config": 0, "activate": 0, "item": 0 
     }
 
     jobs_cursor = (

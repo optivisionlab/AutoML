@@ -11,7 +11,7 @@ import pickle
 from database.get_dataset import dataset
 from kafka_consumer import data
 from automl.v2.distributed import process_async
-from automl.v2.schemas import InputRequest, JobResponse
+from automl.v2.schemas import InputRequest
 from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
 from automl.v2.minio import minIOStorage
 
@@ -101,7 +101,7 @@ async def get_jobs_offset(
 ):
     job_list_raw, total_pages, total_jobs = query_jobs(id_user, page, limit)
 
-    jobs_data = [JobResponse.model_validate(job) for job in job_list_raw]
+    jobs_data = [{**job, '_id': str(job['_id'])} for job in job_list_raw]
 
     return {
         "data": jobs_data,
