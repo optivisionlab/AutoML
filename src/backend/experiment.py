@@ -22,7 +22,6 @@ exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 async def get_features_of_dataset(id_data: str): 
     try:
         data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
-        dataset.get_data_and_features(id_data)
         return {
             "features": features
         }
@@ -126,8 +125,8 @@ async def get_model_by_path(
     model_stream = None
     try:
         # Lấy luồng byte từ MinIO
-        model_stream = minIOStorage.get_object(bucket_name, object_name)
-        model = pickle.load(model_stream)
+        buffer = minIOStorage.get_object(bucket_name, object_name)
+        model = pickle.load(buffer)
 
         prediction = model.predict(data)
         return {

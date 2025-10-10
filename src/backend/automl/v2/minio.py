@@ -93,14 +93,25 @@ class MinIOStorage:
 
 
     def get_object(self, bucket_name: str, object_name: str):
+        data_stream = None
         try:
             data_stream = self.__client.get_object(
                 bucket_name,
                 object_name
             )
-            return data_stream
+            data_bytes = data_stream.read()
+            buffer = io.BytesIO(data_bytes)
+            buffer.seek(0)
+
+            return buffer
         except Exception as e:
             raise Exception(f"{str(e)}")
+        finally:
+            if data_stream:
+                try:
+                    data_stream.close()
+                except Exception:
+                    pass
 
 
     def remove_object(self, bucket_name: str, object_name: str):

@@ -21,7 +21,8 @@ class MongoDataLoader:
         try: 
             data = self.__data_collection.find_one({"_id": ObjectId(id_data)}, {"data_link": 1})
             if data:
-                return data.get("bucket_name"), data.get("object_name")
+                data_link = data.get("data_link", {})
+                return data_link.get("bucket_name"), data_link.get("object_name")
         except Exception as e:
             print(f"Exception when get dataset from MongoDB: {str(e)}")
             return None, None
@@ -36,7 +37,6 @@ class MongoDataLoader:
         try:
             parquet_stream = minIOStorage.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(parquet_stream)
-            parquet_stream.close()
 
             # df_retrieved = df_retrieved.where(pd.notna(df_retrieved), None)
 

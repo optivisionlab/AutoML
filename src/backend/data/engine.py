@@ -135,7 +135,7 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
         df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
 
-        data_name_copy = dataName.strip().replace(' ', '_')
+        data_name_copy = dataName.strip().replace(' ', '_').lower()
 
         minIOStorage.uploaded_dataset(
             bucket_name="dataset",
@@ -175,7 +175,6 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
 
 
 def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):
-    parquet_stream = None
     try:
 
         # Lấy bản ghi hiện tại để so sánh
@@ -198,27 +197,31 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
         bucket_name = data_link.get("bucket_name")
         object_name = data_link.get("object_name")
 
-        # if file_data:
-        #     # Read file and change to DataFrame
-        #     file_content_bytes = file_data.file.read()
-        #     csv_stream = io.BytesIO(file_content_bytes)
-        #     df = pd.read_csv(csv_stream)
+        if file_data:
+            # Read file and change to DataFrame
+            file_content_bytes = file_data.file.read()
+            csv_stream = io.BytesIO(file_content_bytes)
+            df = pd.read_csv(csv_stream)
 
-        #     # Get dataset from MinIO
-        #     parquet_stream = minIOStorage.get_object(bucket_name, object_name)
-        #     df_retrieved = pd.read_parquet(parquet_stream)
+            # Get dataset from MinIO
+            try:
+                with minIOStorage.get_object(bucket_name, object_name) as parquet_stream:
+                    df_retrieved = pd.read_parquet(parquet_stream)
+            except Exception as e:
+                # Xử lý trường hợp không tìm thấy file cũ (NoSuchKey)
+                df_retrieved = None
 
-        #     if not df.equals(df_retrieved):
-        #         parquet_buffer = io.BytesIO()
-        #         df.to_parquet(parquet_buffer, index=False)
-        #         parquet_buffer.seek(0)
+            if df_retrieved is not None and not df.equals(df_retrieved):
+                parquet_buffer = io.BytesIO()
+                df.to_parquet(parquet_buffer, index=False)
+                parquet_buffer.seek(0)
 
-        #         minIOStorage.uploaded_dataset(
-        #             bucket_name=bucket_name,
-        #             object_name=object_name,
-        #             parquet_buffer=parquet_buffer
-        #         )
-        #         data_changed = True
+                minIOStorage.uploaded_dataset(
+                    bucket_name=bucket_name,
+                    object_name=object_name,
+                    parquet_buffer=parquet_buffer
+                )
+                data_changed = True
 
         if data_changed:
             update_fields["latestUpdate"] = time.time()
@@ -231,12 +234,6 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
 
     except Exception as e:
         raise Exception(f"Error: {str(e)}")
-    finally:
-        if parquet_stream:
-            try:
-                parquet_stream.close()
-            except Exception:
-                pass
 
 
 def delete_dataset_at_minio_by_id(dataset_id: str):
