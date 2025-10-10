@@ -129,9 +129,6 @@ async def get_model_by_path(
         model_stream = minIOStorage.get_object(bucket_name, object_name)
         model = pickle.load(model_stream)
 
-        # Đóng luồng
-        model_stream.close()
-
         prediction = model.predict(data)
         return {
             "_id": _id,
@@ -140,4 +137,9 @@ async def get_model_by_path(
     except Exception as e:
         model_stream.close() if model_stream else None
         raise HTTPException(status_code=500, detail=f"Failed to process model: {str(e)}")
-
+    finally:
+        if model_stream:
+            try:
+                model_stream.close()
+            except Exception:
+                pass

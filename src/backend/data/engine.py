@@ -209,7 +209,6 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
             # Get dataset from MinIO
             parquet_stream = minIOStorage.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(parquet_stream)
-            parquet_stream.close()
 
             if not df.equals(df_retrieved):
                 parquet_buffer = io.BytesIO()
@@ -233,8 +232,13 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
         return data_changed
 
     except Exception as e:
-        parquet_stream.close() if parquet_stream else None
         raise Exception(f"Error: {str(e)}")
+    finally:
+        if parquet_stream:
+            try:
+                parquet_stream.close()
+            except Exception:
+                pass
 
 
 def delete_dataset_at_minio_by_id(dataset_id: str):

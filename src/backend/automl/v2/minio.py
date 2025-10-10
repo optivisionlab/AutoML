@@ -42,7 +42,13 @@ class MinIOStorage:
 
     def uploaded_model(self, bucket_name: str, object_name: str, model_bytes: bytes, ):
         if not self.__client.bucket_exists(bucket_name):
-            self.__client.make_bucket(bucket_name)
+            try:
+                self.__client.make_bucket(bucket_name)
+            except S3Error as e:
+                if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                    pass 
+                else:
+                    raise Exception(f"Failed to create MinIO bucket '{bucket_name}': {e}")
 
         with io.BytesIO(model_bytes) as data_stream:
             try:
@@ -60,9 +66,16 @@ class MinIOStorage:
             except Exception as e:
                 raise Exception(f"MinIO upload error for {object_name}: {e}")
         
+
     def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer ):
         if not self.__client.bucket_exists(bucket_name):
-            self.__client.make_bucket(bucket_name)
+            try:
+                self.__client.make_bucket(bucket_name)
+            except S3Error as e:
+                if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                    pass 
+                else:
+                    raise Exception(f"Failed to create MinIO bucket '{bucket_name}': {e}")
 
         try:
             self.__client.put_object(
@@ -70,11 +83,10 @@ class MinIOStorage:
                 object_name,
                 data=parquet_buffer,
                 length=len(parquet_buffer.getvalue()),
-                content_type='application/octet-stream'
+                content_type='application/x-parquet'
             )
             print(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
         except S3Error as e:
-            # Ghi log lỗi chi tiết hơn
             raise Exception(f"MinIO upload error (S3Error) for {object_name}: {e}")
         except Exception as e:
             raise Exception(f"MinIO upload error for {object_name}: {e}")
@@ -139,4 +151,3 @@ class MinIOStorage:
         
         
 minIOStorage = MinIOStorage(endpoint=MINIO_ENDPOINT, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY)
-
