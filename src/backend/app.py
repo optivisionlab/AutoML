@@ -408,7 +408,11 @@ def upload_dataset(
 ):
 
     # return upload_data(file_data, data_name, data_type, user_id)
-    return upload_data_to_minio(file_data, data_name, data_type, user_id)
+    try:
+        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
+        return dataset
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{str(e)}")
 
 
 # Update dataset
@@ -416,8 +420,13 @@ def upload_dataset(
 def update_dataset(
     dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    return update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
-
+    try:
+        result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
+        return {
+            "sucess": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{str(e)}")
 
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")

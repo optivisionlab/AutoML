@@ -121,54 +121,57 @@ def upload_data(file_data, dataName, dataType, userId):
 def upload_data_to_minio(file_data, dataName, dataType, userId):
     now = time.time()
 
-    # Lấy thông tin người dùng từ userId
-    user = user_collection.find_one({"_id": ObjectId(userId)})
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+    try:
+        # Lấy thông tin người dùng từ userId
+        user = user_collection.find_one({"_id": ObjectId(userId)})
+        if not user:
+            raise Exception(f"Not found user")
 
-    file_content_bytes = file_data.file.read()
-    csv_stream = io.BytesIO(file_content_bytes)
-    df = pd.read_csv(csv_stream)
+        file_content_bytes = file_data.file.read()
+        csv_stream = io.BytesIO(file_content_bytes)
+        df = pd.read_csv(csv_stream)
 
-    parquet_buffer = io.BytesIO()
-    df.to_parquet(parquet_buffer, index=False)
-    parquet_buffer.seek(0)
+        parquet_buffer = io.BytesIO()
+        df.to_parquet(parquet_buffer, index=False)
+        parquet_buffer.seek(0)
 
-    minIOStorage.uploaded_dataset(
-        bucket_name=f"{userId}",
-        object_name=f"dataset/{dataName}.parquet",
-        parquet_buffer=parquet_buffer
-    )
+        minIOStorage.uploaded_dataset(
+            bucket_name=f"{userId}",
+            object_name=f"dataset/{dataName}.parquet",
+            parquet_buffer=parquet_buffer
+        )
 
-    username = user.get("username")
-    role = user.get("role")
+        username = user.get("username")
+        role = user.get("role")
 
-    # Nếu là admin thì đặt userId = 0
-    if role == "admin":
-        userId = "0"
+        # Nếu là admin thì đặt userId = 0
+        if role == "admin":
+            userId = "0"
 
-    data_to_insert = {
-        "dataName": dataName,
-        "dataType": dataType,
-        "data_link": {
-            "bucket_name": f"{userId}",
-            "object_name": f"dataset/{dataName}.parquet"
-        },
-        "latestUpdate": now,
-        "createDate": now,
-        "user": {
-            "id": userId,
-            "name": username
-        },
-        "role": role,
-    }
+        data_to_insert = {
+            "dataName": dataName,
+            "dataType": dataType,
+            "data_link": {
+                "bucket_name": f"{userId}",
+                "object_name": f"dataset/{dataName}.parquet"
+            },
+            "latestUpdate": now,
+            "createDate": now,
+            "user": {
+                "id": userId,
+                "name": username
+            },
+            "role": role,
+        }
 
-    result = data_collection.insert_one(data_to_insert)
-    if result.inserted_id:
-        serialize_mongo_doc(data_to_insert)
-        return JSONResponse(content=data_to_insert)
-    else:
-        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi thêm bộ dữ liệu")
+        result = data_collection.insert_one(data_to_insert)
+        if result.inserted_id:
+            serialize_mongo_doc(data_to_insert)
+            return data_to_insert
+        else:
+            raise Exception(f"Error when insert data to mongo")
+    except Exception as e:
+        raise Exception(f"Error when upload dataset: {str(e)}")
 
 
 def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):
@@ -223,7 +226,7 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
                 {"$set": update_fields}
             )
             
-        return True
+        return data_changed
 
     except Exception as e:
         parquet_stream.close() if parquet_stream else None
