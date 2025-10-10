@@ -159,10 +159,8 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
             },
             "latestUpdate": now,
             "createDate": now,
-            "user": {
-                "id": userId,
-                "name": username
-            },
+            "userId": userId,
+            "username": username,
             "role": role,
         }
 
@@ -200,27 +198,27 @@ def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataTyp
         bucket_name = data_link.get("bucket_name")
         object_name = data_link.get("object_name")
 
-        if file_data and file_data.file:
-            # Read file and change to DataFrame
-            file_content_bytes = file_data.file.read()
-            csv_stream = io.BytesIO(file_content_bytes)
-            df = pd.read_csv(csv_stream)
+        # if file_data:
+        #     # Read file and change to DataFrame
+        #     file_content_bytes = file_data.file.read()
+        #     csv_stream = io.BytesIO(file_content_bytes)
+        #     df = pd.read_csv(csv_stream)
 
-            # Get dataset from MinIO
-            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
-            df_retrieved = pd.read_parquet(parquet_stream)
+        #     # Get dataset from MinIO
+        #     parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+        #     df_retrieved = pd.read_parquet(parquet_stream)
 
-            if not df.equals(df_retrieved):
-                parquet_buffer = io.BytesIO()
-                df.to_parquet(parquet_buffer, index=False)
-                parquet_buffer.seek(0)
+        #     if not df.equals(df_retrieved):
+        #         parquet_buffer = io.BytesIO()
+        #         df.to_parquet(parquet_buffer, index=False)
+        #         parquet_buffer.seek(0)
 
-                minIOStorage.uploaded_dataset(
-                    bucket_name=bucket_name,
-                    object_name=object_name,
-                    parquet_buffer=parquet_buffer
-                )
-                data_changed = True
+        #         minIOStorage.uploaded_dataset(
+        #             bucket_name=bucket_name,
+        #             object_name=object_name,
+        #             parquet_buffer=parquet_buffer
+        #         )
+        #         data_changed = True
 
         if data_changed:
             update_fields["latestUpdate"] = time.time()

@@ -67,7 +67,7 @@ class MinIOStorage:
                 raise Exception(f"MinIO upload error for {object_name}: {e}")
         
 
-    def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer ):
+    def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer):
         if not self.__client.bucket_exists(bucket_name):
             try:
                 self.__client.make_bucket(bucket_name)
