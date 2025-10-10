@@ -40,7 +40,7 @@ class MinIOStorage:
             raise Exception(f"MinIO initialization error: {e}")
     
 
-    def uploaded_object(self, bucket_name: str, object_name: str, model_bytes: bytes):
+    def uploaded_model(self, bucket_name: str, object_name: str, model_bytes: bytes, ):
         if not self.__client.bucket_exists(bucket_name):
             self.__client.make_bucket(bucket_name)
 
@@ -60,7 +60,37 @@ class MinIOStorage:
             except Exception as e:
                 raise Exception(f"MinIO upload error for {object_name}: {e}")
         
+    def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer ):
+        if not self.__client.bucket_exists(bucket_name):
+            self.__client.make_bucket(bucket_name)
 
+            try:
+                self.__client.put_object(
+                    bucket_name,
+                    object_name,
+                    data=parquet_buffer,
+                    length=len(parquet_buffer.getvalue()),
+                    content_type='application/x-parquet'
+                )
+                print(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
+            except S3Error as e:
+                # Ghi log lỗi chi tiết hơn
+                raise Exception(f"MinIO upload error (S3Error) for {object_name}: {e}")
+            except Exception as e:
+                raise Exception(f"MinIO upload error for {object_name}: {e}")
+
+
+    def get_object(self, bucket_name: str, object_name: str):
+        try:
+            data_stream = self.__client.get_object(
+                bucket_name,
+                object_name
+            )
+            return data_stream
+        except Exception as e:
+            raise Exception(f"{str(e)}")
+
+        
     def get_url(self, bucket_name: str, object_name: str):
         try:
             url = self.__client.presigned_get_object(bucket_name, object_name)

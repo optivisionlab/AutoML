@@ -5,6 +5,7 @@ from bson.objectid import ObjectId
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from bson import ObjectId
+from automl.v2.minio import minIOStorage
 
 import base64
 import pandas as pd
@@ -115,6 +116,118 @@ def upload_data(file_data, dataName, dataType, userId):
         return JSONResponse(content=data_to_insert)
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi thêm bộ dữ liệu")
+
+
+def upload_data_to_minio(file_data, dataName, dataType, userId):
+    now = time.time()
+
+    # Lấy thông tin người dùng từ userId
+    user = user_collection.find_one({"_id": ObjectId(userId)})
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
+
+    file_content_bytes = file_data.file.read()
+    csv_stream = io.BytesIO(file_content_bytes)
+    df = pd.read_csv(csv_stream)
+
+    parquet_buffer = io.BytesIO()
+    df.to_parquet(parquet_buffer, index=False)
+    parquet_buffer.seek(0)
+
+    minIOStorage.uploaded_dataset(
+        bucket_name=f"{userId}",
+        object_name=f"dataset/{dataName}.parquet",
+        parquet_buffer=parquet_buffer
+    )
+
+    username = user.get("username")
+    role = user.get("role")
+
+    # Nếu là admin thì đặt userId = 0
+    if role == "admin":
+        userId = "0"
+
+    data_to_insert = {
+        "dataName": dataName,
+        "dataType": dataType,
+        "data_link": {
+            "bucket_name": f"{userId}",
+            "object_name": f"dataset/{dataName}.parquet"
+        },
+        "latestUpdate": now,
+        "createDate": now,
+        "user": {
+            "id": userId,
+            "name": username
+        },
+        "role": role,
+    }
+
+    result = data_collection.insert_one(data_to_insert)
+    if result.inserted_id:
+        serialize_mongo_doc(data_to_insert)
+        return JSONResponse(content=data_to_insert)
+    else:
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi thêm bộ dữ liệu")
+
+
+def update_dataset_to_minio_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):
+    try:
+        # Lấy bản ghi hiện tại để so sánh
+        current_data = data_collection.find_one({"_id": ObjectId(dataset_id)})
+        if not current_data:
+            raise Exception(f"Not found dataset")
+
+        update_fields = {}
+        data_changed = False
+
+        # Kiểm tra từng trường và chỉ thêm vào nếu có thay đổi
+        if dataName and dataName != current_data.get("dataName"):
+            update_fields["dataName"] = dataName
+            data_changed = True
+        if dataType and dataType != current_data.get("dataType"):
+            update_fields["dataType"] = dataType
+            data_changed = True
+
+        data_link = current_data.get("data_link", {})
+        bucket_name = data_link.get("bucket_name")
+        object_name = data_link.get("object_name")
+
+        if file_data and file_data.file:
+            # Read file and change to DataFrame
+            file_content_bytes = file_data.file.read()
+            csv_stream = io.BytesIO(file_content_bytes)
+            df = pd.read_csv(csv_stream)
+
+            # Get dataset from MinIO
+            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+            df_retrieved = pd.read_parquet(parquet_stream)
+            parquet_stream.close()
+
+            if not df.equals(df_retrieved):
+                parquet_buffer = io.BytesIO()
+                df.to_parquet(parquet_buffer, index=False)
+                parquet_buffer.seek(0)
+
+                minIOStorage.uploaded_dataset(
+                    bucket_name=bucket_name,
+                    object_name=object_name,
+                    parquet_buffer=parquet_buffer
+                )
+                data_changed = True
+
+        if data_changed:
+            update_fields["latestUpdate"] = time.time()
+            data_collection.update_one(
+                {"_id": ObjectId(dataset_id)},
+                {"$set": update_fields}
+            )
+            
+        return True
+
+    except Exception as e:
+        parquet_stream.close() if parquet_stream else None
+        raise Exception(f"Error: {str(e)}")
 
 
 def update_dataset_by_id(dataset_id: str, dataName: str = None, dataType: str = None, file_data=None):

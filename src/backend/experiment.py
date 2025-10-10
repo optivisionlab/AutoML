@@ -118,39 +118,26 @@ async def get_jobs_offset(
 # API lấy model để sử dụng (mongodb + minio)
 @exp.get('jobs/prediction/{id}')
 async def get_model_by_path(
-    _id: str
+    _id: str, 
+    data
 ):
     # model mới có dạng dict, những dữ liệu được training trước đó sẽ xảy ra lỗi.
     bucket_name, object_name = get_model(_id)
 
-    local_path = f"/data/model_registry/{bucket_name}/{object_name}"
-
-    model_local_path = None
-    model = None
-    data = [1,2,3]
-
     try:
-        model_local_path = minIOStorage.download_model(bucket_name, object_name, local_path)
-
-        is_pickle = model_local_path.lower().endswith(".pkl")
-        is_joblib = model_local_path.lower().endswith(".joblib")
-
-        if is_pickle:
-            def load_pickle(path):
-                with open(path, 'rb') as f:
-                    return pickle.load(f)
-            
-            model = await asyncio.to_thread(load_pickle, model_local_path)
-
-        else:
-            raise ValueError(f"Unsupported file format for model")
+        # Lấy luồng byte từ MinIO
+        model_stream = minIOStorage.get_object(bucket_name, object_name)
+        model = pickle.load(model_stream)
+        
+        # Đóng luồng
+        model_stream.close()
 
         prediction = model.predict(data)
-
         return {
             "_id": _id,
             "prediction": prediction.tolist()
         }
     except Exception as e:
+        model_stream.close() if model_stream else None
         raise HTTPException(status_code=500, detail=f"Failed to process model: {str(e)}")
 

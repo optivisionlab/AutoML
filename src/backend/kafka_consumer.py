@@ -51,7 +51,7 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
         version = 1
 
         await asyncio.to_thread(
-            minIOStorage.uploaded_object,
+            minIOStorage.uploaded_model,
             bucket_name=f"{id_user}",
             object_name=f"{job_id}/{results['best_model']}_{version}.pkl",
             model_bytes=results["model"]
