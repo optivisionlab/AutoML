@@ -87,7 +87,7 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
 
     except Exception as e:
         # Lỗi từ quá trình huấn luyện
-        error_msg = f"Training failure: {str(e)} {end-start}"
+        error_msg = f"Training failure: {str(e)}"
         print(f"[JOB {job_id}] {error_msg}")
 
 
