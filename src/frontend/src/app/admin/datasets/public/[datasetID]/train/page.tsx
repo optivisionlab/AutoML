@@ -14,7 +14,7 @@ export default function Page() {
 
   useEffect(() => {
     sessionStorage.clear();
-    
+
     const fetchData = async () => {
       try {
         const res = await fetch(

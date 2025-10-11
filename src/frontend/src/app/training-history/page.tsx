@@ -4,12 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableHeader,
@@ -90,6 +85,11 @@ const TrainingHistory = () => {
     };
 
     fetchTrainingJobs();
+
+    // revalidate sau mỗi 10 giây
+    // const interval = setInterval(fetchTrainingJobs, 5000);
+
+    // return () => clearInterval(interval);
   }, [session?.user?.id]);
 
   const handleSortByDate = () => {
@@ -177,10 +177,11 @@ const TrainingHistory = () => {
                     <TableCell className="text-center">
                       <Button
                         variant="default"
-                        className={`px-4 py-2 rounded-md text-white ${job.status === 1
-                          ? "bg-[#3a6df4] hover:bg-[#5b85f7]"
-                          : "bg-gray-400 cursor-not-allowed"
-                          }`}
+                        className={`px-4 py-2 rounded-md text-white ${
+                          job.status === 1
+                            ? "bg-[#3a6df4] hover:bg-[#5b85f7]"
+                            : "bg-gray-400 cursor-not-allowed"
+                        }`}
                         onClick={() => {
                           if (job.status === 1) {
                             router.push(`/training-history/${job.job_id}`);
@@ -202,8 +203,14 @@ const TrainingHistory = () => {
                 <PaginationContent>
                   <PaginationItem>
                     <PaginationPrevious
-                      onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                      className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(prev - 1, 1))
+                      }
+                      className={
+                        currentPage === 1
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
                     />
                   </PaginationItem>
 
@@ -212,10 +219,11 @@ const TrainingHistory = () => {
                       <Button
                         variant="ghost"
                         onClick={() => setCurrentPage(i + 1)}
-                        className={`px-3 ${currentPage === i + 1
+                        className={`px-3 ${
+                          currentPage === i + 1
                             ? "bg-white border border-gray-300 text-black" // trang hiện tại
                             : ""
-                          }`}
+                        }`}
                       >
                         {i + 1}
                       </Button>
@@ -225,9 +233,7 @@ const TrainingHistory = () => {
                   <PaginationItem>
                     <PaginationNext
                       onClick={() =>
-                        setCurrentPage((prev) =>
-                          Math.min(prev + 1, totalPages)
-                        )
+                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
                       }
                       className={
                         currentPage === totalPages
