@@ -39,18 +39,20 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
 
   const [isLoading, setIsLoading] = useState(false);
 
+  // 31. Lấy dữ liệu dataset theo datasetID chọn
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
+        // `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`,
         {
-          method: "POST",
+          method: "GET",
           headers: { accept: "application/json" },
         }
       )
         .then((res) => res.json())
-        .then(({ list_feature }) => {
-          setListFeature(list_feature);
+        .then(({ features }) => {
+          setListFeature(features);
         })
         .catch((err) => {
           console.error("Lỗi khi gọi API:", err);
@@ -121,6 +123,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
             ]}
             value={selectedOption}
             onChange={(val) => {
+              console.log("Giá trị được chọn:", val);
               setSelectedOption(val);
               sessionStorage.setItem("choose", val);
             }}
@@ -139,6 +142,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
             ]}
             value={method}
             onChange={(val) => {
+              console.log("Giá trị được chọn:", val);
               setMethod(val);
               sessionStorage.setItem("method", val);
             }}
@@ -228,6 +232,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
               </RadioGroup>
             </div>
 
+            {/* Confirm Dialog */}
             <div className="flex justify-between mt-6">
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại

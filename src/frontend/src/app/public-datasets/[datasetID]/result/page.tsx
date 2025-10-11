@@ -106,8 +106,10 @@ const ResultPage = ({ params }: Props) => {
         return;
       }
 
+      // body gửi lên sv
       const requestBody = {
-        data: dataTrain,
+        id_data: datasetID,
+        id_user: session.user.id,
         config: {
           choose: config.choose,
           metric_sort: config.metric_sort,
@@ -119,9 +121,11 @@ const ResultPage = ({ params }: Props) => {
       setIsLoading(true);
       setError(null);
 
+      // api 33 -> gửi dữ liệu lên tiến hành train
       try {
+        console.log(JSON.stringify(requestBody));
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/api-push-kafka?user_id=${session.user.id}&data_id=${datasetID}`,
+          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/jobs/training`,
           {
             method: "POST",
             headers: {
@@ -142,7 +146,9 @@ const ResultPage = ({ params }: Props) => {
         setJobStatus(resultData.status || null);
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
-        setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
+        setError(
+          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -157,7 +163,9 @@ const ResultPage = ({ params }: Props) => {
         <Card className="w-full max-w-md shadow-md border border-red-300 bg-white">
           <CardHeader className="flex flex-row items-center gap-3 border-b border-red-100 pb-2">
             <AlertCircle className="text-red-500 w-5 h-5" />
-            <CardTitle className="text-red-600 text-base font-semibold">Đã xảy ra lỗi</CardTitle>
+            <CardTitle className="text-red-600 text-base font-semibold">
+              Đã xảy ra lỗi
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
             <p className="text-sm text-gray-700 leading-relaxed">{error}</p>
