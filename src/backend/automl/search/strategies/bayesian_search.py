@@ -25,6 +25,7 @@ class BayesianSearchStrategy(SearchStrategy):
         bayesian_config = {
             'n_calls': 50,  # Số lần gọi hàm mục tiêu để tối ưu hóa
             'scoring': 'accuracy',  # Hàm đánh giá mô hình
+            'metrics': ['accuracy', 'precision', 'recall', 'f1'],
             'log_dir': 'logs',  # Thư mục lưu log
             'save_log': True,  # Có lưu log không
         }
@@ -85,14 +86,28 @@ class BayesianSearchStrategy(SearchStrategy):
             model.set_params(**params)
 
             scoring = self.config['scoring']
+            metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
 
             # Tính toán các metric chi tiết
-            scoring_metrics = {
+            scoring_metrics = {}
+            metric_mapping = {
                 'accuracy': 'accuracy',
                 'precision': 'precision_weighted',
                 'recall': 'recall_weighted',
                 'f1': 'f1_weighted'
             }
+
+            for metric in metrics:
+                if metric in metric_mapping:
+                    scoring_metrics[metric] = metric_mapping[metric]
+                else:
+                    scoring_metrics[metric] = metric
+
+            if scoring not in scoring_metrics:
+                if scoring in metric_mapping:
+                    scoring_metrics[scoring] = metric_mapping[scoring]
+                else:
+                    scoring_metrics[scoring] = scoring
 
             cv_results = cross_validate(
                 estimator=model,
@@ -105,16 +120,13 @@ class BayesianSearchStrategy(SearchStrategy):
                 return_train_score=False
             )
 
-            # Lưu metrics vào biến toàn cục để callback có thể truy cập
-            objective.last_metrics = {
-                'accuracy': np.mean(cv_results['test_accuracy']),
-                'precision': np.mean(cv_results['test_precision']),
-                'recall': np.mean(cv_results['test_recall']),
-                'f1': np.mean(cv_results['test_f1'])
-            }
+            # Lưu metrics vào biến toàn cục
+            objective.last_metrics = {}
+            for metric, sklearn_metric in scoring_metrics.items():
+                objective.last_metrics[metric] = np.mean(cv_results[f'test_{sklearn_metric}'])
 
             # Sử dụng scoring chính để tối ưu hóa
-            score = objective.last_metrics[scoring] if scoring in objective.last_metrics  else objective.last_metrics['accuracy']
+            score = objective.last_metrics.get(scoring, objective.last_metrics.get('accuracy', 0.0))
 
             # gp_minimize luôn tối thiểu hóa, vì vậy ta chỉ cần trả về -score
             return -score
