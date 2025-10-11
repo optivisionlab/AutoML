@@ -323,8 +323,9 @@ def delete_dataset_by_id(dataset_id: str):
 # Hàm lấy danh sách data user cho admin
 def get_user_data_list():
     try:
-        data_list = data_collection.find({"userId": {"$ne": "0"}})
+        data_list = data_collection.find({"userId": {"$ne": "0"}, "activate": 1}, {"username": 0, "role": 0})
         result = [serialize_mongo_doc(data) for data in data_list]
         return JSONResponse(content=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy danh sách dữ liệu: {str(e)}")
+
