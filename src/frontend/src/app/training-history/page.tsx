@@ -85,11 +85,6 @@ const TrainingHistory = () => {
     };
 
     fetchTrainingJobs();
-
-    // revalidate sau mỗi 10 giây
-    // const interval = setInterval(fetchTrainingJobs, 5000);
-
-    // return () => clearInterval(interval);
   }, [session?.user?.id]);
 
   const handleSortByDate = () => {
