@@ -14,7 +14,7 @@ import time
 
 db = get_database()
 data_collection = db["tbl_Data"]
-user_collection = db["tbl_User"]
+user_collection = db["tbl_User"] 
 
 # Hàm lấy danh sách data
 def get_list_data(id_user):
