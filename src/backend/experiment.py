@@ -37,6 +37,26 @@ async def get_features_of_dataset(id_data: str):
         )
 
 
+@exp.get("/data")
+async def get_features_of_dataset(id_data: str): 
+    try:
+        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
+        return {
+            "data": data
+        }
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+
 # API training model = client ==> server (dùng cho test)
 @exp.post("/distributed/mongodb")
 async def distributed_mongodb(input: InputRequest):
