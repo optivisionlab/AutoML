@@ -137,6 +137,10 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
 
         data_name_copy = dataName.strip().replace(' ', '_').lower()
 
+        # Nếu là admin thì đặt userId = 0
+        if role == "admin":
+            userId = "0"
+
         minIOStorage.uploaded_dataset(
             bucket_name="dataset",
             object_name=f"{userId}/{data_name_copy}.parquet",
@@ -145,10 +149,6 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
 
         username = user.get("username")
         role = user.get("role")
-
-        # Nếu là admin thì đặt userId = 0
-        if role == "admin":
-            userId = "0"
 
         data_to_insert = {
             "dataName": dataName,
