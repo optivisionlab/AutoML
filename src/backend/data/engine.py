@@ -18,7 +18,9 @@ user_collection = db["tbl_User"]
 
 # Hàm lấy danh sách data
 def get_list_data(id_user):
-    data = data_collection.find({"userId": id_user})
+    filter_query = {"userId": id_user, "deactivate": 0}
+
+    data = data_collection.find(filter_query, {"username": 0, "role": 0})
     list_data = []
     for item in data:
         item["_id"] = str(item["_id"])
@@ -162,6 +164,7 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
             "userId": userId,
             "username": username,
             "role": role,
+            "deactivate": 0
         }
 
         result = data_collection.insert_one(data_to_insert)
