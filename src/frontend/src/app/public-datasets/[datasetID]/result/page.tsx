@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect, useState, useCallback } from "react";
 import { AlertCircle, CheckCircle, LoaderCircle } from "lucide-react";
-import { type ChartConfig } from "@/components/ui/chart";
+
 import { useSession } from "next-auth/react";
 import React from "react";
 import { useRouter } from "next/navigation";
@@ -102,10 +102,6 @@ const ResultPage = ({ params }: Props) => {
   // Gửi dataTrain và config tới API tiếp theo
   useEffect(() => {
     const trainModel = async () => {
-      // if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
-      //   return;
-      // }
-
       if (!config || !session?.user?.id || !datasetID) {
         return;
       }
