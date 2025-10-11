@@ -39,31 +39,31 @@ const ResultPage = ({ params }: Props) => {
   }, [params]);
 
   // Fetch data train từ API đầu tiên
-  const fetchDataTrain = useCallback(async () => {
-    if (datasetID) {
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
-          {
-            method: "POST",
-            headers: { accept: "application/json" },
-            body: "",
-          }
-        );
-        const { data } = await response.json();
-        setDataTrain(data);
-      } catch (err) {
-        console.log("Lỗi khi fetch:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [datasetID]);
+  // const fetchDataTrain = useCallback(async () => {
+  //   if (datasetID) {
+  //     setIsLoading(true);
+  //     try {
+  //       const response = await fetch(
+  //         `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
+  //         {
+  //           method: "POST",
+  //           headers: { accept: "application/json" },
+  //           body: "",
+  //         }
+  //       );
+  //       const { data } = await response.json();
+  //       setDataTrain(data);
+  //     } catch (err) {
+  //       console.log("Lỗi khi fetch:", err);
+  //     } finally {
+  //       setIsLoading(false);
+  //     }
+  //   }
+  // }, [datasetID]);
 
-  useEffect(() => {
-    fetchDataTrain();
-  }, [datasetID, fetchDataTrain]);
+  // useEffect(() => {
+  //   fetchDataTrain();
+  // }, [datasetID, fetchDataTrain]);
 
   // Lấy cấu hình từ sessionStorage và chuẩn bị config
   useEffect(() => {
@@ -102,7 +102,11 @@ const ResultPage = ({ params }: Props) => {
   // Gửi dataTrain và config tới API tiếp theo
   useEffect(() => {
     const trainModel = async () => {
-      if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
+      // if (!dataTrain.length || !config || !session?.user?.id || !datasetID) {
+      //   return;
+      // }
+
+      if (!config || !session?.user?.id || !datasetID) {
         return;
       }
 
@@ -155,7 +159,8 @@ const ResultPage = ({ params }: Props) => {
     };
 
     trainModel();
-  }, [dataTrain, config]);
+    // }, [dataTrain, config]);
+  }, [config]);
 
   if (error) {
     return (
