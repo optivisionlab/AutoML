@@ -512,4 +512,3 @@ app.include_router(exp)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
-    pass
