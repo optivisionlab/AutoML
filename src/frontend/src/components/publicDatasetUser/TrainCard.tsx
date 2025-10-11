@@ -43,7 +43,6 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        // `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
         `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`,
         {
           method: "GET",

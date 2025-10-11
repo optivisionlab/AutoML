@@ -20,7 +20,6 @@ import {
   AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
 
-
 interface TrainMyDataCardProps {
   datasetID?: string;
   datasetName: string;
@@ -41,18 +40,18 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   useEffect(() => {
     if (step === 3 && datasetID) {
       fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
+        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`,
         {
-          method: "POST",
+          method: "GET",
           headers: { accept: "application/json" },
         }
       )
         .then((res) => res.json())
-        .then(({ list_feature }) => {
-          setListFeature(list_feature);
+        .then(({ features }) => {
+          setListFeature(features);
         })
         .catch((err) => {
-          console.log("Lỗi khi gọi API:", err);
+          console.error("Lỗi khi gọi API:", err);
           alert("Không thể tải dữ liệu huấn luyện.");
         });
     }
@@ -71,7 +70,7 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   const handleBack = () => {
     if (step === 1) {
       if (session?.user?.role === "admin") {
-        router.push("/admin/datasets/users")
+        router.push("/admin/datasets/users");
       } else {
         router.push("/my-datasets");
       }
@@ -99,14 +98,14 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   };
 
   const handleStartTraining = () => {
-  if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
+    if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
 
-  setIsLoading(true);
+    setIsLoading(true);
 
-  setTimeout(() => {
-    router.push(`/public-datasets/${datasetID}/result`);
-  }, 100); 
-};
+    setTimeout(() => {
+      router.push(`/public-datasets/${datasetID}/result`);
+    }, 100);
+  };
 
   return (
     <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
@@ -136,7 +135,12 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
                   key={value}
                   className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
                 >
-                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
+                  <RadioGroupItem
+                    id={value}
+                    value={value}
+                    disabled={disabled}
+                    className="mr-3"
+                  />
                   <Label htmlFor={value}>{label}</Label>
                 </div>
               ))}
@@ -173,7 +177,12 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
                   key={value}
                   className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
                 >
-                  <RadioGroupItem id={value} value={value} disabled={disabled} className="mr-3" />
+                  <RadioGroupItem
+                    id={value}
+                    value={value}
+                    disabled={disabled}
+                    className="mr-3"
+                  />
                   <Label htmlFor={value}>{label}</Label>
                 </div>
               ))}
@@ -268,7 +277,6 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
                     </Label>
                   </div>
                 ))}
-
               </RadioGroup>
             </div>
 
@@ -286,12 +294,16 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu hình đã chọn không?
+                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu
+                      hình đã chọn không?
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Hủy</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleStartTraining} className="bg-[#3a6df4] text-white">
+                    <AlertDialogAction
+                      onClick={handleStartTraining}
+                      className="bg-[#3a6df4] text-white"
+                    >
                       Đồng ý
                     </AlertDialogAction>
                   </AlertDialogFooter>
