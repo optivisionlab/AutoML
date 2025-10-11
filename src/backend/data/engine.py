@@ -18,7 +18,7 @@ user_collection = db["tbl_User"]
 
 # Hàm lấy danh sách data
 def get_list_data(id_user):
-    filter_query = {"userId": id_user, "deactivate": 0}
+    filter_query = {"userId": id_user, "deactivate": 0} # deactivate = 0 <=> activate
 
     data = data_collection.find(filter_query, {"username": 0, "role": 0})
     list_data = []
@@ -110,6 +110,7 @@ def upload_data(file_data, dataName, dataType, userId):
         "userId": userId,
         "username": username,
         "role": role,
+        "deactivate": 1
     }
 
     result = data_collection.insert_one(data_to_insert)
@@ -164,7 +165,7 @@ def upload_data_to_minio(file_data, dataName: str, dataType, userId):
             "userId": userId,
             "username": username,
             "role": role,
-            "deactivate": 0
+            "deactivate": 0 # deactivate = 0 <=> activate
         }
 
         result = data_collection.insert_one(data_to_insert)
