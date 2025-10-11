@@ -38,7 +38,7 @@ class MongoDataLoader:
             parquet_stream = minIOStorage.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(parquet_stream)
 
-            df_retrieved = df_retrieved.where(pd.notna(df_retrieved), None)
+            # df_retrieved = df_retrieved.where(pd.notna(df_retrieved), None)
 
             # Lấy danh sách các cột (features)
             features = df_retrieved.columns.tolist()
