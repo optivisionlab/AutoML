@@ -8,13 +8,24 @@
 # file .config.yml đã được thêm vào .gitignore nên sẽ không đẩy lên github
 # COPY src/backend/temp.config.yml -> src/backend/.config.yml
 
+# Làm tương tự với file temp.env 
+
 # 1. cài đặt môi trường conda python 3.10.12
 cd src/backend
 pip install -r requirements.txt
 
 # 2. cấu hình môi trường
 cp src/backend/temp.config.yml src/backend/.config.yml
+
+cp src/backend/temp.env src/backend/.env
+
 export PYTHONPATH=$(pwd)
+
+# run worker server
+python worker.py
+# hoặc
+./run-worker.sh
+# Lý do: vì hệ thống hoạt động theo kiến trúc phân tán
 
 # run hautoml toolkit
 python app.py
@@ -47,4 +58,25 @@ npm run dev
 # run docker compose
 # workdir automl
 docker-compose up -d
+```
+
+## Quick start Worker
+```bash
+cd src/backend
+# default
+./run-worker.sh
+# chỉ định số lượng worker sẽ chạy
+./run-worker.sh -n 3
+# Sau khi docker được build lên, có thể  yêu cầu docker build lại image bằng cờ -b
+./run-worker.sh -b
+## Mục đích lựa chọn cờ -b khi có thay đổi logic hoặc Dockerfile.
+# Xem hướng dẫn
+./run-worker.sh -h
+```
+
+## Quick start MinIO
+```bash
+# Dùng để lưu trữ dữ liệu
+# https://github.com/minio/minio
+# Chỉ định MinIO endpoint (port run server của MinIO) vào .env
 ```
