@@ -19,6 +19,7 @@ cp src/backend/temp.config.yml src/backend/.config.yml
 
 cp src/backend/temp.env src/backend/.env
 
+
 export PYTHONPATH=$(pwd)
 
 # run worker server
@@ -26,6 +27,7 @@ python worker.py
 # hoặc
 ./run-worker.sh
 # Lý do: vì hệ thống hoạt động theo kiến trúc phân tán
+# Chỉ định số lượng worker sẽ được dùng và port cho worker đầu tiên trong .env
 
 # run hautoml toolkit
 python app.py
@@ -77,6 +79,6 @@ cd src/backend
 ## Quick start MinIO
 ```bash
 # Dùng để lưu trữ dữ liệu
-# https://github.com/minio/minio
-# Chỉ định MinIO endpoint (port run server của MinIO) vào .env
+https://github.com/minio/minio
+# Chỉ định MinIO endpoint (endpoint run server của MinIO) vào .env
 ```
