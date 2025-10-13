@@ -5,14 +5,15 @@ import time
 from fastapi import status, HTTPException, Query
 from fastapi.routing import APIRouter
 import asyncio
+import pickle
 
 # Local Modules
 from database.get_dataset import dataset
 from kafka_consumer import data
 from automl.v2.distributed import process_async
-from automl.v2.schemas import InputRequest, JobResponse
-from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message
-
+from automl.v2.schemas import InputRequest
+from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
+from automl.v2.minio import minIOStorage
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
@@ -21,7 +22,6 @@ exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 async def get_features_of_dataset(id_data: str): 
     try:
         data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
-        dataset.get_data_and_features(id_data)
         return {
             "features": features
         }
@@ -35,6 +35,26 @@ async def get_features_of_dataset(id_data: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@exp.get("/data")
+async def get_features_of_dataset(id_data: str): 
+    try:
+        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
+        return {
+            "data": data
+        }
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
 
 
 # API training model = client ==> server (dùng cho test)
@@ -100,7 +120,7 @@ async def get_jobs_offset(
 ):
     job_list_raw, total_pages, total_jobs = query_jobs(id_user, page, limit)
 
-    jobs_data = [JobResponse.model_validate(job) for job in job_list_raw]
+    jobs_data = [{**job, '_id': str(job['_id'])} for job in job_list_raw]
 
     return {
         "data": jobs_data,
@@ -112,3 +132,33 @@ async def get_jobs_offset(
             "prev_page": page - 1 if page > 1 else None
         }
     }
+
+
+# API lấy model để sử dụng (mongodb + minio)
+@exp.get('jobs/prediction/{id}')
+async def get_model_by_path(
+    _id: str, 
+    data
+):
+    # model mới có dạng dict, những dữ liệu được training trước đó sẽ xảy ra lỗi.
+    bucket_name, object_name = get_model(_id)
+    model_stream = None
+    try:
+        # Lấy luồng byte từ MinIO
+        buffer = minIOStorage.get_object(bucket_name, object_name)
+        model = pickle.load(buffer)
+
+        prediction = model.predict(data)
+        return {
+            "_id": _id,
+            "prediction": prediction.tolist()
+        }
+    except Exception as e:
+        model_stream.close() if model_stream else None
+        raise HTTPException(status_code=500, detail=f"Failed to process model: {str(e)}")
+    finally:
+        if model_stream:
+            try:
+                model_stream.close()
+            except Exception:
+                pass

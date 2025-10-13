@@ -58,7 +58,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
-from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
+from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
 import threading
 from kafka_consumer import kafka_consumer_process
 from users.engine import get_current_admin
@@ -83,7 +83,6 @@ async def lifespan(app: FastAPI):
     Trước yield là startup, sau yield là shutdown
     """
     global consumer_task
-    print("[Server Lifespan] Start Consumer Process")
 
     # KHỞI TẠO VÀ START PRODUCER 
     await start_producer()
@@ -94,9 +93,8 @@ async def lifespan(app: FastAPI):
 
     yield # Server Fastapi accepts requests
 
-    print("[Server Lifespan] Shutdown resources...")
-
     # DỪNG PRODUCER
+    print("[Server Lifespan] Shutdown resources...")
     await stop_producer()
     
     # DỪNG CONSUMER TASK
@@ -409,7 +407,12 @@ def upload_dataset(
     file_data: UploadFile = File(...),
 ):
 
-    return upload_data(file_data, data_name, data_type, user_id)
+    # return upload_data(file_data, data_name, data_type, user_id)
+    try:
+        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
+        return dataset
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
 # Update dataset
@@ -417,14 +420,27 @@ def upload_dataset(
 def update_dataset(
     dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
+    # return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
+    try:
+        result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
+        return {
+            "sucess": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
-    return delete_dataset_by_id(dataset_id)
-
+    # return delete_dataset_by_id(dataset_id)
+    try:
+        result = delete_dataset_at_minio_by_id(dataset_id)
+        return {
+            "success": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
@@ -496,4 +512,3 @@ app.include_router(exp)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
-    pass

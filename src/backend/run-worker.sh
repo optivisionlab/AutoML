@@ -21,8 +21,8 @@ while getopts "n:bh" opt; do
             ;;
         h)
             # Hiển thị hướng dẫn
-            echo "Sử dụng: $0 [-w <số lượng worker>] [-b (buộc build lại image)]"
-            echo "  -w: Chỉ định số lượng worker cần chạy (Mặc định: $DEFAULT_WORKERS)"
+            echo "Sử dụng: $0 [-n <số lượng worker>] [-b (buộc build lại image)]"
+            echo "  -n: Chỉ định số lượng worker cần chạy (Mặc định: $DEFAULT_WORKERS)"
             echo "  -b: Yêu cầu Docker Compose build lại image."
             exit 0
             ;;

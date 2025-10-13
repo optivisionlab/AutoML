@@ -8,7 +8,7 @@ from bson.objectid import ObjectId
 # Local Modules
 from database.get_dataset import get_database
 from kafka_consumer import get_producer
-from automl.v2.schemas import InputRequest, JobResponse
+from automl.v2.schemas import InputRequest
 
 
 async def send_message(topic: str, key: str, message: dict):
@@ -122,7 +122,8 @@ def save_job(input: InputRequest) -> str:
 
     msg_job = {
         "id_data": input.id_data,
-        "config": input.config
+        "config": input.config,
+        "id_user": input.id_user
     }
 
     try:
@@ -165,7 +166,7 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     # Projection để lấy các trường cần thiết, tránh tải dữ liệu lớn
     projection_fields = {
         # Các trường loại bỏ
-        "best_model": 0, "model": 0, "config": 0, "activate": 0 
+        "model": 0, "config": 0, "activate": 0, "item": 0 
     }
 
     jobs_cursor = (
@@ -179,3 +180,19 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     jobs_list_raw = [convert_mongodb_document(job) for job in jobs_cursor]
 
     return jobs_list_raw, total_pages, total_jobs
+
+
+def get_model(id: str) -> dict:
+    db = get_database()
+    job_collection = db["tbl_Job"]
+
+    model_doc = job_collection.find_one({"_id": ObjectId(id)}, {"model": 1})
+
+    if not model_doc:
+        raise ValueError("Data not found")
+    
+    model = model_doc.get("model", {})
+    bucket_name = model.get("bucket_name")
+    object_name = model.get("object_name")
+
+    return bucket_name, object_name

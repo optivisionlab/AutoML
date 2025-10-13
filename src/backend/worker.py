@@ -22,7 +22,7 @@ import uvicorn
 from automl.engine import train_process
 from database.get_dataset import dataset
 
-# ÁNH XẠ MÔ HÌNH AN TOÀN
+# ÁNH XẠ MÔ HÌNH
 MODEL_MAPPING = {
     "RandomForestClassifier": RandomForestClassifier,
     "DecisionTreeClassifier": DecisionTreeClassifier,
