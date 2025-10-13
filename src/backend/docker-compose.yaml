@@ -1,9 +1,28 @@
 version: '3.3'
 
 services:
+  hautoml_woker_1:
+    image: workers:latest
+    container_name: hautoml-woker-1
+    restart: unless-stopped
+    network_mode: host
+    ports:
+      - "4000:4000"
+    command: uvicorn worker:app --host 0.0.0.0 --port 4000
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4000
+      - WORKER_INDEX=1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   hautoml_nano:
     image: hautoml-nano
     container_name: hautoml_nano_v1
+    restart: unless-stopped
     network_mode: host
     ports:
       - "7860:7860"
@@ -19,6 +38,7 @@ services:
   hautoml_toolkit:
     image: hautoml-toolkit
     container_name: hautoml_toolkit_v1
+    restart: unless-stopped
     network_mode: host
     ports:
       - "9999:9999"
@@ -34,6 +54,7 @@ services:
   kafka:
     image: apache/kafka:latest
     container_name: kafka
+    restart: unless-stopped
     network_mode: host
     ports:
       - "9092:9092"
@@ -47,12 +68,15 @@ services:
   
   mongo:
     image: mongo:latest
-    container_name: mongodb
-    network_mode: host
+    container_name: mongodb_hautoml
+    restart: unless-stopped
+    # network_mode: host
     ports:
       - "27017:27017"
     expose:
       - '27017'
+    volumes:
+      - /data/mongodb/mongo-automl:/data/db
     logging:
       driver: "json-file"
       options:
