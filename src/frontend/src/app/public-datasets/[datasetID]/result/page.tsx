@@ -15,12 +15,13 @@ type Props = {
 
 const ResultPage = ({ params }: Props) => {
   const [datasetID, setDatasetID] = useState<string | null>(null);
-  const [dataTrain, setDataTrain] = useState<any[]>([]);
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
   const { data: session } = useSession();
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const router = useRouter();
@@ -37,33 +38,6 @@ const ResultPage = ({ params }: Props) => {
 
     unwrapParams();
   }, [params]);
-
-  // Fetch data train từ API đầu tiên
-  // const fetchDataTrain = useCallback(async () => {
-  //   if (datasetID) {
-  //     setIsLoading(true);
-  //     try {
-  //       const response = await fetch(
-  //         `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
-  //         {
-  //           method: "POST",
-  //           headers: { accept: "application/json" },
-  //           body: "",
-  //         }
-  //       );
-  //       const { data } = await response.json();
-  //       setDataTrain(data);
-  //     } catch (err) {
-  //       console.log("Lỗi khi fetch:", err);
-  //     } finally {
-  //       setIsLoading(false);
-  //     }
-  //   }
-  // }, [datasetID]);
-
-  // useEffect(() => {
-  //   fetchDataTrain();
-  // }, [datasetID, fetchDataTrain]);
 
   // Lấy cấu hình từ sessionStorage và chuẩn bị config
   useEffect(() => {
@@ -155,7 +129,6 @@ const ResultPage = ({ params }: Props) => {
     };
 
     trainModel();
-    // }, [dataTrain, config]);
   }, [config]);
 
   if (error) {
