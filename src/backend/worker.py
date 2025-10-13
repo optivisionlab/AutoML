@@ -62,11 +62,12 @@ async def train_models(request: Request):
             target = config.get("target")
             metric_sort = config.get("metric_sort")
 
-            data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"])
+            data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"], list_feature)
             
         except Exception as e:
+            print(str(e))
             raise HTTPException(
-                status_code=400,
+                status_code=500,
                 detail=f"Invalid data format: {str(e)}"
             )
 
@@ -104,13 +105,15 @@ async def train_models(request: Request):
 
             
         except Exception as e:
+            print(str(e))
             raise HTTPException(
-                status_code=400,
+                status_code=500,
                 detail=f"Training failed: {str(e)}"
             )
             
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+        print(str(e))
+        raise HTTPException(status_code=500, detail=f"Invalid JSON: {str(e)}")
 
     
 
