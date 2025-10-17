@@ -5,6 +5,7 @@ from skopt.space import Real, Categorical
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
+import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
@@ -70,21 +71,41 @@ def load_glass_data():
     return X, y
 
 
-def run_test():
-    """Run the genetic algorithm test with iris dataset."""
-    # Load the data
-    X, y = load_glass_data()
+def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
+    """Run the genetic algorithm test with specified dataset.
+    
+    Args:
+        dataset_name: 'glass' (balanced), 'shopping' (imbalanced), or 'iris' (balanced)
+        averaging: 'both', 'macro', or 'weighted'
+        optimize_for: 'auto', 'macro', or 'weighted' (used when averaging='both')
+    """
+    # Load the data based on selection
+    if dataset_name == 'glass':
+        X, y = load_glass_data()
+        print(f"\nUsing Glass dataset (balanced classes)")
+    elif dataset_name == 'shopping':
+        X, y = load_shopping_data()
+        print(f"\nUsing Shopping dataset (imbalanced classes - ~15% positive)")
+    else:
+        X, y = load_iris_data()
+        print(f"\nUsing Iris dataset (balanced classes)")
+    
+    # Print class distribution
+    from collections import Counter
+    print(f"Class distribution: {Counter(y)}")
 
-    # Initialize the genetic algorithm
+    # Initialize the genetic algorithm with averaging parameter
     opt = BayesianSearchStrategy(
         n_calls=30,
         cv=5,
-        scoring='roc_auc',
+        scoring='accuracy',
         n_jobs=-1,
         verbose=1,
         random_state=42,
         save_log=True,
-        log_dir='logs'
+        log_dir='logs',
+        averaging=averaging,  # 'both', 'macro', or 'weighted'
+        optimize_for=optimize_for  # Which metric to optimize when averaging='both'
     )
 
     # Define different models and their parameter grids to test
@@ -141,24 +162,46 @@ def run_test():
             cv_scores = cross_validate(best_model, X, y, cv=opt.config['cv'], scoring=scoring_metrics,
                                        n_jobs=opt.config['n_jobs'])
 
-            # Store results
+            # Store results - handle both single and dual averaging modes
             result_row = {
                 'model': model_name,
-                'run_type': 'genetic_algorithm',
+                'run_type': 'bayesian_search',
                 'best_params': str(best_params),
                 'accuracy': cv_scores['test_accuracy'].mean(),
-                'precision': cv_scores['test_precision_macro'].mean(),
-                'recall': cv_scores['test_recall_macro'].mean(),
-                'f1': cv_scores['test_f1_macro'].mean()
             }
-
+            
+            # Check which metrics are available and add them
+            if averaging == 'both':
+                # Add both macro and weighted metrics
+                result_row['precision_macro'] = cv_scores.get('test_precision_macro', np.zeros(5)).mean()
+                result_row['recall_macro'] = cv_scores.get('test_recall_macro', np.zeros(5)).mean()
+                result_row['f1_macro'] = cv_scores.get('test_f1_macro', np.zeros(5)).mean()
+                result_row['precision_weighted'] = cv_scores.get('test_precision_weighted', np.zeros(5)).mean()
+                result_row['recall_weighted'] = cv_scores.get('test_recall_weighted', np.zeros(5)).mean()
+                result_row['f1_weighted'] = cv_scores.get('test_f1_weighted', np.zeros(5)).mean()
+            else:
+                # Single averaging method
+                suffix = '_macro' if averaging == 'macro' else '_weighted' if averaging == 'weighted' else '_macro'
+                result_row['precision'] = cv_scores.get(f'test_precision{suffix}', np.zeros(5)).mean()
+                result_row['recall'] = cv_scores.get(f'test_recall{suffix}', np.zeros(5)).mean()
+                result_row['f1'] = cv_scores.get(f'test_f1{suffix}', np.zeros(5)).mean()
+                
             all_results.append(result_row)
 
             print(f"\nResults for {model_name}:")
             print(f"Best Parameters: {best_params}")
-            print(f"Best F1 Score (from search): {best_f1_score:.4f}")
+            print(f"Best Score (from search): {best_f1_score:.4f}")
             print(f"Cross-validated Accuracy: {result_row['accuracy']:.4f}")
-            print(f"Cross-validated F1: {result_row['f1']:.4f}")
+            
+            if averaging == 'both':
+                print(f"Macro metrics    - P: {result_row['precision_macro']:.4f}, "
+                      f"R: {result_row['recall_macro']:.4f}, F1: {result_row['f1_macro']:.4f}")
+                print(f"Weighted metrics - P: {result_row['precision_weighted']:.4f}, "
+                      f"R: {result_row['recall_weighted']:.4f}, F1: {result_row['f1_weighted']:.4f}")
+            else:
+                print(f"Cross-validated Precision: {result_row.get('precision', 0.0):.4f}")
+                print(f"Cross-validated Recall: {result_row.get('recall', 0.0):.4f}")
+                print(f"Cross-validated F1: {result_row.get('f1', 0.0):.4f}")
 
         except Exception as e:
             print(f"Error occurred during test {i}: {e}")
@@ -173,4 +216,23 @@ def run_test():
 
 # Main execution
 if __name__ == "__main__":
-    run_test()
+    import sys
+    
+    # Parse command line arguments
+    if len(sys.argv) > 1:
+        dataset = sys.argv[1]  # 'glass', 'shopping', or 'iris'
+    else:
+        dataset = 'glass'
+    
+    if len(sys.argv) > 2:
+        averaging = sys.argv[2]  # 'both', 'macro', or 'weighted'
+    else:
+        averaging = 'both'
+    
+    if len(sys.argv) > 3:
+        optimize_for = sys.argv[3]  # 'auto', 'macro', or 'weighted'
+    else:
+        optimize_for = 'auto'
+    
+    print(f"Running test with dataset='{dataset}', averaging='{averaging}', optimize_for='{optimize_for}'")
+    run_test(dataset_name=dataset, averaging=averaging, optimize_for=optimize_for)
