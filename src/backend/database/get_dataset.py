@@ -74,5 +74,5 @@ class MongoDataLoader:
             print(f"Exception when read dataset from MinIO: {str(e)}")
             return None, None
         
-    
+
 dataset = MongoDataLoader()
