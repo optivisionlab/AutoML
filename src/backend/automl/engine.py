@@ -153,7 +153,7 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models
 
 
-def training(models, metric_list, metric_sort, X_train, y_train):
+def training(models, metric_list, metric_sort, X_train, y_train, algorithm_search):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -217,10 +217,10 @@ def training(models, metric_list, metric_sort, X_train, y_train):
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_search):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train)
+                                                                                X_train, y_train, algorithm_search)
     return best_model_id, best_model, best_score, best_params, model_scores
 
 

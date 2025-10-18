@@ -48,7 +48,7 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
         start = time.time()
         results, processed_workers, successful_workers = await process_async(id_data, config)
         
-        version = 1
+        version = 1 
 
         await asyncio.to_thread(
             minIOStorage.uploaded_model,
@@ -117,7 +117,7 @@ async def kafka_consumer_process():
             config = message.value.get('config')
 
             tp = TopicPartition(message.topic, message.partition)
-
+            print(config)
             asyncio.create_task(
                 handle_training_job(
                     job_id, id_data, id_user, config, tp, message.offset, consumer

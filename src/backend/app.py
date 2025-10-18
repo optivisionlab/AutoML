@@ -106,11 +106,8 @@ async def lifespan(app: FastAPI):
             pass
 
 
-<<<<<<< HEAD
 # default sync
 app = FastAPI(lifespan=lifespan)
-=======
->>>>>>> origin/features/search
 app.add_middleware(SessionMiddleware, secret_key="!secret")
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -141,30 +138,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-<<<<<<< HEAD
-=======
-
-producer = KafkaProducer(
-    bootstrap_servers=data["KAFKA_SERVER"],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup logic
-    print("Starting Kafka consumer thread...")
-    kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
-    kafka_thread.start()
-    yield
-    # Shutdown logic (if needed)
-
-
-app = FastAPI(lifespan=lifespan)
-
-
->>>>>>> origin/features/search
 @app.get("/")
 def read_root():
     return {

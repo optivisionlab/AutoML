@@ -88,7 +88,7 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             headers={"Content-Type": "application/json"},
             timeout=5000
         )
-
+        print(f"Hello {worker_url}")
         response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
         return response.json()
     
@@ -208,6 +208,7 @@ async def process_async(id_data: str, config: dict):
     models, metric_list = await asyncio.to_thread(get_models)
 
     # Giai đoạn Map: Gửi request bất đồng bộ và nhận lại các phản hồi
+    print("starting")
     worker_responses = await run_mapreduce_async(metric_list, models, WORKERS, id_data, config)
 
     # Đếm số worker thành công dựa trên kết quả

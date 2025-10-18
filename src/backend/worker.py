@@ -50,6 +50,7 @@ async def train_models(request: Request):
 
     # Xử lý dữ liệu
     try:
+        print("hello")
         payload = await request.json()
 
         # Process data
@@ -61,6 +62,7 @@ async def train_models(request: Request):
             list_feature = config.get("list_feature")
             target = config.get("target")
             metric_sort = config.get("metric_sort")
+            algorithm_search = config.get("algorithm_search")
 
             data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"], list_feature)
             
@@ -87,7 +89,8 @@ async def train_models(request: Request):
                 target,
                 metric_list,
                 metric_sort,
-                models
+                models,
+                algorithm_search
             )
 
             # Tuần tư hóa mô hình thành byte
