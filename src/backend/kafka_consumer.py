@@ -46,8 +46,8 @@ def get_producer() -> AIOKafkaProducer:
 
 
 async def handle_training_job(job_id, id_data, id_user, config, tp, offset, consumer):
-    master_server_url = f"http://{data["HOST_BACK_END"]}:{data["PORT_BACK_END"]}" 
-    manager = JobManager(job_id, id_data, id_user, config, master_server_url)
+    master_server_url = f"http://{data['HOST_BACK_END']}:{data['PORT_BACK_END']}" 
+    manager = JobManager(job_id, id_data, id_user, config, master_server_url) 
     ACTIVE_JOBS[job_id] = manager
 
     try:
