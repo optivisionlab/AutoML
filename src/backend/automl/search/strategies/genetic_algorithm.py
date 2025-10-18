@@ -197,6 +197,7 @@ class GeneticAlgorithm(SearchStrategy):
 
                 # Determine the primary metric for fitness evaluation. (e.g., accuracy, f1, ...)
                 primary_metric = self.config.get('scoring', 'f1').replace('_macro', '')
+                
                 # Get the score for the primary metric to use as the individual's fitness'.
                 score = scores.get(primary_metric, 0.0)
                 fitness_scores.append(score)

@@ -16,6 +16,8 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 
 from automl.model import Item
 from automl.search.strategies.grid_search import GridSearchStrategy
+from automl.search.strategies.bayesian_search import BayesianSearchStrategy
+from automl.search.strategies.genetic_algorithm import GeneticAlgorithm
 from database.database import get_database
 
 np.random.seed(42)
@@ -168,11 +170,19 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
         else:
             scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
 
+    print(scoring)
+
     # Create a GridSearchStrategy instance
-    grid_strategy = GridSearchStrategy()
+    search_strategy = None
+    if algorithm_search == "GS":
+        search_strategy = GridSearchStrategy()
+    elif algorithm_search == "BS":
+        search_strategy = BayesianSearchStrategy()
+    elif algorithm_search == "GA":
+        search_strategy = GeneticAlgorithm()
 
     # Configure the strategy
-    grid_strategy.set_config(
+    search_strategy.set_config(
         cv=5,
         scoring=scoring,
         metric_sort=metric_sort,
@@ -185,18 +195,23 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
         model = model_info['model']
         param_grid = model_info['params']
 
-        best_params_model, best_score_model, cv_results = grid_strategy.search(
+        best_params_model, best_score_model, cv_results = search_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,
             y=y_train
         )
+        print(best_params_model)
+        print("==========================")
+        print(best_score_model)
+        print("==========================")
+        print(cv_results)
+
 
         # Get the best estimator with the best parameters
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
 
-        # print(cv_results[f"mean_test_recall"][cv_results['rank_test_' + metric_sort]])
         # Extract scores from cv_results
         results = {
             "model_id": model_id,

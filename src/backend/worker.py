@@ -79,6 +79,7 @@ async def train_models(request: Request):
             content['model'] = MODEL_MAPPING[content['model']]()
 
         try:
+            print("Training")
             # Tác vụ huấn luyện sử dụng nhóm luồng
             best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.to_thread(
                 train_process,
