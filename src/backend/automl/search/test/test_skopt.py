@@ -14,7 +14,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import cross_validate
 from datasets import load_dataset
 
-from automl.search.strategies.bayesian_search import BayesianSearchStrategy
+from automl.search.strategy.bayesian_search import BayesianSearchStrategy
 from ucimlrepo import fetch_ucirepo
 
 def load_iris_data():

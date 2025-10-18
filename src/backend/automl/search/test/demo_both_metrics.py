@@ -16,7 +16,7 @@ from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 import pandas as pd
-from automl.search.strategies.bayesian_search import BayesianSearchStrategy
+from automl.search.strategy.bayesian_search import BayesianSearchStrategy
 
 
 def demo_both_metrics():

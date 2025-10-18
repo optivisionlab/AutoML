@@ -6,7 +6,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 class SearchStrategy(ABC):
-    """Base class for all search strategies."""
+    """Base class for all search strategy."""
 
     def __init__(self, **kwargs):
         self.config = self.get_default_config()
