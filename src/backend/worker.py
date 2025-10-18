@@ -1,10 +1,8 @@
-# Standard Libraries
 import pickle
 import base64
 import asyncio
 import os
-
-# Third-party Libraries
+import httpx
 from fastapi import FastAPI, Request, HTTPException
 from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestClassifier
@@ -16,11 +14,11 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.calibration import LabelEncoder
-import uvicorn
 
-# Local Modules
 from automl.engine import train_process
 from database.get_dataset import dataset
+
+load_dotenv()
 
 # ÁNH XẠ MÔ HÌNH
 MODEL_MAPPING = {
@@ -37,100 +35,108 @@ MODEL_MAPPING = {
     "SpectralClustering": SpectralClustering
 }
 
+app = FastAPI(title="Dynamic Caching Worker")
+IS_POLLING = False
 
-app = FastAPI()
-# Load environment
-load_dotenv()
+DATASET_CACHE = {}
 
-@app.post("/train")
-async def train_models(request: Request):
-    """
-    Huấn luyện model
-    """
-
-    # Xử lý dữ liệu
+async def _execute_single_training_task(task: dict):
+    """Xử lý việc huấn luyện với một model"""
     try:
-        payload = await request.json()
+        id_data = task["id_data"]
+        config = task["config"]
+        list_feature = config.get("list_feature")
 
-        # Process data
-        try:
-            metric_list = payload["metrics"]
-            config = payload["config"]
-            
-            choose = config.get("choose")
-            list_feature = config.get("list_feature")
-            target = config.get("target")
-            metric_sort = config.get("metric_sort")
+        if id_data in DATASET_CACHE:
+            data = DATASET_CACHE[id_data]
+        else:
+            data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
+            DATASET_CACHE[id_data] = (data)
 
-            data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"], list_feature)
-            
-        except Exception as e:
-            print(str(e))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Invalid data format: {str(e)}"
-            )
-
-        # Train models
-        models = {}
-        for id, content in payload["models"].items():
-            models[int(id)] = content # Chuyển ID mới thành int
-            content['model'] = MODEL_MAPPING[content['model']]()
-
-        try:
-            # Tác vụ huấn luyện sử dụng nhóm luồng
-            best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.to_thread(
-                train_process,
-                data,
-                choose,
-                list_feature,
-                target,
-                metric_list,
-                metric_sort,
-                models
-            )
-
-            # Tuần tư hóa mô hình thành byte
-            model_bytes = pickle.dumps(best_model)
-
-            # Mã hóa chuỗi byte thành Base64 để có thể truyền qua JSON
-            model_base64 = base64.b64encode(model_bytes).decode('utf-8')
-
-            return {
-                "success": True,
-                "model_scores": model_scores,
-                "best_model": model_base64,
-                "best_score": best_score
+        model_info = task["model_info"]
+        models_to_train = {
+            0: {
+                "model": MODEL_MAPPING[model_info["model"]](),
+                "params": model_info["params"]
             }
+        }
 
-            
-        except Exception as e:
-            print(str(e))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Training failed: {str(e)}"
-            )
-            
+        print("Training")
+        best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
+            train_process,
+            data, config.get("choose"), list_feature, config.get("target"),
+            task["metrics"], config.get("metric_sort"), models_to_train
+        )
+
+        model_bytes = pickle.dumps(best_model_obj)
+        model_base64 = base64.b64encode(model_bytes).decode('utf-8')
+
+        return {
+            "success": True,
+            "model_name": model_scores_list[0]["model_name"],
+            "score": best_score,
+            "scores": model_scores_list[0]["scores"],
+            "best_params": best_params,
+            "model_base64": model_base64
+        }
     except Exception as e:
-        print(str(e))
-        raise HTTPException(status_code=500, detail=f"Invalid JSON: {str(e)}")
-
+        print(f"Error executing task for model: {e}")
+        return { "success": False, "error": str(e) }
     
+
+async def _polling_loop(master_api_url: str, job_id: str):
+    global IS_POLLING
+    IS_POLLING = True
+
+    id_data_for_this_job = None
+
+    async with httpx.AsyncClient(timeout=None) as client:
+        while True:
+            try:
+                response = await client.get(f"{master_api_url}/jobs/{job_id}/task")
+                response.raise_for_status()
+                task = response.json().get("task")
+                if not task:
+                    break
+
+                if not id_data_for_this_job:
+                    id_data_for_this_job = task.get("id_data")
+
+                result = await _execute_single_training_task(task)
+
+                await client.post(f"{master_api_url}/jobs/{job_id}/result", json=result)
+            except Exception as e:
+                print(f"[{job_id}] Error in polling loop: {e}. Retrying in 5s.")
+                await asyncio.sleep(5)
+    
+    IS_POLLING = False
+    print(f"[{job_id}]: Polling loop finished.")
+    if id_data_for_this_job and id_data_for_this_job in DATASET_CACHE:
+        del DATASET_CACHE[id_data_for_this_job]
+        print(f"[{job_id}]: Self-cleaned cache for id_data: {id_data_for_this_job}")
+
+
+@app.post("/control/start-work")
+async def start_work(request: Request):
+    global IS_POLLING
+    if IS_POLLING: return {"status": "already_working"}
+    payload = await request.json()
+    master_api_url = payload.get("master_api_url")
+    job_id = payload.get("job_id")
+    if not master_api_url or not job_id:
+        raise HTTPException(status_code=400, detail="master_api_url and job_id are required")
+    
+    asyncio.create_task(_polling_loop(master_api_url, job_id))
+    return {"status": "work_started"}
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    """API kiểm tra tình trạng worker"""
-    return {
-        "status": "OK",
-        "message": "Welcome to my server!"
-    }
-
-
+async def health_check():
+    return {"status": "OK", "is_polling": IS_POLLING}
 
 
 if __name__ == "__main__":
-    HOST = os.getenv('HOST', '0.0.0.0')
-    PORT = int(os.getenv('PORT', 8000))
-    
+    import uvicorn
+    HOST = os.getenv('WORKER_HOST', '0.0.0.0')
+    PORT = int(os.getenv('WORKER_BASE_PORT', 8000))
     uvicorn.run("worker:app", host=HOST, port=PORT, reload=True)

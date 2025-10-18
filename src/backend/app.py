@@ -508,7 +508,8 @@ def api_activate_model(job_id, activate=0):
 from experiment import exp
 app.include_router(exp)
     
-
+from automl.v2.master import mas
+app.include_router(mas)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)

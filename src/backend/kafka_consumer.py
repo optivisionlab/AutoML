@@ -5,9 +5,10 @@ import yaml
 import json
 from database.get_dataset import get_database
 import asyncio
+import os
 
 # Local Modules
-from automl.v2.distributed import process_async
+from automl.v2.master import JobManager, ACTIVE_JOBS
 from automl.v2.minio import minIOStorage
 
 file_path = ".config.yml"
@@ -42,19 +43,27 @@ def get_producer() -> AIOKafkaProducer:
         raise RuntimeError("AIOKafkaProducer has not been started via lifespan")
     return producer_instance
 
+
+
 async def handle_training_job(job_id, id_data, id_user, config, tp, offset, consumer):
+    master_server_url = f"http://{data["HOST_BACK_END"]}:{data["PORT_BACK_END"]}" 
+    manager = JobManager(job_id, id_data, id_user, config, master_server_url)
+    ACTIVE_JOBS[job_id] = manager
+
     try:
         import time
         start = time.time()
-        results, processed_workers, successful_workers = await process_async(id_data, config)
-        
+
+        # Chạy toàn bộ quá trình điều phối và chờ kết quả
+        final_result = await manager.run()
+
         version = 1
 
         await asyncio.to_thread(
             minIOStorage.uploaded_model,
             bucket_name="models",
-            object_name=f"{id_user}/{job_id}/{results['best_model']}_{version}.pkl",
-            model_bytes=results["model"]
+            object_name=f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl",
+            model_bytes=final_result["model"]
         )
 
         def update_success():
@@ -62,15 +71,15 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
             job_collection = db["tbl_Job"]
             update_data = {
                 "$set": {
-                    "best_model_id": results["best_model_id"],
-                    "best_model": results["best_model"],
+                    "best_model_id": final_result["best_model_id"],
+                    "best_model": final_result["best_model"],
                     "model": {
                         "bucket_name": "models",
-                        "object_name": f"{id_user}/{job_id}/{results['best_model']}_{version}.pkl"
+                        "object_name": f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl"
                     },
-                    "best_params": results["best_params"],
-                    "best_score": results["best_score"],
-                    "orther_model_scores": results["model_scores"],
+                    "best_params": final_result["best_params"],
+                    "best_score": final_result["best_score"],
+                    "orther_model_scores": final_result["model_scores"],
                     "status": 1
                 }
             }
@@ -89,6 +98,11 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
         # Lỗi từ quá trình huấn luyện
         error_msg = f"Training failure: {str(e)}"
         print(f"[JOB {job_id}] {error_msg}")
+
+    finally:
+        # Dọn dẹp job
+        if job_id in ACTIVE_JOBS:
+            del ACTIVE_JOBS[job_id]
 
 
 """ Hàm Consumer chạy tiến trình riêng """

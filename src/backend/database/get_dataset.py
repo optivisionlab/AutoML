@@ -20,7 +20,6 @@ def automatic_imputation(df: pd.DataFrame, list_features: Optional[List[str]] = 
     else:
         columns_to_impute = [col for col in list_features if col in df_imputed.columns]
 
-
     for column in columns_to_impute:
         if pd.api.types.is_numeric_dtype(df_imputed[column]):
             median_val = df_imputed[column].median()

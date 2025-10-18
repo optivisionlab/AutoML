@@ -24,7 +24,7 @@ async def send_message(topic: str, key: str, message: dict):
     )
 
 
-def save_job_mongo(input: InputRequest, models_info) -> dict:
+def save_job_mongo(input: InputRequest, models_info, job_id) -> dict:
     db = get_database()
     user_collection = db["tbl_User"]
     job_collection = db["tbl_Job"]
@@ -47,7 +47,7 @@ def save_job_mongo(input: InputRequest, models_info) -> dict:
 
         # Tạo một bản ghi job mới
         new_job = {
-            "job_id": str(uuid4()),
+            "job_id": job_id,
             "best_model_id": models_info["best_model_id"],
             "best_model": models_info["best_model"],
             "model": models_info["model"],

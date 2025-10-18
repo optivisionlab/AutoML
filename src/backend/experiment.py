@@ -6,11 +6,12 @@ from fastapi import status, HTTPException, Query
 from fastapi.routing import APIRouter
 import asyncio
 import pickle
+import uuid
 
 # Local Modules
 from database.get_dataset import dataset
 from kafka_consumer import data
-from automl.v2.distributed import process_async
+from automl.v2.master import ACTIVE_JOBS, JobManager
 from automl.v2.schemas import InputRequest
 from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
 from automl.v2.minio import minIOStorage
@@ -64,14 +65,15 @@ async def get_features_of_dataset(id_data: str):
 async def distributed_mongodb(input: InputRequest):
     try:
         start = time.time()
-
-        results, processed_workers, successful_workers = await process_async(input.id_data, input.config)
+        job_id = str(uuid.uuid4())
+        master_server_url = f"http://{data["HOST_BACK_END"]}:{data["PORT_BACK_END"]}" 
+        manager = JobManager(job_id, input.id_data, input.id_user, input.config, master_server_url)
+        ACTIVE_JOBS[job_id] = manager
+        final_result = await manager.run()
         # Lưu vào database 
-        save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, results)
+        save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, final_result, job_id)
 
         save_job_result.update({
-            "processed_workers": processed_workers,
-            "successful_workers": successful_workers,
             "executed_time": time.time() - start
         })
 
