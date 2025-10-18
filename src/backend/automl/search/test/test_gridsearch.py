@@ -12,7 +12,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import cross_validate
 from datasets import load_dataset
 
-from automl.search.strategies.grid_search import GridSearchStrategy
+from automl.search.strategy.grid_search import GridSearchStrategy
 from ucimlrepo import fetch_ucirepo
 
 def load_iris_data():

@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics import make_scorer
 
 from automl.model import Item
-from automl.search.strategies.grid_search import GridSearchStrategy
+from automl.search.factory import SearchStrategyFactory
 from database.database import get_database
 
 np.random.seed(42)
@@ -91,12 +91,21 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
 
     models, metric_list = get_model()
-    return choose, list_feature, target, metric_list, metric_sort, models
+    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
 def get_model():
+    # Import model classes for eval to work
+    from sklearn.tree import DecisionTreeClassifier
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.svm import SVC
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.naive_bayes import GaussianNB
+    
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -135,9 +144,10 @@ def get_data_and_config_from_MongoDB():
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
 def get_data_config_from_json(file_content: Item):
@@ -148,12 +158,13 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def training(models, metric_list, metric_sort, X_train, y_train):
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid'):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -178,24 +189,27 @@ def training(models, metric_list, metric_sort, X_train, y_train):
             else:
                 raise ValueError(f"Unknown metric: {metric}")
 
-    # Create a GridSearchStrategy instance
-    grid_strategy = GridSearchStrategy()
-
-    # Configure the strategy
-    grid_strategy.set_config(
-        cv=5,
-        scoring=scoring,
-        metric_sort=metric_sort,
-        error_score="raise",
-        return_train_score=True
-    )
+    # Use the factory to create the search strategy with configuration
+    strategy_config = {
+        'cv': 5,
+        'scoring': scoring,
+        'metric_sort': metric_sort,
+        'error_score': "raise",
+        'return_train_score': True
+    }
+    
+    try:
+        search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
+    except ValueError as e:
+        print(f"Warning: {e}. Using default 'grid' search.")
+        search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
 
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
 
-        best_params_model, best_score_model, best_all_scores_model, cv_results = grid_strategy.search(
+        best_params_model, best_score_model, best_all_scores_model, cv_results = search_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,
@@ -207,13 +221,24 @@ def training(models, metric_list, metric_sort, X_train, y_train):
         best_estimator.fit(X_train, y_train)
 
         # Extract scores from cv_results
+        # Convert rank list to numpy array for argmin operation
+        rank_key = f'rank_test_{metric_sort}'
+        if rank_key in cv_results:
+            rank_array = np.array(cv_results[rank_key])
+        else:
+            # Fallback to 'rank_test_score' if specific metric rank not found
+            rank_array = np.array(cv_results.get('rank_test_score', []))
+        
+        best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
+        
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
             "scores": {
-                metric: cv_results[f"mean_test_{metric}"][cv_results['rank_test_' + metric_sort].argmin()] for metric in
-                metric_list
+                metric: cv_results[f"mean_test_{metric}"][best_idx] 
+                for metric in metric_list 
+                if f"mean_test_{metric}" in cv_results
             }
         }
 
@@ -228,10 +253,10 @@ def training(models, metric_list, metric_sort, X_train, y_train):
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid'):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train)
+                                                                                X_train, y_train, search_algorithm)
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
@@ -242,9 +267,9 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose, list_feature, target, metric_list, metric_sort, models = get_config(data_file_config)
+    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
     return best_model_id, best_model, best_score, best_params, model_scores
 
@@ -257,12 +282,12 @@ def serialize_mongo_doc(doc):
 
 # Không dùng kafka
 def train_json(item: Item, userId, id_data):
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_config_from_json(item)
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     data_name, user_name = get_dataset_and_user_info(id_data, userId)
@@ -336,12 +361,12 @@ def train_json_from_job(job):
     if existing_job.get("status") == 1:
         return JSONResponse(content={"message": "Job đã được train", "job_id": job_id})
 
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_config_from_json(Item(**item))
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     model_data = pickle.dumps(best_model)

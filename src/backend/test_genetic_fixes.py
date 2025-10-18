@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
-from automl.search.strategies.genetic_algorithm import GeneticAlgorithm
+from automl.search.strategy.genetic_algorithm import GeneticAlgorithm
 
 
 def test_genetic_algorithm():

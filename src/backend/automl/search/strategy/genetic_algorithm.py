@@ -161,7 +161,7 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _crossover(self, parent1: Dict[str, float], parent2: Dict[str, float]) -> Tuple[
         Dict[str, float], Dict[str, float]]:
-        """Perform a crossover between two individuals using different strategies based on parameter types."""
+        """Perform a crossover between two individuals using different strategy based on parameter types."""
         if random.random() > self.config['crossover_rate']:
             return copy.deepcopy(parent1), copy.deepcopy(parent2)
 
