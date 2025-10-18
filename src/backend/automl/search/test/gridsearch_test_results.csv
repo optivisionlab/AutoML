@@ -1,0 +1,4 @@
+model,run_type,best_params,accuracy,precision,recall,f1
+RandomForestClassifier,grid_search,"{'n_estimators': 10, 'max_depth': None, 'min_samples_split': 2, 'min_samples_leaf': 1}",0.6775193798449612,0.6599182408005937,0.6574603174603174,0.6268158217036197
+SVC,grid_search,"{'C': 100, 'gamma': 'auto', 'kernel': 'rbf'}",0.626688815060908,0.5436327657017312,0.6064087301587302,0.5491226809564406
+DecisionTreeClassifier,grid_search,"{'max_depth': 10, 'min_samples_split': 5, 'min_samples_leaf': 1, 'criterion': 'entropy'}",0.5932447397563676,0.623688640793904,0.647281746031746,0.6014481079115024

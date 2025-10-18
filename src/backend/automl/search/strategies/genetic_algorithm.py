@@ -94,7 +94,19 @@ class GeneticAlgorithm(SearchStrategy):
 
             model.set_params(**params)
 
-            scoring_metrics = ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro']
+            # Get scoring configuration
+            scoring_config = self.config.get('scoring')
+            
+            # Determine which scoring metrics to use
+            if isinstance(scoring_config, dict):
+                # Use the provided scorer dict (from engine.py with make_scorer objects)
+                scoring_metrics = scoring_config
+                # Extract metric names from the dict keys
+                metric_names = list(scoring_config.keys())
+            else:
+                # Default scoring metrics (backward compatibility)
+                scoring_metrics = ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro']
+                metric_names = ['accuracy', 'precision', 'recall', 'f1']
 
             # use cross_validate instead of cross_val_score to get scores for each fold
             scores = cross_validate(
@@ -105,20 +117,34 @@ class GeneticAlgorithm(SearchStrategy):
                 error_score=self.config['error_score']
             )
 
-            return {
-                'accuracy': np.mean(scores['test_accuracy']),
-                'precision': np.mean(scores['test_precision_macro']),
-                'recall': np.mean(scores['test_recall_macro']),
-                'f1': np.mean(scores['test_f1_macro'])
-            }
+            # Build result dictionary
+            result = {}
+            if isinstance(scoring_config, dict):
+                # When scoring is a dict, the keys are already the metric names
+                for metric_name in metric_names:
+                    result[metric_name] = np.mean(scores[f'test_{metric_name}'])
+            else:
+                # Default mapping for backward compatibility
+                result = {
+                    'accuracy': np.mean(scores['test_accuracy']),
+                    'precision': np.mean(scores['test_precision_macro']),
+                    'recall': np.mean(scores['test_recall_macro']),
+                    'f1': np.mean(scores['test_f1_macro'])
+                }
+            
+            return result
 
         except Exception:
-            return {
-                'accuracy': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'f1': 0.0
-            }
+            # Return zeros for all metrics
+            if isinstance(self.config.get('scoring'), dict):
+                return {metric: 0.0 for metric in self.config['scoring'].keys()}
+            else:
+                return {
+                    'accuracy': 0.0,
+                    'precision': 0.0,
+                    'recall': 0.0,
+                    'f1': 0.0
+                }
 
     def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores: List[float]) -> Dict[
         str, float]:
@@ -269,11 +295,19 @@ class GeneticAlgorithm(SearchStrategy):
                 scores = self._evaluate_individual(individual, model, X, y)
 
                 # Determine the primary metric for fitness evaluation. (e.g., accuracy, f1, ...)
-                primary_metric = self.config.get('scoring', 'f1')
-                if primary_metric:
-                    primary_metric = primary_metric.replace('_macro', '').replace('_weighted', '')
+                scoring_config = self.config.get('scoring', 'f1')
+                
+                # Handle both string and dict scoring configurations
+                if isinstance(scoring_config, dict):
+                    # When scoring is a dict, use metric_sort to determine which metric to optimize
+                    primary_metric = self.config.get('metric_sort', 'accuracy')
+                elif isinstance(scoring_config, str):
+                    # When scoring is a string, extract the base metric name
+                    primary_metric = scoring_config.replace('_macro', '').replace('_weighted', '')
                 else:
+                    # Default fallback
                     primary_metric = 'f1'
+                
                 # Get the score for the primary metric to use as the individual's fitness'.
                 score = scores.get(primary_metric, 0.0)
                 fitness_scores.append(score)

@@ -68,7 +68,7 @@ def demo_both_metrics():
         'min_samples_split': [2, 5, 10]
     }
     
-    best_params, best_score, result = opt.search(
+    best_params, best_score, best_all_scores, cv_results = opt.search(
         model, param_grid, X_train, y_train
     )
     
@@ -91,7 +91,7 @@ def demo_both_metrics():
         verbose=0
     )
     
-    best_params_macro, best_score_macro, _ = opt_macro.search(
+    best_params_macro, best_score_macro, _, _ = opt_macro.search(
         model, param_grid, X_train, y_train
     )
     
@@ -114,7 +114,7 @@ def demo_both_metrics():
         verbose=0
     )
     
-    best_params_weighted, best_score_weighted, _ = opt_weighted.search(
+    best_params_weighted, best_score_weighted, _, _ = opt_weighted.search(
         model, param_grid, X_train, y_train
     )
     

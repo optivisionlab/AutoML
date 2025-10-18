@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
 
 from automl.model import Item
@@ -164,8 +164,19 @@ def training(models, metric_list, metric_sort, X_train, y_train):
     for metric in metric_list:
         if metric == 'accuracy':
             scoring[metric] = make_scorer(accuracy_score)
+        elif metric == 'precision':
+            scoring[metric] = make_scorer(precision_score, average='macro')
+        elif metric == 'recall':
+            scoring[metric] = make_scorer(recall_score, average='macro')
+        elif metric == 'f1':
+            scoring[metric] = make_scorer(f1_score, average='macro')
         else:
-            scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
+            # Try to get the score function dynamically if it's not one of the common ones
+            score_func = globals().get(f'{metric}_score')
+            if score_func:
+                scoring[metric] = make_scorer(score_func, average='macro')
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
 
     # Create a GridSearchStrategy instance
     grid_strategy = GridSearchStrategy()
