@@ -4,7 +4,7 @@ This module provides a factory for creating different search strategy instances.
 """
 
 from typing import Dict, Any, Optional
-from automl.search.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy
 from automl.search.strategy.grid_search import GridSearchStrategy
 from automl.search.strategy.genetic_algorithm import GeneticAlgorithm
 from automl.search.strategy.bayesian_search import BayesianSearchStrategy

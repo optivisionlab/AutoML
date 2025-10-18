@@ -1,16 +1,16 @@
-from typing import Any, Dict, Tuple, List
+from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
 from datetime import datetime
 import os
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import cross_val_score, cross_validate
+from sklearn.model_selection import cross_validate
 from skopt import gp_minimize
-from skopt.space import Real, Integer, Categorical
+from skopt.space import Categorical
 from skopt.utils import use_named_args
 from collections import Counter
 
-from automl.search.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy
 
 class BayesianSearchStrategy(SearchStrategy):
     """

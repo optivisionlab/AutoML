@@ -3,8 +3,8 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import cross_val_score, cross_validate
-from ..base import SearchStrategy
+from sklearn.model_selection import cross_validate
+from automl.search.strategy.base import SearchStrategy
 import random
 import copy
 from datetime import datetime

@@ -7,7 +7,7 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
-from ..base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy
 
 class GridSearchStrategy(SearchStrategy):
     """Grid Search implementation"""
