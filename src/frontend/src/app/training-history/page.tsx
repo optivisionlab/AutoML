@@ -15,13 +15,8 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
+
+import PaginationCustom from "@/components/common/Panigation";
 
 type TrainingJob = {
   _id: string;
@@ -51,11 +46,12 @@ const TrainingHistory = () => {
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+
   const { data: session } = useSession();
   const router = useRouter();
 
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const itemsPerPage = 5;
+  const [currentPage, setCurrentPage] = useState<number>(1); // xác định trang hiện tại
+  const itemsPerPage = 5; // số trang 1 page
 
   useEffect(() => {
     const fetchTrainingJobs = async () => {
@@ -193,53 +189,11 @@ const TrainingHistory = () => {
             </Table>
 
             {/* Pagination */}
-            {totalPages > 1 && (
-              <Pagination className="mt-4 justify-center">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() =>
-                        setCurrentPage((prev) => Math.max(prev - 1, 1))
-                      }
-                      className={
-                        currentPage === 1
-                          ? "pointer-events-none opacity-50"
-                          : ""
-                      }
-                    />
-                  </PaginationItem>
-
-                  {Array.from({ length: totalPages }, (_, i) => (
-                    <PaginationItem key={i}>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setCurrentPage(i + 1)}
-                        className={`px-3 ${
-                          currentPage === i + 1
-                            ? "bg-white border border-gray-300 text-black" // trang hiện tại
-                            : ""
-                        }`}
-                      >
-                        {i + 1}
-                      </Button>
-                    </PaginationItem>
-                  ))}
-
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() =>
-                        setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                      }
-                      className={
-                        currentPage === totalPages
-                          ? "pointer-events-none opacity-50"
-                          : ""
-                      }
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            )}
+            <PaginationCustom
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </>
         )}
       </CardContent>
