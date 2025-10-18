@@ -117,7 +117,6 @@ async def kafka_consumer_process():
             config = message.value.get('config')
 
             tp = TopicPartition(message.topic, message.partition)
-            print(config)
             asyncio.create_task(
                 handle_training_job(
                     job_id, id_data, id_user, config, tp, message.offset, consumer

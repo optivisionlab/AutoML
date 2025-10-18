@@ -50,7 +50,6 @@ async def train_models(request: Request):
 
     # Xử lý dữ liệu
     try:
-        print("hello")
         payload = await request.json()
 
         # Process data
@@ -106,7 +105,7 @@ async def train_models(request: Request):
                 "best_score": best_score
             }
 
-            
+        
         except Exception as e:
             print(str(e))
             raise HTTPException(

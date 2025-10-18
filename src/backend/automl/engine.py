@@ -12,6 +12,7 @@ from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import make_scorer
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 from automl.model import Item
 from automl.search.strategies.grid_search import GridSearchStrategy
@@ -195,13 +196,14 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
 
+        # print(cv_results[f"mean_test_recall"][cv_results['rank_test_' + metric_sort]])
         # Extract scores from cv_results
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
             "scores": {
-                metric: cv_results[f"mean_test_{metric}"][cv_results['rank_test_' + metric_sort].argmin()] for metric in
+                metric: cv_results[f"mean_test_{metric}"][np.array(cv_results['rank_test_' + metric_sort]).argmin()] for metric in
                 metric_list
             }
         }
