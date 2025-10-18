@@ -6,7 +6,7 @@ from sklearn.model_selection import StratifiedKFold
 
 
 class SearchStrategy(ABC):
-    """Base class for all search strategy."""
+    """Base class for all search strategies."""
 
     def __init__(self, **kwargs):
         self.config = self.get_default_config()
@@ -32,7 +32,7 @@ class SearchStrategy(ABC):
         """Execute the search algorithm.
 
         Returns:
-            tuple: (best_params, best_score, cv_results)))
+            tuple: (best_params, best_score, cv_results)
         """
         pass
 
