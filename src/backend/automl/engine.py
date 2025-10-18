@@ -184,7 +184,7 @@ def training(models, metric_list, metric_sort, X_train, y_train):
         model = model_info['model']
         param_grid = model_info['params']
 
-        best_params_model, best_score_model, cv_results = grid_strategy.search(
+        best_params_model, best_score_model, best_all_scores_model, cv_results = grid_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,

@@ -33,7 +33,11 @@ class GridSearchStrategy(SearchStrategy):
             **kwargs: Additional configuration parameters
 
         Returns:
-            tuple: (best_params, best_score, cv_results)
+            tuple: (best_params, best_score, best_all_scores, cv_results)
+                - best_params: Dictionary of best parameters
+                - best_score: Best score achieved
+                - best_all_scores: Dictionary with all metric scores for best parameters
+                - cv_results: Dictionary with detailed cross-validation results
         """
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
 
@@ -48,4 +52,4 @@ class GridSearchStrategy(SearchStrategy):
             return_train_score=self.config['return_train_score']
         )
 
-        return best_params, best_score, cv_results
+        return best_params, best_score, best_all_scores, cv_results

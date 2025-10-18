@@ -1,5 +1,0 @@
-model,run_type,best_params,accuracy,precision,recall,f1
-RandomForestClassifier,bayesian_search,"{'n_estimators': 200, 'max_depth': 3, 'min_samples_split': 10, 'min_samples_leaf': 2}",0.8452554744525548,0.7144568565581938,0.8452554744525548,0.7743717209610035
-RandomForestClassifier,bayesian_search,"{'n_estimators': 50, 'max_depth': 3, 'min_samples_split': 5, 'min_samples_leaf': 2}",0.8452554744525548,0.7144568565581938,0.8452554744525548,0.7743717209610035
-RandomForestClassifier,bayesian_search,"{'n_estimators': 10, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 4}",0.8903487429034873,0.8829205353576673,0.8903487429034873,0.878194972877632
-RandomForestClassifier,bayesian_search,"{'n_estimators': 200, 'max_depth': 3, 'min_samples_split': 10, 'min_samples_leaf': 2}",0.8452554744525548,0.7144568565581938,0.8452554744525548,0.7743717209610035

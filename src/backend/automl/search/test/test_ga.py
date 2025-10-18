@@ -1,8 +1,6 @@
 import sys
 import os
 
-from skopt.space import Real, Categorical
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 import numpy as np
@@ -14,7 +12,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import cross_validate
 from datasets import load_dataset
 
-from automl.search.strategies.bayesian_search import BayesianSearchStrategy
+from automl.search.strategies.genetic_algorithm import GeneticAlgorithm
 from ucimlrepo import fetch_ucirepo
 
 def load_iris_data():
@@ -71,13 +69,11 @@ def load_glass_data():
     return X, y
 
 
-def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
+def run_test(dataset_name='glass'):
     """Run the genetic algorithm test with a specified dataset.
     
     Args:
         dataset_name: 'glass' (balanced), 'shopping' (imbalanced), or 'iris' (balanced)
-        averaging: 'both', 'macro', or 'weighted'
-        optimize_for: 'auto', 'macro', or 'weighted' (used when averaging='both')
     """
     # Load the data based on selection
     if dataset_name == 'glass':
@@ -94,18 +90,21 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
     from collections import Counter
     print(f"Class distribution: {Counter(y)}")
 
-    # Initialize the genetic algorithm with averaging parameter
-    opt = BayesianSearchStrategy(
-        n_calls=30,
+    # Initialize the genetic algorithm
+    opt = GeneticAlgorithm(
+        population_size=20,
+        generation=15,
+        mutation_rate=0.1,
+        crossover_rate=0.8,
+        elite_size=3,
+        tournament_size=3,
         cv=5,
-        scoring='accuracy',
+        scoring='f1',  # Use 'f1' (will use macro by default in evaluation)
         n_jobs=-1,
         verbose=1,
         random_state=42,
         save_log=True,
-        log_dir='logs',
-        averaging=averaging,  # 'both', 'macro', or 'weighted'
-        optimize_for=optimize_for  # Which metric to optimize when averaging='both'
+        log_dir='logs'
     )
 
     # Define different models and their parameter grids to test
@@ -122,9 +121,9 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
         {
             'model': SVC(random_state=42, probability=True),
             'param_grid': {
-                'C': Real(0.01, 100.0, prior='log-uniform'),  # Remove name parameter
-                'gamma': Categorical(['scale', 'auto']),
-                'kernel': Categorical(['rbf', 'linear', 'poly'])
+                'C': (0.01, 100.0),  # Continuous range for GA
+                'gamma': ['scale', 'auto'],
+                'kernel': ['rbf', 'linear', 'poly']
             }
         },
         {
@@ -139,8 +138,7 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
     ]
 
     all_results = []
-    scoring_metrics = ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro']
-    output_file = 'opt_test_results.csv'
+    output_file = 'ga_test_results.csv'
 
     # Run tests for each model
     for i, test_case in enumerate(test_cases, 1):
@@ -151,7 +149,7 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
 
         try:
             # Run the genetic algorithm search
-            best_params, best_f1_score, _, _ = opt.search(
+            best_params, best_f1_score, best_all_scores, cv_results = opt.search(
                 model=test_case['model'],
                 param_grid=test_case['param_grid'],
                 X=X,
@@ -168,7 +166,7 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
             # Store results with simple column names
             result_row = {
                 'model': model_name,
-                'run_type': 'bayesian_search',
+                'run_type': 'genetic_algorithm',
                 'best_params': str(best_params),
                 'accuracy': cv_scores['test_accuracy'].mean(),
                 'precision': cv_scores['test_precision_macro'].mean(),
@@ -188,6 +186,8 @@ def run_test(dataset_name='glass', averaging='both', optimize_for='auto'):
 
         except Exception as e:
             print(f"Error occurred during test {i}: {e}")
+            import traceback
+            traceback.print_exc()
 
     # Save all results to a CSV file
     if all_results:
@@ -207,15 +207,5 @@ if __name__ == "__main__":
     else:
         dataset = 'glass'
     
-    if len(sys.argv) > 2:
-        averaging = sys.argv[2]  # 'both', 'macro', or 'weighted'
-    else:
-        averaging = 'both'
-    
-    if len(sys.argv) > 3:
-        optimize_for = sys.argv[3]  # 'auto', 'macro', or 'weighted'
-    else:
-        optimize_for = 'auto'
-    
-    print(f"Running test with dataset='{dataset}', averaging='{averaging}', optimize_for='{optimize_for}'")
-    run_test(dataset_name=dataset, averaging=averaging, optimize_for=optimize_for)
+    print(f"Running Genetic Algorithm test with dataset='{dataset}'")
+    run_test(dataset_name=dataset)

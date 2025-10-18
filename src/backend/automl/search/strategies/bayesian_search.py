@@ -90,7 +90,7 @@ class BayesianSearchStrategy(SearchStrategy):
         return base_config
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any],
-               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict[str, Any], float, Any]:
+               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict[str, Any], float, Dict[str, float], Dict[str, Any]]:
         """
         Thực thi thuật toán tìm kiếm.
 
@@ -103,7 +103,11 @@ class BayesianSearchStrategy(SearchStrategy):
             **kwargs: Các tham số bổ sung cho gp_minimize.
 
         Returns:
-            Tuple[Dict, float, Any]: (best_params, best_score, optimizer_result)
+            Tuple[Dict, float, Dict, Dict]: (best_params, best_score, best_all_scores, cv_results_)
+                - best_params: Dictionary of best parameters
+                - best_score: Best score achieved
+                - best_all_scores: Dictionary with all metric scores for best parameters  
+                - cv_results_: Dictionary with detailed cross-validation results
         """
         self.set_config(**kwargs)
 
@@ -136,6 +140,24 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # Danh sách để lưu lịch sử tìm kiếm
         search_history = []
+        
+        # Initialize cv_results_ dictionary similar to grid_search
+        cv_results_ = {
+            'params': [],
+            'mean_test_score': [],
+            'std_test_score': [],
+            'rank_test_score': []
+        }
+        
+        # Add metric-specific fields
+        metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
+        for metric in metrics:
+            cv_results_[f'mean_test_{metric}'] = []
+            cv_results_[f'std_test_{metric}'] = []
+            cv_results_[f'rank_test_{metric}'] = []
+        
+        # Track best metrics for all scores
+        best_all_scores = None
         
         # Determine which metrics to compute
         averaging = self.config.get('averaging', 'both')
@@ -223,6 +245,8 @@ class BayesianSearchStrategy(SearchStrategy):
         # Hàm callback để lưu lịch sử
         def on_step(res):
             """Callback được gọi sau mỗi iteration để lưu kết quả"""
+            nonlocal best_all_scores
+            
             iteration = len(res.x_iters)
             current_params = {param_names[i]: val for i, val in enumerate(res.x_iters[-1])}
             current_score = -res.func_vals[-1]
@@ -275,6 +299,36 @@ class BayesianSearchStrategy(SearchStrategy):
                       f"F1={record.get('f1', 0.0):.4f}")
             
             search_history.append(record)
+            
+            # Populate cv_results_
+            cv_results_['params'].append(current_params)
+            cv_results_['mean_test_score'].append(current_score)
+            cv_results_['std_test_score'].append(0.0)  # Bayesian opt doesn't compute std per iteration
+            
+            # Add metrics to cv_results_
+            cv_results_['mean_test_accuracy'].append(metrics.get('accuracy', 0.0))
+            cv_results_['std_test_accuracy'].append(0.0)
+            
+            if averaging == 'both':
+                # Add both macro and weighted metrics
+                for metric_type in ['precision', 'recall', 'f1']:
+                    # For compatibility, use the optimized version
+                    if optimize_for == 'macro':
+                        cv_results_[f'mean_test_{metric_type}'].append(metrics.get(f'{metric_type}_macro', 0.0))
+                    else:
+                        cv_results_[f'mean_test_{metric_type}'].append(metrics.get(f'{metric_type}_weighted', 0.0))
+                    cv_results_[f'std_test_{metric_type}'].append(0.0)
+            else:
+                # Single averaging method
+                avg_suffix = '' if averaging not in ['macro', 'weighted'] else f'_{averaging}'
+                for metric_type in ['precision', 'recall', 'f1']:
+                    key = f'{metric_type}{avg_suffix}' if avg_suffix else metric_type
+                    cv_results_[f'mean_test_{metric_type}'].append(metrics.get(key, 0.0))
+                    cv_results_[f'std_test_{metric_type}'].append(0.0)
+            
+            # Update best_all_scores if this is the best so far
+            if current_score >= best_score_so_far:
+                best_all_scores = metrics.copy()
 
             # Lưu log sau mỗi iteration nếu được yêu cầu
             if self.config['save_log']:
@@ -309,9 +363,26 @@ class BayesianSearchStrategy(SearchStrategy):
         # Lấy tham số tốt nhất và điểm số tốt nhất
         best_params = {param_names[i]: val for i, val in enumerate(result.x)}
         best_score = -result.fun  # Đổi dấu để lấy giá trị dương
+        
+        # Compute rankings for cv_results_
+        for metric in metrics:
+            test_scores = cv_results_[f'mean_test_{metric}']
+            if test_scores:
+                ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
+                cv_results_[f'rank_test_{metric}'] = ranks.tolist()
+        
+        # Overall ranking based on the optimization metric
+        test_scores = cv_results_['mean_test_score']
+        if test_scores:
+            ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
+            cv_results_['rank_test_score'] = ranks.tolist()
+        
+        # If best_all_scores was not set (shouldn't happen), create it from the final run
+        if best_all_scores is None:
+            best_all_scores = getattr(objective, 'last_metrics', {})
 
         # In thông báo về vị trí file log
         if self.config['save_log']:
             print(f"\nĐã lưu log tìm kiếm vào: {log_file}")
 
-        return best_params, best_score, result
+        return best_params, best_score, best_all_scores, cv_results_
