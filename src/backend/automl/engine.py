@@ -1,40 +1,29 @@
-from io import BytesIO
-import pandas as pd # type: ignore
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.calibration import LabelEncoder
-from sklearn.discriminant_analysis import StandardScaler
-from sklearn.metrics import make_scorer
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
-import yaml
 import os
 import pickle
-import pymongo
-import numpy as np
 import random
-from database.database import get_database
+from io import BytesIO
+
+import numpy as np
+import pandas as pd  # type: ignore
+import yaml
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from sklearn.calibration import LabelEncoder
+from sklearn.discriminant_analysis import StandardScaler
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import make_scorer
+
 from automl.model import Item
-from pathlib import Path
+from automl.search.strategies.grid_search import GridSearchStrategy
+from database.database import get_database
 
 np.random.seed(42)
 random.seed(42)
 
-from database.database import get_database
-from fastapi.responses import JSONResponse
-from fastapi import HTTPException
 import time
 from bson import ObjectId
 # Push and get Kafka
 from uuid import uuid4
-import json
-
 
 # MongoDB setup
 db = get_database()
@@ -42,25 +31,53 @@ job_collection = db["tbl_Job"]
 data_collection = db["tbl_Data"]
 user_collection = db["tbl_User"]
 
-# Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn. 
+
+def get_dataset_and_user_info(data_id, user_id):
+    """
+    Helper function to retrieve dataset and user information from MongoDB.
+
+    Args:
+        data_id: The ObjectId string of the dataset
+        user_id: The ObjectId string of the user
+
+    Returns:
+        tuple: (data_name, user_name)
+
+    Raises:
+        HTTPException: If dataset or user not found
+    """
+    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
+    data_name = dataset.get("dataName")
+
+    user = user_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
+    user_name = user.get("username")
+
+    return data_name, user_name
+
+# Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn.
 def preprocess_data(list_feature, target, data):
     for column in data.columns:
         if data[column].dtype == 'object':
             le = LabelEncoder()
             data[column] = le.fit_transform(data[column])
-    
+
     X = data[list_feature]
     y = data[target]
-    scaler = StandardScaler() 
+    scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    
+
     X, y = X_scaled, y
-    
+
     return X, y
 
+
 def choose_model_version(choose):
-    if(choose == "new model") : 
-        list_model_search = [0,1,2,3]
+    if choose == "new model":
+        list_model_search = [0, 1, 2, 3]
     else:
         # Gọi đến hàm để người ta chọn xem người ta muốn train lại cái model nào. hàm này sẽ return ra id của mô hình đó. 
         # id = ...
@@ -69,14 +86,13 @@ def choose_model_version(choose):
     return list_model_search
 
 def get_config(file):
-    
     config = yaml.safe_load(file)
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
 
-    models,metric_list  = get_model()
+    models, metric_list = get_model()
     return choose, list_feature, target, metric_list, metric_sort, models
 
 
@@ -85,7 +101,7 @@ def get_model():
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
-    
+
     models = {}
     for key, model_info in data['Classification_models'].items():
         model_class = eval(model_info['model'])
@@ -114,28 +130,28 @@ def get_data_and_config_from_MongoDB():
 
     if '_id' in config:
         del config['_id']
-    
+
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
 
-    models,metric_list  = get_model()
+    models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models
-
 
 
 def get_data_config_from_json(file_content: Item):
     data = pd.DataFrame(file_content.data)
     config = file_content.config
-    
+
     choose = config['choose']
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
 
-    models,metric_list  = get_model()
+    models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models
+
 
 def training(models, metric_list, metric_sort, X_train, y_train):
     best_model_id = None
@@ -151,46 +167,62 @@ def training(models, metric_list, metric_sort, X_train, y_train):
         else:
             scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
 
+    # Create a GridSearchStrategy instance
+    grid_strategy = GridSearchStrategy()
+
+    # Configure the strategy
+    grid_strategy.set_config(
+        cv=5,
+        scoring=scoring,
+        metric_sort=metric_sort,
+        error_score="raise",
+        return_train_score=True
+    )
+
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
-        
-        grid_search = GridSearchCV(
-            model,
-            param_grid,
-            cv=5,
-            scoring = scoring,
-            refit=metric_sort,
-            error_score="raise"
+
+        best_params_model, best_score_model, cv_results = grid_strategy.search(
+            model=model,
+            param_grid=param_grid,
+            X=X_train,
+            y=y_train
         )
 
-        grid_search.fit(X_train, y_train)
+        # Get the best estimator with the best parameters
+        best_estimator = model.set_params(**best_params_model)
+        best_estimator.fit(X_train, y_train)
 
+        # Extract scores from cv_results
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
-            "best_params": grid_search.best_params_,
-            "scores": {metric: grid_search.cv_results_[f"mean_test_{metric}"][grid_search.best_index_] for metric in metric_list}
+            "best_params": best_params_model,
+            "scores": {
+                metric: cv_results[f"mean_test_{metric}"][cv_results['rank_test_' + metric_sort].argmin()] for metric in
+                metric_list
+            }
         }
 
         model_results.append(results)
-        
-        if grid_search.best_score_ > best_score:
+
+        if best_score_model > best_score:
             best_model_id = model_id
-            best_model = grid_search.best_estimator_
-            best_score = grid_search.best_score_
-            best_params = grid_search.best_params_
+            best_model = best_estimator
+            best_score = best_score_model
+            best_params = best_params_model
 
-    return best_model_id, best_model ,best_score, best_params, model_results
-
+    return best_model_id, best_model, best_score, best_params, model_results
 
 
 def train_process(data, choose, list_feature, target, metric_list, metric_sort, models):
     X_train, y_train = preprocess_data(list_feature, target, data)
-    best_model_id, best_model ,best_score, best_params, model_scores = training(models, metric_list, metric_sort, X_train, y_train)
+    best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
+                                                                                X_train, y_train)
+    return best_model_id, best_model, best_score, best_params, model_scores
 
-    return best_model_id, best_model ,best_score, best_params, model_scores
 
 def app_train_local(file_data, file_config):
     contents = file_data.file.read()
@@ -199,16 +231,18 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose,  list_feature, target, metric_list, metric_sort , models = get_config(data_file_config)
+    choose, list_feature, target, metric_list, metric_sort, models = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
     return best_model_id, best_model, best_score, best_params, model_scores
 
+
 # chuyển đổi ObjectId sang string để trả về cho client
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
+
 
 # Không dùng kafka
 def train_json(item: Item, userId, id_data):
@@ -219,21 +253,13 @@ def train_json(item: Item, userId, id_data):
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models
     )
-    
-    dataset = data_collection.find_one({"_id":ObjectId(id_data)})
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
-    data_name = dataset.get("dataName")
-    
-    user = user_collection.find_one({"_id":ObjectId(userId)})
-    if not user:
-        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
-    user_name = user.get("username")
 
+    data_name, user_name = get_dataset_and_user_info(id_data, userId)
     model_data = pickle.dumps(best_model)
     job_id = str(uuid4())
+
     job = {
-        "job_id" : job_id,
+        "job_id": job_id,
         "best_model_id": best_model_id,
         "best_model": str(best_model),
         "model": model_data,
@@ -259,7 +285,8 @@ def train_json(item: Item, userId, id_data):
         return JSONResponse(content=serialize_mongo_doc(job))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
-    
+
+
 def inference_model(job_id, file_data):
     stored_model = job_collection.find_one({"job_id": job_id})
     if 'activate' in stored_model.keys():
@@ -275,7 +302,7 @@ def inference_model(job_id, file_data):
                 if data[column].dtype == 'object':
                     le = LabelEncoder()
                     data[column] = le.fit_transform(data[column])
-            
+
             X = data[list_feature]
             y = model.predict(X)
             data["predict"] = y
@@ -285,7 +312,6 @@ def inference_model(job_id, file_data):
         "job_id": job_id,
         "message": "model is deactivate"
     }
-
 
 
 # Dùng với kafka
@@ -331,20 +357,22 @@ def train_json_from_job(job):
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi cập nhật job")
 
+
 # Lấy danh sách job
 def get_jobs(user_id):
     try:
         query = {}
         if user_id:
             query["user.id"] = user_id
-        
+
         jobs = list(job_collection.find(query, {"model": 0, "item": 0}))
         for job in jobs:
             job["_id"] = str(job["_id"])  # Chuyển ObjectId thành string
         return JSONResponse(content=jobs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 # Lấy job theo job_id
 def get_one_job(id_job: str):
     try:
@@ -358,16 +386,8 @@ def get_one_job(id_job: str):
 # Không dùng được nữa => Đổi từ kafka-python --> aiokafka.
 def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
-    
-    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
-    data_name = dataset.get("dataName")
 
-    user = user_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
-    user_name = user.get("username")
+    data_name, user_name = get_dataset_and_user_info(data_id, user_id)
 
     job_doc = {
         "job_id": job_id,
@@ -399,13 +419,13 @@ def push_train_job(item: Item, user_id, data_id, producer):
 def update_activate_model(job_id, activate=0):
     result = job_collection.update_one(
         {"job_id": job_id},
-        { "$set": {"activate": int(activate)} }
+        {"$set": {"activate": int(activate)}}
     )
     return JSONResponse(
         content={
             "job_id": job_id,
             "message": "cập nhập trạng thái mô hình thành công",
             "activate": int(activate)
-        }, 
+        },
         status_code=200
     )
