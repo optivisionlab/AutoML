@@ -102,6 +102,49 @@ class GeneticAlgorithm(SearchStrategy):
             individual[param_name] = random.uniform(min_val, max_val)
 
         return individual
+    
+    def _create_smart_population(self, size: int) -> List[Dict[str, float]]:
+        """Create an initial population using smart initialization (grid and random)."""
+        population = []
+        
+        # Create a mini-grid for each parameter (2-3 points per parameter)
+        grid_points = {}
+        for param_name, (min_val, max_val) in self.param_bounds.items():
+            param_type, _ = self.param_types[param_name]
+            if param_type == 'categorical':
+                # For categorical, sample evenly
+                n_values = int(max_val - min_val + 1)
+                if n_values <= 3:
+                    grid_points[param_name] = [float(i) for i in range(int(min_val), int(max_val) + 1)]
+                else:
+                    # Sample 3 points
+                    grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
+            else:
+                # For continuous/integer, use 3 points: min, mid, max
+                grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
+        
+        # Create grid combinations (but limit to population size)
+        import itertools
+        all_combinations = list(itertools.product(*[grid_points[p] for p in self.param_bounds.keys()]))
+        
+        # If we have fewer combinations than population size, use all
+        if len(all_combinations) <= size:
+            for combo in all_combinations:
+                individual = dict(zip(self.param_bounds.keys(), combo))
+                population.append(individual)
+        else:
+            # Sample from combinations
+            selected_indices = random.sample(range(len(all_combinations)), min(size // 2, len(all_combinations)))
+            for idx in selected_indices:
+                combo = all_combinations[idx]
+                individual = dict(zip(self.param_bounds.keys(), combo))
+                population.append(individual)
+        
+        # Fill the rest with random individuals
+        while len(population) < size:
+            population.append(self._create_individual())
+        
+        return population[:size]
 
     def _evaluate_individual(self, individual: Dict[str, float], model: BaseEstimator, X: np.ndarray,
                              y: np.ndarray) -> dict:
@@ -163,17 +206,28 @@ class GeneticAlgorithm(SearchStrategy):
                     'f1': 0.0
                 }
 
-    def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores: List[float]) -> Dict[
+    def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores) -> Dict[
         str, float]:
-        """Select an individual using tournament selection."""
-        if not population or not fitness_scores:
-            raise ValueError("Population and fitness scores cannot be empty")
+        """Select an individual using tournament selection with numpy optimization."""
+        # Handle both numpy array and list types
+        if not population:
+            raise ValueError("Population cannot be empty")
+        if isinstance(fitness_scores, np.ndarray):
+            if fitness_scores.size == 0:
+                raise ValueError("Fitness scores cannot be empty")
+        elif not fitness_scores:
+            raise ValueError("Fitness scores cannot be empty")
         
         # Ensure tournament size doesn't exceed population size
         tournament_size = min(self.config['tournament_size'], len(population))
-        tournament_indices = random.sample(range(len(population)), tournament_size)
-        tournament_fitness = [fitness_scores[i] for i in tournament_indices]
-        winner_index = tournament_indices[np.argmax(tournament_fitness)]
+        # Use numpy for faster selection if fitness_scores is a numpy array
+        if isinstance(fitness_scores, np.ndarray):
+            tournament_indices = np.random.choice(len(population), size=tournament_size, replace=False)
+            winner_index = tournament_indices[np.argmax(fitness_scores[tournament_indices])]
+        else:
+            tournament_indices = random.sample(range(len(population)), tournament_size)
+            tournament_fitness = [fitness_scores[i] for i in tournament_indices]
+            winner_index = tournament_indices[np.argmax(tournament_fitness)]
         # Return a shallow copy since we'll deepcopy when needed
         return population[winner_index].copy()
 
@@ -253,7 +307,7 @@ class GeneticAlgorithm(SearchStrategy):
         return mutated
 
     def _inject_diversity(self, population: List[Dict[str, float]], injection_rate: float = 0.3) -> List[Dict[str, float]]:
-        """Inject new random individuals to increase diversity when population stagnates.
+        """Inject new random individuals to increase diversity when the population stagnates.
         
         Args:
             population: Current population
@@ -271,7 +325,7 @@ class GeneticAlgorithm(SearchStrategy):
         # For now, we'll just replace random individuals
         new_population = population.copy()
         
-        # Replace worst individuals with new random ones
+        # Replace the worst individuals with new random ones
         injection_indices = random.sample(range(len(population)), num_to_inject)
         for idx in injection_indices:
             new_population[idx] = self._create_individual()
@@ -359,12 +413,34 @@ class GeneticAlgorithm(SearchStrategy):
 
         # Convert the hyperparameter grid into a format suitable for the genetic algorithm.
         encoded_grid = self._encode_parameters(param_grid)
-        # Create the initial population of individuals (potential solutions).
-        population = [self._create_individual() for _ in range(self.config['population_size'])]
+        
+        # Adaptive population sizing based on parameter space complexity
+        if self.config.get('adaptive_population', True):
+            # Calculate parameter space size
+            param_space_size = 1
+            for param_name, (min_val, max_val) in self.param_bounds.items():
+                param_type, param_values = self.param_types[param_name]
+                if param_type == 'categorical':
+                    param_space_size *= (max_val - min_val + 1)
+                else:
+                    param_space_size *= 10  # Approximate for continuous
+            
+            # Adapt population size (min 5, max 30)
+            adaptive_pop_size = min(30, max(5, int(np.log(param_space_size) * 3)))
+            actual_population_size = min(adaptive_pop_size, self.config['population_size'])
+        else:
+            actual_population_size = self.config['population_size']
+        
+        # Create the initial population using smart or random initialization
+        if self.config.get('init_strategy', 'smart') == 'smart':
+            population = self._create_smart_population(actual_population_size)
+        else:
+            population = [self._create_individual() for _ in range(actual_population_size)]
 
         # Lists to store the history of all individuals and their scores across all generations.
         all_individuals = []
         all_scores = []
+        all_metric_scores = []  # Store all metric scores for each individual
         generation_history = []  # Store history for logging
 
         # Initialize variables to keep track of the best solution found so far.
@@ -383,9 +459,12 @@ class GeneticAlgorithm(SearchStrategy):
         diversity_history = []
 
         # Execute the genetic algorithm main loop
-        print(f"\nStarting Genetic Algorithm with {self.config['population_size']} individuals for {self.config['generation']} generations")
-        print(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
-              (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
+        verbose = self.config.get('verbose', 1)
+        if verbose > 0:
+            print(f"\nStarting Genetic Algorithm with {actual_population_size} individuals for {self.config['generation']} generations")
+            if verbose > 1:
+                print(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
+                      (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
         
         for generation in range(self.config['generation']):
             generation_start_time = datetime.now()
@@ -395,7 +474,8 @@ class GeneticAlgorithm(SearchStrategy):
             diversity_history.append(diversity)
             
             # Progress indicator
-            print(f"\nGeneration {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}", end="")
+            if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config['generation'] - 1):
+                print(f"\nGeneration {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}", end="")
             
             # Evaluate population (optionally in parallel)
             all_individual_scores = self._evaluate_population_parallel(population, model, X, y)
@@ -409,18 +489,19 @@ class GeneticAlgorithm(SearchStrategy):
             else:
                 primary_metric = 'f1'
             
-            # Extract fitness scores and track best individual
-            fitness_scores = []
+            # Extract fitness scores and track the best individual
+            fitness_scores = np.zeros(len(population))  # Use numpy array for better performance
             generation_best_score = float('-inf')
             generation_improved = False
             
             for idx, (individual, scores) in enumerate(zip(population, all_individual_scores)):
                 score = scores.get(primary_metric, 0.0)
-                fitness_scores.append(score)
+                fitness_scores[idx] = score
                 
                 # Record for history
                 all_individuals.append(self._decode_individual(individual))
                 all_scores.append(score)
+                all_metric_scores.append(scores.copy())  # Store all metric scores
                 
                 # Track generation best
                 if score > generation_best_score:
@@ -452,9 +533,9 @@ class GeneticAlgorithm(SearchStrategy):
                     }
                     generation_history.append(history_entry)
             
-            # Track convergence
-            mean_fitness = np.mean(fitness_scores)
-            std_fitness = np.std(fitness_scores)
+            # Track convergence with numpy operations
+            mean_fitness = fitness_scores.mean()
+            std_fitness = fitness_scores.std()
             convergence_history.append({
                 'generation': generation + 1,
                 'best': best_score,
@@ -465,10 +546,11 @@ class GeneticAlgorithm(SearchStrategy):
             
             # Update progress with generation results
             generation_time = (datetime.now() - generation_start_time).total_seconds()
-            print(f" | Best: {generation_best_score:.4f} | Mean: {mean_fitness:.4f} | Std: {std_fitness:.4f} | Time: {generation_time:.2f}s", end="")
-            
-            if generation_improved:
-                print(" ✓ NEW BEST!", end="")
+            if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config['generation'] - 1):
+                print(f" | Best: {generation_best_score:.4f} | Mean: {mean_fitness:.4f} | Std: {std_fitness:.4f} | Time: {generation_time:.2f}s", end="")
+                
+                if generation_improved and verbose > 1:
+                    print(" ✓ NEW BEST!", end="")
             
             # Check early stopping
             if not generation_improved:
@@ -496,17 +578,17 @@ class GeneticAlgorithm(SearchStrategy):
             new_population = []
             
             # Elitism: Directly carry over the best individuals to the next generation
-            elite_indices = np.argsort(fitness_scores)[-self.config['elite_size']:]
+            elite_indices = np.argpartition(fitness_scores, -self.config['elite_size'])[-self.config['elite_size']:] if self.config['elite_size'] > 0 else []
             for idx in elite_indices:
-                new_population.append(copy.deepcopy(population[idx]))
+                new_population.append(population[idx].copy())  # Shallow copy is sufficient here
             
             # Adaptive crossover rate based on diversity
             adaptive_crossover_rate = self.config['crossover_rate']
             if diversity < 0.1:  # Low diversity, increase exploration
                 adaptive_crossover_rate = min(1.0, adaptive_crossover_rate * 1.2)
             
-            # Fill the rest of the new population using selection, crossover, and mutation
-            while len(new_population) < self.config['population_size']:
+            # Fill the rest with the new population using selection, crossover, and mutation
+            while len(new_population) < actual_population_size:
                 # Select two parent individuals from the old population
                 parent1 = self._tournament_selection(population, fitness_scores)
                 parent2 = self._tournament_selection(population, fitness_scores)
@@ -526,9 +608,9 @@ class GeneticAlgorithm(SearchStrategy):
                 child2 = self._mutate(child2, generation, self.config['generation'])
                 
                 # Add offspring to the next generation
-                if len(new_population) < self.config['population_size']:
+                if len(new_population) < actual_population_size:
                     new_population.append(child1)
-                if len(new_population) < self.config['population_size']:
+                if len(new_population) < actual_population_size:
                     new_population.append(child2)
             
             # Replace the old population with the newly created one
@@ -548,6 +630,21 @@ class GeneticAlgorithm(SearchStrategy):
             'best_generation': best_generation + 1,
             'total_evaluations': len(all_individuals)
         }
+        
+        # Add mean_test_{metric} and std_test_{metric} for each metric
+        # These are expected by the training function in engine.py
+        if all_metric_scores:
+            # Get all metric names from the first result
+            metric_names = list(all_metric_scores[0].keys())
+            
+            for metric_name in metric_names:
+                # Extract scores for this metric from all evaluations
+                metric_scores_list = [scores.get(metric_name, 0.0) for scores in all_metric_scores]
+                cv_results[f'mean_test_{metric_name}'] = metric_scores_list
+                cv_results[f'std_test_{metric_name}'] = [0.0] * len(metric_scores_list)  # No std in GA
+                
+                # Add ranking for this metric
+                cv_results[f'rank_test_{metric_name}'] = self._compute_ranks(metric_scores_list)
 
         # If best_all_scores was not set (shouldn't happen), create default
         if best_all_scores is None:
@@ -567,12 +664,16 @@ class GeneticAlgorithm(SearchStrategy):
         print(f"Best parameters: {best_params}")
         print(f"Final population diversity: {diversity_history[-1]:.4f}")
         
-        # Print log file location if logging is enabled
+        # Print the log file location if logging is enabled
         if self.config['save_log'] and log_file:
             print(f"\nDetailed log saved to: {log_file}")
         
-        # Clear cache after search completes
+        # Clear caches after the search completes
         self._decode_cache.clear()
+        if hasattr(self, '_evaluation_cache'):
+            self._evaluation_cache.clear()
+        if hasattr(self, '_model_copies'):
+            self._model_copies.clear()
         
         # Return the best parameters, the best score, all metrics, and the comprehensive results.
         return best_params, best_score, best_all_scores, cv_results
