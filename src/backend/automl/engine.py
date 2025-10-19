@@ -355,7 +355,7 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-
+# Không dùng được nữa => Đổi từ kafka-python --> aiokafka.
 def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
     

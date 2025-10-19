@@ -58,17 +58,56 @@ from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
-from data.engine import upload_data, update_dataset_by_id, delete_dataset_by_id
+from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
 import threading
-from kafka_consumer import run_train_consumer
+from kafka_consumer import kafka_consumer_process
 from users.engine import get_current_admin
 # Lấy danh sách user
 from users.engine import get_list_user
-from kafka import KafkaProducer
+from contextlib import asynccontextmanager
+from kafka_consumer import (
+    kafka_consumer_process,
+    start_producer,
+    stop_producer
+)
+from kafka_consumer import get_producer
+import asyncio
+
+# Lifespan Context Manager 
+consumer_task: asyncio.Task | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Context Manager quản lý vòng đời (startup, shutdown) của server 
+    Trước yield là startup, sau yield là shutdown
+    """
+    global consumer_task
+
+    # KHỞI TẠO VÀ START PRODUCER 
+    await start_producer()
+
+    # START CONSUMER
+    print("[Server Lifespan] Start Consumer Task")
+    consumer_task = asyncio.create_task(kafka_consumer_process())
+
+    yield # Server Fastapi accepts requests
+
+    # DỪNG PRODUCER
+    print("[Server Lifespan] Shutdown resources...")
+    await stop_producer()
+    
+    # DỪNG CONSUMER TASK
+    if consumer_task:
+        consumer_task.cancel()
+        try:
+            await consumer_task 
+        except asyncio.CancelledError:
+            pass
 
 
 # default sync
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key="!secret")
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -98,20 +137,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-producer = KafkaProducer(
-    bootstrap_servers=data["KAFKA_SERVER"],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-
-@app.on_event("startup")
-def startup_event():
-    print("Starting Kafka consumer thread...")
-    kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
-    kafka_thread.start()
-  
 
 @app.get("/")
 def read_root():
@@ -382,7 +407,12 @@ def upload_dataset(
     file_data: UploadFile = File(...),
 ):
 
-    return upload_data(file_data, data_name, data_type, user_id)
+    # return upload_data(file_data, data_name, data_type, user_id)
+    try:
+        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
+        return dataset
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
 # Update dataset
@@ -390,14 +420,27 @@ def upload_dataset(
 def update_dataset(
     dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
+    # return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
+    try:
+        result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
+        return {
+            "sucess": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
-    return delete_dataset_by_id(dataset_id)
-
+    # return delete_dataset_by_id(dataset_id)
+    try:
+        result = delete_dataset_at_minio_by_id(dataset_id)
+        return {
+            "success": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
@@ -405,11 +448,12 @@ def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
 
-
+# Không dùng nữa => Gửi cả data không hiệu quả..
 # API push kafka
-@app.post("/api-push-kafka")
-def api_push_kafka(item: Item, user_id: str, data_id: str):
-    return push_train_job(item, user_id, data_id, producer)
+# @app.post("/api-push-kafka")
+# def api_push_kafka(item: Item, user_id: str, data_id: str):
+#     producer = get_producer()
+#     return push_train_job(item, user_id, data_id, producer)
 
 
 @app.post("/training-file-local")
@@ -468,4 +512,3 @@ app.include_router(exp)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
-    pass

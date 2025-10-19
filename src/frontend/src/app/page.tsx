@@ -5,10 +5,7 @@ import { FaFacebook, FaYoutube, FaLinkedin } from "react-icons/fa";
 import Link from "next/link";
 import ImageCarousel from "@/components/homeCarousel/ImageCarousel";
 
-
 export default function Home() {
-
-
   return (
     <>
       {/* Header Section */}
@@ -31,9 +28,12 @@ export default function Home() {
           <div className="w-full md:w-1/3 flex items-center justify-center md:justify-start text-center md:text-left text-gray-800 dark:text-gray-200">
             <div>
               <p className="text-xl leading-relaxed italic mb-4">
-                "Không có việc gì khó<br />
-                Chỉ sợ lòng không bền<br />
-                Đào núi và lấp biển<br />
+                "Không có việc gì khó
+                <br />
+                Chỉ sợ lòng không bền
+                <br />
+                Đào núi và lấp biển
+                <br />
                 Quyết chí ắt làm nên"
               </p>
               <p className="font-semibold">– Chủ tịch Hồ Chí Minh</p>
@@ -111,20 +111,17 @@ export default function Home() {
       </section>
 
       {/* About Us Section */}
-      <section
-        id="about-us"
-        className="bg-gray-100 dark:bg-background py-16"
-      >
+      <section id="about-us" className="bg-gray-100 dark:bg-background py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-center mb-6 text-gray-900 dark:text-white">
             Về chúng tôi
           </h2>
           <p className="text-center max-w-3xl mx-auto mb-12 text-gray-700 dark:text-gray-300">
             OptivisionLab là phòng nghiên cứu tập trung vào trí tuệ nhân tạo,
-            với sứ mệnh khám phá và phát triển các giải pháp công nghệ tiên
-            tiến phục vụ cho giáo dục, y tế và công nghiệp. Chúng tôi kết nối
-            nghiên cứu học thuật với ứng dụng thực tiễn nhằm tạo ra giá trị bền
-            vững cho cộng đồng.
+            với sứ mệnh khám phá và phát triển các giải pháp công nghệ tiên tiến
+            phục vụ cho giáo dục, y tế và công nghiệp. Chúng tôi kết nối nghiên
+            cứu học thuật với ứng dụng thực tiễn nhằm tạo ra giá trị bền vững
+            cho cộng đồng.
           </p>
           <MemberLab />
         </div>
@@ -146,12 +143,16 @@ export default function Home() {
               <div className="flex items-start text-sm text-gray-800 dark:text-gray-200 mb-2">
                 <MapPin className="w-4 h-4 mt-0.5 mr-2" />
                 <span>
-                  Đại Học Công Nghiệp Hà Nội, Số 298 đường Cầu Diễn, phường Minh Khai, quận Bắc Từ Liêm, Hà Nội
+                  Đại Học Công Nghiệp Hà Nội, Số 298 đường Cầu Diễn, phường Minh
+                  Khai, quận Bắc Từ Liêm, Hà Nội
                 </span>
               </div>
               <div className="flex items-start text-sm text-orange-500 mb-4">
                 <Mail className="w-4 h-4 mt-0.5 mr-2" />
-                <a href="mailto:optivision.work@gmail.com" className="hover:underline">
+                <a
+                  href="mailto:optivision.work@gmail.com"
+                  className="hover:underline"
+                >
                   optivision.work@gmail.com
                 </a>
               </div>
@@ -160,10 +161,18 @@ export default function Home() {
             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
               <span>© 2025 OptivisionLab</span>
               <div className="flex items-center space-x-4 ml-5">
-                <Link href="https://www.facebook.com/meoluoiai" className="text-blue-600" aria-label="Facebook">
+                <Link
+                  href="https://www.facebook.com/meoluoiai"
+                  className="text-blue-600"
+                  aria-label="Facebook"
+                >
                   <FaFacebook className="w-5 h-5" />
                 </Link>
-                <Link href="https://www.youtube.com/@meoluoiai" className="text-red-600" aria-label="YouTube">
+                <Link
+                  href="https://www.youtube.com/@meoluoiai"
+                  className="text-red-600"
+                  aria-label="YouTube"
+                >
                   <FaYoutube className="w-5 h-5" />
                 </Link>
                 {/* <Link href="#" className="text-blue-800" aria-label="LinkedIn">

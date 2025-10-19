@@ -107,7 +107,7 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             "error": str(exc),
             "results": []
         }
-    
+
 
 
 async def run_mapreduce_async(metric_list, models, workers, id_data, config):
@@ -202,7 +202,6 @@ async def reduce_async(worker_responses):
         "model_scores": final_model_scores
     }
    
-
 
 async def process_async(id_data: str, config: dict):
 

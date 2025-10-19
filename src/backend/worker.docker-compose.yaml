@@ -1,28 +1,16 @@
 version: '3.8'
-
 services:
   worker-1:
-    build: # Xây dựng từ Dockerfile trong cùng thư mục
-      context: .
-      dockerfile: worker.dockerfile # Chỉ định tên file Dockerfile 
-    command: uvicorn worker:app --host 0.0.0.0 --port 4001 --reload # Chạy server
-    ports:
-      - "4001:4001"
-    volumes:
-      - .:/app
-    environment:
-      - HOST=0.0.0.0
-      - PORT=4001
-
-  worker-2:
+    image: workers:latest
     build:
       context: .
       dockerfile: worker.dockerfile
-    command: uvicorn worker:app --host 0.0.0.0 --port 4002 --reload  # Chạy server thứ hai
+    command: uvicorn worker:app --host 0.0.0.0 --port 4000
     ports:
-      - "4002:4002"
+      - "4000:4000"
     volumes:
       - .:/app
     environment:
       - HOST=0.0.0.0
-      - PORT=4002
+      - PORT=4000
+      - WORKER_INDEX=1
