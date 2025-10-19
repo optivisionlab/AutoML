@@ -87,17 +87,27 @@ class GridSearchStrategy(SearchStrategy):
     
     def _evaluate_params_batch(self, param_combinations: List[Dict[str, Any]], model: BaseEstimator,
                               X: np.ndarray, y: np.ndarray, cv, scoring_config) -> List[Dict[str, Any]]:
-        """Evaluate a batch of parameter combinations in parallel."""
-        if self.config.get('parallel_evaluation', True) and len(param_combinations) > 1:
-            n_jobs = min(self.config.get('n_jobs', 1), len(param_combinations))
-            if n_jobs > 1 or n_jobs == -1:
+        """Evaluate a batch of parameter combinations in parallel with optimized settings."""
+        # Always use parallel for more than 1 combination
+        if len(param_combinations) > 1:
+            import multiprocessing
+            n_jobs = self.config.get('n_jobs', -1)
+            if n_jobs == -1:
+                n_jobs = multiprocessing.cpu_count()
+            
+            # Always use parallel evaluation
+            if n_jobs > 1:
                 # Pre-create model copies for better memory management
                 if not self._model_copies or len(self._model_copies) < n_jobs:
-                    actual_n_jobs = n_jobs if n_jobs != -1 else 4  # Limit to 4 for -1
-                    self._model_copies = [copy.deepcopy(model) for _ in range(min(actual_n_jobs, len(param_combinations)))]
+                    actual_n_jobs = min(n_jobs, len(param_combinations))
+                    self._model_copies = [copy.deepcopy(model) for _ in range(actual_n_jobs)]
                 
-                # Parallel evaluation
-                results = Parallel(n_jobs=n_jobs, backend='threading' if len(param_combinations) < 10 else 'loky')(
+                # Choose backend based on data size and combination count
+                # Use threading for small workloads, loky for larger ones
+                backend = 'threading' if len(param_combinations) <= 8 else 'loky'
+                
+                # Parallel evaluation with optimized settings
+                results = Parallel(n_jobs=n_jobs, backend=backend, batch_size='auto', prefer='threads')(
                     delayed(self._evaluate_single_params)(
                         params, self._model_copies[i % len(self._model_copies)], X, y, cv, scoring_config
                     )
@@ -105,7 +115,7 @@ class GridSearchStrategy(SearchStrategy):
                 )
                 return results
         
-        # Sequential evaluation
+        # Sequential evaluation only for single parameter
         return [self._evaluate_single_params(params, model, X, y, cv, scoring_config) 
                 for params in param_combinations]
 

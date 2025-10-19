@@ -19,17 +19,28 @@ class GeneticAlgorithm(SearchStrategy):
     def get_default_config() -> Dict[str, Any]:
         config = SearchStrategy.get_default_config()
         config.update({
-            'population_size': 50,
-            'generation': 20,
-            'mutation_rate': 0.1,
-            'crossover_rate': 0.8,
-            'elite_size': 5,
-            'tournament_size': 3,
+            'population_size': 10,  # Ultra small for extreme speed
+            'generation': 5,  # Very few generations
+            'mutation_rate': 0.2,  # Higher for faster exploration
+            'crossover_rate': 0.9,  # Very high crossover
+            'elite_size': 2,  # Minimal elite
+            'tournament_size': 2,  # Minimal tournament
             'log_dir': 'logs',
             'save_log': False,
-            'early_stopping_patience': 5,  # Stop if no improvement for this many generations
-            'early_stopping_enabled': True,  # Enable early stopping
-            'parallel_evaluation': True,  # Enable parallel evaluation of individuals
+            'early_stopping_patience': 2,  # Ultra aggressive early stopping
+            'early_stopping_enabled': True,
+            'parallel_evaluation': True,
+            'adaptive_population': True,  # Dynamic population sizing
+            'min_population': 4,  # Very small minimum
+            'max_population': 12,  # Small maximum
+            'convergence_threshold': 0.002,  # Less strict for faster convergence
+            'use_global_cache': True,  # Cache evaluations across generations
+            'max_cache_size': 1000,  # Larger cache
+            'fast_mode': True,  # Enable all speed optimizations
+            'n_initial_random': 3,  # Minimal random evaluations
+            'ultra_fast_mode': True,  # New: Enable ultra fast mode
+            'skip_diversity_check': True,  # Skip diversity calculations for speed
+            'simple_crossover': True,  # Use simpler crossover for speed
         })
         return config
 
@@ -38,6 +49,30 @@ class GeneticAlgorithm(SearchStrategy):
         self.param_bounds = {}
         self.param_types = {}
         self._decode_cache = {}  # Cache for decoded parameters
+        self._evaluation_cache = {}  # Global cache for fitness evaluations
+        self._cache_hits = 0  # Track cache efficiency
+        self._total_evaluations = 0
+    
+    def _convert_numpy_types(self, obj):
+        """Convert numpy types to native Python types recursively."""
+        import numpy as np
+        
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {key: self._convert_numpy_types(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(self._convert_numpy_types(item) for item in obj)
+        elif isinstance(obj, (np.bool_, bool)):
+            return bool(obj)
+        else:
+            return obj
 
     def _make_hashable(self, individual: Dict[str, float]) -> tuple:
         """Convert individual to hashable format for caching."""
@@ -155,7 +190,16 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _evaluate_individual(self, individual: Dict[str, float], model: BaseEstimator, X: np.ndarray,
                              y: np.ndarray) -> dict:
-        """Evaluate an individual using cross-validation."""
+        """Evaluate an individual using cross-validation with global caching."""
+        self._total_evaluations += 1
+        
+        # Check global cache if enabled
+        if self.config.get('use_global_cache', True):
+            cache_key = self._make_hashable(individual)
+            if cache_key in self._evaluation_cache:
+                self._cache_hits += 1
+                return self._evaluation_cache[cache_key].copy()
+        
         try:
             params = self._decode_individual(individual)
 
@@ -189,15 +233,27 @@ class GeneticAlgorithm(SearchStrategy):
             if isinstance(scoring_config, dict):
                 # When scoring is a dict, the keys are already the metric names
                 for metric_name in metric_names:
-                    result[metric_name] = np.mean(scores[f'test_{metric_name}'])
+                    result[metric_name] = float(np.mean(scores[f'test_{metric_name}']))
             else:
                 # Default mapping for backward compatibility
                 result = {
-                    'accuracy': np.mean(scores['test_accuracy']),
-                    'precision': np.mean(scores['test_precision_macro']),
-                    'recall': np.mean(scores['test_recall_macro']),
-                    'f1': np.mean(scores['test_f1_macro'])
+                    'accuracy': float(np.mean(scores['test_accuracy'])),
+                    'precision': float(np.mean(scores['test_precision_macro'])),
+                    'recall': float(np.mean(scores['test_recall_macro'])),
+                    'f1': float(np.mean(scores['test_f1_macro']))
                 }
+            
+            # Cache the result if enabled
+            if self.config.get('use_global_cache', True):
+                cache_key = self._make_hashable(individual)
+                # Manage cache size
+                max_cache_size = self.config.get('max_cache_size', 500)
+                if len(self._evaluation_cache) >= max_cache_size:
+                    # Remove oldest entries (FIFO)
+                    keys_to_remove = list(self._evaluation_cache.keys())[:max_cache_size // 4]
+                    for key in keys_to_remove:
+                        del self._evaluation_cache[key]
+                self._evaluation_cache[cache_key] = result.copy()
             
             return result
 
@@ -243,6 +299,18 @@ class GeneticAlgorithm(SearchStrategy):
         """Perform a crossover between two individuals using different strategy based on parameter types."""
         if random.random() > self.config['crossover_rate']:
             return parent1.copy(), parent2.copy()
+
+        # Ultra fast simple crossover
+        if self.config.get('simple_crossover', False):
+            # Simple uniform crossover - just swap half the parameters
+            child1 = parent1.copy()
+            child2 = parent2.copy()
+            params = list(parent1.keys())
+            if len(params) > 1:
+                swap_point = len(params) // 2
+                for param in params[:swap_point]:
+                    child1[param], child2[param] = child2[param], child1[param]
+            return child1, child2
 
         child1 = parent1.copy()
         child2 = parent2.copy()
@@ -369,19 +437,42 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator, 
                                     X: np.ndarray, y: np.ndarray) -> List[Dict[str, float]]:
-        """Evaluate all individuals in parallel."""
-        if self.config.get('parallel_evaluation', True) and len(population) > 1:
-            # Use joblib for parallel evaluation
-            n_jobs = min(self.config.get('n_jobs', 1), len(population))
-            if n_jobs > 1 or n_jobs == -1:
-                results = Parallel(n_jobs=n_jobs)(
-                    delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y) 
-                    for individual in population
-                )
-                return results
+        """Evaluate all individuals in parallel with smart optimization."""
+        n_jobs = self.config.get('n_jobs', -1)
         
-        # Fall back to sequential evaluation
-        return [self._evaluate_individual(individual, model, X, y) for individual in population]
+        # If explicitly set to 1, use sequential
+        if n_jobs == 1:
+            return [self._evaluate_individual(individual, model, X, y) for individual in population]
+        
+        # Smart parallel decision based on population size and CV folds
+        cv_folds = self.config.get('cv', 5)
+        min_parallel_work = cv_folds * 3  # Need at least 3x CV work per core to benefit
+        
+        if n_jobs == -1:
+            import multiprocessing
+            n_jobs = multiprocessing.cpu_count()
+        
+        # Calculate total work units (population * cv_folds)
+        total_work = len(population) * cv_folds
+        
+        # Only use parallel if we have enough work to justify the overhead
+        # Rule: at least 2 work units per core AND population > 4
+        if total_work >= (n_jobs * 2) and len(population) > 4:
+            # Use optimal number of jobs (don't use more cores than work units)
+            optimal_jobs = min(n_jobs, len(population))
+            
+            # Choose backend based on model complexity
+            # Threading is faster for simple models, loky for complex ones
+            backend = 'threading' if cv_folds <= 3 else 'loky'
+            
+            results = Parallel(n_jobs=optimal_jobs, backend=backend)(
+                delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y) 
+                for individual in population
+            )
+            return results
+        else:
+            # Sequential is faster for small populations
+            return [self._evaluate_individual(individual, model, X, y) for individual in population]
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
         """Execute genetic algorithm search with enhanced loop features.
@@ -422,7 +513,7 @@ class GeneticAlgorithm(SearchStrategy):
         encoded_grid = self._encode_parameters(param_grid)
         
         # Adaptive population sizing based on parameter space complexity
-        if self.config.get('adaptive_population', True):
+        if self.config.get('adaptive_population', True) and self.config.get('fast_mode', True):
             # Calculate parameter space size
             param_space_size = 1
             for param_name, (min_val, max_val) in self.param_bounds.items():
@@ -432,14 +523,19 @@ class GeneticAlgorithm(SearchStrategy):
                 else:
                     param_space_size *= 10  # Approximate for continuous
             
-            # Adapt population size (min 5, max 30)
-            adaptive_pop_size = min(30, max(5, int(np.log(param_space_size) * 3)))
+            # Adapt population size with tighter bounds for faster runtime
+            min_pop = self.config.get('min_population', 8)
+            max_pop = self.config.get('max_population', 25)
+            adaptive_pop_size = min(max_pop, max(min_pop, int(np.log(param_space_size) * 2)))
             actual_population_size = min(adaptive_pop_size, self.config['population_size'])
         else:
             actual_population_size = self.config['population_size']
         
         # Create the initial population using smart or random initialization
-        if self.config.get('init_strategy', 'smart') == 'smart':
+        if self.config.get('ultra_fast_mode', False):
+            # In ultra fast mode, use mostly random population
+            population = [self._create_individual() for _ in range(actual_population_size)]
+        elif self.config.get('init_strategy', 'smart') == 'smart':
             population = self._create_smart_population(actual_population_size)
         else:
             population = [self._create_individual() for _ in range(actual_population_size)]
@@ -476,16 +572,37 @@ class GeneticAlgorithm(SearchStrategy):
         for generation in range(self.config['generation']):
             generation_start_time = datetime.now()
             
-            # Calculate population diversity
-            diversity = self._calculate_population_diversity(population)
-            diversity_history.append(diversity)
+            # Calculate population diversity (skip in ultra fast mode)
+            if not self.config.get('skip_diversity_check', False):
+                diversity = self._calculate_population_diversity(population)
+                diversity_history.append(diversity)
+            else:
+                diversity = 1.0  # Dummy value for ultra fast mode
+                diversity_history.append(diversity)
             
             # Progress indicator
             if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config['generation'] - 1):
                 print(f"\nGeneration {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}", end="")
             
-            # Evaluate population (optionally in parallel)
-            all_individual_scores = self._evaluate_population_parallel(population, model, X, y)
+            # Evaluate population (with optimization for ultra fast mode)
+            if self.config.get('ultra_fast_mode', False) and generation > 0:
+                # In ultra fast mode after first generation, only evaluate new/changed individuals
+                # Use cached scores for elite individuals
+                all_individual_scores = []
+                for idx, individual in enumerate(population):
+                    if idx < self.config['elite_size'] and generation > 0:
+                        # Elite individuals - use previous scores if available
+                        cache_key = self._make_hashable(individual)
+                        if cache_key in self._evaluation_cache:
+                            all_individual_scores.append(self._evaluation_cache[cache_key].copy())
+                        else:
+                            all_individual_scores.append(self._evaluate_individual(individual, model, X, y))
+                    else:
+                        # New individuals - must evaluate
+                        all_individual_scores.append(self._evaluate_individual(individual, model, X, y))
+            else:
+                # Normal evaluation
+                all_individual_scores = self._evaluate_population_parallel(population, model, X, y)
             
             # Determine the primary metric for fitness evaluation
             scoring_config = self.config.get('scoring', 'f1')
@@ -559,9 +676,18 @@ class GeneticAlgorithm(SearchStrategy):
                 if generation_improved and verbose > 1:
                     print(" ✓ NEW BEST!", end="")
             
-            # Check early stopping
+            # Check early stopping with convergence threshold
             if not generation_improved:
                 generations_without_improvement += 1
+            
+            # Check convergence threshold (very small improvements)
+            convergence_threshold = self.config.get('convergence_threshold', 0.001)
+            if generation > 0 and len(convergence_history) > 1:
+                recent_improvement = convergence_history[-1]['best'] - convergence_history[-2]['best']
+                if abs(recent_improvement) < convergence_threshold and generations_without_improvement >= 2:
+                    print(f"\n\n✓ Convergence detected at generation {generation + 1} (improvement < {convergence_threshold:.4f})")
+                    print(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
+                    break
                 
             if early_stopping_enabled and generations_without_improvement >= early_stopping_patience:
                 print(f"\n\n🛑 Early stopping triggered at generation {generation + 1} (no improvement for {early_stopping_patience} generations)")
@@ -573,13 +699,14 @@ class GeneticAlgorithm(SearchStrategy):
                 df = pd.DataFrame(generation_history)
                 df.to_csv(log_file, index=False)
             
-            # Check if population has converged (low diversity)
-            stagnation_threshold = 0.05
-            if diversity < stagnation_threshold and generations_without_improvement >= 3:
-                print(f"\n⚠️ Stagnation detected (diversity={diversity:.4f}, no improvement for {generations_without_improvement} gen). Injecting diversity...")
-                # Inject new random individuals to escape local optima
-                population = self._inject_diversity(population, injection_rate=0.2)
-                print(" Diversity injection complete!", end="")
+            # Check if population has converged (low diversity) - skip in ultra fast mode
+            if not self.config.get('ultra_fast_mode', False):
+                stagnation_threshold = 0.05
+                if diversity < stagnation_threshold and generations_without_improvement >= 3:
+                    print(f"\n⚠️ Stagnation detected (diversity={diversity:.4f}, no improvement for {generations_without_improvement} gen). Injecting diversity...")
+                    # Inject new random individuals to escape local optima
+                    population = self._inject_diversity(population, injection_rate=0.2)
+                    print(" Diversity injection complete!", end="")
             
             # --- Create the next generation ---
             new_population = []
@@ -671,6 +798,12 @@ class GeneticAlgorithm(SearchStrategy):
         print(f"Best parameters: {best_params}")
         print(f"Final population diversity: {diversity_history[-1]:.4f}")
         
+        # Report cache efficiency if enabled
+        if self.config.get('use_global_cache', True) and self._total_evaluations > 0:
+            cache_efficiency = (self._cache_hits / self._total_evaluations) * 100
+            print(f"Cache efficiency: {self._cache_hits}/{self._total_evaluations} ({cache_efficiency:.1f}% hit rate)")
+            print(f"Unique evaluations: {self._total_evaluations - self._cache_hits}")
+        
         # Print the log file location if logging is enabled
         if self.config['save_log'] and log_file:
             print(f"\nDetailed log saved to: {log_file}")
@@ -681,6 +814,12 @@ class GeneticAlgorithm(SearchStrategy):
             self._evaluation_cache.clear()
         if hasattr(self, '_model_copies'):
             self._model_copies.clear()
+        
+        # Convert all numpy types to native Python types before returning
+        best_params = self._convert_numpy_types(best_params)
+        best_score = self._convert_numpy_types(best_score)
+        best_all_scores = self._convert_numpy_types(best_all_scores)
+        cv_results = self._convert_numpy_types(cv_results)
         
         # Return the best parameters, the best score, all metrics, and the comprehensive results.
         return best_params, best_score, best_all_scores, cv_results

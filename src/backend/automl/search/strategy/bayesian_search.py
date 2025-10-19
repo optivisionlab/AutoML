@@ -77,14 +77,20 @@ class BayesianSearchStrategy(SearchStrategy):
         """Ghi đè cấu hình mặc định để thêm các tham số cho tối ưu hóa Bayesian"""
         base_config = SearchStrategy.get_default_config()
         bayesian_config = {
-            'n_calls': 50,  # Số lần gọi hàm mục tiêu để tối ưu hóa
+            'n_calls': 25,  # Reduced for faster runtime (was 50)
+            'n_initial_points': 5,  # Reduced initial random exploration (default is 10)
+            'acq_func': 'EI',  # Expected Improvement - faster than default 'gp_hedge'
+            'acq_optimizer': 'sampling',  # Faster than 'lbfgs' for acquisition
             'scoring': 'accuracy',  # Hàm đánh giá mô hình
             'metrics': ['accuracy', 'precision', 'recall', 'f1'],
             'log_dir': 'logs',  # Thư mục lưu log
-            'save_log': True,  # Có lưu log không
-            'averaging': 'both',  # 'both', 'macro', 'weighted' - 'both' computes both types
-            'optimize_for': 'auto',  # 'auto', 'macro', 'weighted' - which metric to optimize when averaging='both'
+            'save_log': False,  # Disabled by default for speed
+            'averaging': 'macro',  # Single averaging method is faster than 'both'
+            'optimize_for': 'auto',  # 'auto', 'macro', 'weighted' 
             'imbalance_threshold': 0.3,  # Threshold for detecting class imbalance (auto mode)
+            'early_stopping_enabled': True,  # Enable early stopping
+            'early_stopping_patience': 5,  # Stop if no improvement for these many iterations
+            'convergence_threshold': 0.001,  # Stop if improvement < threshold
         }
         base_config.update(bayesian_config)
         return base_config
@@ -242,10 +248,16 @@ class BayesianSearchStrategy(SearchStrategy):
             # gp_minimize luôn tối thiểu hóa, vì vậy trả về -score
             return -score
 
+        # Track for early stopping
+        best_score_history = []
+        early_stopping_patience = self.config.get('early_stopping_patience', 5)
+        early_stopping_enabled = self.config.get('early_stopping_enabled', True)
+        convergence_threshold = self.config.get('convergence_threshold', 0.001)
+        
         # Hàm callback để lưu lịch sử
         def on_step(res):
             """Callback được gọi sau mỗi iteration để lưu kết quả"""
-            nonlocal best_all_scores
+            nonlocal best_all_scores, best_score_history
             
             iteration = len(res.x_iters)
             current_params = {param_names[i]: val for i, val in enumerate(res.x_iters[-1])}
@@ -329,6 +341,24 @@ class BayesianSearchStrategy(SearchStrategy):
             # Update best_all_scores if this is the best so far
             if current_score >= best_score_so_far:
                 best_all_scores = metrics.copy()
+            
+            # Track score history for early stopping
+            best_score_history.append(best_score_so_far)
+            
+            # Check early stopping conditions
+            if early_stopping_enabled and iteration >= early_stopping_patience:
+                # Check if no improvement for patience iterations
+                recent_scores = best_score_history[-early_stopping_patience:]
+                if len(set(recent_scores)) == 1:  # No improvement
+                    print(f"\n🛑 Early stopping at iteration {iteration} (no improvement for {early_stopping_patience} iterations)")
+                    return True  # This will stop gp_minimize
+                
+                # Check convergence threshold
+                if len(best_score_history) > 1:
+                    recent_improvement = best_score_history[-1] - best_score_history[-2]
+                    if abs(recent_improvement) < convergence_threshold:
+                        print(f"\n✓ Convergence detected at iteration {iteration} (improvement < {convergence_threshold:.4f})")
+                        return True
 
             # Lưu log sau mỗi iteration nếu được yêu cầu
             if self.config['save_log']:
@@ -341,6 +371,14 @@ class BayesianSearchStrategy(SearchStrategy):
                                     'x0', 'y0', 'noise', 'n_points', 'n_restarts_optimizer',
                                     'xi', 'kappa', 'verbose', 'callback', 'n_jobs']
         gp_kwargs = {k: v for k, v in kwargs.items() if k in valid_gp_minimize_params}
+        
+        # Add optimized parameters from config if not already specified
+        if 'n_initial_points' not in gp_kwargs:
+            gp_kwargs['n_initial_points'] = self.config.get('n_initial_points', 5)
+        if 'acq_func' not in gp_kwargs:
+            gp_kwargs['acq_func'] = self.config.get('acq_func', 'EI')
+        if 'acq_optimizer' not in gp_kwargs:
+            gp_kwargs['acq_optimizer'] = self.config.get('acq_optimizer', 'sampling')
 
         # Thêm callback vào gp_kwargs
         if 'callback' in gp_kwargs:
@@ -351,7 +389,12 @@ class BayesianSearchStrategy(SearchStrategy):
         else:
             gp_kwargs['callback'] = [on_step]
 
-        # Thực thi tối ưu hóa Bayesian
+        # Thực thi tối ưu hóa Bayesian with parallel support
+        # Ensure n_jobs is set for parallel acquisition function optimization
+        if 'n_jobs' not in gp_kwargs:
+            import multiprocessing
+            gp_kwargs['n_jobs'] = self.config.get('n_jobs', multiprocessing.cpu_count())
+        
         result = gp_minimize(
             func=objective,
             dimensions=search_space,

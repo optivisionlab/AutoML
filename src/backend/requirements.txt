@@ -18,3 +18,4 @@ PyJWT==2.10.1
 # bo sung
 python-dotenv==1.1.1
 httpx==0.28.1
+pygad==3.32.0
