@@ -84,7 +84,14 @@ class GeneticAlgorithm(SearchStrategy):
             if param_type == 'categorical':
                 index = int(round(value))
                 index = max(0, min(index, len(param_values) - 1))
-                decoded[param_name] = param_values[index]
+                param_value = param_values[index]
+                # Convert numpy types to native Python types
+                if isinstance(param_value, np.integer):
+                    decoded[param_name] = int(param_value)
+                elif isinstance(param_value, np.floating):
+                    decoded[param_name] = float(param_value)
+                else:
+                    decoded[param_name] = param_value
             elif param_type == 'integer':
                 decoded[param_name] = int(round(value))
             else:
