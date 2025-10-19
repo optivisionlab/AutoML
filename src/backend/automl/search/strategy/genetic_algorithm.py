@@ -8,6 +8,8 @@ from automl.search.strategy.base import SearchStrategy
 import random
 import copy
 from datetime import datetime
+from joblib import Parallel, delayed
+from functools import lru_cache
 
 
 class GeneticAlgorithm(SearchStrategy):
@@ -25,6 +27,9 @@ class GeneticAlgorithm(SearchStrategy):
             'tournament_size': 3,
             'log_dir': 'logs',
             'save_log': False,
+            'early_stopping_patience': 5,  # Stop if no improvement for this many generations
+            'early_stopping_enabled': True,  # Enable early stopping
+            'parallel_evaluation': True,  # Enable parallel evaluation of individuals
         })
         return config
 
@@ -32,6 +37,11 @@ class GeneticAlgorithm(SearchStrategy):
         super().__init__(**kwargs)
         self.param_bounds = {}
         self.param_types = {}
+        self._decode_cache = {}  # Cache for decoded parameters
+
+    def _make_hashable(self, individual: Dict[str, float]) -> tuple:
+        """Convert individual to hashable format for caching."""
+        return tuple(sorted(individual.items()))
 
     def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
         """Encode parameter grid for genetic algorithm."""
@@ -60,7 +70,12 @@ class GeneticAlgorithm(SearchStrategy):
         return encoded_grid
 
     def _decode_individual(self, individual: Dict[str, float]) -> Dict[str, Any]:
-        """Decode individual from genetic representation to actual parameter values."""
+        """Decode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       an individual from genetic representation to actual parameter values with caching."""
+        # Check cache first
+        cache_key = self._make_hashable(individual)
+        if cache_key in self._decode_cache:
+            return self._decode_cache[cache_key].copy()
+        
         decoded = {}
 
         for param_name, value in individual.items():
@@ -75,6 +90,8 @@ class GeneticAlgorithm(SearchStrategy):
             else:
                 decoded[param_name] = float(value)
 
+        # Cache the result
+        self._decode_cache[cache_key] = decoded
         return decoded
 
     def _create_individual(self) -> Dict[str, float]:
@@ -157,16 +174,17 @@ class GeneticAlgorithm(SearchStrategy):
         tournament_indices = random.sample(range(len(population)), tournament_size)
         tournament_fitness = [fitness_scores[i] for i in tournament_indices]
         winner_index = tournament_indices[np.argmax(tournament_fitness)]
-        return copy.deepcopy(population[winner_index])
+        # Return a shallow copy since we'll deepcopy when needed
+        return population[winner_index].copy()
 
     def _crossover(self, parent1: Dict[str, float], parent2: Dict[str, float]) -> Tuple[
         Dict[str, float], Dict[str, float]]:
         """Perform a crossover between two individuals using different strategy based on parameter types."""
         if random.random() > self.config['crossover_rate']:
-            return copy.deepcopy(parent1), copy.deepcopy(parent2)
+            return parent1.copy(), parent2.copy()
 
-        child1 = copy.deepcopy(parent1)
-        child2 = copy.deepcopy(parent2)
+        child1 = parent1.copy()
+        child2 = parent2.copy()
 
         for param_name in parent1.keys():
             param_type, param_values = self.param_types[param_name]
@@ -205,7 +223,7 @@ class GeneticAlgorithm(SearchStrategy):
             generation: Current generation number (for adaptive mutation)
             max_generation: Maximum number of generations (for adaptive mutation)
         """
-        mutated = copy.deepcopy(individual)
+        mutated = individual.copy()
         
         # Adaptive mutation rate - decreases as generations progress
         if max_generation and max_generation > 0:
@@ -234,8 +252,78 @@ class GeneticAlgorithm(SearchStrategy):
 
         return mutated
 
+    def _inject_diversity(self, population: List[Dict[str, float]], injection_rate: float = 0.3) -> List[Dict[str, float]]:
+        """Inject new random individuals to increase diversity when population stagnates.
+        
+        Args:
+            population: Current population
+            injection_rate: Fraction of population to replace with new random individuals
+        
+        Returns:
+            Population with injected diversity
+        """
+        num_to_inject = int(len(population) * injection_rate)
+        if num_to_inject == 0:
+            return population
+        
+        # Sort population by fitness (keep the best)
+        # Note: This assumes we have access to fitness scores, so we'll need to pass them
+        # For now, we'll just replace random individuals
+        new_population = population.copy()
+        
+        # Replace worst individuals with new random ones
+        injection_indices = random.sample(range(len(population)), num_to_inject)
+        for idx in injection_indices:
+            new_population[idx] = self._create_individual()
+        
+        return new_population
+    
+    def _calculate_population_diversity(self, population: List[Dict[str, float]]) -> float:
+        """Calculate the diversity of the population using average pairwise distance."""
+        if len(population) < 2:
+            return 0.0
+        
+        total_distance = 0
+        count = 0
+        
+        for i in range(len(population)):
+            for j in range(i + 1, len(population)):
+                distance = 0
+                for param_name in population[i].keys():
+                    param_type, _ = self.param_types[param_name]
+                    if param_type == 'categorical':
+                        # For categorical, use 0/1 distance
+                        distance += 0 if population[i][param_name] == population[j][param_name] else 1
+                    else:
+                        # For continuous/integer, normalize the distance
+                        min_val, max_val = self.param_bounds[param_name]
+                        if max_val != min_val:
+                            normalized_diff = abs(population[i][param_name] - population[j][param_name]) / (max_val - min_val)
+                            distance += normalized_diff
+                
+                total_distance += distance / len(population[i])  # Average over parameters
+                count += 1
+        
+        return total_distance / count if count > 0 else 0.0
+
+    def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator, 
+                                    X: np.ndarray, y: np.ndarray) -> List[Dict[str, float]]:
+        """Evaluate all individuals in parallel."""
+        if self.config.get('parallel_evaluation', True) and len(population) > 1:
+            # Use joblib for parallel evaluation
+            n_jobs = min(self.config.get('n_jobs', 1), len(population))
+            if n_jobs > 1 or n_jobs == -1:
+                results = Parallel(n_jobs=n_jobs)(
+                    delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y) 
+                    for individual in population
+                )
+                return results
+        
+        # Fall back to sequential evaluation
+        return [self._evaluate_individual(individual, model, X, y) for individual in population]
+
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
-        """Execute genetic algorithm search.
+        """Execute genetic algorithm search with enhanced loop features.
 
                Args:
                    model: The estimator to search over
@@ -260,7 +348,7 @@ class GeneticAlgorithm(SearchStrategy):
         if self.config['elite_size'] >= self.config['population_size']:
             self.config['elite_size'] = max(1, self.config['population_size'] // 4)
 
-        # Create log directory and file if needed
+        # Create a log directory and file if needed
         log_file = None
         if self.config['save_log']:
             log_dir = self.config['log_dir']
@@ -283,44 +371,69 @@ class GeneticAlgorithm(SearchStrategy):
         best_individual = None
         best_score = float('-inf')
         best_all_scores = None  # Track all metrics for the best individual
+        
+        # Early stopping tracking
+        early_stopping_enabled = self.config.get('early_stopping_enabled', True)
+        early_stopping_patience = self.config.get('early_stopping_patience', 5)
+        generations_without_improvement = 0
+        best_generation = 0
+        
+        # Convergence tracking
+        convergence_history = []
+        diversity_history = []
 
-        # Execute the genetic algorithm.
+        # Execute the genetic algorithm main loop
+        print(f"\nStarting Genetic Algorithm with {self.config['population_size']} individuals for {self.config['generation']} generations")
+        print(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
+              (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
+        
         for generation in range(self.config['generation']):
-            # Lists to store the fitness scores for the current generation.
+            generation_start_time = datetime.now()
+            
+            # Calculate population diversity
+            diversity = self._calculate_population_diversity(population)
+            diversity_history.append(diversity)
+            
+            # Progress indicator
+            print(f"\nGeneration {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}", end="")
+            
+            # Evaluate population (optionally in parallel)
+            all_individual_scores = self._evaluate_population_parallel(population, model, X, y)
+            
+            # Determine the primary metric for fitness evaluation
+            scoring_config = self.config.get('scoring', 'f1')
+            if isinstance(scoring_config, dict):
+                primary_metric = self.config.get('metric_sort', 'accuracy')
+            elif isinstance(scoring_config, str):
+                primary_metric = scoring_config.replace('_macro', '').replace('_weighted', '')
+            else:
+                primary_metric = 'f1'
+            
+            # Extract fitness scores and track best individual
             fitness_scores = []
-
-            # Evaluate each individual in the current population.
-            for individual in population:
-                # Calculate performance metrics (accuracy, precision, recall, f1, ...) for the current individual.
-                scores = self._evaluate_individual(individual, model, X, y)
-
-                # Determine the primary metric for fitness evaluation. (e.g., accuracy, f1, ...)
-                scoring_config = self.config.get('scoring', 'f1')
-                
-                # Handle both string and dict scoring configurations
-                if isinstance(scoring_config, dict):
-                    # When scoring is a dict, use metric_sort to determine which metric to optimize
-                    primary_metric = self.config.get('metric_sort', 'accuracy')
-                elif isinstance(scoring_config, str):
-                    # When scoring is a string, extract the base metric name
-                    primary_metric = scoring_config.replace('_macro', '').replace('_weighted', '')
-                else:
-                    # Default fallback
-                    primary_metric = 'f1'
-                
-                # Get the score for the primary metric to use as the individual's fitness'.
+            generation_best_score = float('-inf')
+            generation_improved = False
+            
+            for idx, (individual, scores) in enumerate(zip(population, all_individual_scores)):
                 score = scores.get(primary_metric, 0.0)
                 fitness_scores.append(score)
-
-                # Record the decoded parameters and score for historical tracking.
+                
+                # Record for history
                 all_individuals.append(self._decode_individual(individual))
                 all_scores.append(score)
-
-                # If the current individual is better than the best so far, update the best solution.
+                
+                # Track generation best
+                if score > generation_best_score:
+                    generation_best_score = score
+                
+                # Update global best if improved
                 if score > best_score:
                     best_score = score
                     best_individual = copy.deepcopy(individual)
-                    best_all_scores = scores.copy()  # Save all metrics for the best individual
+                    best_all_scores = scores.copy()
+                    best_generation = generation
+                    generation_improved = True
+                    generations_without_improvement = 0
                 
                 # Save to generation history for logging
                 if self.config['save_log']:
@@ -333,53 +446,107 @@ class GeneticAlgorithm(SearchStrategy):
                         'recall': scores.get('recall', 0.0),
                         'f1': scores.get('f1', 0.0),
                         'fitness_score': score,
-                        'is_best_so_far': score == best_score
+                        'is_best_so_far': score == best_score,
+                        'diversity': diversity,
+                        'generation_best': generation_best_score
                     }
                     generation_history.append(history_entry)
-
+            
+            # Track convergence
+            mean_fitness = np.mean(fitness_scores)
+            std_fitness = np.std(fitness_scores)
+            convergence_history.append({
+                'generation': generation + 1,
+                'best': best_score,
+                'mean': mean_fitness,
+                'std': std_fitness,
+                'diversity': diversity
+            })
+            
+            # Update progress with generation results
+            generation_time = (datetime.now() - generation_start_time).total_seconds()
+            print(f" | Best: {generation_best_score:.4f} | Mean: {mean_fitness:.4f} | Std: {std_fitness:.4f} | Time: {generation_time:.2f}s", end="")
+            
+            if generation_improved:
+                print(" ✓ NEW BEST!", end="")
+            
+            # Check early stopping
+            if not generation_improved:
+                generations_without_improvement += 1
+                
+            if early_stopping_enabled and generations_without_improvement >= early_stopping_patience:
+                print(f"\n\n🛑 Early stopping triggered at generation {generation + 1} (no improvement for {early_stopping_patience} generations)")
+                print(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
+                break
+            
             # Save log after each generation
             if self.config['save_log'] and log_file:
                 df = pd.DataFrame(generation_history)
                 df.to_csv(log_file, index=False)
-
+            
+            # Check if population has converged (low diversity)
+            stagnation_threshold = 0.05
+            if diversity < stagnation_threshold and generations_without_improvement >= 3:
+                print(f"\n⚠️ Stagnation detected (diversity={diversity:.4f}, no improvement for {generations_without_improvement} gen). Injecting diversity...")
+                # Inject new random individuals to escape local optima
+                population = self._inject_diversity(population, injection_rate=0.2)
+                print(" Diversity injection complete!", end="")
+            
             # --- Create the next generation ---
             new_population = []
-
-            # Elitism: Directly carry over the best individuals to the next generation.
+            
+            # Elitism: Directly carry over the best individuals to the next generation
             elite_indices = np.argsort(fitness_scores)[-self.config['elite_size']:]
             for idx in elite_indices:
                 new_population.append(copy.deepcopy(population[idx]))
-
-            # Fill the rest of the new population using selection, crossover, and mutation.
+            
+            # Adaptive crossover rate based on diversity
+            adaptive_crossover_rate = self.config['crossover_rate']
+            if diversity < 0.1:  # Low diversity, increase exploration
+                adaptive_crossover_rate = min(1.0, adaptive_crossover_rate * 1.2)
+            
+            # Fill the rest of the new population using selection, crossover, and mutation
             while len(new_population) < self.config['population_size']:
-                # Select two parent individuals from the old population.
+                # Select two parent individuals from the old population
                 parent1 = self._tournament_selection(population, fitness_scores)
                 parent2 = self._tournament_selection(population, fitness_scores)
-
-                # Create two offspring by performing crossover on the parents.
+                
+                # Save original crossover rate and temporarily use adaptive rate
+                original_rate = self.config['crossover_rate']
+                self.config['crossover_rate'] = adaptive_crossover_rate
+                
+                # Create two offspring by performing crossover on the parents
                 child1, child2 = self._crossover(parent1, parent2)
-                # Apply mutation to the offspring to introduce genetic diversity.
+                
+                # Restore original rate
+                self.config['crossover_rate'] = original_rate
+                
+                # Apply mutation to the offspring to introduce genetic diversity
                 child1 = self._mutate(child1, generation, self.config['generation'])
                 child2 = self._mutate(child2, generation, self.config['generation'])
-
-                # Add offspring to the next generation, being careful not to exceed population size
+                
+                # Add offspring to the next generation
                 if len(new_population) < self.config['population_size']:
                     new_population.append(child1)
                 if len(new_population) < self.config['population_size']:
                     new_population.append(child2)
-
-            # Replace the old population with the newly created one.
+            
+            # Replace the old population with the newly created one
             population = new_population
 
-        # After all generations, decode the best individual found to get the best hyperparameters.
+        # After all generations, decode the best individual found to get the best hyperparameters
         best_params = self._decode_individual(best_individual) if best_individual else {}
 
-        # Compile the final results in a format similar to GridSearchCV's cv_results_.
+        # Compile the final results in a format similar to GridSearchCV's cv_results_
         cv_results = {
             'params': all_individuals,
             'mean_test_score': all_scores,
             'std_test_score': [0.0] * len(all_scores),  # Std deviation is not calculated in this setup.
-            'rank_test_score': self._compute_ranks(all_scores)
+            'rank_test_score': self._compute_ranks(all_scores),
+            'convergence_history': convergence_history,
+            'diversity_history': diversity_history,
+            'best_generation': best_generation + 1,
+            'total_evaluations': len(all_individuals)
         }
 
         # If best_all_scores was not set (shouldn't happen), create default
@@ -391,9 +558,21 @@ class GeneticAlgorithm(SearchStrategy):
                 'f1': 0.0
             }
         
+        # Final summary
+        print(f"\n\n{'=' * 60}")
+        print(f"Genetic Algorithm Search Complete!")
+        print(f"{'=' * 60}")
+        print(f"Total evaluations: {len(all_individuals)}")
+        print(f"Best score: {best_score:.4f} (achieved at generation {best_generation + 1})")
+        print(f"Best parameters: {best_params}")
+        print(f"Final population diversity: {diversity_history[-1]:.4f}")
+        
         # Print log file location if logging is enabled
         if self.config['save_log'] and log_file:
-            print(f"\nGenetic Algorithm log saved to: {log_file}")
+            print(f"\nDetailed log saved to: {log_file}")
+        
+        # Clear cache after search completes
+        self._decode_cache.clear()
         
         # Return the best parameters, the best score, all metrics, and the comprehensive results.
         return best_params, best_score, best_all_scores, cv_results

@@ -1,4 +1,4 @@
 model,run_type,best_params,accuracy,precision,recall,f1
-RandomForestClassifier,genetic_algorithm,"{'n_estimators': 10, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1}",0.6821705426356589,0.6970618708776604,0.6663492063492064,0.6546912522548815
-SVC,genetic_algorithm,"{'C': 46.83102055946492, 'gamma': 'auto', 'kernel': 'poly'}",0.6408637873754153,0.6510421985421986,0.6323412698412698,0.5985152093253229
-DecisionTreeClassifier,genetic_algorithm,"{'max_depth': 10, 'min_samples_split': 10, 'min_samples_leaf': 2, 'criterion': 'entropy'}",0.6356589147286822,0.6938787774546288,0.6694246031746032,0.6392245498499438
+RandomForestClassifier,genetic_algorithm,"{'n_estimators': 50, 'max_depth': 10, 'min_samples_split': 5, 'min_samples_leaf': 1}",0.6967884828349945,0.717793309631545,0.6643650793650794,0.6539905525231612
+SVC,genetic_algorithm,"{'C': 97.15958116238812, 'gamma': 'auto', 'kernel': 'poly'}",0.6455149501661129,0.6527348414113121,0.6348809523809524,0.5997924466240654
+DecisionTreeClassifier,genetic_algorithm,"{'max_depth': 15, 'min_samples_split': 20, 'min_samples_leaf': 4, 'criterion': 'entropy'}",0.6312292358803987,0.7041914631349616,0.6971626984126983,0.6481503089994551
