@@ -88,6 +88,13 @@ async def train_models(request: Request):
                 metric_sort,
                 models
             )
+            
+            # Convert all numpy types to native Python types to avoid serialization issues
+            from automl.search.strategy.base import SearchStrategy
+            best_model_id = SearchStrategy.convert_numpy_types(best_model_id)
+            best_score = SearchStrategy.convert_numpy_types(best_score)
+            best_params = SearchStrategy.convert_numpy_types(best_params)
+            model_scores = SearchStrategy.convert_numpy_types(model_scores)
 
             # Tuần tư hóa mô hình thành byte
             model_bytes = pickle.dumps(best_model)

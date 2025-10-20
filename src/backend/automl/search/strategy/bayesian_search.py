@@ -172,42 +172,54 @@ class BayesianSearchStrategy(SearchStrategy):
         # If optimize_for is 'auto', detect based on class balance
         if optimize_for == 'auto':
             optimize_for = 'weighted' if self._detect_class_imbalance(y) else 'macro'
-            print(f"Auto-detected optimization target: {optimize_for}")
+            if self.config.get('verbose', 1) > 0:
+                print(f"Auto-detected optimization target: {optimize_for}")
 
         # Định nghĩa hàm mục tiêu
         @use_named_args(search_space)
         def objective(**params):
             model.set_params(**params)
 
-            scoring = self.config['scoring']
+            # Get the scoring config - might be a dict or a string
+            scoring_config = self.config.get('scoring')
             metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
-
-            # Build scoring metrics dict based on averaging setting
-            scoring_metrics = {}
             
-            if averaging == 'both':
-                # Compute both macro and weighted metrics
-                scoring_metrics['accuracy'] = 'accuracy'
-                for metric in ['precision', 'recall', 'f1']:
-                    if metric in metrics:
-                        scoring_metrics[f'{metric}_macro'] = f'{metric}_macro'
-                        scoring_metrics[f'{metric}_weighted'] = f'{metric}_weighted'
-                
-                # Add the primary scoring metric if not already included
-                if scoring != 'accuracy' and scoring in metrics:
-                    if f'{scoring}_macro' not in scoring_metrics:
-                        scoring_metrics[f'{scoring}_macro'] = f'{scoring}_macro'
-                    if f'{scoring}_weighted' not in scoring_metrics:
-                        scoring_metrics[f'{scoring}_weighted'] = f'{scoring}_weighted'
-                        
+            # Determine the primary metric to optimize
+            # If scoring is a dict, use metric_sort; otherwise use scoring as the primary metric
+            if isinstance(scoring_config, dict):
+                # When scoring is a dict (from engine.py), use metric_sort as primary metric
+                primary_metric = self.config.get('metric_sort', 'accuracy')
+                scoring_metrics = scoring_config  # Use the provided scoring dict directly
             else:
-                # Use only specified averaging method
-                avg_method = averaging if averaging in ['macro', 'weighted'] else 'macro'
-                scoring_metrics['accuracy'] = 'accuracy'
-                for metric in metrics:
-                    if metric == 'accuracy':
-                        continue
-                    scoring_metrics[metric] = f'{metric}_{avg_method}'
+                # When scoring is a string (legacy behavior)
+                primary_metric = scoring_config if scoring_config else 'accuracy'
+                
+                # Build scoring metrics dict based on averaging setting
+                scoring_metrics = {}
+                
+                if averaging == 'both':
+                    # Compute both macro and weighted metrics
+                    scoring_metrics['accuracy'] = 'accuracy'
+                    for metric in ['precision', 'recall', 'f1']:
+                        if metric in metrics:
+                            scoring_metrics[f'{metric}_macro'] = f'{metric}_macro'
+                            scoring_metrics[f'{metric}_weighted'] = f'{metric}_weighted'
+                    
+                    # Add the primary scoring metric if not already included
+                    if primary_metric != 'accuracy' and primary_metric in metrics:
+                        if f'{primary_metric}_macro' not in scoring_metrics:
+                            scoring_metrics[f'{primary_metric}_macro'] = f'{primary_metric}_macro'
+                        if f'{primary_metric}_weighted' not in scoring_metrics:
+                            scoring_metrics[f'{primary_metric}_weighted'] = f'{primary_metric}_weighted'
+                            
+                else:
+                    # Use only specified averaging method
+                    avg_method = averaging if averaging in ['macro', 'weighted'] else 'macro'
+                    scoring_metrics['accuracy'] = 'accuracy'
+                    for metric in metrics:
+                        if metric == 'accuracy':
+                            continue
+                        scoring_metrics[metric] = f'{metric}_{avg_method}'
 
             cv_results = cross_validate(
                 estimator=model,
@@ -234,16 +246,16 @@ class BayesianSearchStrategy(SearchStrategy):
                         objective.last_metrics[f'{metric}_weighted'] = float(np.mean(cv_results[f'test_{metric}_weighted']))
                 
                 # Choose which score to optimize based on configuration
-                if scoring == 'accuracy':
+                if primary_metric == 'accuracy':
                     score = objective.last_metrics['accuracy']
                 else:
-                    score = objective.last_metrics.get(f'{scoring}_{optimize_for}', 
+                    score = objective.last_metrics.get(f'{primary_metric}_{optimize_for}', 
                                                       objective.last_metrics.get('accuracy', 0.0))
             else:
                 # Single averaging method - convert numpy types
                 for key in scoring_metrics:
                     objective.last_metrics[key] = float(np.mean(cv_results[f'test_{key}']))
-                score = objective.last_metrics.get(scoring, objective.last_metrics.get('accuracy', 0.0))
+                score = objective.last_metrics.get(primary_metric, objective.last_metrics.get('accuracy', 0.0))
 
             # gp_minimize luôn tối thiểu hóa, vì vậy trả về -score
             return -score
@@ -292,16 +304,17 @@ class BayesianSearchStrategy(SearchStrategy):
                     record[f'{metric_type}_macro'] = metrics.get(f'{metric_type}_macro', 0.0)
                     record[f'{metric_type}_weighted'] = metrics.get(f'{metric_type}_weighted', 0.0)
                 
-                # In thông tin ra console với cả hai loại
-                print(f"Lần lặp {iteration}/{self.config['n_calls']}: ")
-                print(f"  Độ chính xác={metrics.get('accuracy', 0.0):.4f}")
-                print(f"  Macro   - P={metrics.get('precision_macro', 0.0):.4f}, "
-                      f"R={metrics.get('recall_macro', 0.0):.4f}, "
-                      f"F1={metrics.get('f1_macro', 0.0):.4f}")
-                print(f"  Weighted- P={metrics.get('precision_weighted', 0.0):.4f}, "
-                      f"R={metrics.get('recall_weighted', 0.0):.4f}, "
-                      f"F1={metrics.get('f1_weighted', 0.0):.4f}")
-                print(f"  Đang tối ưu cho: {optimize_for}")
+                # In thông tin ra console với cả hai loại  
+                if self.config.get('verbose', 1) > 0:
+                    print(f"Lần lặp {iteration}/{self.config['n_calls']}: ")
+                    print(f"  Độ chính xác={metrics.get('accuracy', 0.0):.4f}")
+                    print(f"  Macro   - P={metrics.get('precision_macro', 0.0):.4f}, "
+                          f"R={metrics.get('recall_macro', 0.0):.4f}, "
+                          f"F1={metrics.get('f1_macro', 0.0):.4f}")
+                    print(f"  Weighted- P={metrics.get('precision_weighted', 0.0):.4f}, "
+                          f"R={metrics.get('recall_weighted', 0.0):.4f}, "
+                          f"F1={metrics.get('f1_weighted', 0.0):.4f}")
+                    print(f"  Đang tối ưu cho: {optimize_for}")
                 
             else:
                 # Phương pháp averaging đơn
@@ -311,11 +324,12 @@ class BayesianSearchStrategy(SearchStrategy):
                     record[metric_type] = metrics.get(key, 0.0)
                 
                 # In thông tin ra console
-                print(f"Lần lặp {iteration}/{self.config['n_calls']}: "
-                      f"Độ chính xác={metrics.get('accuracy', 0.0):.4f}, "
-                      f"Precision={record.get('precision', 0.0):.4f}, "
-                      f"Recall={record.get('recall', 0.0):.4f}, "
-                      f"F1={record.get('f1', 0.0):.4f}")
+                if self.config.get('verbose', 1) > 0:
+                    print(f"Lần lặp {iteration}/{self.config['n_calls']}: "
+                          f"Độ chính xác={metrics.get('accuracy', 0.0):.4f}, "
+                          f"Precision={record.get('precision', 0.0):.4f}, "
+                          f"Recall={record.get('recall', 0.0):.4f}, "
+                          f"F1={record.get('f1', 0.0):.4f}")
             
             search_history.append(record)
             

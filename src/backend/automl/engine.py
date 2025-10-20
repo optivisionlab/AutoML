@@ -215,6 +215,13 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             X=X_train,
             y=y_train
         )
+        
+        # Convert all numpy types to native Python types to avoid serialization issues
+        from automl.search.strategy.base import SearchStrategy
+        best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
+        best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
+        best_all_scores_model = SearchStrategy.convert_numpy_types(best_all_scores_model)
+        cv_results = SearchStrategy.convert_numpy_types(cv_results)
 
         # Get the best estimator with the best parameters
         best_estimator = model.set_params(**best_params_model)
@@ -231,15 +238,19 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         
         best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
         
+        # Ensure scores are also converted to native types
+        scores_dict = {}
+        for metric in metric_list:
+            if f"mean_test_{metric}" in cv_results:
+                score_value = cv_results[f"mean_test_{metric}"][best_idx]
+                # Convert to native Python float if it's a numpy type
+                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+        
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
-            "scores": {
-                metric: cv_results[f"mean_test_{metric}"][best_idx] 
-                for metric in metric_list 
-                if f"mean_test_{metric}" in cv_results
-            }
+            "scores": scores_dict
         }
 
         model_results.append(results)
@@ -249,6 +260,12 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_model = best_estimator
             best_score = best_score_model
             best_params = best_params_model
+    
+    # Final conversion to ensure all return values are native Python types
+    from automl.search.strategy.base import SearchStrategy
+    best_params = SearchStrategy.convert_numpy_types(best_params)
+    best_score = SearchStrategy.convert_numpy_types(best_score)
+    model_results = SearchStrategy.convert_numpy_types(model_results)
 
     return best_model_id, best_model, best_score, best_params, model_results
 
@@ -294,14 +311,17 @@ def train_json(item: Item, userId, id_data):
     model_data = pickle.dumps(best_model)
     job_id = str(uuid4())
 
+    # Ensure all values are properly converted to native Python types before storing
+    from automl.search.strategy.base import SearchStrategy
+    
     job = {
         "job_id": job_id,
-        "best_model_id": best_model_id,
+        "best_model_id": SearchStrategy.convert_numpy_types(best_model_id),
         "best_model": str(best_model),
         "model": model_data,
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
+        "best_params": SearchStrategy.convert_numpy_types(best_params),
+        "best_score": SearchStrategy.convert_numpy_types(best_score),
+        "orther_model_scores": SearchStrategy.convert_numpy_types(model_scores),
         "config": item.config,
         "data": {
             "id": id_data,
