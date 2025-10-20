@@ -224,14 +224,14 @@ class BayesianSearchStrategy(SearchStrategy):
             objective.last_metrics = {}
             
             if averaging == 'both':
-                # Store both macro and weighted metrics
-                objective.last_metrics['accuracy'] = np.mean(cv_results['test_accuracy'])
+                # Store both macro and weighted metrics - convert numpy types
+                objective.last_metrics['accuracy'] = float(np.mean(cv_results['test_accuracy']))
                 
                 for metric in ['precision', 'recall', 'f1']:
                     if f'{metric}_macro' in scoring_metrics:
-                        objective.last_metrics[f'{metric}_macro'] = np.mean(cv_results[f'test_{metric}_macro'])
+                        objective.last_metrics[f'{metric}_macro'] = float(np.mean(cv_results[f'test_{metric}_macro']))
                     if f'{metric}_weighted' in scoring_metrics:
-                        objective.last_metrics[f'{metric}_weighted'] = np.mean(cv_results[f'test_{metric}_weighted'])
+                        objective.last_metrics[f'{metric}_weighted'] = float(np.mean(cv_results[f'test_{metric}_weighted']))
                 
                 # Choose which score to optimize based on configuration
                 if scoring == 'accuracy':
@@ -240,9 +240,9 @@ class BayesianSearchStrategy(SearchStrategy):
                     score = objective.last_metrics.get(f'{scoring}_{optimize_for}', 
                                                       objective.last_metrics.get('accuracy', 0.0))
             else:
-                # Single averaging method
+                # Single averaging method - convert numpy types
                 for key in scoring_metrics:
-                    objective.last_metrics[key] = np.mean(cv_results[f'test_{key}'])
+                    objective.last_metrics[key] = float(np.mean(cv_results[f'test_{key}']))
                 score = objective.last_metrics.get(scoring, objective.last_metrics.get('accuracy', 0.0))
 
             # gp_minimize luôn tối thiểu hóa, vì vậy trả về -score
@@ -260,9 +260,21 @@ class BayesianSearchStrategy(SearchStrategy):
             nonlocal best_all_scores, best_score_history
             
             iteration = len(res.x_iters)
-            current_params = {param_names[i]: val for i, val in enumerate(res.x_iters[-1])}
-            current_score = -res.func_vals[-1]
-            best_score_so_far = -res.fun
+            # Convert numpy types to native Python types
+            current_params = {}
+            for i, val in enumerate(res.x_iters[-1]):
+                # Convert numpy types to native Python types
+                if hasattr(val, 'item'):  # numpy scalar
+                    current_params[param_names[i]] = val.item()
+                elif isinstance(val, (np.integer, np.floating)):
+                    current_params[param_names[i]] = val.item()
+                elif isinstance(val, np.ndarray):
+                    current_params[param_names[i]] = val.tolist()
+                else:
+                    current_params[param_names[i]] = val
+            
+            current_score = float(-res.func_vals[-1]) if hasattr(res.func_vals[-1], 'item') else -res.func_vals[-1]
+            best_score_so_far = float(-res.fun) if hasattr(res.fun, 'item') else -res.fun
 
             # Lấy tên model
             model_name = model.__class__.__name__
@@ -404,8 +416,19 @@ class BayesianSearchStrategy(SearchStrategy):
         )
 
         # Lấy tham số tốt nhất và điểm số tốt nhất
-        best_params = {param_names[i]: val for i, val in enumerate(result.x)}
-        best_score = -result.fun  # Đổi dấu để lấy giá trị dương
+        # Convert numpy types to native Python types
+        best_params = {}
+        for i, val in enumerate(result.x):
+            if hasattr(val, 'item'):  # numpy scalar
+                best_params[param_names[i]] = val.item()
+            elif isinstance(val, (np.integer, np.floating)):
+                best_params[param_names[i]] = val.item()
+            elif isinstance(val, np.ndarray):
+                best_params[param_names[i]] = val.tolist()
+            else:
+                best_params[param_names[i]] = val
+        
+        best_score = float(-result.fun) if hasattr(result.fun, 'item') else -result.fun  # Đổi dấu để lấy giá trị dương
         
         # Compute rankings for cv_results_
         for metric in metrics:
@@ -423,6 +446,20 @@ class BayesianSearchStrategy(SearchStrategy):
         # If best_all_scores was not set (shouldn't happen), create it from the final run
         if best_all_scores is None:
             best_all_scores = getattr(objective, 'last_metrics', {})
+        
+        # Convert all numpy types in best_all_scores to native Python types
+        if best_all_scores:
+            converted_scores = {}
+            for key, value in best_all_scores.items():
+                if hasattr(value, 'item'):
+                    converted_scores[key] = value.item()
+                elif isinstance(value, (np.integer, np.floating)):
+                    converted_scores[key] = value.item()
+                elif isinstance(value, np.ndarray):
+                    converted_scores[key] = value.tolist()
+                else:
+                    converted_scores[key] = value
+            best_all_scores = converted_scores
 
         # In thông báo về vị trí file log
         if self.config['save_log']:

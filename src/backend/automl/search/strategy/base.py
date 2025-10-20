@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, Union
 from sklearn.base import  BaseEstimator
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
@@ -40,3 +40,34 @@ class SearchStrategy(ABC):
         """Update configuration"""
         self.config.update(kwargs)
         return self
+    
+    @staticmethod
+    def convert_numpy_types(obj: Any) -> Any:
+        """Convert numpy types to native Python types recursively.
+        
+        This is important for JSON serialization and avoiding 
+        unhashable type errors.
+        
+        Args:
+            obj: Object to convert (can be dict, list, scalar, etc.)
+            
+        Returns:
+            Object with all numpy types converted to native Python types
+        """
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # numpy scalar
+            return obj.item()
+        elif isinstance(obj, dict):
+            return {key: SearchStrategy.convert_numpy_types(value) 
+                   for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [SearchStrategy.convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return tuple(SearchStrategy.convert_numpy_types(item) for item in obj)
+        else:
+            return obj
