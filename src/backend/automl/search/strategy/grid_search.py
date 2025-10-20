@@ -279,6 +279,13 @@ class GridSearchStrategy(SearchStrategy):
         if hasattr(self, '_model_copies'):
             self._model_copies.clear()
         
+        # Convert all numpy types to native Python types
+        from automl.search.strategy.base import SearchStrategy
+        best_params = SearchStrategy.convert_numpy_types(best_params)
+        best_score = SearchStrategy.convert_numpy_types(best_score)
+        best_all_scores = SearchStrategy.convert_numpy_types(best_all_scores)
+        cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)
+        
         return best_params, best_score, best_all_scores, cv_results_
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):

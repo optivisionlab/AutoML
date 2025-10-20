@@ -54,25 +54,10 @@ class GeneticAlgorithm(SearchStrategy):
         self._total_evaluations = 0
     
     def _convert_numpy_types(self, obj):
-        """Convert numpy types to native Python types recursively."""
-        import numpy as np
-        
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, dict):
-            return {key: self._convert_numpy_types(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [self._convert_numpy_types(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return tuple(self._convert_numpy_types(item) for item in obj)
-        elif isinstance(obj, (np.bool_, bool)):
-            return bool(obj)
-        else:
-            return obj
+        """Convert numpy types to native Python types recursively.
+        Delegates to base class static method for consistency."""
+        from automl.search.strategy.base import SearchStrategy
+        return SearchStrategy.convert_numpy_types(obj)
 
     def _make_hashable(self, individual: Dict[str, float]) -> tuple:
         """Convert individual to hashable format for caching."""
@@ -445,7 +430,15 @@ class GeneticAlgorithm(SearchStrategy):
             return [self._evaluate_individual(individual, model, X, y) for individual in population]
         
         # Smart parallel decision based on population size and CV folds
-        cv_folds = self.config.get('cv', 5)
+        cv = self.config.get('cv', 5)
+        # Get the number of folds from cv object or use directly if it's an integer
+        if hasattr(cv, 'n_splits'):
+            cv_folds = cv.n_splits
+        elif hasattr(cv, 'get_n_splits'):
+            cv_folds = cv.get_n_splits()
+        else:
+            cv_folds = cv if isinstance(cv, int) else 5
+        
         min_parallel_work = cv_folds * 3  # Need at least 3x CV work per core to benefit
         
         if n_jobs == -1:
@@ -816,10 +809,12 @@ class GeneticAlgorithm(SearchStrategy):
             self._model_copies.clear()
         
         # Convert all numpy types to native Python types before returning
-        best_params = self._convert_numpy_types(best_params)
-        best_score = self._convert_numpy_types(best_score)
-        best_all_scores = self._convert_numpy_types(best_all_scores)
-        cv_results = self._convert_numpy_types(cv_results)
+        # Convert all numpy types to native Python types using base class method
+        from automl.search.strategy.base import SearchStrategy
+        best_params = SearchStrategy.convert_numpy_types(best_params)
+        best_score = SearchStrategy.convert_numpy_types(best_score)
+        best_all_scores = SearchStrategy.convert_numpy_types(best_all_scores)
+        cv_results = SearchStrategy.convert_numpy_types(cv_results)
         
         # Return the best parameters, the best score, all metrics, and the comprehensive results.
         return best_params, best_score, best_all_scores, cv_results

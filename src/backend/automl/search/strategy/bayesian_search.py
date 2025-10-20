@@ -220,7 +220,7 @@ class BayesianSearchStrategy(SearchStrategy):
                 return_train_score=False
             )
 
-            # Store all metrics
+            # Store all metrics - will be converted later
             objective.last_metrics = {}
             
             if averaging == 'both':
@@ -260,18 +260,12 @@ class BayesianSearchStrategy(SearchStrategy):
             nonlocal best_all_scores, best_score_history
             
             iteration = len(res.x_iters)
-            # Convert numpy types to native Python types
-            current_params = {}
+            # Convert numpy types to native Python types using base class method
+            raw_params = {}
             for i, val in enumerate(res.x_iters[-1]):
-                # Convert numpy types to native Python types
-                if hasattr(val, 'item'):  # numpy scalar
-                    current_params[param_names[i]] = val.item()
-                elif isinstance(val, (np.integer, np.floating)):
-                    current_params[param_names[i]] = val.item()
-                elif isinstance(val, np.ndarray):
-                    current_params[param_names[i]] = val.tolist()
-                else:
-                    current_params[param_names[i]] = val
+                raw_params[param_names[i]] = val
+            # Use the base class converter for comprehensive conversion
+            current_params = SearchStrategy.convert_numpy_types(raw_params)
             
             current_score = float(-res.func_vals[-1]) if hasattr(res.func_vals[-1], 'item') else -res.func_vals[-1]
             best_score_so_far = float(-res.fun) if hasattr(res.fun, 'item') else -res.fun
@@ -279,8 +273,9 @@ class BayesianSearchStrategy(SearchStrategy):
             # Lấy tên model
             model_name = model.__class__.__name__
 
-            # Lấy metrics từ iteration hiện tại
-            metrics = getattr(objective, 'last_metrics', {})
+            # Lấy metrics từ iteration hiện tại và convert numpy types
+            raw_metrics = getattr(objective, 'last_metrics', {})
+            metrics = SearchStrategy.convert_numpy_types(raw_metrics)
             
             # Tạo bản ghi cho lịch sử
             record = {
@@ -352,7 +347,7 @@ class BayesianSearchStrategy(SearchStrategy):
             
             # Update best_all_scores if this is the best so far
             if current_score >= best_score_so_far:
-                best_all_scores = metrics.copy()
+                best_all_scores = SearchStrategy.convert_numpy_types(metrics.copy())
             
             # Track score history for early stopping
             best_score_history.append(best_score_so_far)
@@ -416,17 +411,11 @@ class BayesianSearchStrategy(SearchStrategy):
         )
 
         # Lấy tham số tốt nhất và điểm số tốt nhất
-        # Convert numpy types to native Python types
-        best_params = {}
+        # Convert numpy types to native Python types using base class method
+        raw_best_params = {}
         for i, val in enumerate(result.x):
-            if hasattr(val, 'item'):  # numpy scalar
-                best_params[param_names[i]] = val.item()
-            elif isinstance(val, (np.integer, np.floating)):
-                best_params[param_names[i]] = val.item()
-            elif isinstance(val, np.ndarray):
-                best_params[param_names[i]] = val.tolist()
-            else:
-                best_params[param_names[i]] = val
+            raw_best_params[param_names[i]] = val
+        best_params = SearchStrategy.convert_numpy_types(raw_best_params)
         
         best_score = float(-result.fun) if hasattr(result.fun, 'item') else -result.fun  # Đổi dấu để lấy giá trị dương
         
@@ -445,24 +434,14 @@ class BayesianSearchStrategy(SearchStrategy):
         
         # If best_all_scores was not set (shouldn't happen), create it from the final run
         if best_all_scores is None:
-            best_all_scores = getattr(objective, 'last_metrics', {})
-        
-        # Convert all numpy types in best_all_scores to native Python types
-        if best_all_scores:
-            converted_scores = {}
-            for key, value in best_all_scores.items():
-                if hasattr(value, 'item'):
-                    converted_scores[key] = value.item()
-                elif isinstance(value, (np.integer, np.floating)):
-                    converted_scores[key] = value.item()
-                elif isinstance(value, np.ndarray):
-                    converted_scores[key] = value.tolist()
-                else:
-                    converted_scores[key] = value
-            best_all_scores = converted_scores
+            raw_metrics = getattr(objective, 'last_metrics', {})
+            best_all_scores = SearchStrategy.convert_numpy_types(raw_metrics)
 
         # In thông báo về vị trí file log
         if self.config['save_log']:
             print(f"\nĐã lưu log tìm kiếm vào: {log_file}")
+
+        # Convert all numpy types in cv_results_ to native Python types
+        cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)
 
         return best_params, best_score, best_all_scores, cv_results_
