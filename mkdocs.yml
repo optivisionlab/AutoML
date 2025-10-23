@@ -1,0 +1,55 @@
+site_name: HAutoML Documentation
+site_url: https://optivisionlab.github.io/AutoML/
+repo_url: https://github.com/optivisionlab/AutoML
+repo_name: optivisionlab/AutoML
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - 'Trang chủ': 'index.md'
+  - 'Bắt đầu': 'getting_started.md'
+  - 'Kiến trúc': 'architecture.md'
+  - 'Tài liệu API':
+    - 'Backend API': 'backend_api.md'
+  - 'Ghi nhận & Giấy phép': 'citation_license.md'

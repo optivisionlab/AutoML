@@ -1,84 +1,41 @@
-# HAutoML
-## Dự án nghiên cứu khoa học về HAutoML
+# HAutoML - Nền tảng AutoML mã nguồn mở
 
-## Quick start Backend
+[![Documentation Status](https://img.shields.io/badge/docs-latest-blue.svg)](https://optivisionlab.github.io/AutoML/)
+
+HAutoML là một dự án nghiên cứu khoa học mã nguồn mở được phát triển bởi OptiVisionLab. Đây là một nền tảng AutoML toàn diện cho phép người dùng dễ dàng xây dựng, huấn luyện và triển khai các mô hình học máy.
+
+## 📚 Tài liệu
+
+Tài liệu chi tiết về dự án, bao gồm kiến trúc, hướng dẫn cài đặt, và tài liệu API, có thể được tìm thấy tại trang web tài liệu của chúng tôi:
+
+**[https://optivisionlab.github.io/AutoML/](https://optivisionlab.github.io/AutoML/)**
+
+## 🚀 Bắt đầu nhanh
+
+Cách đơn giản nhất để chạy toàn bộ hệ thống là sử dụng Docker. Vui lòng xem [hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/getting_started/) trong tài liệu của chúng tôi.
+
 ```bash
-# COPY FILE 
-# copy ra file riêng nếu update thì sửa file temp.config.yml
-# file .config.yml đã được thêm vào .gitignore nên sẽ không đẩy lên github
-# COPY src/backend/temp.config.yml -> src/backend/.config.yml
+# Sao chép dự án
+git clone https://github.com/optivisionlab/AutoML.git
+cd AutoML
 
-# Làm tương tự với file temp.env 
-
-# 1. cài đặt môi trường conda python 3.10.12
-cd src/backend
-pip install -r requirements.txt
-
-# 2. cấu hình môi trường
+# Cấu hình môi trường (xem chi tiết trong tài liệu)
 cp src/backend/temp.config.yml src/backend/.config.yml
-
 cp src/backend/temp.env src/backend/.env
+cp src/frontend/temp.env src/frontend/.env
 
-
-export PYTHONPATH=$(pwd)
-
-# run worker server
-python worker.py
-# hoặc
-./run-worker.sh
-# Lý do: vì hệ thống hoạt động theo kiến trúc phân tán
-# Chỉ định số lượng worker sẽ được dùng và port cho worker đầu tiên trong .env
-
-# run hautoml toolkit
-python app.py
-
-# run hautoml nano
-python automl/demo_gradio.py
-
+# Khởi chạy với Docker Compose
+docker-compose up -d --build
 ```
 
-## Quick start Frontend
-```bash
-# Trong trường hợp chưa clone dự án:
-# 1. Di chuyển vào thư mục frontend
-cd automl/src/frontend
+## 👥 Người đóng góp
 
-# 2. Nếu có thư mục node_modules hoặc file components.json, xóa đi
-rm -rf node_modules
-rm components.json
+Chúng tôi xin chân thành cảm ơn tất cả những người đã đóng góp cho dự án HAutoML.
 
-# 3. Cài đặt NodeJS, tailwindcss, postcss, shadcn
-bash install-nodejs.sh
+<a href="https://github.com/optivisionlab/AutoML/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=optivisionlab/AutoML" />
+</a>
 
-# 4. Chạy dự án trên môi trường phát triển
-cp temp.env .env
-npm run dev
-```
+## ✍️ Trích dẫn & Giấy phép
 
-## Quick start Docker
-```bash
-# run docker compose
-# workdir automl
-docker-compose up -d
-```
-
-## Quick start Worker
-```bash
-cd src/backend
-# default
-./run-worker.sh
-# chỉ định số lượng worker sẽ chạy
-./run-worker.sh -n 3
-# Sau khi docker được build lên, có thể  yêu cầu docker build lại image bằng cờ -b
-./run-worker.sh -b
-## Mục đích lựa chọn cờ -b khi có thay đổi logic hoặc Dockerfile.
-# Xem hướng dẫn
-./run-worker.sh -h
-```
-
-## Quick start MinIO
-```bash
-# Dùng để lưu trữ dữ liệu
-https://github.com/minio/minio
-# Chỉ định MinIO endpoint (endpoint run server của MinIO) vào .env
-```
+Vui lòng xem mục [Ghi nhận & Giấy phép](https://optivisionlab.github.io/AutoML/citation_license/) trong tài liệu của chúng tôi để biết thông tin chi tiết về cách trích dẫn dự án và giấy phép sử dụng.
