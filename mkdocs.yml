@@ -4,8 +4,6 @@ repo_url: https://github.com/optivisionlab/AutoML
 repo_name: optivisionlab/AutoML
 edit_uri: edit/main/docs/
 
-use_directory_urls: false
-
 theme:
   name: material
   palette:
