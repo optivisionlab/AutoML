@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://optivisionlab.github.io/AutoML/</loc>
+         <lastmod>2025-10-23</lastmod>
+    </url>
+    <url>
+         <loc>https://optivisionlab.github.io/AutoML/architecture/</loc>
+         <lastmod>2025-10-23</lastmod>
+    </url>
+    <url>
+         <loc>https://optivisionlab.github.io/AutoML/backend_api/</loc>
+         <lastmod>2025-10-23</lastmod>
+    </url>
+    <url>
+         <loc>https://optivisionlab.github.io/AutoML/citation_license/</loc>
+         <lastmod>2025-10-23</lastmod>
+    </url>
+    <url>
+         <loc>https://optivisionlab.github.io/AutoML/getting_started/</loc>
+         <lastmod>2025-10-23</lastmod>
+    </url>
+</urlset>
