@@ -1,6 +1,6 @@
 # HAutoML - Nền tảng AutoML mã nguồn mở
 
-[![Documentation Status](https://img.shields.io/badge/docs-latest-blue.svg)](https://optivisionlab.github.io/AutoML/)
+[![Documentation Status](https://img.shields.io/badge/docs-latest-blue.svg)](https://optivisionlab.github.io/AutoML/docs/)
 
 HAutoML là một dự án nghiên cứu khoa học mã nguồn mở được phát triển bởi OptiVisionLab. Đây là một nền tảng AutoML toàn diện cho phép người dùng dễ dàng xây dựng, huấn luyện và triển khai các mô hình học máy.
 
@@ -8,11 +8,11 @@ HAutoML là một dự án nghiên cứu khoa học mã nguồn mở được ph
 
 Tài liệu chi tiết về dự án, bao gồm kiến trúc, hướng dẫn cài đặt, và tài liệu API, có thể được tìm thấy tại trang web tài liệu của chúng tôi:
 
-**[https://optivisionlab.github.io/AutoML/](https://optivisionlab.github.io/AutoML/)**
+**[https://optivisionlab.github.io/AutoML/docs/](https://optivisionlab.github.io/AutoML/docs/)**
 
 ## 🚀 Bắt đầu nhanh
 
-Cách đơn giản nhất để chạy toàn bộ hệ thống là sử dụng Docker. Vui lòng xem [hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/getting_started/) trong tài liệu của chúng tôi.
+Cách đơn giản nhất để chạy toàn bộ hệ thống là sử dụng Docker. Vui lòng xem [hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/docs/getting_started/) trong tài liệu của chúng tôi.
 
 ```bash
 # Sao chép dự án
@@ -38,4 +38,4 @@ Chúng tôi xin chân thành cảm ơn tất cả những người đã đóng g
 
 ## ✍️ Trích dẫn & Giấy phép
 
-Vui lòng xem mục [Ghi nhận & Giấy phép](https://optivisionlab.github.io/AutoML/citation_license/) trong tài liệu của chúng tôi để biết thông tin chi tiết về cách trích dẫn dự án và giấy phép sử dụng.
+Vui lòng xem mục [Ghi nhận & Giấy phép](https://optivisionlab.github.io/AutoML/docs/citation_license/) trong tài liệu của chúng tôi để biết thông tin chi tiết về cách trích dẫn dự án và giấy phép sử dụng.

@@ -3,15 +3,16 @@ name: Deploy Documentation to GitHub Pages
 on:
   push:
     branches:
-      - main  # Mỗi lần push lên main sẽ tự build và deploy
+      - main
 
 permissions:
-  contents: write  # Cho phép push lên gh-pages
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,7 +23,14 @@ jobs:
           python-version: 3.x
 
       - name: Install dependencies
-        run: pip install mkdocs mkdocs-material
+        run: pip install mkdocs-material
 
-      - name: Build and deploy to GitHub Pages
-        run: mkdocs gh-deploy --force
+      - name: Build documentation
+        run: mkdocs build
+
+      - name: Deploy to Github Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          destination_dir: ./docs
