@@ -41,3 +41,25 @@ Cách đơn giản và được khuyến nghị nhất để chạy toàn bộ h
 Để dừng tất cả các container, chạy lệnh sau trong thư mục gốc của dự án:
 ```bash
 docker-compose down
+```
+
+---
+
+## Xem tài liệu trên máy Local
+
+Trước khi triển khai, bạn có thể xem trước trang web tài liệu trên máy tính của mình.
+
+1.  **Cài đặt các gói cần thiết (chỉ cần làm một lần):**
+    Mở terminal và chạy lệnh sau để cài đặt MkDocs và theme Material:
+    ```bash
+    pip install mkdocs-material
+    ```
+
+2.  **Chạy máy chủ phát triển:**
+    Từ thư mục gốc của dự án, chạy lệnh:
+    ```bash
+    mkdocs serve
+    ```
+
+3.  **Xem trang tài liệu:**
+    Mở trình duyệt và truy cập vào địa chỉ `http://127.0.0.1:8000`. Máy chủ này có tính năng tự động tải lại (live-reloading), có nghĩa là bất kỳ khi nào bạn lưu một thay đổi trong các tệp Markdown, trang web trên trình duyệt sẽ tự động cập nhật.
