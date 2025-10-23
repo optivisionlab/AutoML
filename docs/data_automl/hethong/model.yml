@@ -1,0 +1,37 @@
+metric_list:
+  - accuracy
+  - precision
+  - recall
+  - f1
+Classification_models:
+  0:
+    model: DecisionTreeClassifier
+    params:
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]
+  1:
+    model: RandomForestClassifier
+    params:
+      n_estimators: [50, 100, 200]
+      max_features: ["sqrt", "log2", 0.5, 1]
+  2:
+    model: KNeighborsClassifier
+    params:
+      n_neighbors: [3, 5, 7, 9]
+      weights: ["uniform", "distance"]
+  3:
+    model: SVC
+    params:
+      C: [0.1, 1, 10]
+      kernel: ["linear", "rbf"]
+  4:
+    model: LogisticRegression
+    params:
+      C: [0.001, 0.01, 0.1, 1]
+      penalty: ["l1", "l2"]
+      solver: ["saga"]
+      max_iter: [500,1000]
+  5:
+    model: GaussianNB
+    params:
+      var_smoothing: [0.000000001, 0.00000001, 0.0000001, 0.000001]
