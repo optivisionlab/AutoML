@@ -12,7 +12,7 @@ Tài liệu chi tiết về dự án, bao gồm kiến trúc, hướng dẫn cà
 
 ## 🚀 Bắt đầu nhanh
 
-Cách đơn giản nhất để chạy toàn bộ hệ thống là sử dụng Docker. Vui lòng xem [hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/docs/getting_started/) trong tài liệu của chúng tôi.
+Cách đơn giản nhất để chạy toàn bộ hệ thống là sử dụng Docker. Vui lòng xem [hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/docs) trong tài liệu của chúng tôi.
 
 ```bash
 # Sao chép dự án
