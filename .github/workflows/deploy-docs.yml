@@ -1,20 +1,17 @@
 name: Deploy Documentation to GitHub Pages
 
-# Chạy quy trình này mỗi khi có push lên nhánh main
 on:
   push:
     branches:
-      - main
+      - main  # Mỗi lần push lên main sẽ tự build và deploy
 
-# Cho phép quy trình này tạo một GitHub Pages deployment
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: write  # Cho phép push lên gh-pages
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,14 +22,7 @@ jobs:
           python-version: 3.x
 
       - name: Install dependencies
-        run: pip install mkdocs-material
+        run: pip install mkdocs mkdocs-material
 
-      - name: Build documentation
-        run: mkdocs build
-
-      - name: List built files for debugging
-        run: ls -R site
-
-      - name: Deploy to GitHub Pages
-        # Lệnh này sẽ tự động đẩy nội dung từ thư mục 'site' lên nhánh gh-pages
+      - name: Build and deploy to GitHub Pages
         run: mkdocs gh-deploy --force
