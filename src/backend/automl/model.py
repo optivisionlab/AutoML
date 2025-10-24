@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from typing import List, Dict, Union
+
 from pydantic import BaseModel
-from typing import List, Dict, Union, Optional
 
 
 class Item(BaseModel):

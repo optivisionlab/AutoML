@@ -3,6 +3,8 @@ import itertools
 import time
 import copy
 import hashlib
+import logging
+import pandas as pd
 
 import numpy as np
 from sklearn.base import BaseEstimator
@@ -11,6 +13,9 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from joblib import Parallel, delayed
 
 from automl.search.strategy.base import SearchStrategy
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 class GridSearchStrategy(SearchStrategy):
     """Grid Search implementation"""
@@ -115,11 +120,11 @@ class GridSearchStrategy(SearchStrategy):
                 )
                 return results
         
-        # Sequential evaluation only for single parameter
+        # Sequential evaluation only for a single parameter
         return [self._evaluate_single_params(params, model, X, y, cv, scoring_config) 
                 for params in param_combinations]
 
-    def _grid_search_core(self, param_grid, model_func, data, targets, cv, scoring, metric_sort, return_train_score):
+    def _grid_search_core(self, param_grid, model_func, data, targets, cv, scoring, metric_sort, return_train_score, log_file=None):
         """Core grid search implementation with parallel evaluation."""
         # Convert scoring to cross_validate compatible format if needed
         if scoring is None:
@@ -144,9 +149,9 @@ class GridSearchStrategy(SearchStrategy):
         combinations = list(itertools.product(*(param_grid[key] for key in keys)))
         all_params = [dict(zip(keys, combo)) for combo in combinations]
         
-        print(f"Grid Search: Evaluating {len(all_params)} parameter combinations...")
+        logger.info(f"Grid Search: Evaluating {len(all_params)} parameter combinations...")
         
-        # Create model instance for evaluation
+        # Create a model instance for evaluation
         if callable(model_func):
             model = model_func()
         else:
@@ -165,7 +170,7 @@ class GridSearchStrategy(SearchStrategy):
             
             # Progress indication
             if self.config.get('verbose', 1) > 0:
-                print(f"Progress: {min(i+batch_size, len(all_params))}/{len(all_params)} combinations evaluated")
+                logger.info(f"Progress: {min(i+batch_size, len(all_params))}/{len(all_params)} combinations evaluated")
         
         # Process results and build cv_results_
         cv_results_ = {
@@ -273,20 +278,32 @@ class GridSearchStrategy(SearchStrategy):
         test_scores = cv_results_[f'mean_test_{metric_sort}']
         ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
         cv_results_['rank_test_score'] = ranks.tolist()
+        
+        # Save results to log file if logging is enabled
+        if log_file and self.config.get('save_log', False):
+            # Create a DataFrame with search results
+            log_data = []
+            for i in range(len(cv_results_['params'])):
+                row = {
+                    'rank': cv_results_['rank_test_score'][i],
+                    'mean_test_score': cv_results_['mean_test_score'][i],
+                    'std_test_score': cv_results_['std_test_score'][i]
+                }
+                # Add parameter values
+                row.update(cv_results_['params'][i])
+                # Add metric scores
+                for metric in scoring.keys():
+                    row[f'mean_test_{metric}'] = cv_results_[f'mean_test_{metric}'][i]
+                    row[f'std_test_{metric}'] = cv_results_[f'std_test_{metric}'][i]
+                log_data.append(row)
+            
+            # Save to CSV
+            df = pd.DataFrame(log_data)
+            df = df.sort_values('rank')
+            df.to_csv(log_file, index=False)
 
-        # Clear caches after search completes
-        self._evaluation_cache.clear()
-        if hasattr(self, '_model_copies'):
-            self._model_copies.clear()
-        
-        # Convert all numpy types to native Python types
-        from automl.search.strategy.base import SearchStrategy
-        best_params = SearchStrategy.convert_numpy_types(best_params)
-        best_score = SearchStrategy.convert_numpy_types(best_score)
-        best_all_scores = SearchStrategy.convert_numpy_types(best_all_scores)
-        cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)
-        
-        return best_params, best_score, best_all_scores, cv_results_
+        # Clear caches and convert numpy types before returning
+        return self._finalize_results(best_params, best_score, best_all_scores, cv_results_)
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
         """
@@ -307,6 +324,9 @@ class GridSearchStrategy(SearchStrategy):
                 - cv_results: Dictionary with detailed cross-validation results
         """
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
+        
+        # Create a log file path using the base class method
+        log_file = self.create_log_file_path(model, 'grid_search')
 
         best_params, best_score, best_all_scores, cv_results = self._grid_search_core(
             param_grid=param_grid,
@@ -316,7 +336,12 @@ class GridSearchStrategy(SearchStrategy):
             cv=self.config['cv'],
             scoring=self.config['scoring'],
             metric_sort=self.config['metric_sort'],
-            return_train_score=self.config.get('return_train_score', False)
+            return_train_score=self.config.get('return_train_score', False),
+            log_file=log_file
         )
+        
+        # Log the completion message if logging is enabled
+        if self.config.get('save_log', False) and log_file:
+            logger.info(f"Grid search log saved to: {log_file}")
 
         return best_params, best_score, best_all_scores, cv_results

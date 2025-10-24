@@ -1,15 +1,19 @@
-import os
+import copy
+import logging
+import random
+from datetime import datetime
 from typing import List, Dict, Any, Tuple
+
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
+
 from automl.search.strategy.base import SearchStrategy
-import random
-import copy
-from datetime import datetime
-from joblib import Parallel, delayed
-from functools import lru_cache
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 
 class GeneticAlgorithm(SearchStrategy):
@@ -19,14 +23,12 @@ class GeneticAlgorithm(SearchStrategy):
     def get_default_config() -> Dict[str, Any]:
         config = SearchStrategy.get_default_config()
         config.update({
-            'population_size': 10,  # Ultra small for extreme speed
+            'population_size': 10,  # Tiny for extreme speed
             'generation': 5,  # Very few generations
             'mutation_rate': 0.2,  # Higher for faster exploration
             'crossover_rate': 0.9,  # Very high crossover
             'elite_size': 2,  # Minimal elite
             'tournament_size': 2,  # Minimal tournament
-            'log_dir': 'logs',
-            'save_log': False,
             'early_stopping_patience': 2,  # Ultra aggressive early stopping
             'early_stopping_enabled': True,
             'parallel_evaluation': True,
@@ -52,14 +54,9 @@ class GeneticAlgorithm(SearchStrategy):
         self._evaluation_cache = {}  # Global cache for fitness evaluations
         self._cache_hits = 0  # Track cache efficiency
         self._total_evaluations = 0
-    
-    def _convert_numpy_types(self, obj):
-        """Convert numpy types to native Python types recursively.
-        Delegates to base class static method for consistency."""
-        from automl.search.strategy.base import SearchStrategy
-        return SearchStrategy.convert_numpy_types(obj)
 
-    def _make_hashable(self, individual: Dict[str, float]) -> tuple:
+    @staticmethod
+    def _make_hashable(individual: Dict[str, float]) -> tuple:
         """Convert individual to hashable format for caching."""
         return tuple(sorted(individual.items()))
 
@@ -143,12 +140,10 @@ class GeneticAlgorithm(SearchStrategy):
                 n_values = int(max_val - min_val + 1)
                 if n_values <= 3:
                     grid_points[param_name] = [float(i) for i in range(int(min_val), int(max_val) + 1)]
-                else:
-                    # Sample 3 points
-                    grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
-            else:
-                # For continuous/integer, use 3 points: min, mid, max
-                grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
+                    continue
+            
+            # For all other cases (categorical with > 3 values, continuous, integer), use 3 points: min, mid, max
+            grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
         
         # Create grid combinations (but limit to population size)
         import itertools
@@ -242,8 +237,9 @@ class GeneticAlgorithm(SearchStrategy):
             
             return result
 
-        except Exception:
-            # Return zeros for all metrics
+        except (ValueError, TypeError, KeyError):
+            # Return zeros for all metrics when evaluation fails
+            # Common errors: invalid parameters, type mismatches, missing keys
             if isinstance(self.config.get('scoring'), dict):
                 return {metric: 0.0 for metric in self.config['scoring'].keys()}
             else:
@@ -285,7 +281,7 @@ class GeneticAlgorithm(SearchStrategy):
         if random.random() > self.config['crossover_rate']:
             return parent1.copy(), parent2.copy()
 
-        # Ultra fast simple crossover
+        # Ultra-fast simple crossover
         if self.config.get('simple_crossover', False):
             # Simple uniform crossover - just swap half the parameters
             child1 = parent1.copy()
@@ -339,7 +335,7 @@ class GeneticAlgorithm(SearchStrategy):
         """
         mutated = individual.copy()
         
-        # Adaptive mutation rate - decreases as generations progress
+        # Adaptive mutation rate decreases as generations progress
         if max_generation and max_generation > 0:
             adaptive_rate = self.config['mutation_rate'] * (1 - generation / max_generation)
         else:
@@ -439,8 +435,6 @@ class GeneticAlgorithm(SearchStrategy):
         else:
             cv_folds = cv if isinstance(cv, int) else 5
         
-        min_parallel_work = cv_folds * 3  # Need at least 3x CV work per core to benefit
-        
         if n_jobs == -1:
             import multiprocessing
             n_jobs = multiprocessing.cpu_count()
@@ -451,7 +445,7 @@ class GeneticAlgorithm(SearchStrategy):
         # Only use parallel if we have enough work to justify the overhead
         # Rule: at least 2 work units per core AND population > 4
         if total_work >= (n_jobs * 2) and len(population) > 4:
-            # Use optimal number of jobs (don't use more cores than work units)
+            # Use the optimal number of jobs (don't use more cores than work units)
             optimal_jobs = min(n_jobs, len(population))
             
             # Choose backend based on model complexity
@@ -493,17 +487,11 @@ class GeneticAlgorithm(SearchStrategy):
         if self.config['elite_size'] >= self.config['population_size']:
             self.config['elite_size'] = max(1, self.config['population_size'] // 4)
 
-        # Create a log directory and file if needed
-        log_file = None
-        if self.config['save_log']:
-            log_dir = self.config['log_dir']
-            os.makedirs(log_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_name = model.__class__.__name__
-            log_file = os.path.join(log_dir, f'genetic_algorithm_{model_name}_{timestamp}.csv')
+        # Create a log file path using the base class method
+        log_file = self.create_log_file_path(model, 'genetic_algorithm')
 
         # Convert the hyperparameter grid into a format suitable for the genetic algorithm.
-        encoded_grid = self._encode_parameters(param_grid)
+        self._encode_parameters(param_grid)
         
         # Adaptive population sizing based on parameter space complexity
         if self.config.get('adaptive_population', True) and self.config.get('fast_mode', True):
@@ -526,7 +514,7 @@ class GeneticAlgorithm(SearchStrategy):
         
         # Create the initial population using smart or random initialization
         if self.config.get('ultra_fast_mode', False):
-            # In ultra fast mode, use mostly random population
+            # In ultra-fast mode, use mostly random population
             population = [self._create_individual() for _ in range(actual_population_size)]
         elif self.config.get('init_strategy', 'smart') == 'smart':
             population = self._create_smart_population(actual_population_size)
@@ -557,9 +545,9 @@ class GeneticAlgorithm(SearchStrategy):
         # Execute the genetic algorithm main loop
         verbose = self.config.get('verbose', 1)
         if verbose > 0:
-            print(f"\nStarting Genetic Algorithm with {actual_population_size} individuals for {self.config['generation']} generations")
+            logger.info(f"Starting Genetic Algorithm with {actual_population_size} individuals for {self.config['generation']} generations")
             if verbose > 1:
-                print(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
+                logger.info(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
                       (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
         
         for generation in range(self.config['generation']):
@@ -575,11 +563,11 @@ class GeneticAlgorithm(SearchStrategy):
             
             # Progress indicator
             if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config['generation'] - 1):
-                print(f"\nGeneration {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}", end="")
+                logger.info(f"Generation {generation + 1}/{self.config['generation']} | Diversity: {diversity:.4f}")
             
-            # Evaluate population (with optimization for ultra fast mode)
+            # Evaluate population (with optimization for ultra-fast mode)
             if self.config.get('ultra_fast_mode', False) and generation > 0:
-                # In ultra fast mode after first generation, only evaluate new/changed individuals
+                # In ultra-fast mode after the first generation, only evaluate new/changed individuals
                 # Use cached scores for elite individuals
                 all_individual_scores = []
                 for idx, individual in enumerate(population):
@@ -591,7 +579,7 @@ class GeneticAlgorithm(SearchStrategy):
                         else:
                             all_individual_scores.append(self._evaluate_individual(individual, model, X, y))
                     else:
-                        # New individuals - must evaluate
+                        # New individuals must evaluate
                         all_individual_scores.append(self._evaluate_individual(individual, model, X, y))
             else:
                 # Normal evaluation
@@ -664,27 +652,27 @@ class GeneticAlgorithm(SearchStrategy):
             # Update progress with generation results
             generation_time = (datetime.now() - generation_start_time).total_seconds()
             if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config['generation'] - 1):
-                print(f" | Best: {generation_best_score:.4f} | Mean: {mean_fitness:.4f} | Std: {std_fitness:.4f} | Time: {generation_time:.2f}s", end="")
+                logger.info(f" | Best: {generation_best_score:.4f} | Mean: {mean_fitness:.4f} | Std: {std_fitness:.4f} | Time: {generation_time:.2f}s")
                 
                 if generation_improved and verbose > 1:
-                    print(" ✓ NEW BEST!", end="")
+                    logger.info(" ✓ NEW BEST!")
             
-            # Check early stopping with convergence threshold
+            # Check early stopping with a convergence threshold
             if not generation_improved:
                 generations_without_improvement += 1
             
-            # Check convergence threshold (very small improvements)
+            # Check the convergence threshold (very small improvements)
             convergence_threshold = self.config.get('convergence_threshold', 0.001)
             if generation > 0 and len(convergence_history) > 1:
                 recent_improvement = convergence_history[-1]['best'] - convergence_history[-2]['best']
                 if abs(recent_improvement) < convergence_threshold and generations_without_improvement >= 2:
-                    print(f"\n\n✓ Convergence detected at generation {generation + 1} (improvement < {convergence_threshold:.4f})")
-                    print(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
+                    logger.info(f"Convergence detected at generation {generation + 1} (improvement < {convergence_threshold:.4f})")
+                    logger.info(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
                     break
                 
             if early_stopping_enabled and generations_without_improvement >= early_stopping_patience:
-                print(f"\n\n🛑 Early stopping triggered at generation {generation + 1} (no improvement for {early_stopping_patience} generations)")
-                print(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
+                logger.info(f"Early stopping triggered at generation {generation + 1} (no improvement for {early_stopping_patience} generations)")
+                logger.info(f"Best score {best_score:.4f} achieved at generation {best_generation + 1}")
                 break
             
             # Save log after each generation
@@ -692,14 +680,14 @@ class GeneticAlgorithm(SearchStrategy):
                 df = pd.DataFrame(generation_history)
                 df.to_csv(log_file, index=False)
             
-            # Check if population has converged (low diversity) - skip in ultra fast mode
+            # Check if the population has converged (low diversity) - skip in ultra-fast mode
             if not self.config.get('ultra_fast_mode', False):
                 stagnation_threshold = 0.05
                 if diversity < stagnation_threshold and generations_without_improvement >= 3:
-                    print(f"\n⚠️ Stagnation detected (diversity={diversity:.4f}, no improvement for {generations_without_improvement} gen). Injecting diversity...")
+                    logger.warning(f"Stagnation detected (diversity={diversity:.4f}, no improvement for {generations_without_improvement} gen). Injecting diversity...")
                     # Inject new random individuals to escape local optima
                     population = self._inject_diversity(population, injection_rate=0.2)
-                    print(" Diversity injection complete!", end="")
+                    logger.info(" Diversity injection complete!")
             
             # --- Create the next generation ---
             new_population = []
@@ -707,7 +695,7 @@ class GeneticAlgorithm(SearchStrategy):
             # Elitism: Directly carry over the best individuals to the next generation
             elite_indices = np.argpartition(fitness_scores, -self.config['elite_size'])[-self.config['elite_size']:] if self.config['elite_size'] > 0 else []
             for idx in elite_indices:
-                new_population.append(population[idx].copy())  # Shallow copy is sufficient here
+                new_population.append(population[idx].copy())  # Shallow copy is enough here
             
             # Adaptive crossover rate based on diversity
             adaptive_crossover_rate = self.config['crossover_rate']
@@ -783,43 +771,29 @@ class GeneticAlgorithm(SearchStrategy):
             }
         
         # Final summary
-        print(f"\n\n{'=' * 60}")
-        print(f"Genetic Algorithm Search Complete!")
-        print(f"{'=' * 60}")
-        print(f"Total evaluations: {len(all_individuals)}")
-        print(f"Best score: {best_score:.4f} (achieved at generation {best_generation + 1})")
-        print(f"Best parameters: {best_params}")
-        print(f"Final population diversity: {diversity_history[-1]:.4f}")
+        logger.info(f"{'=' * 60}")
+        logger.info(f"Genetic Algorithm Search Complete!")
+        logger.info(f"{'=' * 60}")
+        logger.info(f"Total evaluations: {len(all_individuals)}")
+        logger.info(f"Best score: {best_score:.4f} (achieved at generation {best_generation + 1})")
+        logger.info(f"Best parameters: {best_params}")
+        logger.info(f"Final population diversity: {diversity_history[-1]:.4f}")
         
         # Report cache efficiency if enabled
         if self.config.get('use_global_cache', True) and self._total_evaluations > 0:
             cache_efficiency = (self._cache_hits / self._total_evaluations) * 100
-            print(f"Cache efficiency: {self._cache_hits}/{self._total_evaluations} ({cache_efficiency:.1f}% hit rate)")
-            print(f"Unique evaluations: {self._total_evaluations - self._cache_hits}")
+            logger.info(f"Cache efficiency: {self._cache_hits}/{self._total_evaluations} ({cache_efficiency:.1f}% hit rate)")
+            logger.info(f"Unique evaluations: {self._total_evaluations - self._cache_hits}")
         
         # Print the log file location if logging is enabled
         if self.config['save_log'] and log_file:
-            print(f"\nDetailed log saved to: {log_file}")
+            logger.info(f"Detailed log saved to: {log_file}")
         
-        # Clear caches after the search completes
-        self._decode_cache.clear()
-        if hasattr(self, '_evaluation_cache'):
-            self._evaluation_cache.clear()
-        if hasattr(self, '_model_copies'):
-            self._model_copies.clear()
-        
-        # Convert all numpy types to native Python types before returning
-        # Convert all numpy types to native Python types using base class method
-        from automl.search.strategy.base import SearchStrategy
-        best_params = SearchStrategy.convert_numpy_types(best_params)
-        best_score = SearchStrategy.convert_numpy_types(best_score)
-        best_all_scores = SearchStrategy.convert_numpy_types(best_all_scores)
-        cv_results = SearchStrategy.convert_numpy_types(cv_results)
-        
-        # Return the best parameters, the best score, all metrics, and the comprehensive results.
-        return best_params, best_score, best_all_scores, cv_results
+        # Clear caches and convert numpy types before returning
+        return self._finalize_results(best_params, best_score, best_all_scores, cv_results)
 
-    def _compute_ranks(self, scores: List[float]) -> List[int]:
+    @staticmethod
+    def _compute_ranks(scores: List[float]) -> List[int]:
         """Compute ranks for scores (1 = best)."""
         if not scores:
             return []
