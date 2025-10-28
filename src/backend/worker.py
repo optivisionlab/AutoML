@@ -13,9 +13,6 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
-from sklearn.discriminant_analysis import StandardScaler
-from sklearn.calibration import LabelEncoder
 import uvicorn
 
 # Local Modules
@@ -30,11 +27,6 @@ MODEL_MAPPING = {
     "KNeighborsClassifier": KNeighborsClassifier,
     "LogisticRegression": LogisticRegression,
     "GaussianNB": GaussianNB,
-    "KMeans": KMeans,
-    "DBSCAN": DBSCAN,
-    "AgglomerativeClustering": AgglomerativeClustering,
-    "MeanShift": MeanShift,
-    "SpectralClustering": SpectralClustering
 }
 
 

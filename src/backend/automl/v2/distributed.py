@@ -86,7 +86,7 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             f"{worker_url}/train",
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=5000
+            timeout=10000
         )
         response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
         return response.json()

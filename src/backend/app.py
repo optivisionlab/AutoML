@@ -52,7 +52,7 @@ from users.engine import handle_delete_user
 from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+from automl.engine import get_config, get_data_and_config_from_MongoDB
 from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl

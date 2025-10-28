@@ -10,14 +10,12 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.calibration import LabelEncoder
 from sklearn.discriminant_analysis import StandardScaler
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
-from sklearn.metrics import precision_score, recall_score, f1_score
 
 from automl.model import Item
-from automl.search.strategies.grid_search import GridSearchStrategy
-from automl.search.strategies.bayesian_search import BayesianSearchStrategy
-from automl.search.strategies.genetic_algorithm import GeneticAlgorithm
+from automl.search.strategy.base import SearchStrategy
+from automl.search.factory.search_strategy_factory import SearchStrategyFactory
 from database.database import get_database
 
 np.random.seed(42)
@@ -156,7 +154,7 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, algorithm_search):
+def training(models, metric_list, metric_sort, X_train, y_train, algorithm_search="grid_search"):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -167,60 +165,83 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
     for metric in metric_list:
         if metric == 'accuracy':
             scoring[metric] = make_scorer(accuracy_score)
+        elif metric == 'precision':
+            scoring[metric] = make_scorer(precision_score, average='macro')
+        elif metric == 'recall':
+            scoring[metric] = make_scorer(recall_score, average='macro')
+        elif metric == 'f1':
+            scoring[metric] = make_scorer(f1_score, average='macro')
         else:
-            scoring[metric] = make_scorer(globals()[f'{metric}_score'], average='macro')
+            # Try to get the score function dynamically if it's not one of the common ones
+            score_func = globals().get(f'{metric}_score')
+            if score_func:
+                scoring[metric] = make_scorer(score_func, average='macro')
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
 
-    print(scoring)
 
-    # Create a GridSearchStrategy instance
-    search_strategy = None
-    if algorithm_search == "GS":
-        search_strategy = GridSearchStrategy()
-    elif algorithm_search == "BS":
-        search_strategy = BayesianSearchStrategy()
-    elif algorithm_search == "GA":
-        search_strategy = GeneticAlgorithm()
+    # Use the factory to create the search strategy with configuration
+    strategy_config = {
+        'cv': 5,
+        'scoring': scoring,
+        'metric_sort': metric_sort,
+        'error_score': "raise",
+        'return_train_score': True
+    }
 
-    # Configure the strategy
-    search_strategy.set_config(
-        cv=5,
-        scoring=scoring,
-        metric_sort=metric_sort,
-        error_score="raise",
-        return_train_score=True
-    )
+    try:
+        search_strategy = SearchStrategyFactory.create_strategy(algorithm_search, strategy_config)
+    except ValueError as e:
+        print(f"Warning: {e}. Using default 'grid' search.")
+        search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
+
 
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
 
-        best_params_model, best_score_model, cv_results = search_strategy.search(
+        best_params_model, best_score_model, best_all_scores_model, cv_results = search_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,
             y=y_train
         )
-        print(best_params_model)
-        print("==========================")
-        print(best_score_model)
-        print("==========================")
-        print(cv_results)
 
+        # Convert all numpy types to native Python types to avoid serialization issues
+        best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
+        best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
+        best_all_scores_model = SearchStrategy.convert_numpy_types(best_all_scores_model)
+        cv_results = SearchStrategy.convert_numpy_types(cv_results)
 
         # Get the best estimator with the best parameters
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
 
         # Extract scores from cv_results
+        # Convert rank list to numpy array for argmin operation
+        rank_key = f'rank_test_{metric_sort}'
+        if rank_key in cv_results:
+            rank_array = np.array(cv_results[rank_key])
+        else:
+            # Fallback to 'rank_test_score' if specific metric rank not found
+            rank_array = np.array(cv_results.get('rank_test_score', []))
+        
+        best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
+        
+        # Ensure scores are also converted to native types
+        scores_dict = {}
+        for metric in metric_list:
+            if f"mean_test_{metric}" in cv_results:
+                score_value = cv_results[f"mean_test_{metric}"][best_idx]
+                # Convert to native Python float if it's a numpy type
+                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+        
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
-            "scores": {
-                metric: cv_results[f"mean_test_{metric}"][np.array(cv_results['rank_test_' + metric_sort]).argmin()] for metric in
-                metric_list
-            }
+            "scores": scores_dict
         }
 
         model_results.append(results)
@@ -230,6 +251,11 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
             best_model = best_estimator
             best_score = best_score_model
             best_params = best_params_model
+    
+    # Final conversion to ensure all return values are native Python types
+    best_params = SearchStrategy.convert_numpy_types(best_params)
+    best_score = SearchStrategy.convert_numpy_types(best_score)
+    model_results = SearchStrategy.convert_numpy_types(model_results)
 
     return best_model_id, best_model, best_score, best_params, model_results
 
