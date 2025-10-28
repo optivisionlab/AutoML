@@ -11,7 +11,7 @@ import uuid
 # Local Modules
 from database.get_dataset import dataset
 from kafka_consumer import data
-from automl.v2.master import ACTIVE_JOBS, JobManager
+from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job 
 from automl.v2.schemas import InputRequest
 from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
 from automl.v2.minio import minIOStorage
@@ -66,10 +66,14 @@ async def distributed_mongodb(input: InputRequest):
     try:
         start = time.time()
         job_id = str(uuid.uuid4())
-        master_server_url = f"http://{data["HOST_BACK_END"]}:{data["PORT_BACK_END"]}" 
-        manager = JobManager(job_id, input.id_data, input.id_user, input.config, master_server_url)
-        ACTIVE_JOBS[job_id] = manager
-        final_result = await manager.run()
+        await setup_job_tasks(job_id, input.id_data, input.id_user, input.config)
+
+        # Chờ job hoàn thành
+        tracker = JOB_TRACKER[job_id]
+        await tracker["completion_event"].wait()
+
+        # Job đã xong, thực hiện reduce
+        final_result = reduce_results_for_job(job_id)
         # Lưu vào database 
         save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, final_result, job_id)
 

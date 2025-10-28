@@ -3,12 +3,12 @@ import json
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
 import yaml
 import json
-from database.get_dataset import get_database
+from database.get_dataset import job_update
 import asyncio
-import os
+import time
 
 # Local Modules
-from automl.v2.master import JobManager, ACTIVE_JOBS
+from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job
 from automl.v2.minio import minIOStorage
 
 file_path = ".config.yml"
@@ -27,14 +27,14 @@ async def start_producer():
     )
 
     await producer_instance.start()
-    print("[Kafka Producer] Started.")
+    print("[Kafka Producer] Started")
 
 
 async def stop_producer():
     global producer_instance
     if producer_instance:
         await producer_instance.stop()
-        print("[Kafka Producer] Started.")
+        print("[Kafka Producer] Started")
 
 
 def get_producer() -> AIOKafkaProducer:
@@ -44,21 +44,24 @@ def get_producer() -> AIOKafkaProducer:
     return producer_instance
 
 
-
-async def handle_training_job(job_id, id_data, id_user, config, tp, offset, consumer):
-    master_server_url = f"http://{data['HOST_BACK_END']}:{data['PORT_BACK_END']}" 
-    manager = JobManager(job_id, id_data, id_user, config, master_server_url) 
-    ACTIVE_JOBS[job_id] = manager
-
+async def handle_training_job(job_id: str, id_data: str, id_user: str, config: dict):
+    """
+    Xử lý một job từ Kafka
+    """
     try:
-        import time
         start = time.time()
 
-        # Chạy toàn bộ quá trình điều phối và chờ kết quả
-        final_result = await manager.run()
+        #  Đăng ký task vào hàng đợi
+        await setup_job_tasks(job_id, id_data, id_user, config)
+
+        # Chờ job hoàn thành
+        tracker = JOB_TRACKER[job_id]
+        await tracker["completion_event"].wait()
+
+        # Job đã xong, thực hiện reduce
+        final_result = reduce_results_for_job(job_id)
 
         version = 1
-
         await asyncio.to_thread(
             minIOStorage.uploaded_model,
             bucket_name="models",
@@ -66,48 +69,28 @@ async def handle_training_job(job_id, id_data, id_user, config, tp, offset, cons
             model_bytes=final_result["model"]
         )
 
-        def update_success():
-            db = get_database()
-            job_collection = db["tbl_Job"]
-            update_data = {
-                "$set": {
-                    "best_model_id": final_result["best_model_id"],
-                    "best_model": final_result["best_model"],
-                    "model": {
-                        "bucket_name": "models",
-                        "object_name": f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl"
-                    },
-                    "best_params": final_result["best_params"],
-                    "best_score": final_result["best_score"],
-                    "orther_model_scores": final_result["model_scores"],
-                    "status": 1
-                }
-            }
-            job_collection.update_one({"job_id": job_id}, update_data)
-
-        await asyncio.to_thread(update_success)
+        await asyncio.to_thread(job_update.update_success, job_id, id_user, final_result)
         end = time.time()
         print(f"[Consumer Task] Completed job {job_id}: {end-start}")
-
-        await consumer.commit({
-            tp: offset + 1
-        })
-        print(f"[Consumer Task] Committed offset {offset + 1} after processing")
-
+        return {"job_id": job_id, "status": "success"}
+        
     except Exception as e:
         # Lỗi từ quá trình huấn luyện
         error_msg = f"Training failure: {str(e)}"
-        print(f"[JOB {job_id}] {error_msg}")
+
+        await asyncio.to_thread(job_update.update_failure, job_id, error_msg)
+        raise Exception(error_msg)
 
     finally:
         # Dọn dẹp job
-        if job_id in ACTIVE_JOBS:
-            del ACTIVE_JOBS[job_id]
+        if job_id in JOB_TRACKER:
+            del JOB_TRACKER[job_id]
 
 
 """ Hàm Consumer chạy tiến trình riêng """
 async def kafka_consumer_process():
     consumer = None
+    MAX_CONCURRENT_JOBS = 3
 
     try:
         # KHỞI TẠO VÀ START CONSUMER 
@@ -123,20 +106,52 @@ async def kafka_consumer_process():
         await consumer.start()
         print(f"[Consumer Task] Kafka is running...")
 
-        # VÒNG LẶP ĐỂ XỬ LÝ MESSAGE 
-        async for message in consumer:
-            job_id = message.key.decode('utf-8')
-            id_data = message.value.get('id_data')
-            id_user = message.value.get('id_user')
-            config = message.value.get('config')
-
-            tp = TopicPartition(message.topic, message.partition)
-
-            asyncio.create_task(
-                handle_training_job(
-                    job_id, id_data, id_user, config, tp, message.offset, consumer
-                )
+        while True:
+            batch = await consumer.getmany(
+                timeout_ms=3000, max_records=MAX_CONCURRENT_JOBS
             )
+
+            if not batch:
+                continue
+
+            tasks = []
+            messages_in_batch = []
+
+            # VÒNG LẶP ĐỂ XỬ LÝ MESSAGE 
+            for tp, messages in batch.items():
+                for msg in messages:
+                    job_id = msg.key.decode('utf-8')
+                    id_data = msg.value.get('id_data')
+                    id_user = msg.value.get('id_user')
+                    config = msg.value.get('config')
+
+                    tasks.append(
+                        asyncio.create_task(
+                            handle_training_job(job_id, id_data, id_user, config)
+                        )
+                    )
+                    messages_in_batch.append(msg)
+        
+            if not tasks:
+                continue
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            success_count = 0
+            fail_count = 0
+            for res in results:
+                if isinstance(res, Exception):
+                    fail_count += 1
+                else:
+                    success_count += 1
+            print(f"[Consumer] Batch complete")
+
+            last_message_in_batch = messages_in_batch[-1]
+            tp = TopicPartition(last_message_in_batch.topic, last_message_in_batch.partition)
+            offset_to_commit = last_message_in_batch.offset + 1
+
+            await consumer.commit({tp: offset_to_commit})
+
     except asyncio.CancelledError:
         print("[Consumer Task] Task was cancelled gracefully.")
         raise

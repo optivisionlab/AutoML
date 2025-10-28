@@ -1,0 +1,7 @@
+.env
+.config.yml
+
+.git
+.vscode/
+__pycache__/
+search/

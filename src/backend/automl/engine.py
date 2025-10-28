@@ -26,7 +26,6 @@ from pathlib import Path
 np.random.seed(42)
 random.seed(42)
 
-from database.database import get_database
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import time

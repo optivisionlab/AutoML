@@ -159,8 +159,8 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     
     # Nếu trang yêu cầu vượt quá tổng số trang, điều chỉnh offset về trang cuối cùng
     if page > total_pages and total_pages > 0:
-         page = total_pages
-         offset = (page - 1) * limit
+        page = total_pages
+        offset = (page - 1) * limit
 
 
     # Projection để lấy các trường cần thiết, tránh tải dữ liệu lớn

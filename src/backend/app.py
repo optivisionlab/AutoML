@@ -60,7 +60,6 @@ from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
 import threading
-from kafka_consumer import kafka_consumer_process
 from users.engine import get_current_admin
 # Lấy danh sách user
 from users.engine import get_list_user
@@ -71,25 +70,21 @@ from kafka_consumer import (
     stop_producer
 )
 from kafka_consumer import get_producer
+from automl.v2.master import monitor_tasks
 import asyncio
 
 # Lifespan Context Manager 
-consumer_task: asyncio.Task | None = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Context Manager quản lý vòng đời (startup, shutdown) của server 
     Trước yield là startup, sau yield là shutdown
     """
-    global consumer_task
-
     # KHỞI TẠO VÀ START PRODUCER 
     await start_producer()
 
-    # START CONSUMER
-    print("[Server Lifespan] Start Consumer Task")
-    consumer_task = asyncio.create_task(kafka_consumer_process())
+    app.state.kafka_task = asyncio.create_task(kafka_consumer_process())
+    app.state.monitor_task = asyncio.create_task(monitor_tasks())
 
     yield # Server Fastapi accepts requests
 
@@ -97,13 +92,10 @@ async def lifespan(app: FastAPI):
     print("[Server Lifespan] Shutdown resources...")
     await stop_producer()
     
-    # DỪNG CONSUMER TASK
-    if consumer_task:
-        consumer_task.cancel()
-        try:
-            await consumer_task 
-        except asyncio.CancelledError:
-            pass
+    app.state.kafka_task.cancel()
+    app.state.monitor_task.cancel()
+    await asyncio.gather(app.state.kafka_task, app.state.monitor_task, return_exceptions=True)
+    print("[Master] Shutdown complete.")
 
 
 # default sync
@@ -115,6 +107,7 @@ with open(file_path, "r") as f:
 
 config = Config(file_path)
 oauth = OAuth(config)
+master_api_url = f"http://{data['HOST_BACK_END']}:{data['PORT_BACK_END']}"
 
 # phương thức để đăng ký một dịch vụ OAuth
 CONF_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -125,14 +118,14 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": f"http://{data['HOST_BACK_END']}:{data['HOST_BACK_END']}/auth",
+        "redirect_url": f"{master_api_url}/auth",
     },
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://{data['HOST_FRONT_END']}:{data['PORT_FRONT_END']}", "http://localhost:3000"],
+    allow_origins=[f"{master_api_url}", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -508,8 +501,8 @@ def api_activate_model(job_id, activate=0):
 from experiment import exp
 app.include_router(exp)
     
-from automl.v2.master import mas
-app.include_router(mas)
+from automl.v2.master import master
+app.include_router(master)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
