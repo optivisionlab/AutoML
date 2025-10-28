@@ -6,4 +6,5 @@
  HOST_FRONT_END: "localhost"
  PORT_FRONT_END: "3000"
  KAFKA_SERVER: "localhost:9092"
+ KAFKA_TOPIC: "abc"
  MONGODB_CONNECT: "mongodb://localhost:27017/"

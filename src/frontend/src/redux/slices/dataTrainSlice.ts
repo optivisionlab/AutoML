@@ -2,15 +2,15 @@ import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import axios from "axios";
 
 interface DataTrainState {
-  trainData: any; 
+  // trainData: any;
   listFeature: string[];
-  selectedTarget: string | null; 
-  status: "idle" | "loading" | "succeeded" | "failed"; 
-  error: string | null; 
+  selectedTarget: string | null;
+  status: "idle" | "loading" | "succeeded" | "failed";
+  error: string | null;
 }
 
 const initialState: DataTrainState = {
-  trainData: null,
+  // trainData: null,
   listFeature: [],
   selectedTarget: null,
   status: "idle",
@@ -23,12 +23,13 @@ export const fetchTrainData = createAsyncThunk(
   async (datasetID: string, thunkAPI) => {
     try {
       // Thực hiện gọi API để lấy dữ liệu
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`
       );
       return response.data;
     } catch (error: any) {
-      const message = error.response?.data?.message || "Lỗi khi lấy dữ liệu huấn luyện";
+      const message =
+        error.response?.data?.message || "Lỗi khi lấy dữ liệu huấn luyện";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -45,13 +46,13 @@ const dataTrainSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchTrainData.pending, (state) => {
-        state.status = "loading"; 
+        state.status = "loading";
         state.error = null;
       })
       .addCase(fetchTrainData.fulfilled, (state, action) => {
-        state.status = "succeeded"; 
-        state.trainData = action.payload.data; 
-        state.listFeature = action.payload.list_feature; 
+        state.status = "succeeded";
+        // state.trainData = action.payload.data;
+        state.listFeature = action.payload.list_feature;
       })
       .addCase(fetchTrainData.rejected, (state, action) => {
         state.status = "failed";

@@ -222,7 +222,8 @@ const Page = () => {
               Bạn có chắc chắn muốn xoá?
             </AlertDialogTitle>
             <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
-              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi hệ thống.
+              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi
+              hệ thống.
             </AlertDialogDescription>
           </AlertDialogHeader>
 

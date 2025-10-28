@@ -1,4 +1,5 @@
 "use client";
+
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -17,6 +18,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
+import { useSession } from "next-auth/react";
 
 type Props = {
   params: Promise<{
@@ -26,10 +28,10 @@ type Props = {
 
 const ResultPage = ({ params }: Props) => {
   const [datasetID, setDatasetID] = useState<string | null>(null);
-  const [dataTrain, setDataTrain] = useState<any[]>([]);
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const { data: session } = useSession();
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -47,33 +49,6 @@ const ResultPage = ({ params }: Props) => {
 
     unwrapParams();
   }, [params]);
-
-  // Fetch data train từ API đầu tiên
-  const fetchDataTrain = useCallback(async () => {
-    if (datasetID) {
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-mongodb-to-train?id=${datasetID}`,
-          {
-            method: "POST",
-            headers: { accept: "application/json" },
-            body: "", 
-          }
-        );
-        const { data } = await response.json();
-        setDataTrain(data);
-      } catch (err) {
-        console.log("Lỗi khi fetch:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [datasetID]);
-
-  useEffect(() => {
-    fetchDataTrain();
-  }, [datasetID, fetchDataTrain]);
 
   // Lấy cấu hình từ sessionStorage và chuẩn bị config
   useEffect(() => {
@@ -113,41 +88,43 @@ const ResultPage = ({ params }: Props) => {
   // Gửi dataTrain và config tới API tiếp theo
   useEffect(() => {
     const trainModel = async () => {
-      if (dataTrain.length && config) {
-        const requestBody = {
-          data: dataTrain,
-          config: {
-            choose: config.choose,
-            metric_sort: config.metric_sort,
-            list_feature: config.list_feature,
-            target: config.target,
-          },
-        };
+      if (!config || !session?.user?.id || !datasetID) {
+        return;
+      }
+      const requestBody = {
+        id_data: datasetID,
+        id_user: session.user.id,
+        config: {
+          choose: config.choose,
+          metric_sort: config.metric_sort,
+          list_feature: config.list_feature,
+          target: config.target,
+        },
+      };
 
-        setIsLoading(true);
-        try {
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_BASE_API}/train-from-requestbody-json/`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(requestBody),
-            }
-          );
-          const resultData = await response.json();
-          setResult(resultData); 
-        } catch (err) {
-          console.error("Lỗi khi gọi API train:", err);
-        } finally {
-          setIsLoading(false);
-        }
+      setIsLoading(true);
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/jobs/training`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          }
+        );
+        const resultData = await response.json();
+        setResult(resultData);
+      } catch (err) {
+        console.error("Lỗi khi gọi API train:", err);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     trainModel();
-  }, [dataTrain, config]);
+  }, [config]);
 
   if (error) {
     return <div>{error}</div>;
@@ -252,11 +229,7 @@ const ResultPage = ({ params }: Props) => {
                       value.replace(/([a-z])([A-Z])/g, "$1 $2")
                     }
                   />
-                  <YAxis
-                    domain={[0, 1]}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <YAxis domain={[0, 1]} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Bar

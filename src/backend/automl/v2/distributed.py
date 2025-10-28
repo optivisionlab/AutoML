@@ -86,9 +86,8 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             f"{worker_url}/train",
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=5000
+            timeout=10000
         )
-
         response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
         return response.json()
     
@@ -107,7 +106,7 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             "error": str(exc),
             "results": []
         }
-    
+
 
 
 async def run_mapreduce_async(metric_list, models, workers, id_data, config):
@@ -202,7 +201,6 @@ async def reduce_async(worker_responses):
         "model_scores": final_model_scores
     }
    
-
 
 async def process_async(id_data: str, config: dict):
 

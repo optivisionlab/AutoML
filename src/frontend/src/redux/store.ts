@@ -6,7 +6,7 @@ import getDataUCISlice from "./slices/dataUCISlice";
 export const store = configureStore({
   reducer: {
     register: registerSlice,
-    dataTrain: dataTrainSlice,
+    dataTrain: dataTrainSlice, 
     getDataUCI: getDataUCISlice,
   },
 })
