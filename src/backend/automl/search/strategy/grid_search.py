@@ -7,7 +7,7 @@ import pandas as pd
 
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import StratifiedKFold, cross_validate
+from sklearn.model_selection import cross_validate
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from joblib import Parallel, delayed
 
