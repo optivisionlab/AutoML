@@ -51,8 +51,6 @@ class SearchStrategyFactory:
         
         if strategy_class is None:
             available_strategies = list(set(cls._strategies.values()))
-            available_names = [name for name, cls_type in cls._strategies.items() 
-                             if cls_type in available_strategies[:3]]  # Get main names
             raise ValueError(
                 f"Unknown search strategy: '{strategy_name}'. "
                 f"Available strategy: {', '.join(['grid', 'genetic', 'bayesian'])}"
