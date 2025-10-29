@@ -1,7 +1,6 @@
 from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
-import os
 import logging
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
