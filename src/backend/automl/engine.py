@@ -220,7 +220,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         from automl.search.strategy.base import SearchStrategy
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
-        best_all_scores_model = SearchStrategy.convert_numpy_types(best_all_scores_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
 
         # Get the best estimator with the best parameters
