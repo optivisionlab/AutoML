@@ -380,6 +380,9 @@ class BayesianSearchStrategy(SearchStrategy):
             if self.config['save_log']:
                 df = pd.DataFrame(search_history)
                 df.to_csv(log_file, index=False)
+            
+            # Return False to continue optimization (True would stop)
+            return False
 
         # Lọc kwargs để chỉ giữ các tham số hợp lệ cho gp_minimize
         # Loại bỏ các tham số của SearchStrategy như 'scoring', 'cv', 'n_jobs', 'error_score'
