@@ -1,4 +1,0 @@
-model,run_type,best_params,accuracy,precision,recall,f1
-RandomForestClassifier,genetic_algorithm,"{'n_estimators': 200, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 2}",0.7015503875968994,0.6791525512384646,0.6574603174603174,0.6403238190510067
-SVC,genetic_algorithm,"{'C': 60.137779229328544, 'gamma': 'auto', 'kernel': 'poly'}",0.6407530454042082,0.6507195908666497,0.6326587301587302,0.5976696053076758
-DecisionTreeClassifier,genetic_algorithm,"{'max_depth': 7, 'min_samples_split': 10, 'min_samples_leaf': 4, 'criterion': 'entropy'}",0.6450719822812847,0.7006462627786156,0.6654960317460317,0.6454175291948744

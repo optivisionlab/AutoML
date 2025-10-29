@@ -16,7 +16,9 @@ from minio import Minio
 from minio.error import S3Error
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load environment variables from temp.env file
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "temp.env")
+load_dotenv(env_path)
 
 # Truy cập các biến môi trường
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
