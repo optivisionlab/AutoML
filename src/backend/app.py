@@ -139,26 +139,6 @@ app.add_middleware(
 )
 
 
-producer = KafkaProducer(
-    bootstrap_servers=data["KAFKA_SERVER"],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup logic
-    print("Starting Kafka consumer thread...")
-    kafka_thread = threading.Thread(target=run_train_consumer, daemon=True)
-    kafka_thread.start()
-    yield
-    # Shutdown logic (if needed)
-
-
-app = FastAPI(lifespan=lifespan)
-
-
 @app.get("/")
 def read_root():
     return {
