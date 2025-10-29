@@ -73,7 +73,7 @@ async def train_models(request: Request):
         try:
             print("Training")
             # Tác vụ huấn luyện sử dụng nhóm luồng
-            best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.to_thread(
+            _, best_model, best_score, _, model_scores = await asyncio.to_thread(
                 train_process,
                 data,
                 choose,
@@ -87,9 +87,7 @@ async def train_models(request: Request):
             
             # Convert all numpy types to native Python types to avoid serialization issues
             from automl.search.strategy.base import SearchStrategy
-            best_model_id = SearchStrategy.convert_numpy_types(best_model_id)
             best_score = SearchStrategy.convert_numpy_types(best_score)
-            best_params = SearchStrategy.convert_numpy_types(best_params)
             model_scores = SearchStrategy.convert_numpy_types(model_scores)
 
             # Tuần tư hóa mô hình thành byte

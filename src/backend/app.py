@@ -470,11 +470,11 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
 
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_and_config_from_MongoDB()
     )
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     return {
