@@ -196,25 +196,16 @@ class GridSearchStrategy(SearchStrategy):
         best_all_scores = None
 
         # Process all results
-        for idx, result in enumerate(all_results):
+        for result in all_results:
             params = result['params']
             cv_results_['params'].append(params)
 
             # Handle error case
             if result.get('test_scores') is None:
-                # Failed evaluation
-                for metric in scoring.keys():
-                    cv_results_[f'mean_test_{metric}'].append(0.0)
-                    cv_results_[f'std_test_{metric}'].append(0.0)
-                    if return_train_score:
-                        cv_results_[f'mean_train_{metric}'].append(0.0)
-                        cv_results_[f'std_train_{metric}'].append(0.0)
-                cv_results_['mean_test_score'].append(0.0)
-                cv_results_['std_test_score'].append(0.0)
-                cv_results_['mean_fit_time'].append(0.0)
-                cv_results_['std_fit_time'].append(0.0)
-                cv_results_['mean_score_time'].append(0.0)
-                cv_results_['std_score_time'].append(0.0)
+                # Failed evaluation - append 0.0 for all metrics
+                for key in cv_results_.keys():
+                    if key != 'params':
+                        cv_results_[key].append(0.0)
                 continue
             
             # Extract scores from result
