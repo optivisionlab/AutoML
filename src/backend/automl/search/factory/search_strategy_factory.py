@@ -53,33 +53,33 @@ class SearchStrategyFactory:
             return strategy_class()
     
     @classmethod
-    def register_strategy(cls, name: str, strategy_class: type):
+    def get_available_strategies(cls) -> list:
         """
-        Register a new search strategy with the factory.
-        
-        Args:
-            name: Name to register the strategy under
-            strategy_class: The strategy class to register
-        """
-        if not issubclass(strategy_class, SearchStrategy):
-            raise TypeError(f"Strategy class must inherit from SearchStrategy")
-        
-        cls._strategies[name.lower()] = strategy_class
-    
-    @classmethod
-    def get_available_strategies(cls) -> Dict[str, type]:
-        """
-        Get a dictionary of all available strategy.
+        Get a list of all available strategy patterns.
         
         Returns:
-            Dict mapping strategy names to their classes
+            List of strategy name patterns
         """
-        return cls._strategies.copy()
+        return ['grid*', 'genetic*/ga*', 'bayesian*/bayes*/skopt*']
     
     @classmethod
     def is_strategy_available(cls, strategy_name: str) -> bool:
         """
         Check if a strategy is available in the factory.
+        
+        Args:
+            strategy_name: Name of the strategy to check
+            
+        Returns:
+            bool: True if the strategy is available, False otherwise
+        """
+        strategy_name = strategy_name.lower().strip()
+        return (strategy_name.startswith('grid') or 
+                strategy_name.startswith('genetic') or 
+                strategy_name.startswith('ga') or
+                strategy_name.startswith('bayesian') or 
+                strategy_name.startswith('bayes') or
+              if a strategy is available in the factory.
         
         Args:
             strategy_name: Name of the strategy to check
