@@ -13,21 +13,6 @@ from automl.search.strategy.bayesian_search import BayesianSearchStrategy
 class SearchStrategyFactory:
     """Factory class for creating search strategy instances."""
     
-    # Registry of available search strategy
-    _strategies = {
-        'grid': GridSearchStrategy,
-        'gridsearch': GridSearchStrategy,
-        'grid_search': GridSearchStrategy,
-        'genetic': GeneticAlgorithm,
-        'ga': GeneticAlgorithm,
-        'GA': GeneticAlgorithm,
-        'genetic_algorithm': GeneticAlgorithm,
-        'bayesian': BayesianSearchStrategy,
-        'bayes': BayesianSearchStrategy,
-        'bayesian_search': BayesianSearchStrategy,
-        'skopt': BayesianSearchStrategy,
-    }
-    
     @classmethod
     def create_strategy(cls, strategy_name: str, config: Optional[Dict[str, Any]] = None) -> SearchStrategy:
         """
@@ -46,14 +31,19 @@ class SearchStrategyFactory:
         # Normalize strategy name to lowercase
         strategy_name = strategy_name.lower().strip()
         
-        # Get the strategy class
-        strategy_class = cls._strategies.get(strategy_name)
+        # Determine strategy class using startswith pattern matching
+        strategy_class = None
         
-        if strategy_class is None:
-            available_strategies = list(set(cls._strategies.values()))
+        if strategy_name.startswith('grid'):
+            strategy_class = GridSearchStrategy
+        elif strategy_name.startswith('genetic') or strategy_name.startswith('ga'):
+            strategy_class = GeneticAlgorithm
+        elif strategy_name.startswith('bayesian') or strategy_name.startswith('bayes') or strategy_name.startswith('skopt'):
+            strategy_class = BayesianSearchStrategy
+        else:
             raise ValueError(
                 f"Unknown search strategy: '{strategy_name}'. "
-                f"Available strategy: {', '.join(['grid', 'genetic', 'bayesian'])}"
+                f"Available strategies: grid*, genetic*/ga*, bayesian*/bayes*/skopt*"
             )
         
         # Create and return the strategy instance
