@@ -5,7 +5,7 @@ import os
 
 # Get the directory of the current file and construct the config path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(os.path.dirname(current_dir), "temp.config.yml")
+config_path = os.path.join(os.path.dirname(current_dir), ".config.yml")
 
 with open(config_path, "r") as f:
     data = yaml.safe_load(f)
