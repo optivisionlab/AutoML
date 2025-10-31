@@ -74,17 +74,11 @@ class SearchStrategyFactory:
             bool: True if the strategy is available, False otherwise
         """
         strategy_name = strategy_name.lower().strip()
-        return (strategy_name.startswith('grid') or 
-                strategy_name.startswith('genetic') or 
-                strategy_name.startswith('ga') or
-                strategy_name.startswith('bayesian') or 
-                strategy_name.startswith('bayes') or
-              if a strategy is available in the factory.
-        
-        Args:
-            strategy_name: Name of the strategy to check
-            
-        Returns:
-            bool: True if the strategy is available, False otherwise
-        """
-        return strategy_name.lower().strip() in cls._strategies
+        return (
+            strategy_name.startswith('grid') or
+            strategy_name.startswith('genetic') or
+            strategy_name.startswith('ga') or
+            strategy_name.startswith('bayesian') or
+            strategy_name.startswith('bayes') or
+            strategy_name.startswith('skopt')
+        )
