@@ -58,7 +58,7 @@ export default function Header() {
             const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
             return (
               <Link
-                key={idx}
+                key={item}
                 href={{
                   pathname: "/",
                   hash: hrefs[idx].replace("#", ""),

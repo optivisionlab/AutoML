@@ -13,9 +13,6 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift, SpectralClustering
-from sklearn.discriminant_analysis import StandardScaler
-from sklearn.calibration import LabelEncoder
 import uvicorn
 
 # Local Modules
@@ -30,11 +27,6 @@ MODEL_MAPPING = {
     "KNeighborsClassifier": KNeighborsClassifier,
     "LogisticRegression": LogisticRegression,
     "GaussianNB": GaussianNB,
-    "KMeans": KMeans,
-    "DBSCAN": DBSCAN,
-    "AgglomerativeClustering": AgglomerativeClustering,
-    "MeanShift": MeanShift,
-    "SpectralClustering": SpectralClustering
 }
 
 
@@ -61,6 +53,7 @@ async def train_models(request: Request):
             list_feature = config.get("list_feature")
             target = config.get("target")
             metric_sort = config.get("metric_sort")
+            algorithm_search = config.get("algorithm_search")
 
             data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"], list_feature)
             
@@ -78,8 +71,9 @@ async def train_models(request: Request):
             content['model'] = MODEL_MAPPING[content['model']]()
 
         try:
+            print("Training")
             # Tác vụ huấn luyện sử dụng nhóm luồng
-            best_model_id, best_model ,best_score, best_params, model_scores = await asyncio.to_thread(
+            _, best_model, best_score, _, model_scores = await asyncio.to_thread(
                 train_process,
                 data,
                 choose,
@@ -87,8 +81,14 @@ async def train_models(request: Request):
                 target,
                 metric_list,
                 metric_sort,
-                models
+                models,
+                algorithm_search
             )
+            
+            # Convert all numpy types to native Python types to avoid serialization issues
+            from automl.search.strategy.base import SearchStrategy
+            best_score = SearchStrategy.convert_numpy_types(best_score)
+            model_scores = SearchStrategy.convert_numpy_types(model_scores)
 
             # Tuần tư hóa mô hình thành byte
             model_bytes = pickle.dumps(best_model)
@@ -103,7 +103,7 @@ async def train_models(request: Request):
                 "best_score": best_score
             }
 
-            
+        
         except Exception as e:
             print(str(e))
             raise HTTPException(

@@ -23,6 +23,11 @@ NUMBER_WORKERS = int(os.getenv('NUMBER_WORKERS', 1))
 
 WORKERS = [f"http://{HOST}:{PORT + i}" for i in range(NUMBER_WORKERS)]
 
+# Load config
+with open('.config.yml', 'r', encoding='utf-8') as f:
+    CONFIG = yaml.safe_load(f)
+    WORKER_TIMEOUT = CONFIG.get('WORKER_TIMEOUT', 10000)
+
 
 def get_models():
     base_dir = "assets/system_models"
@@ -86,9 +91,8 @@ async def send_to_worker_async(worker_url, models_part, metric_list, id_data, co
             f"{worker_url}/train",
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=5000
+            timeout=WORKER_TIMEOUT
         )
-
         response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
         return response.json()
     

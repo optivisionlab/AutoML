@@ -52,7 +52,7 @@ from users.engine import handle_delete_user
 from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
-from automl.engine import get_config, train_process, get_data_and_config_from_MongoDB
+from automl.engine import get_data_and_config_from_MongoDB
 from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
@@ -73,18 +73,18 @@ from kafka_consumer import (
 from kafka_consumer import get_producer
 import asyncio
 
-# Lifespan Context Manager 
+# Lifespan Context Manager
 consumer_task: asyncio.Task | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Context Manager quản lý vòng đời (startup, shutdown) của server 
+    Context Manager quản lý vòng đời (startup, shutdown) của server
     Trước yield là startup, sau yield là shutdown
     """
     global consumer_task
 
-    # KHỞI TẠO VÀ START PRODUCER 
+    # KHỞI TẠO VÀ START PRODUCER
     await start_producer()
 
     # START CONSUMER
@@ -96,12 +96,12 @@ async def lifespan(app: FastAPI):
     # DỪNG PRODUCER
     print("[Server Lifespan] Shutdown resources...")
     await stop_producer()
-    
+
     # DỪNG CONSUMER TASK
     if consumer_task:
         consumer_task.cancel()
         try:
-            await consumer_task 
+            await consumer_task
         except asyncio.CancelledError:
             pass
 
@@ -137,6 +137,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.get("/")
 def read_root():
@@ -407,12 +408,7 @@ def upload_dataset(
     file_data: UploadFile = File(...),
 ):
 
-    # return upload_data(file_data, data_name, data_type, user_id)
-    try:
-        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
-        return dataset
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"{str(e)}")
+    return upload_data(file_data, data_name, data_type, user_id)
 
 
 # Update dataset
@@ -474,11 +470,11 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
 
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_and_config_from_MongoDB()
     )
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     return {
