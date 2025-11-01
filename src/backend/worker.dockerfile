@@ -1,6 +1,9 @@
 # Sử dụng một image nền tảng (base image)
 FROM python:3.10.12
 
+# setup system
+RUN apt-get update && apt-get install vim -y
+
 # Đặt thư mục làm việc trong container
 WORKDIR /app
 
@@ -8,8 +11,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Sao chép toàn bộ mã nguồn vào container
 COPY . .
+ENV PYTHONPATH="/app"
 
-# Lệnh mặc định khi container chạy, nhưng chúng ta sẽ ghi đè bằng Docker Compose
-CMD [ "uvicorn", "worker:app", "--host", "0.0.0.0" ]
+# Lệnh mặc định khi container chạy, nhưng sẽ ghi đè bằng Docker Compose
+CMD [ "python", "worker.py" ]

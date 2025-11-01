@@ -91,7 +91,7 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
@@ -122,7 +122,7 @@ def get_model():
     metric_list = data['metric_list']
     return models, metric_list
 
-
+# Không dùng được nữa
 def get_data_and_config_from_MongoDB():
     client = get_database()
     db = client["AutoML"]
@@ -144,7 +144,7 @@ def get_data_and_config_from_MongoDB():
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
@@ -158,13 +158,13 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid'):
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -269,7 +269,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid'):
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid_search'):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
@@ -369,7 +369,7 @@ def inference_model(job_id, file_data):
     }
 
 
-# Dùng với kafka
+# Dùng với kafka || Không còn dùng được nữa
 def train_json_from_job(job):
     job_id = job["job_id"]
     item = job["item"]
