@@ -9,4 +9,4 @@ COPY . .
 RUN pip install -r requirements.txt
 ENV PYTHONPATH="/app"
 
-# CMD ["python", "app.py"]
+CMD ["python", "app.py"]

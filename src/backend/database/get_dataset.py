@@ -1,9 +1,7 @@
 # Standard Libraries
-import io
 
 # Third-party Libraries
 import pandas as pd
-import numpy as np
 from bson.objectid import ObjectId
 from automl.v2.minio import minIOStorage
 from typing import List, Optional
@@ -19,7 +17,6 @@ def automatic_imputation(df: pd.DataFrame, list_features: Optional[List[str]] = 
         columns_to_impute = df_imputed.columns
     else:
         columns_to_impute = [col for col in list_features if col in df_imputed.columns]
-
 
     for column in columns_to_impute:
         if pd.api.types.is_numeric_dtype(df_imputed[column]):
@@ -76,3 +73,38 @@ class MongoDataLoader:
         
 
 dataset = MongoDataLoader()
+
+
+class MongoJob:
+    def __init__(self):
+        self.__db = get_database()
+        self.__job_collection = self.__db["tbl_Job"]
+
+    def update_failure(self, job_id: str, error_msg: str):
+            update_data = {
+                "$set": {
+                    "status": -1,
+                    "infor": error_msg
+                }
+            }
+            self.__job_collection.update_one({"job_id": job_id}, update_data)
+
+        
+    def update_success(self, job_id: str, id_user: str, final_result: dict, version: int = 1):
+        update_data = {
+            "$set": {
+                "best_model_id": final_result["best_model_id"],
+                "best_model": final_result["best_model"],
+                "model": {
+                    "bucket_name": "models",
+                    "object_name": f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl"
+                },
+                "best_params": final_result["best_params"],
+                "best_score": final_result["best_score"],
+                "orther_model_scores": final_result["model_scores"],
+                "status": 1
+            }
+        }
+        self.__job_collection.update_one({"job_id": job_id}, update_data)
+
+job_update = MongoJob()

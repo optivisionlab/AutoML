@@ -20,7 +20,7 @@ class InputRequest(BaseModel):
                             "B",
                             "..."
                         ],
-                        "algorithm_search": "",
+                        "search_algorithm": "",
                         "target": "Revenue"
                     }
                 }
@@ -35,3 +35,4 @@ class UserInfo(BaseModel):
 class DataInfo(BaseModel):
     id: str
     name: str
+

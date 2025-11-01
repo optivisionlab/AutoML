@@ -4,7 +4,6 @@ from fastapi import (
     File,
     Form,
     Query,
-    Depends,
     Response,
     HTTPException,
     status,
@@ -12,13 +11,11 @@ from fastapi import (
 from typing import List
 from io import BytesIO
 import pandas as pd
-from users.engine import checkLogin
 from automl.engine import (
     train_process,
     get_data_and_config_from_MongoDB,
     get_jobs,
     get_one_job,
-    push_train_job,
     train_json,
     update_activate_model
 )
@@ -52,16 +49,15 @@ from users.engine import handle_delete_user
 from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
-from automl.engine import get_data_and_config_from_MongoDB
+
 from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
-import threading
-from kafka_consumer import kafka_consumer_process
 from users.engine import get_current_admin
+
 # Lấy danh sách user
 from users.engine import get_list_user
 from contextlib import asynccontextmanager
@@ -70,44 +66,39 @@ from kafka_consumer import (
     start_producer,
     stop_producer
 )
-from kafka_consumer import get_producer
+from automl.v2.master import monitor_tasks
 import asyncio
 
-# Lifespan Context Manager
-consumer_task: asyncio.Task | None = None
 
+# Lifespan Context Manager 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Context Manager quản lý vòng đời (startup, shutdown) của server
     Trước yield là startup, sau yield là shutdown
     """
-    global consumer_task
 
-    # KHỞI TẠO VÀ START PRODUCER
+    # KHỞI TẠO VÀ START PRODUCER 
     await start_producer()
 
-    # START CONSUMER
-    print("[Server Lifespan] Start Consumer Task")
-    consumer_task = asyncio.create_task(kafka_consumer_process())
+    app.state.kafka_task = asyncio.create_task(kafka_consumer_process())
+    app.state.monitor_task = asyncio.create_task(monitor_tasks())
 
     yield # Server Fastapi accepts requests
 
     # DỪNG PRODUCER
     print("[Server Lifespan] Shutdown resources...")
     await stop_producer()
-
-    # DỪNG CONSUMER TASK
-    if consumer_task:
-        consumer_task.cancel()
-        try:
-            await consumer_task
-        except asyncio.CancelledError:
-            pass
+    
+    app.state.kafka_task.cancel()
+    app.state.monitor_task.cancel()
+    await asyncio.gather(app.state.kafka_task, app.state.monitor_task, return_exceptions=True)
+    print("[Master] Shutdown complete.")
 
 
 # default sync
 app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(SessionMiddleware, secret_key="!secret")
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -115,6 +106,7 @@ with open(file_path, "r") as f:
 
 config = Config(file_path)
 oauth = OAuth(config)
+master_api_url = f"http://{data['HOST_BACK_END']}:{data['PORT_BACK_END']}"
 
 # phương thức để đăng ký một dịch vụ OAuth
 CONF_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -125,14 +117,14 @@ oauth.register(
     client_secret=data["CLIENT_SECRET"],
     client_kwargs={
         "scope": "openid email profile",
-        "redirect_url": f"http://{data['HOST_BACK_END']}:{data['HOST_BACK_END']}/auth",
+        "redirect_url": f"{master_api_url}/auth",
     },
 )
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://{data['HOST_FRONT_END']}:{data['PORT_FRONT_END']}", "http://localhost:3000"],
+    allow_origins=[f"{master_api_url}", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -399,18 +391,6 @@ def get_data_from_mongodb_to_train(id: str):
     return JSONResponse(content=data)
 
 
-# Upload dataset
-@app.post("/upload-dataset")
-def upload_dataset(
-    user_id: str,
-    data_name: str = Form(...),
-    data_type: str = Form(...),
-    file_data: UploadFile = File(...),
-):
-
-    return upload_data(file_data, data_name, data_type, user_id)
-
-
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
@@ -443,13 +423,6 @@ async def delete_dataset(dataset_id: str):
 def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
-
-# Không dùng nữa => Gửi cả data không hiệu quả..
-# API push kafka
-# @app.post("/api-push-kafka")
-# def api_push_kafka(item: Item, user_id: str, data_id: str):
-#     producer = get_producer()
-#     return push_train_job(item, user_id, data_id, producer)
 
 
 @app.post("/training-file-local")
@@ -504,7 +477,8 @@ def api_activate_model(job_id, activate=0):
 from experiment import exp
 app.include_router(exp)
     
-
+from automl.v2.master import master
+app.include_router(master)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True)
+    uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True, log_level="info")

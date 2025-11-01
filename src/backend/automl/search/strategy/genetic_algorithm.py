@@ -1,3 +1,4 @@
+
 import copy
 import logging
 import os
@@ -249,6 +250,7 @@ class GeneticAlgorithm(SearchStrategy):
             
             return result
 
+
         except (ValueError, TypeError, KeyError):
             # Return zeros for all metrics when evaluation fails
             # Common errors: invalid parameters, type mismatches, missing keys
@@ -347,6 +349,7 @@ class GeneticAlgorithm(SearchStrategy):
         """
         mutated = individual.copy()
         
+
         # Adaptive mutation rate decreases as generations progress
         if max_generation and max_generation > 0:
             adaptive_rate = self.config['mutation_rate'] * (1 - generation / max_generation)
@@ -447,6 +450,7 @@ class GeneticAlgorithm(SearchStrategy):
         else:
             cv_folds = cv if isinstance(cv, int) else 5
         
+
         if n_jobs == -1:
             import multiprocessing
             n_jobs = multiprocessing.cpu_count()
@@ -457,6 +461,7 @@ class GeneticAlgorithm(SearchStrategy):
         # Only use parallel if we have enough work to justify the overhead
         # Rule: at least 2 work units per core AND population > 4
         if total_work >= (n_jobs * 2) and len(population) > 4:
+
             # Use the optimal number of jobs (don't use more cores than work units)
             optimal_jobs = min(n_jobs, len(population))
             
@@ -498,6 +503,7 @@ class GeneticAlgorithm(SearchStrategy):
             raise ValueError("Population size must be at least 2")
         if self.config['elite_size'] >= self.config['population_size']:
             self.config['elite_size'] = max(1, self.config['population_size'] // 4)
+
 
         # Create a log file path using the base class method
         log_file = self.create_log_file_path(model, 'genetic_algorithm')
@@ -557,6 +563,7 @@ class GeneticAlgorithm(SearchStrategy):
         # Execute the genetic algorithm main loop
         verbose = self.config.get('verbose', 1)
         if verbose > 0:
+
             logger.info(f"Starting Genetic Algorithm with {actual_population_size} individuals for {self.config['generation']} generations")
             if verbose > 1:
                 logger.info(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
