@@ -1,12 +1,11 @@
 # Kafka consumer setup
 import json
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import yaml
 import json
 from database.get_dataset import job_update
 import asyncio
 import time
-import logging
 
 # Local Modules
 from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job
@@ -50,7 +49,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
     Xử lý một job từ Kafka
     """
     try:
-        start = time.time()
+        start = time.perf_counter()
 
         #  Đăng ký task vào hàng đợi
         await setup_job_tasks(job_id, id_data, id_user, config)
@@ -58,9 +57,11 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         # Chờ job hoàn thành
         tracker = JOB_TRACKER[job_id]
         await tracker["completion_event"].wait()
+        start = time.perf_counter()
 
         # Job đã xong, thực hiện reduce
         final_result = reduce_results_for_job(job_id)
+        end = time.perf_counter()
 
         version = 1
         await asyncio.to_thread(
@@ -71,7 +72,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         )
 
         await asyncio.to_thread(job_update.update_success, job_id, id_user, final_result)
-        end = time.time()
+
         print(f"[Consumer Task] Completed job {job_id}: {end-start}")
         return {"job_id": job_id, "status": "success"}
         
@@ -118,7 +119,7 @@ async def kafka_consumer_process():
             tasks = []
             messages_in_batch = []
 
-            # VÒNG LẶP ĐỂ XỬ LÝ MESSAGE 
+            # VÒNG LẶP ĐỂ XỬ LÝ MESSAGE
             for tp, messages in batch.items():
                 for msg in messages:
                     job_id = msg.key.decode('utf-8')
