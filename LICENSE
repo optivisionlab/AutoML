@@ -1,21 +1,56 @@
-MIT License
+Creative Commons Attribution-NonCommercial 4.0 International License
+====================================================================
 
-Copyright (c) 2024 optivisionlab
+Copyright (c) 2024 OptivisionLab
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and associated documentation files (the "Software") are licensed
+under the Creative Commons Attribution-NonCommercial 4.0 International License
+(CC BY-NC 4.0).
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You are free to:
+- Share — copy and redistribute the material in any medium or format
+- Adapt — remix, transform, and build upon the material
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Under the following terms:
+- Attribution — You must give appropriate credit, provide a link to the license,
+  and indicate if changes were made. You may do so in any reasonable manner,
+  but not in any way that suggests the licensor endorses you or your use.
+- NonCommercial — You may not use the material for commercial purposes.
+- No additional restrictions — You may not apply legal terms or technological
+  measures that legally restrict others from doing anything the license permits.
+
+You should have received a copy of the license along with this work.
+If not, see <https://creativecommons.org/licenses/by-nc/4.0/>.
+
+--------------------------------------------------------------------
+Academic Usage and Citation
+--------------------------------------------------------------------
+This software is released for **academic and research purposes only**.
+When using this software or any derivative work, please cite the following paper:
+
+[Authors], "[Paper Title]," in *[Conference or Journal Name]*, 2025.
+DOI: [DOI or arXiv link if available]
+
+Commercial use, including but not limited to integration in products, services,
+or research conducted for commercial gain, is **strictly prohibited**
+without prior written consent from OptivisionLab.
+
+--------------------------------------------------------------------
+Disclaimer of Warranty and Liability
+--------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, OR AFFILIATED
+INSTITUTIONS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------
+Contact
+--------------------------------------------------------------------
+For questions or requests for commercial licensing, please contact:
+quang.do@fit-haui.edu.vn

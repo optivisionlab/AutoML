@@ -121,7 +121,7 @@ def save_job(input: InputRequest) -> str:
     }
 
     msg_job = {
-        "id_data": input.id_data,
+        "id_data": input.id_data, 
         "config": input.config,
         "id_user": input.id_user
     }

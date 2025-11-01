@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import os
+import logging
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 from skopt import gp_minimize
@@ -11,6 +12,10 @@ from skopt.utils import use_named_args
 from collections import Counter
 
 from automl.search.strategy.base import SearchStrategy
+
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 class BayesianSearchStrategy(SearchStrategy):
     """
@@ -60,17 +65,18 @@ class BayesianSearchStrategy(SearchStrategy):
         if averaging == 'auto':
             # Tự động phát hiện dựa trên cân bằng lớp
             if self._detect_class_imbalance(y):
-                print("Phát hiện mất cân bằng lớp. Sử dụng trung bình có trọng số (weighted).")
+                logger.info("Phát hiện mất cân bằng lớp. Sử dụng trung bình có trọng số (weighted).")
                 return 'weighted'
             else:
-                print("Phát hiện các lớp cân bằng. Sử dụng trung bình macro.")
+                logger.info("Phát hiện các lớp cân bằng. Sử dụng trung bình macro.")
                 return 'macro'
         elif averaging in ['macro', 'weighted']:
-            print(f"Sử dụng trung bình {averaging} theo cấu hình.")
+            logger.info(f"Sử dụng trung bình {averaging} theo cấu hình.")
             return averaging
         else:
-            print(f"Phương pháp tính trung bình '{averaging}' không hợp lệ. Mặc định dùng macro.")
+            logger.warning(f"Phương pháp tính trung bình '{averaging}' không hợp lệ. Mặc định dùng macro.")
             return 'macro'
+
 
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
@@ -83,8 +89,6 @@ class BayesianSearchStrategy(SearchStrategy):
             'acq_optimizer': 'sampling',  # Faster than 'lbfgs' for acquisition
             'scoring': 'accuracy',  # Hàm đánh giá mô hình
             'metrics': ['accuracy', 'precision', 'recall', 'f1'],
-            'log_dir': 'logs',  # Thư mục lưu log
-            'save_log': False,  # Disabled by default for speed
             'averaging': 'macro',  # Single averaging method is faster than 'both'
             'optimize_for': 'auto',  # 'auto', 'macro', 'weighted' 
             'imbalance_threshold': 0.3,  # Threshold for detecting class imbalance (auto mode)
@@ -117,13 +121,6 @@ class BayesianSearchStrategy(SearchStrategy):
         """
         self.set_config(**kwargs)
 
-        # Tạo thư mục log nếu cần
-        if self.config['save_log']:
-            log_dir = self.config['log_dir']
-            os.makedirs(log_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_name = model.__class__.__name__
-            log_file = os.path.join(log_dir, f'bayesian_search_{model_name}_{timestamp}.csv')
 
         # Chuyển đổi param_grid thành danh sách các dimension
         search_space = []
@@ -173,7 +170,8 @@ class BayesianSearchStrategy(SearchStrategy):
         if optimize_for == 'auto':
             optimize_for = 'weighted' if self._detect_class_imbalance(y) else 'macro'
             if self.config.get('verbose', 1) > 0:
-                print(f"Auto-detected optimization target: {optimize_for}")
+                logger.info(f"Auto-detected optimization target: {optimize_for}")
+
 
         # Định nghĩa hàm mục tiêu
         @use_named_args(search_space)
@@ -306,15 +304,15 @@ class BayesianSearchStrategy(SearchStrategy):
                 
                 # In thông tin ra console với cả hai loại  
                 if self.config.get('verbose', 1) > 0:
-                    print(f"Lần lặp {iteration}/{self.config['n_calls']}: ")
-                    print(f"  Độ chính xác={metrics.get('accuracy', 0.0):.4f}")
-                    print(f"  Macro   - P={metrics.get('precision_macro', 0.0):.4f}, "
+                    logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: ")
+                    logger.info(f"  Độ chính xác={metrics.get('accuracy', 0.0):.4f}")
+                    logger.info(f"  Macro   - P={metrics.get('precision_macro', 0.0):.4f}, "
                           f"R={metrics.get('recall_macro', 0.0):.4f}, "
                           f"F1={metrics.get('f1_macro', 0.0):.4f}")
-                    print(f"  Weighted- P={metrics.get('precision_weighted', 0.0):.4f}, "
+                    logger.info(f"  Weighted- P={metrics.get('precision_weighted', 0.0):.4f}, "
                           f"R={metrics.get('recall_weighted', 0.0):.4f}, "
                           f"F1={metrics.get('f1_weighted', 0.0):.4f}")
-                    print(f"  Đang tối ưu cho: {optimize_for}")
+                    logger.info(f"  Đang tối ưu cho: {optimize_for}")
                 
             else:
                 # Phương pháp averaging đơn
@@ -325,7 +323,7 @@ class BayesianSearchStrategy(SearchStrategy):
                 
                 # In thông tin ra console
                 if self.config.get('verbose', 1) > 0:
-                    print(f"Lần lặp {iteration}/{self.config['n_calls']}: "
+                    logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: "
                           f"Độ chính xác={metrics.get('accuracy', 0.0):.4f}, "
                           f"Precision={record.get('precision', 0.0):.4f}, "
                           f"Recall={record.get('recall', 0.0):.4f}, "
@@ -371,20 +369,17 @@ class BayesianSearchStrategy(SearchStrategy):
                 # Check if no improvement for patience iterations
                 recent_scores = best_score_history[-early_stopping_patience:]
                 if len(set(recent_scores)) == 1:  # No improvement
-                    print(f"\n🛑 Early stopping at iteration {iteration} (no improvement for {early_stopping_patience} iterations)")
+                    logger.info(f"Early stopping at iteration {iteration} (no improvement for {early_stopping_patience} iterations)")
                     return True  # This will stop gp_minimize
                 
                 # Check convergence threshold
                 if len(best_score_history) > 1:
                     recent_improvement = best_score_history[-1] - best_score_history[-2]
                     if abs(recent_improvement) < convergence_threshold:
-                        print(f"\n✓ Convergence detected at iteration {iteration} (improvement < {convergence_threshold:.4f})")
+
+                        logger.info(f"Convergence detected at iteration {iteration} (improvement < {convergence_threshold:.4f})")
                         return True
 
-            # Lưu log sau mỗi iteration nếu được yêu cầu
-            if self.config['save_log']:
-                df = pd.DataFrame(search_history)
-                df.to_csv(log_file, index=False)
 
         # Lọc kwargs để chỉ giữ các tham số hợp lệ cho gp_minimize
         # Loại bỏ các tham số của SearchStrategy như 'scoring', 'cv', 'n_jobs', 'error_score'
@@ -453,7 +448,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # In thông báo về vị trí file log
         if self.config['save_log']:
-            print(f"\nĐã lưu log tìm kiếm vào: {log_file}")
+            logger.info(f"Đã lưu log tìm kiếm")
 
         # Convert all numpy types in cv_results_ to native Python types
         cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)

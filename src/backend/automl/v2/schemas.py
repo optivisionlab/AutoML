@@ -20,8 +20,8 @@ class InputRequest(BaseModel):
                             "B",
                             "..."
                         ],
+                        "search_algorithm": "",
                         "target": "Revenue"
-
                     }
                 }
             ]

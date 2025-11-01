@@ -16,7 +16,6 @@ from automl.engine import (
     get_data_and_config_from_MongoDB,
     get_jobs,
     get_one_job,
-    push_train_job,
     train_json,
     update_activate_model
 )
@@ -50,6 +49,7 @@ from users.engine import handle_delete_user
 from users.engine import handle_contact
 from users.engine import handle_update_user
 import pathlib
+
 from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
@@ -57,17 +57,18 @@ from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
 from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
 from users.engine import get_current_admin
+
 # Lấy danh sách user
 from users.engine import get_list_user
 from contextlib import asynccontextmanager
 from kafka_consumer import (
     kafka_consumer_process,
     start_producer,
-    stop_producer,
-    get_producer
+    stop_producer
 )
 from automl.v2.master import monitor_tasks
 import asyncio
+
 
 # Lifespan Context Manager 
 @asynccontextmanager
@@ -96,6 +97,7 @@ async def lifespan(app: FastAPI):
 
 # default sync
 app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(SessionMiddleware, secret_key="!secret")
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -436,13 +438,6 @@ async def delete_dataset(dataset_id: str):
 def get_list_data_user():
     list_data = get_user_data_list()
     return list_data
-
-# Không dùng nữa => Gửi cả data không hiệu quả..
-# API push kafka
-# @app.post("/api-push-kafka")
-# def api_push_kafka(item: Item, user_id: str, data_id: str):
-#     producer = get_producer()
-#     return push_train_job(item, user_id, data_id, producer)
 
 
 @app.post("/training-file-local")

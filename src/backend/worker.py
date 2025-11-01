@@ -17,7 +17,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-
 from automl.engine import train_process
 from database.get_dataset import dataset
 
@@ -56,6 +55,7 @@ MODEL_MAPPING = {
     "GaussianNB": GaussianNB
 }
 
+
 # =========================================================================
 # QUẢN LÝ CACHE (LRU)
 # =========================================================================
@@ -79,7 +79,7 @@ async def get_data_with_cache(id_data: str, list_feature: list):
         CACHE_ACCESS_ORDER.remove(id_data)
         CACHE_ACCESS_ORDER.append(id_data)
         return DATASET_CACHE[id_data]
-    
+
     # Cache MISS
     data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
 
@@ -106,6 +106,7 @@ async def _execute_single_training_task(task: dict):
         id_data = task["id_data"]
         config = task["config"]
         list_feature = config.get("list_feature")
+        search_algorithm = config.get("search_algorithm", "grid_search")
 
         data, features = await get_data_with_cache(id_data, list_feature)
         model_info = task["model_info"]
@@ -124,7 +125,8 @@ async def _execute_single_training_task(task: dict):
             config.get("target"),
             task["metrics"],
             config.get("metric_sort"),
-            models_to_train
+            models_to_train,
+            search_algorithm
         )
 
         model_bytes = pickle.dumps(best_model_obj)

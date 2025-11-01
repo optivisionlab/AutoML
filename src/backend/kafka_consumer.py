@@ -72,7 +72,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
 
         await asyncio.to_thread(job_update.update_success, job_id, id_user, final_result)
         end = time.time()
-        logging.error(f"[Consumer Task] Completed job {job_id}: {end-start}")
+        logging.info(f"[Consumer Task] Completed job {job_id}: {end-start}")
         return {"job_id": job_id, "status": "success"}
         
     except Exception as e:
@@ -145,7 +145,7 @@ async def kafka_consumer_process():
                     fail_count += 1
                 else:
                     success_count += 1
-            logging.error(f"[Consumer] Batch complete")
+            logging.info(f"[Consumer] Batch complete")
 
             offsets_to_commit = {}
             for tp, messages in batch.items():
