@@ -440,7 +440,7 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "orther_model_scores": model_scores,
     }
 
-
+# Không còn sử dụng được, do data đã được lưu trên HCloud
 @app.post("/training-file-mongodb")
 def api_train_mongo():
     data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
