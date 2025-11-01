@@ -7,6 +7,7 @@ import yaml
 import signal
 
 import httpx
+import uvicorn
 from fastapi import FastAPI
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -258,7 +259,7 @@ async def check_for_work():
 async def ping():
     return {"status": "OK"}
 
-import uvicorn
+
 WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
 WORKER_PORT = int(os.getenv('WORKER_PORT', 8000)) 
 
