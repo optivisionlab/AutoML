@@ -2,9 +2,12 @@ import pickle
 import base64
 import asyncio
 import os
+import logging
+import yaml
+import signal
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
@@ -18,7 +21,29 @@ from automl.engine import train_process
 from database.get_dataset import dataset
 
 
+
+# Load file .env
 load_dotenv()
+
+# Load file .config.yml
+def load_configuration(config_path):
+    if not os.path.exists(config_path):
+        logging.error("Not found file")
+        return None
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as file:
+            config = yaml.safe_load(file)
+            return config
+    except yaml.YAMLError as e:
+        logging.error(f"Invalid file {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Error {str(e)}")
+        return None
+    
+config = load_configuration('.config.yml')
+
 
 # ÁNH XẠ MÔ HÌNH
 MODEL_MAPPING = {
@@ -90,7 +115,6 @@ async def _execute_single_training_task(task: dict):
             }
         }
 
-        print("training...")
         best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
             train_process,
             data,
@@ -127,37 +151,75 @@ async def _execute_single_training_task(task: dict):
 # =========================================================================
 async def polling_loop(client: httpx.AsyncClient):
     # Lấy ID duy nhất của worker
-    master_url = f"http://{os.getenv('HOST_BACK_END', '0.0.0.0')}:{int(os.getenv('PORT_BACK_END', 8000))}"
+    master_url = None
+    if config is not None:
+        try:
+            host = config['HOST_BACK_END']
+            port = config['PORT_BACK_END']
+
+            if host == "::":
+                host = "[::]"
+
+            master_url = f"http://{host}:{port}"
+        except KeyError as e:
+            logging.error(f"Missing important configuration in .config.yml: {str(e)}")
+        except TypeError as e:
+            logging.error(f"Configuration value is not valid {str(e)}")
+
+    if not master_url:
+        logging.critical("Master URL does not exist. Worker will be shut down")
+        os.kill(os.getpid(), signal.SIGTERM)
+        return
+
     while True:
+        try:
+            await WAKE_UP_EVENT.wait()
+
+        except asyncio.CancelledError:
+            print(f"[Worker] 'wait()' was cancelled. Worker will be shut down")
+            raise
+        except Exception as e:
+            logging.error(f"[Worker] Error when wake up: {str(e)}")
+            await asyncio.sleep(60)
+            continue
+
+        
         try:
             # Lấy id data dùng gần nhất
             cached_hint = CACHE_ACCESS_ORDER[-1] if CACHE_ACCESS_ORDER else None
+
+            worker_url = os.getenv('WORKER_URL')
+            if not worker_url:
+                logging.error("Error: Missing 'WORKER_URL'. Worker will be shut down")
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+
 
             # Gọi API "GET TASK" của Master
             response = await client.get(
                 f"{master_url}/task/get",
                 params={
                     "cached_id_data": cached_hint,
-                    "worker_url": f"http://{os.getenv('WORKER_HOST', '0.0.0.0')}:{int(os.getenv('WORKER_BASE_PORT', 4000))}"
+                    "worker_url": worker_url
                 },
-                timeout=10.0
+                timeout=5.0
             )
             task = response.json().get("task")
 
             if task:
+                print(f"[Worker] Received task. Training")
                 result = await _execute_single_training_task(task)
                 await client.post(f"{master_url}/task/submit", json=result)
             else:
+                print(f"[Worker] No tasks. Return to sleep")
                 WAKE_UP_EVENT.clear()
-                # DATASET_CACHE.clear() # sẽ mất thời gian load dataset nếu là dataset đang dùng.
-                await asyncio.wait_for(WAKE_UP_EVENT.wait(), timeout=180)
 
         except httpx.RequestError as e:
             print(f"[Worker] Cannot connect to Master")
             await asyncio.sleep(30)
             continue
         except Exception as e:
-            print(f"[Worker] Error in polling loop: {e}. Stopping poll")
+            print(f"[Worker] Fatal error while retrieving task: {e}. Retrying...")
             await asyncio.sleep(60)
             continue
 
@@ -168,28 +230,37 @@ async def polling_loop(client: httpx.AsyncClient):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global POLLING_CLIENT
-    POLLING_CLIENT = httpx.AsyncClient(timeout=None)
+    POLLING_CLIENT = httpx.AsyncClient()
     polling_task = asyncio.create_task(polling_loop(POLLING_CLIENT))
     yield
     polling_task.cancel()
-    await POLLING_CLIENT.aclose()
+    try:
+        await polling_task
+    except asyncio.CancelledError:
+        print("Polling Task confirmed cancelled")
+    except Exception as e:
+        logging.error(f"Polling Task reports error when shutting down: {str(e)}")
+    finally:
+        if POLLING_CLIENT:
+            await POLLING_CLIENT.aclose()
+
 
 
 app = FastAPI(title="Worker", lifespan=lifespan)
 
-@app.post("/control/check-for-work")
+@app.get("/check-for-work")
 async def check_for_work():
     WAKE_UP_EVENT.set()
-    return {"status": "started"}
+    return {"status": "starting"}
 
 
-@app.get("/health/ping")
+@app.get("/health")
 async def ping():
-    return {"status": "pong"}
+    return {"status": "OK"}
 
 import uvicorn
 WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
-WORKER_PORT = int(os.getenv('WORKER_BASE_PORT', 8000)) 
+WORKER_PORT = int(os.getenv('WORKER_PORT', 8000)) 
 
 if __name__ == "__main__":
     uvicorn.run("worker:app", host=WORKER_HOST, port=WORKER_PORT, reload=True)

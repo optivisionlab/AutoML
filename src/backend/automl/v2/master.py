@@ -8,15 +8,14 @@ import itertools
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
+
 
 load_dotenv()
 
 NUMBER_WORKERS = int(os.getenv('NUMBER_WORKERS', 1))
-WORKER_HOST = os.getenv('WORKER_HOST', 'localhost')
-WORKER_BASE_PORT = int(os.getenv('WORKER_BASE_PORT', 8000))
 WORKER_LIST = os.getenv("WORKER_LIST", '')
-# WORKERS = [f"http://{WORKER_HOST}:{WORKER_BASE_PORT + i}" for i in range(NUMBER_WORKERS)]
+
 WORKERS = [f"{WORKER_LIST.split(',')[i]}" for i in range(NUMBER_WORKERS)]
 
 
@@ -47,7 +46,7 @@ def get_models():
 GLOBAL_TASK_QUEUE = asyncio.PriorityQueue()
 
 # Sổ theo dõi tiến độ Job
-# Key: job_id, Value: Dict chứa thông tin job
+# Key: job_id, Value: dict chứa thông tin job
 JOB_TRACKER: dict[str, dict] = {}
 
 # Sổ theo dõi các Task đang được giao (Dùng cho Heartbeat)
@@ -96,15 +95,13 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
     if was_queue_empty and tasks_added > 0:
         async with httpx.AsyncClient() as client:
             signal_tasks = [
-                client.post(f"{worker_url}/control/check-for-work", timeout=5.0)
-                for worker_url in WORKERS
+                client.get(f"{worker}/check-for-work", timeout=5.0)
+                for worker in WORKERS
             ]
             results = await asyncio.gather(*signal_tasks, return_exceptions=True)
             for i, res in enumerate(results):
                 if isinstance(res, Exception):
                     logging.warning(f"[{job_id}] Failed to send signal to worker {WORKERS[i]}: {res}")
-            logging.info(f"[{job_id}] Signal broadcast complete")
-
 
 
 def reduce_results_for_job(job_id: str):
@@ -150,18 +147,18 @@ async def handle_task_result_submission(result: dict):
     job_id = result.get("job_id")
     model_name = result.get("model_name")
     if not job_id or not model_name:
-        logging.error(f"Received invalid result (missing job_id or model_name): {result}")
-        return {"status": "invalid_result"}
+        logging.error(f"Received invalid result: {result}")
+        return {"status": "Invalid result"}
     
     task_id = f"{job_id}_{model_name}"
 
     if task_id in ACTIVE_TASKS:
-        del ACTIVE_TASKS[task_id]
+        ACTIVE_TASKS.pop(task_id, None)
     
     # Gửi kết quả cho JobTracker
     if not job_id or job_id not in JOB_TRACKER:
         logging.error(f"Received result for unknown job: {job_id}")
-        return {"status": "failure"}
+        return {"status": "Failure"}
 
     tracker = JOB_TRACKER[job_id]
     
@@ -170,7 +167,7 @@ async def handle_task_result_submission(result: dict):
         tracker["completed_tasks"] += 1
 
         if tracker["completed_tasks"] >= tracker["total_tasks"]:
-            logging.info(f"[{job_id}] All tasks completed")
+            print(f"[{job_id}] All tasks completed")
             tracker["completion_event"].set()
 
     return {"status": "success"}
@@ -195,7 +192,7 @@ async def get_prioritized_task(worker_url: str, cached_id_data: str | None = Non
             await GLOBAL_TASK_QUEUE.put(item)
             
         if found_local_task:
-            logging.info(f"[Master] Data Locality HIT for worker {worker_url} on data {cached_id_data}")
+            print(f"[Master] Data Locality HIT for worker {worker_url} on data {cached_id_data}")
 
     # Lấy task có ưu tiên cao nhất
     try:
@@ -219,41 +216,55 @@ async def get_prioritized_task(worker_url: str, cached_id_data: str | None = Non
 # =========================================================================
 # LOGIC HEARTBEAT
 # =========================================================================
+WORKER_REGISTRY = {}
+
 async def monitor_tasks():
     """
     Chạy nền để kiểm tra các task bị kẹt và worker bị chết.
+    Chạy ở lifespan trong app.py
     """
-    while True:
-        await asyncio.sleep(1200) # Kiểm tra mỗi 10 phút
+    async with httpx.AsyncClient() as monitor_client:
+        while True:
+            await asyncio.sleep(TASK_TIMEOUT_SECONDS)
 
-        frozen_tasks = list(ACTIVE_TASKS.items())
-        current_time = time.time()
+            frozen_tasks = list(ACTIVE_TASKS.items())
+            current_time = time.time()
 
-        for task_id, task_info in frozen_tasks:
-            if (current_time - task_info["start_time"]) > TASK_TIMEOUT_SECONDS :
-                worker_url = task_info.get("worker_url")
-                if not worker_url:
+            for task_id, task_info in frozen_tasks:
+                if (current_time - task_info["start_time"]) <= TASK_TIMEOUT_SECONDS:
                     continue
 
-                logging.warning(f"[Monitor] Task {task_id} timed out. Checking worker {worker_url}")
+                dead_worker_url = task_info.get("worker_url")
+                if not dead_worker_url:
+                    continue
+
+                logging.warning(f"[Monitor] Task {task_id} timed out. Checking worker {dead_worker_url}") 
 
                 try:
-                    async with httpx.AsyncClient() as client:
-                        # Ping worker để kiểm tra
-                        await client.get(f"{worker_url}/health/ping", timeout=5.0)
-                    
-                    logging.info(f"[Monitor] Worker {worker_url} is alive but slow")
-                except (httpx.RequestError, httpx.TimeoutException):
-                    logging.error(f"[Monitor] Worker {worker_url} is DEAD. Re-queueing task {task_id}")
+                    # Ping worker để kiểm tra
+                    await monitor_client.get(f"{dead_worker_url}/health", timeout=5.0)
+                    print(f"[Monitor] Worker {dead_worker_url} is alive but slow")
 
-                    original_entry_count = task_info["entry_count"]
+                except (httpx.RequestError, httpx.TimeoutException):
+                    logging.error(f"[Monitor] Worker {dead_worker_url} is DEAD. Re-queueing task {task_id}")
+
+                    WORKER_REGISTRY.pop(dead_worker_url, None)
+
                     # Đẩy task trở lại hàng đợi (với ưu tiên cao nhất)
+                    original_entry_count = task_info["entry_count"]
                     await GLOBAL_TASK_QUEUE.put((0, original_entry_count, task_info["task_data"]))
                     
                     # Xóa khỏi danh sách đang theo dõi
-                    if task_id in ACTIVE_TASKS:
-                        del ACTIVE_TASKS[task_id]
+                    ACTIVE_TASKS.pop(task_id, None)
 
+                    for worker_url, info in WORKER_REGISTRY.items():
+                        if info.get('status') == 'idle':
+                            try:
+                                await monitor_client.get(f"{worker_url}/check-for-work", timeout=5.0)
+                                break
+                            except Exception as e:
+                                logging.error(f"[Monitor] Failed to wake up replacement worker {worker_url}: {e}")
+            
 
 
 # =========================================================================
@@ -262,12 +273,23 @@ async def monitor_tasks():
 master = APIRouter()
 
 @master.get("/task/get")
-async def api_get_task(request: Request, cached_id_data: str | None = None, worker_url: str | None = None):
+async def api_get_task(cached_id_data: str | None = None, worker_url: str | None = None):
+    if worker_url:
+        WORKER_REGISTRY[worker_url] = {
+            'status': 'idle'
+        }
+
     task = await get_prioritized_task(worker_url, cached_id_data)
+    if task and worker_url:
+        WORKER_REGISTRY[worker_url] = {
+            'status': 'working'
+        }
+
     return {"task": task}
 
 
 @master.post("/task/submit")
 async def api_submit_result(result: dict):
     status = await handle_task_result_submission(result)
+
     return status

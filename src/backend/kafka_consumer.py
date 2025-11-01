@@ -6,6 +6,7 @@ import json
 from database.get_dataset import job_update
 import asyncio
 import time
+import logging
 
 # Local Modules
 from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job
@@ -71,7 +72,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
 
         await asyncio.to_thread(job_update.update_success, job_id, id_user, final_result)
         end = time.time()
-        print(f"[Consumer Task] Completed job {job_id}: {end-start}")
+        logging.error(f"[Consumer Task] Completed job {job_id}: {end-start}")
         return {"job_id": job_id, "status": "success"}
         
     except Exception as e:
@@ -84,13 +85,13 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
     finally:
         # Dọn dẹp job
         if job_id in JOB_TRACKER:
-            del JOB_TRACKER[job_id]
+            JOB_TRACKER.pop(job_id, None)
 
 
 """ Hàm Consumer chạy tiến trình riêng """
 async def kafka_consumer_process():
     consumer = None
-    MAX_CONCURRENT_JOBS = 3
+    MAX_CONCURRENT_JOBS = 12
 
     try:
         # KHỞI TẠO VÀ START CONSUMER 
@@ -144,13 +145,16 @@ async def kafka_consumer_process():
                     fail_count += 1
                 else:
                     success_count += 1
-            print(f"[Consumer] Batch complete")
+            logging.error(f"[Consumer] Batch complete")
 
-            last_message_in_batch = messages_in_batch[-1]
-            tp = TopicPartition(last_message_in_batch.topic, last_message_in_batch.partition)
-            offset_to_commit = last_message_in_batch.offset + 1
-
-            await consumer.commit({tp: offset_to_commit})
+            offsets_to_commit = {}
+            for tp, messages in batch.items():
+                if messages:
+                    last_message_in_partition = messages[-1]
+                    offsets_to_commit[tp] = last_message_in_partition.offset + 1
+            
+            if offsets_to_commit:
+                await consumer.commit(offsets_to_commit)
 
     except asyncio.CancelledError:
         print("[Consumer Task] Task was cancelled gracefully.")

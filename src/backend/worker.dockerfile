@@ -14,5 +14,5 @@ RUN pip install -r requirements.txt
 COPY . .
 ENV PYTHONPATH="/app"
 
-# Lệnh mặc định khi container chạy, nhưng chúng ta sẽ ghi đè bằng Docker Compose
+# Lệnh mặc định khi container chạy, nhưng sẽ ghi đè bằng Docker Compose
 CMD [ "python", "worker.py" ]
