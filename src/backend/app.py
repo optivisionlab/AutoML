@@ -391,12 +391,28 @@ def get_data_from_mongodb_to_train(id: str):
     return JSONResponse(content=data)
 
 
+# Upload dataset
+@app.post("/upload-dataset")
+def upload_dataset(
+    user_id: str,
+    data_name: str = Form(...),
+    data_type: str = Form(...),
+    file_data: UploadFile = File(...),
+):
+
+    try:
+        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
+        return dataset
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"{str(e)}")
+
+
+
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
     dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    # return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
     try:
         result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
         return {
@@ -409,7 +425,6 @@ def update_dataset(
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
-    # return delete_dataset_by_id(dataset_id)
     try:
         result = delete_dataset_at_minio_by_id(dataset_id)
         return {
@@ -417,6 +432,7 @@ async def delete_dataset(dataset_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"{str(e)}")
+
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
