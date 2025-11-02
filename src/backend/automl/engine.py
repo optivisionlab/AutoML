@@ -15,6 +15,7 @@ from sklearn.metrics import make_scorer
 
 from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
+from automl.search.strategy.base import SearchStrategy
 from database.database import get_database
 
 np.random.seed(42)
@@ -97,15 +98,7 @@ def get_config(file):
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def get_model():
-    # Import model classes for eval to work
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.svm import SVC
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.naive_bayes import GaussianNB
-    
+def get_model():    
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -218,7 +211,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         )
         
         # Convert all numpy types to native Python types to avoid serialization issues
-        from automl.search.strategy.base import SearchStrategy
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
@@ -262,7 +254,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_params = best_params_model
     
     # Final conversion to ensure all return values are native Python types
-    from automl.search.strategy.base import SearchStrategy
     best_params = SearchStrategy.convert_numpy_types(best_params)
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
@@ -313,7 +304,6 @@ def train_json(item: Item, userId, id_data):
     job_id = str(uuid4())
 
     # Ensure all values are properly converted to native Python types before storing
-    from automl.search.strategy.base import SearchStrategy
     
     job = {
         "job_id": job_id,
@@ -440,7 +430,7 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-
+# Hàm này không dùng nx
 def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
 

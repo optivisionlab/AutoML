@@ -57,7 +57,6 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         # Chờ job hoàn thành
         tracker = JOB_TRACKER[job_id]
         await tracker["completion_event"].wait()
-        start = time.perf_counter()
 
         # Job đã xong, thực hiện reduce
         final_result = reduce_results_for_job(job_id)
