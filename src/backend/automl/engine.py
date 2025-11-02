@@ -14,8 +14,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics import make_scorer
 
 from automl.model import Item
-from automl.search.strategy.base import SearchStrategy
-from automl.search.factory.search_strategy_factory import SearchStrategyFactory
+from automl.search.factory import SearchStrategyFactory
 from database.database import get_database
 
 np.random.seed(42)
@@ -92,12 +91,21 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
-    return choose, list_feature, target, metric_list, metric_sort, models
+    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
 def get_model():
+    # Import model classes for eval to work
+    from sklearn.tree import DecisionTreeClassifier
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.svm import SVC
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.naive_bayes import GaussianNB
+    
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -114,7 +122,7 @@ def get_model():
     metric_list = data['metric_list']
     return models, metric_list
 
-
+# Không dùng được nữa
 def get_data_and_config_from_MongoDB():
     client = get_database()
     db = client["AutoML"]
@@ -136,9 +144,10 @@ def get_data_and_config_from_MongoDB():
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
 def get_data_config_from_json(file_content: Item):
@@ -149,12 +158,14 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm="grid_search"):
+
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -179,7 +190,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             else:
                 raise ValueError(f"Unknown metric: {metric}")
 
-
     # Use the factory to create the search strategy with configuration
     strategy_config = {
         'cv': 5,
@@ -188,13 +198,12 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         'error_score': "raise",
         'return_train_score': True
     }
-
+    
     try:
         search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
     except ValueError as e:
         print(f"Warning: {e}. Using default 'grid' search.")
         search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
-
 
     for model_id in range(len(models)):
         model_info = models[model_id]
@@ -207,11 +216,11 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             X=X_train,
             y=y_train
         )
-
+        
         # Convert all numpy types to native Python types to avoid serialization issues
+        from automl.search.strategy.base import SearchStrategy
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
-        best_all_scores_model = SearchStrategy.convert_numpy_types(best_all_scores_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
 
         # Get the best estimator with the best parameters
@@ -253,6 +262,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_params = best_params_model
     
     # Final conversion to ensure all return values are native Python types
+    from automl.search.strategy.base import SearchStrategy
     best_params = SearchStrategy.convert_numpy_types(best_params)
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
@@ -260,7 +270,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm):
+
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid_search'):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
@@ -274,9 +285,9 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose, list_feature, target, metric_list, metric_sort, models = get_config(data_file_config)
+    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
     return best_model_id, best_model, best_score, best_params, model_scores
 
@@ -289,26 +300,29 @@ def serialize_mongo_doc(doc):
 
 # Không dùng kafka
 def train_json(item: Item, userId, id_data):
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_config_from_json(item)
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     data_name, user_name = get_dataset_and_user_info(id_data, userId)
     model_data = pickle.dumps(best_model)
     job_id = str(uuid4())
 
+    # Ensure all values are properly converted to native Python types before storing
+    from automl.search.strategy.base import SearchStrategy
+    
     job = {
         "job_id": job_id,
-        "best_model_id": best_model_id,
+        "best_model_id": SearchStrategy.convert_numpy_types(best_model_id),
         "best_model": str(best_model),
         "model": model_data,
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
+        "best_params": SearchStrategy.convert_numpy_types(best_params),
+        "best_score": SearchStrategy.convert_numpy_types(best_score),
+        "orther_model_scores": SearchStrategy.convert_numpy_types(model_scores),
         "config": item.config,
         "data": {
             "id": id_data,
@@ -357,7 +371,7 @@ def inference_model(job_id, file_data):
     }
 
 
-# Dùng với kafka
+# Dùng với kafka || Không còn dùng được nữa
 def train_json_from_job(job):
     job_id = job["job_id"]
     item = job["item"]
@@ -368,12 +382,12 @@ def train_json_from_job(job):
     if existing_job.get("status") == 1:
         return JSONResponse(content={"message": "Job đã được train", "job_id": job_id})
 
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_config_from_json(Item(**item))
     )
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     model_data = pickle.dumps(best_model)
@@ -426,7 +440,7 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-# Không dùng được nữa => Đổi từ kafka-python --> aiokafka.
+
 def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
 

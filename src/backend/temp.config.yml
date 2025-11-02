@@ -8,3 +8,4 @@
  KAFKA_SERVER: "localhost:9092"
  KAFKA_TOPIC: "abc"
  MONGODB_CONNECT: "mongodb://localhost:27017/"
+ WORKER_TIMEOUT: 10000

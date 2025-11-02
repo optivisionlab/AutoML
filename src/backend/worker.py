@@ -21,7 +21,6 @@ from automl.engine import train_process
 from database.get_dataset import dataset
 
 
-
 # Load file .env
 load_dotenv()
 

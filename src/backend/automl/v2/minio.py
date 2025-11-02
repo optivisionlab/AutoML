@@ -16,6 +16,7 @@ from minio import Minio
 from minio.error import S3Error
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
 # Truy cập các biến môi trường

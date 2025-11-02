@@ -1,8 +1,6 @@
 from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
-from datetime import datetime
-import os
 import logging
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
@@ -12,7 +10,6 @@ from skopt.utils import use_named_args
 from collections import Counter
 
 from automl.search.strategy.base import SearchStrategy
-
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -77,7 +74,6 @@ class BayesianSearchStrategy(SearchStrategy):
             logger.warning(f"Phương pháp tính trung bình '{averaging}' không hợp lệ. Mặc định dùng macro.")
             return 'macro'
 
-
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
         """Ghi đè cấu hình mặc định để thêm các tham số cho tối ưu hóa Bayesian"""
@@ -121,6 +117,8 @@ class BayesianSearchStrategy(SearchStrategy):
         """
         self.set_config(**kwargs)
 
+        # Create a log file path using the base class method
+        log_file = self.create_log_file_path(model, 'bayesian_search')
 
         # Chuyển đổi param_grid thành danh sách các dimension
         search_space = []
@@ -171,7 +169,6 @@ class BayesianSearchStrategy(SearchStrategy):
             optimize_for = 'weighted' if self._detect_class_imbalance(y) else 'macro'
             if self.config.get('verbose', 1) > 0:
                 logger.info(f"Auto-detected optimization target: {optimize_for}")
-
 
         # Định nghĩa hàm mục tiêu
         @use_named_args(search_space)
@@ -376,10 +373,16 @@ class BayesianSearchStrategy(SearchStrategy):
                 if len(best_score_history) > 1:
                     recent_improvement = best_score_history[-1] - best_score_history[-2]
                     if abs(recent_improvement) < convergence_threshold:
-
                         logger.info(f"Convergence detected at iteration {iteration} (improvement < {convergence_threshold:.4f})")
                         return True
 
+            # Lưu log sau mỗi iteration nếu được yêu cầu
+            if self.config['save_log']:
+                df = pd.DataFrame(search_history)
+                df.to_csv(log_file, index=False)
+            
+            # Return False to continue optimization (True would stop)
+            return False
 
         # Lọc kwargs để chỉ giữ các tham số hợp lệ cho gp_minimize
         # Loại bỏ các tham số của SearchStrategy như 'scoring', 'cv', 'n_jobs', 'error_score'
@@ -448,7 +451,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # In thông báo về vị trí file log
         if self.config['save_log']:
-            logger.info(f"Đã lưu log tìm kiếm")
+            logger.info(f"Đã lưu log tìm kiếm vào: {log_file}")
 
         # Convert all numpy types in cv_results_ to native Python types
         cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)

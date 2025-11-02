@@ -52,7 +52,7 @@ JOB_TRACKER: dict[str, dict] = {}
 # Sổ theo dõi các Task đang được giao (Dùng cho Heartbeat)
 # Key: task_id, Value: dict chứa thông tin task
 ACTIVE_TASKS: dict[str, dict] = {}
-TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 600)) # 10 phút
+TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 300)) # 10 phút
 
 # Bộ đếm TIE-BREAKER cho PriorityQueue
 task_counter = itertools.count()

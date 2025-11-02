@@ -1,7 +1,9 @@
 
 import copy
 import logging
+import os
 import random
+import yaml
 from datetime import datetime
 from typing import List, Dict, Any, Tuple
 
@@ -21,30 +23,40 @@ class GeneticAlgorithm(SearchStrategy):
     """Genetic Algorithm implementation for hyperparameter optimization"""
 
     @staticmethod
+    def _load_ga_config() -> Dict[str, Any]:
+        """Load genetic algorithm config from the YAML file."""
+        # Get the directory where this file is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(current_dir, 'genetic_algorithm_config.yml')
+        
+        # Load from the YAML file if it exists
+        ga_config = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    ga_config = yaml.safe_load(f) or {}
+            except Exception as e:
+                logger.warning(f"Failed to load GA config from {config_file}: {e}")
+        
+        return ga_config
+    
+    @staticmethod
     def get_default_config() -> Dict[str, Any]:
+        """Get the default configuration by loading from a file."""
         config = SearchStrategy.get_default_config()
-        config.update({
-            'population_size': 10,  # Tiny for extreme speed
-            'generation': 5,  # Very few generations
-            'mutation_rate': 0.2,  # Higher for faster exploration
-            'crossover_rate': 0.9,  # Very high crossover
-            'elite_size': 2,  # Minimal elite
-            'tournament_size': 2,  # Minimal tournament
-            'early_stopping_patience': 2,  # Ultra aggressive early stopping
-            'early_stopping_enabled': True,
-            'parallel_evaluation': True,
-            'adaptive_population': True,  # Dynamic population sizing
-            'min_population': 4,  # Very small minimum
-            'max_population': 12,  # Small maximum
-            'convergence_threshold': 0.002,  # Less strict for faster convergence
-            'use_global_cache': True,  # Cache evaluations across generations
-            'max_cache_size': 1000,  # Larger cache
-            'fast_mode': True,  # Enable all speed optimizations
-            'n_initial_random': 3,  # Minimal random evaluations
-            'ultra_fast_mode': True,  # New: Enable ultra fast mode
-            'skip_diversity_check': True,  # Skip diversity calculations for speed
-            'simple_crossover': True,  # Use simpler crossover for speed
-        })
+        
+        # Load GA-specific config from the YAML file
+        ga_config = GeneticAlgorithm._load_ga_config()
+        
+        # Only use hardcoded fallback if YAML file completely missing or empty
+        if not ga_config:
+            logger.warning("GA config file not found or empty, using minimal fallback defaults")
+            ga_config = {
+                'population_size': 10,
+                'generation': 5,
+            }
+        
+        config.update(ga_config)
         return config
 
     def __init__(self, **kwargs):
@@ -88,7 +100,7 @@ class GeneticAlgorithm(SearchStrategy):
         return encoded_grid
 
     def _decode_individual(self, individual: Dict[str, float]) -> Dict[str, Any]:
-        """Decode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       an individual from genetic representation to actual parameter values with caching."""
+        """Decode an individual from genetic representation to actual parameter values with caching."""
         # Check cache first
         cache_key = self._make_hashable(individual)
         if cache_key in self._decode_cache:

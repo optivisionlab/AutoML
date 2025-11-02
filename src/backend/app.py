@@ -74,9 +74,10 @@ import asyncio
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Context Manager quản lý vòng đời (startup, shutdown) của server 
+    Context Manager quản lý vòng đời (startup, shutdown) của server
     Trước yield là startup, sau yield là shutdown
     """
+
     # KHỞI TẠO VÀ START PRODUCER 
     await start_producer()
 
@@ -128,6 +129,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.get("/")
 def read_root():
@@ -398,7 +400,6 @@ def upload_dataset(
     file_data: UploadFile = File(...),
 ):
 
-    # return upload_data(file_data, data_name, data_type, user_id)
     try:
         dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
         return dataset
@@ -406,12 +407,12 @@ def upload_dataset(
         raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
+
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
     dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
 ):
-    # return update_dataset_by_id(dataset_id, data_name, data_type, file_data)
     try:
         result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
         return {
@@ -424,7 +425,6 @@ def update_dataset(
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str):
-    # return delete_dataset_by_id(dataset_id)
     try:
         result = delete_dataset_at_minio_by_id(dataset_id)
         return {
@@ -432,6 +432,7 @@ async def delete_dataset(dataset_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"{str(e)}")
+
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
@@ -455,14 +456,14 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "orther_model_scores": model_scores,
     }
 
-
+# Không còn sử dụng được, do data đã được lưu trên HCloud
 @app.post("/training-file-mongodb")
 def api_train_mongo():
-    data, choose, list_feature, target, metric_list, metric_sort, models = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_and_config_from_MongoDB()
     )
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models
+        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
     )
 
     return {
