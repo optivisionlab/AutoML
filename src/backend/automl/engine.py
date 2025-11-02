@@ -154,7 +154,7 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, algorithm_search="grid_search"):
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm="grid_search"):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -190,7 +190,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
     }
 
     try:
-        search_strategy = SearchStrategyFactory.create_strategy(algorithm_search, strategy_config)
+        search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
     except ValueError as e:
         print(f"Warning: {e}. Using default 'grid' search.")
         search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
@@ -260,10 +260,10 @@ def training(models, metric_list, metric_sort, X_train, y_train, algorithm_searc
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, algorithm_search):
+def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm):
     X_train, y_train = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train, algorithm_search)
+                                                                                X_train, y_train, search_algorithm)
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
