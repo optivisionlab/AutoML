@@ -1,0 +1,4 @@
+Algorithm,Best Score,Accuracy,F1,Time (s),Best Params
+Genetic Algorithm,0.7503866104156925,0.7515466631565092,0.7503866104156925,12.031737089157104,"{'n_estimators': 150, 'max_depth': 10, 'min_samples_split': 2}"
+Grid Search,0.7515466631565092,0.7515466631565092,0.7503866104156925,14.304959058761597,"{'n_estimators': 150, 'max_depth': 10, 'min_samples_split': 2}"
+Bayesian Search,0.7577771927515248,0.7577771927515248,0.7563932193803716,1.5157523155212402,"{'n_estimators': 115, 'max_depth': None, 'min_samples_split': 4}"

@@ -493,6 +493,11 @@ class GeneticAlgorithm(SearchStrategy):
         # Update the algorithm's configuration with any provided keyword arguments
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
         
+        # Set random seed for reproducibility
+        if self.config.get('random_state') is not None:
+            random.seed(self.config['random_state'])
+            np.random.seed(self.config['random_state'])
+        
         # Validate configuration
         if self.config['population_size'] < 2:
             raise ValueError("Population size must be at least 2")
