@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import os
 import yaml
 import time
@@ -10,6 +9,8 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter
 
+from automl.v2.minio import minIOStorage
+from database.get_dataset import job_update
 
 load_dotenv()
 
@@ -117,29 +118,51 @@ def reduce_results_for_job(job_id: str):
     for i, result in enumerate(valid_results):
         score_entry = {
             "model_id": i,
-            "model_name": result["model_name"],
-            "scores": result.get("scores"),
+            "model_name": result.get("model_name", ""),
+            "scores": result.get("scores"), # bao gồm cả 4 tiêu chí
             "best_params": result.get("best_params", {})
         }
         final_model_scores.append(score_entry)
 
     metric = tracker["config"].get("metric_sort", "accuracy")
-    best_model_info = max(final_model_scores, key=lambda x: x["scores"].get(metric, -1.0))
-    
-    original_best_result = next(
-        r for r in valid_results if r["model_name"] == best_model_info["model_name"]
-    )
-    model_bytes = base64.b64decode(original_best_result["model_base64"])
+    best_model_info = max(final_model_scores, key=lambda x: x['scores'].get(metric, -1.0))
 
-    # Trả về kết quả cuối cùng
-    return {
-        "best_model_id": str(best_model_info["model_id"]),
-        "model": model_bytes,
-        "best_model": best_model_info["model_name"],
-        "best_score": original_best_result["score"],
-        "best_params": best_model_info.get("best_params", {}),
-        "model_scores": final_model_scores
-    }
+    original_best_result = next(
+        r for r in valid_results if r['model_name'] == best_model_info['model_name']
+    )
+
+    # Thao tác với Cloud và Database
+    try:
+        # Move model tốt nhất lưu ở bộ nhớ tạm vào folder chính
+        version = 1
+        dest_model_path = f"{tracker["id_user"]}/{job_id}/{best_model_info["model_name"]}_{version}.pkl"
+
+        minIOStorage.move_model(
+            source_bucket=original_best_result["model"].get("bucket_name"),
+            source_model=original_best_result["model"].get("object_name"),
+            dest_bucket="models",
+            dest_model=dest_model_path
+        )
+
+        final_result_payload = {
+            "best_model_id": best_model_info["model_id"],
+            "best_model": best_model_info["model_name"],
+            "model": {
+                "bucket_name": "models",
+                "object_name": dest_model_path
+            },
+            "best_params": best_model_info["best_params"],
+            "best_score": original_best_result["score"],
+            "model_scores": final_model_scores
+        }
+
+        job_update.update_success(job_id, final_result_payload)
+        return True
+    
+    except Exception as e:
+        error_msg = f"Update failure: {str(e)}"
+        job_update.update_failure(job_id, error_msg)
+        raise Exception(f"{error_msg}")
 
 
 async def handle_task_result_submission(result: dict):

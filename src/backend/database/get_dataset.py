@@ -90,14 +90,14 @@ class MongoJob:
             self.__job_collection.update_one({"job_id": job_id}, update_data)
 
         
-    def update_success(self, job_id: str, id_user: str, final_result: dict, version: int = 1):
+    def update_success(self, job_id: str, final_result: dict):
         update_data = {
             "$set": {
                 "best_model_id": final_result["best_model_id"],
                 "best_model": final_result["best_model"],
                 "model": {
-                    "bucket_name": "models",
-                    "object_name": f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl"
+                    "bucket_name": final_result["model"].get("bucket_name", ""),
+                    "object_name": final_result["model"].get("object_name", "")
                 },
                 "best_params": final_result["best_params"],
                 "best_score": final_result["best_score"],

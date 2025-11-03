@@ -1,5 +1,4 @@
 import pickle
-import base64
 import asyncio
 import os
 import logging
@@ -15,8 +14,11 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
+import pandas as pd
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from automl.v2.minio import minIOStorage
+
 from automl.engine import train_process
 from database.get_dataset import dataset
 
@@ -70,17 +72,27 @@ WAKE_UP_EVENT = asyncio.Event()
 async def get_data_with_cache(id_data: str, list_feature: list):
     """
     Quản lý cache
-    Nếu cache HIT, trả về data
-    Nếu cache MISS, tải data, lưu vào cache, và xóa data cũ nhất nếu cần
     """
+    cache_bucket = "cache"
+    data_cache = f"{id_data}.feather"
+    
     # Cache HIT
     if id_data in DATASET_CACHE:
         CACHE_ACCESS_ORDER.remove(id_data)
         CACHE_ACCESS_ORDER.append(id_data)
         return DATASET_CACHE[id_data]
+    
+    try:
+        data_buffer = await asyncio.to_thread(
+            minIOStorage.get_object,
+            cache_bucket,
+            data_cache
+        )
 
-    # Cache MISS
-    data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
+        data = pd.read_feather(data_buffer)
+        features = data.columns.tolist()
+    except Exception as e:
+        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
 
     # Kiểm tra cache đầy
     if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
@@ -104,6 +116,7 @@ async def _execute_single_training_task(task: dict):
     try:
         id_data = task["id_data"]
         config = task["config"]
+        task_id = task["task_id"]
         list_feature = config.get("list_feature")
         search_algorithm = config.get("search_algorithm", "grid_search")
 
@@ -129,7 +142,14 @@ async def _execute_single_training_task(task: dict):
         )
 
         model_bytes = pickle.dumps(best_model_obj)
-        model_base64 = base64.b64encode(model_bytes).decode("utf-8")
+
+        # Lưu vào bộ nhớ tạm thay vì chuyển bằng JSON
+        await asyncio.to_thread(
+            minIOStorage.uploaded_object,
+            bucket_name="temp",
+            object_name=f"{task_id}.pkl",
+            object_bytes=model_bytes
+        )
 
         return {
             "success": True,
@@ -138,7 +158,10 @@ async def _execute_single_training_task(task: dict):
             "score": best_score,
             "scores": model_scores_list[0]["scores"],
             "best_params": best_params,
-            "model_base64": model_base64
+            "model": {
+                "bucket_name": "temp",
+                "object_name": f"{task_id}.pkl"
+            }
         }
     except Exception as e:
         return {
@@ -149,7 +172,7 @@ async def _execute_single_training_task(task: dict):
     
 
 # =========================================================================
-# VÒNG LẶP POLLING 
+# VÒNG LẶP POLLING
 # =========================================================================
 async def polling_loop(client: httpx.AsyncClient):
     # Lấy ID duy nhất của worker

@@ -3,13 +3,16 @@ import json
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import yaml
 import json
-from database.get_dataset import job_update
 import asyncio
 import time
+import io
+import pandas as pd
 
 # Local Modules
 from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job
+from database.get_dataset import dataset
 from automl.v2.minio import minIOStorage
+
 
 file_path = ".config.yml"
 with open(file_path, "r") as f:
@@ -50,6 +53,37 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
     """
     try:
         start = time.perf_counter()
+        list_feature = config.get('list_feature')
+
+        # Thực hiện cache dataset (ví dụ: tiền xử lý thay vì để mỗi worker phải thực hiện việc này -> tốn tài nguyên)
+        # Sử dụng 2 định dạng: 
+        """
+        parquet - cho việc lưu trữ lâu dài (tốn ít tài nguyên)
+        feather - cho việc đọc ghi (tối ưu hóa về tốc độ)
+        """
+        cache_bucket = "cache"
+        data_cache = f"{id_data}.feather"
+
+        cache_exists = await asyncio.to_thread(
+            minIOStorage.check_object_exists,
+            cache_bucket,
+            data_cache
+        )
+
+        if not cache_exists:
+            data_preprocessed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
+
+            with io.BytesIO() as f:
+                data_preprocessed.to_feather(f)
+                f.seek(0)
+                data_bytes = f.read()
+            
+            await asyncio.to_thread(
+                minIOStorage.uploaded_object,
+                bucket_name=cache_bucket,
+                object_name=data_cache,
+                object_bytes=data_bytes
+            )            
 
         #  Đăng ký task vào hàng đợi
         await setup_job_tasks(job_id, id_data, id_user, config)
@@ -59,28 +93,16 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         await tracker["completion_event"].wait()
 
         # Job đã xong, thực hiện reduce
-        final_result = reduce_results_for_job(job_id)
+        final_result = await asyncio.to_thread(reduce_results_for_job, job_id)
         end = time.perf_counter()
 
-        version = 1
-        await asyncio.to_thread(
-            minIOStorage.uploaded_model,
-            bucket_name="models",
-            object_name=f"{id_user}/{job_id}/{final_result['best_model']}_{version}.pkl",
-            model_bytes=final_result["model"]
-        )
-
-        await asyncio.to_thread(job_update.update_success, job_id, id_user, final_result)
 
         print(f"[Consumer Task] Completed job {job_id}: {end-start}")
-        return {"job_id": job_id, "status": "success"}
+        if final_result:
+            return {"job_id": job_id, "status": "success"}
         
     except Exception as e:
-        # Lỗi từ quá trình huấn luyện
-        error_msg = f"Training failure: {str(e)}"
-
-        await asyncio.to_thread(job_update.update_failure, job_id, error_msg)
-        raise Exception(error_msg)
+        raise Exception(f"{str(e)}")
 
     finally:
         # Dọn dẹp job
@@ -92,6 +114,13 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
 async def kafka_consumer_process():
     consumer = None
     MAX_CONCURRENT_JOBS = 12
+
+    MAX_CONCURRENT_HANDLERS = 3
+    sem = asyncio.Semaphore(MAX_CONCURRENT_HANDLERS)
+
+    async def process_job_with_semaphore(job_id, id_data, id_user, config):
+        async with sem:
+            return await handle_training_job(job_id, id_data, id_user, config)
 
     try:
         # KHỞI TẠO VÀ START CONSUMER 
@@ -128,7 +157,7 @@ async def kafka_consumer_process():
 
                     tasks.append(
                         asyncio.create_task(
-                            handle_training_job(job_id, id_data, id_user, config)
+                            process_job_with_semaphore(job_id, id_data, id_user, config)
                         )
                     )
                     messages_in_batch.append(msg)
