@@ -59,42 +59,6 @@ async def get_features_of_dataset(id_data: str):
         )
 
 
-
-# API training model = client ==> server (dùng cho test)
-@exp.post("/distributed/mongodb")
-async def distributed_mongodb(input: InputRequest):
-    try:
-        start = time.time()
-        job_id = str(uuid.uuid4())
-        await setup_job_tasks(job_id, input.id_data, input.id_user, input.config)
-
-        # Chờ job hoàn thành
-        tracker = JOB_TRACKER[job_id]
-        await tracker["completion_event"].wait()
-
-        # Job đã xong, thực hiện reduce
-        final_result = reduce_results_for_job(job_id)
-        # Lưu vào database 
-        save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, final_result, job_id)
-
-        save_job_result.update({
-            "executed_time": time.time() - start
-        })
-
-        return save_job_result
-
-    except ValueError as ve:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(ve)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-
 # API huấn luyện model ==> Client -> Kafka -> Server
 @exp.post("/jobs/training")
 async def distributed_training(input: InputRequest):

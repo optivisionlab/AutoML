@@ -135,7 +135,7 @@ def reduce_results_for_job(job_id: str):
     try:
         # Move model tốt nhất lưu ở bộ nhớ tạm vào folder chính
         version = 1
-        dest_model_path = f"{tracker["id_user"]}/{job_id}/{best_model_info["model_name"]}_{version}.pkl"
+        dest_model_path = f"{tracker['id_user']}/{job_id}/{best_model_info['model_name']}_{version}.pkl"
 
         minIOStorage.move_model(
             source_bucket=original_best_result["model"].get("bucket_name"),

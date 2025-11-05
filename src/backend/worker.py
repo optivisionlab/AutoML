@@ -4,6 +4,8 @@ import os
 import logging
 import yaml
 import signal
+import io
+import numpy as np
 
 import httpx
 import uvicorn
@@ -69,12 +71,12 @@ CACHE_ACCESS_ORDER = []
 POLLING_CLIENT = None
 WAKE_UP_EVENT = asyncio.Event()
 
-async def get_data_with_cache(id_data: str, list_feature: list):
+async def get_data_with_cache(id_data: str, list_feature: list, target: str):
     """
     Quản lý cache
     """
     cache_bucket = "cache"
-    data_cache = f"{id_data}.feather"
+    data_cache = f"{id_data}.np"
     
     # Cache HIT
     if id_data in DATASET_CACHE:
@@ -89,10 +91,14 @@ async def get_data_with_cache(id_data: str, list_feature: list):
             data_cache
         )
 
-        data = pd.read_feather(data_buffer)
-        features = data.columns.tolist()
+        cached_data = np.load(data_buffer) 
+        X_processed = cached_data['X']
+        y_processed = cached_data['y']
+
+        data_buffer.close()
+            
     except Exception as e:
-        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
+        X_processed, y_processed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature, target)
 
     # Kiểm tra cache đầy
     if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
@@ -100,10 +106,10 @@ async def get_data_with_cache(id_data: str, list_feature: list):
         del DATASET_CACHE[lru_id]
 
     # Thêm data mới vào cache
-    DATASET_CACHE[id_data] = (data, features)
+    DATASET_CACHE[id_data] = (X_processed, y_processed)
     CACHE_ACCESS_ORDER.append(id_data)
 
-    return data, features
+    return X_processed, y_processed
 
 
 # =========================================================================
@@ -118,9 +124,10 @@ async def _execute_single_training_task(task: dict):
         config = task["config"]
         task_id = task["task_id"]
         list_feature = config.get("list_feature")
+        target = config.get("target")
         search_algorithm = config.get("search_algorithm", "grid_search")
 
-        data, features = await get_data_with_cache(id_data, list_feature)
+        X_processed, y_processed = await get_data_with_cache(id_data, list_feature, target)
         model_info = task["model_info"]
         models_to_train = {
             0: {
@@ -131,10 +138,8 @@ async def _execute_single_training_task(task: dict):
 
         best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
             train_process,
-            data,
-            config.get("choose"),
-            list_feature,
-            config.get("target"),
+            X_processed,
+            y_processed,
             task["metrics"],
             config.get("metric_sort"),
             models_to_train,

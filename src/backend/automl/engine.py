@@ -17,6 +17,7 @@ from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
 from automl.search.strategy.base import SearchStrategy
 from database.database import get_database
+from automl.v2.minio import minIOStorage
 
 np.random.seed(42)
 random.seed(42)
@@ -59,21 +60,6 @@ def get_dataset_and_user_info(data_id, user_id):
 
     return data_name, user_name
 
-# Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn.
-def preprocess_data(list_feature, target, data):
-    for column in data.columns:
-        if data[column].dtype == 'object':
-            le = LabelEncoder()
-            data[column] = le.fit_transform(data[column])
-
-    X = data[list_feature]
-    y = data[target]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    X, y = X_scaled, y
-
-    return X, y
 
 
 def choose_model_version(choose):
@@ -262,8 +248,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
 
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid_search'):
-    X_train, y_train = preprocess_data(list_feature, target, data)
+def train_process(X_train, y_train, metric_list, metric_sort, models, search_algorithm='grid_search'):
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
     return best_model_id, best_model, best_score, best_params, model_scores
@@ -335,10 +320,18 @@ def train_json(item: Item, userId, id_data):
 
 
 def inference_model(job_id, file_data):
-    stored_model = job_collection.find_one({"job_id": job_id})
+    query = {
+        "job_id": job_id,
+        "status": 1
+    }
+    stored_model = job_collection.find_one(query, {"item": 0, "orther_model_scores": 0})
     if 'activate' in stored_model.keys():
         if stored_model['activate'] == 1:
-            model = pickle.loads(stored_model["model"])
+            bucket_name = stored_model["model"].get("bucket_name")
+            object_name = stored_model["model"].get("object_name")
+            buffer = minIOStorage.get_object(bucket_name, object_name)
+            model = pickle.load(buffer)
+            
             list_feature = stored_model["config"]["list_feature"]
 
             contents = file_data.file.read()
@@ -418,6 +411,7 @@ def get_jobs(user_id):
         return JSONResponse(content=jobs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # Lấy job theo job_id

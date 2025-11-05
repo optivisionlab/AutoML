@@ -8,8 +8,6 @@ from fastapi import (
     HTTPException,
     status,
 )
-from typing import List
-from io import BytesIO
 import pandas as pd
 from automl.engine import (
     train_process,
@@ -144,33 +142,6 @@ def read_root():
 @app.get("/home")
 def ping():
     return {"AutoML": "version 1.0", "message": "Hi there :P"}
-
-
-@app.post("/upload-files")
-def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
-    """
-    file: test.csv
-    stem => test
-    suffix => .csv
-    """
-
-    data_list = []
-    files_list = []
-    for file in files:
-        if pathlib.Path(os.path.basename(file.filename)).suffix != ".csv":
-            data_list.append(None)
-            files_list.append(file.filename)
-            continue
-
-        files_list.append(file.filename)
-        contents = file.file.read()
-        data = BytesIO(contents)
-        df = pd.read_csv(data, on_bad_lines="skip", sep=sep, engine="python")
-        data_list.append(df.values.tolist())
-        data.close()
-        file.file.close()
-
-    return {"data_list": data_list, "files_list": files_list}
 
 
 @app.get("/users")
@@ -463,7 +434,7 @@ def api_train_mongo():
     )
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
-    )
+    ) # sua
 
     return {
         "best_model_id": best_model_id,

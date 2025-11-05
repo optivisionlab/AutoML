@@ -6,7 +6,7 @@ import json
 import asyncio
 import time
 import io
-import pandas as pd
+import numpy as np
 
 # Local Modules
 from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job
@@ -54,15 +54,16 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
     try:
         start = time.perf_counter()
         list_feature = config.get('list_feature')
+        target = config.get('target')
 
         # Thực hiện cache dataset (ví dụ: tiền xử lý thay vì để mỗi worker phải thực hiện việc này -> tốn tài nguyên)
-        # Sử dụng 2 định dạng: 
+        # Sử dụng 2 định dạng:
         """
         parquet - cho việc lưu trữ lâu dài (tốn ít tài nguyên)
         feather - cho việc đọc ghi (tối ưu hóa về tốc độ)
         """
         cache_bucket = "cache"
-        data_cache = f"{id_data}.feather"
+        data_cache = f"{id_data}.npz"
 
         cache_exists = await asyncio.to_thread(
             minIOStorage.check_object_exists,
@@ -71,10 +72,10 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         )
 
         if not cache_exists:
-            data_preprocessed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature)
+            X_processed, y_processed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature, target)
 
             with io.BytesIO() as f:
-                data_preprocessed.to_feather(f)
+                np.savez_compressed(f, X=X_processed, y=y_processed)
                 f.seek(0)
                 data_bytes = f.read()
             
@@ -83,7 +84,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
                 bucket_name=cache_bucket,
                 object_name=data_cache,
                 object_bytes=data_bytes
-            )            
+            )
 
         #  Đăng ký task vào hàng đợi
         await setup_job_tasks(job_id, id_data, id_user, config)
