@@ -4,7 +4,6 @@ import os
 import logging
 import yaml
 import signal
-import io
 import numpy as np
 
 import httpx
@@ -16,7 +15,6 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-import pandas as pd
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from automl.v2.minio import minIOStorage
@@ -76,7 +74,7 @@ async def get_data_with_cache(id_data: str, list_feature: list, target: str):
     Quản lý cache
     """
     cache_bucket = "cache"
-    data_cache = f"{id_data}.np"
+    data_cache = f"{id_data}.npz"
     
     # Cache HIT
     if id_data in DATASET_CACHE:
@@ -98,7 +96,7 @@ async def get_data_with_cache(id_data: str, list_feature: list, target: str):
         data_buffer.close()
             
     except Exception as e:
-        X_processed, y_processed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature, target)
+        X_processed, y_processed, preprocessor = await asyncio.to_thread(dataset.get_processed_data, id_data, list_feature, target)
 
     # Kiểm tra cache đầy
     if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
@@ -129,10 +127,11 @@ async def _execute_single_training_task(task: dict):
 
         X_processed, y_processed = await get_data_with_cache(id_data, list_feature, target)
         model_info = task["model_info"]
+        model_params = model_info.get('params') or {}
         models_to_train = {
             0: {
                 "model": MODEL_MAPPING[model_info["model"]](),
-                "params": model_info["params"]
+                "params": model_params
             }
         }
 
@@ -172,6 +171,7 @@ async def _execute_single_training_task(task: dict):
         return {
             "success": False,
             "job_id": task["job_id"],
+            "model_name": model_info["model"],
             "error": str(e)
         }
     

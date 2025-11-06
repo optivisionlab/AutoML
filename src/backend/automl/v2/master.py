@@ -186,12 +186,12 @@ async def handle_task_result_submission(result: dict):
     tracker = JOB_TRACKER[job_id]
     
     tracker["results"].append(result)
-    if result.get("success"):
-        tracker["completed_tasks"] += 1
+    # if result.get("success"):
+    tracker["completed_tasks"] += 1
 
-        if tracker["completed_tasks"] >= tracker["total_tasks"]:
-            print(f"[{job_id}] All tasks completed")
-            tracker["completion_event"].set()
+    if tracker["completed_tasks"] >= tracker["total_tasks"]:
+        print(f"[{job_id}] All tasks completed")
+        tracker["completion_event"].set()
 
     return {"status": "success"}
 

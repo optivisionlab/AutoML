@@ -65,6 +65,7 @@ from kafka_consumer import (
     stop_producer
 )
 from automl.v2.master import monitor_tasks
+from database.get_dataset import preprocess_data
 import asyncio
 
 
@@ -432,9 +433,10 @@ def api_train_mongo():
     data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_and_config_from_MongoDB()
     )
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
-    ) # sua
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
+    )
 
     return {
         "best_model_id": best_model_id,

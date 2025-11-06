@@ -3,12 +3,12 @@
 # Third-party Libraries
 import pandas as pd
 from bson.objectid import ObjectId
-from typing import List, Optional
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
+import pyarrow.parquet as pq
 
 # Local Modules
 from database.database import get_database
@@ -48,7 +48,7 @@ categorical_transformer = Pipeline(steps=[
 
 text_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='constant', fill_value='')),
-    ('tfidf', TfidfVectorizer(max_features=100))
+    ('tfidf', TfidfVectorizer(max_features=100, preprocessor=lambda x: str(x)))
 ])
 
 def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
@@ -94,10 +94,44 @@ class MongoDataLoader:
         except Exception as e:
             print(f"Exception when get dataset from MongoDB: {str(e)}")
             return None, None
-
-
+        
     
-    def get_data_and_features(self, id_data: str, list_features: Optional[List[str]] = None, target: str = None) -> tuple[pd.DataFrame | None, pd.DataFrame | None, list | None]:
+    def get_data_preview(self, id_data: str, num_rows: int = 50) -> tuple[pd.DataFrame | None, list | None]:
+        bucket_name, object_name = self._get_data_link_from_db(id_data)
+        if not (bucket_name and object_name):
+            return None
+        
+        try:
+            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+            df_retrieved = pd.read_parquet(parquet_stream)
+
+            df_preview = df_retrieved.head(num_rows)
+
+            return df_preview
+        
+        except Exception as e:
+            print(f"Exception when get dataset preview: {str(e)}")
+            return None
+
+
+    def get_data_features(self, id_data: str) -> list | None:
+        bucket_name, object_name = self._get_data_link_from_db(id_data)
+        if not (bucket_name and object_name):
+            return None
+        
+        try:
+            # Lấy file stream
+            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+            
+            schema = pq.read_schema(parquet_stream)
+            
+            return schema.names
+        except Exception as e:
+            print(f"Exception when get dataset schema: {str(e)}")
+            return None
+
+
+    def get_processed_data(self, id_data: str, list_features: list, target: str) -> tuple[pd.DataFrame, pd.DataFrame, object] | tuple[None, None, None]:
         """Load dataset từ MinIO"""
         bucket_name, object_name = self._get_data_link_from_db(id_data)
         if not (bucket_name and object_name):
@@ -109,10 +143,8 @@ class MongoDataLoader:
 
             X_processed, y_processed, preprocessor = preprocess_data(list_features, target, df_retrieved)
 
-            # Lấy danh sách các cột (features)
-            features = df_retrieved.columns.tolist()
+            return X_processed, y_processed, preprocessor
 
-            return X_processed, y_processed, features
         except Exception as e:
             print(f"Exception when read dataset from MinIO: {str(e)}")
             return None, None, None

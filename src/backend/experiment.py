@@ -1,19 +1,16 @@
 # Standard Libraries
-import time
 
 # Third-party Libraries
 from fastapi import status, HTTPException, Query
 from fastapi.routing import APIRouter
 import asyncio
 import pickle
-import uuid
 
 # Local Modules
 from database.get_dataset import dataset
 from kafka_consumer import data
-from automl.v2.master import setup_job_tasks, JOB_TRACKER, reduce_results_for_job 
 from automl.v2.schemas import InputRequest
-from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
+from automl.v2.service import save_job, query_jobs, send_message, get_model
 from automl.v2.minio import minIOStorage
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
@@ -22,7 +19,7 @@ exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 @exp.get("/features")
 async def get_features_of_dataset(id_data: str): 
     try:
-        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
+        features = await asyncio.to_thread(dataset.get_data_features, id_data)
         return {
             "features": features
         }
@@ -41,11 +38,16 @@ async def get_features_of_dataset(id_data: str):
 @exp.get("/data")
 async def get_features_of_dataset(id_data: str): 
     try:
-        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
-        data_json = data.to_dict(orient='records')
+        data_preview = await asyncio.to_thread(dataset.get_data_preview, id_data)
 
+        if data_preview is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or cannot be read"
+            )
+        
         return {
-            "data": data_json
+            "data": data_preview.to_dict(orient='records')
         }
     except ValueError as ve:
         raise HTTPException(

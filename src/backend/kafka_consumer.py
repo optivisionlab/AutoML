@@ -72,7 +72,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         )
 
         if not cache_exists:
-            X_processed, y_processed, features = await asyncio.to_thread(dataset.get_data_and_features, id_data, list_feature, target)
+            X_processed, y_processed, preprocessor = await asyncio.to_thread(dataset.get_processed_data, id_data, list_feature, target)
 
             with io.BytesIO() as f:
                 np.savez_compressed(f, X=X_processed, y=y_processed)

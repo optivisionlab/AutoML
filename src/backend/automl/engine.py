@@ -9,7 +9,6 @@ import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.calibration import LabelEncoder
-from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
 
@@ -18,6 +17,7 @@ from automl.search.factory import SearchStrategyFactory
 from automl.search.strategy.base import SearchStrategy
 from database.database import get_database
 from automl.v2.minio import minIOStorage
+from database.get_dataset import preprocess_data
 
 np.random.seed(42)
 random.seed(42)
@@ -262,9 +262,13 @@ def app_train_local(file_data, file_config):
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
+
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
+
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
@@ -280,8 +284,10 @@ def train_json(item: Item, userId, id_data):
         get_data_config_from_json(item)
     )
 
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
     data_name, user_name = get_dataset_and_user_info(id_data, userId)
@@ -369,8 +375,11 @@ def train_json_from_job(job):
         get_data_config_from_json(Item(**item))
     )
 
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
     model_data = pickle.dumps(best_model)
