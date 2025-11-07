@@ -9,13 +9,15 @@ import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.calibration import LabelEncoder
-from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
 
 from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
+from automl.search.strategy.base import SearchStrategy
 from database.database import get_database
+from automl.v2.minio import minIOStorage
+from database.get_dataset import preprocess_data
 
 np.random.seed(42)
 random.seed(42)
@@ -58,21 +60,6 @@ def get_dataset_and_user_info(data_id, user_id):
 
     return data_name, user_name
 
-# Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn.
-def preprocess_data(list_feature, target, data):
-    for column in data.columns:
-        if data[column].dtype == 'object':
-            le = LabelEncoder()
-            data[column] = le.fit_transform(data[column])
-
-    X = data[list_feature]
-    y = data[target]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    X, y = X_scaled, y
-
-    return X, y
 
 
 def choose_model_version(choose):
@@ -97,15 +84,7 @@ def get_config(file):
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def get_model():
-    # Import model classes for eval to work
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.svm import SVC
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.naive_bayes import GaussianNB
-    
+def get_model():    
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -164,6 +143,7 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
+
 def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     best_model_id = None
     best_model = None
@@ -217,7 +197,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         )
         
         # Convert all numpy types to native Python types to avoid serialization issues
-        from automl.search.strategy.base import SearchStrategy
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
@@ -261,7 +240,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_params = best_params_model
     
     # Final conversion to ensure all return values are native Python types
-    from automl.search.strategy.base import SearchStrategy
     best_params = SearchStrategy.convert_numpy_types(best_params)
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
@@ -269,8 +247,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid_search'):
-    X_train, y_train = preprocess_data(list_feature, target, data)
+
+def train_process(X_train, y_train, metric_list, metric_sort, models, search_algorithm='grid_search'):
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
     return best_model_id, best_model, best_score, best_params, model_scores
@@ -284,9 +262,13 @@ def app_train_local(file_data, file_config):
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
+
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
+
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
@@ -302,8 +284,10 @@ def train_json(item: Item, userId, id_data):
         get_data_config_from_json(item)
     )
 
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
     data_name, user_name = get_dataset_and_user_info(id_data, userId)
@@ -311,7 +295,6 @@ def train_json(item: Item, userId, id_data):
     job_id = str(uuid4())
 
     # Ensure all values are properly converted to native Python types before storing
-    from automl.search.strategy.base import SearchStrategy
     
     job = {
         "job_id": job_id,
@@ -343,10 +326,18 @@ def train_json(item: Item, userId, id_data):
 
 
 def inference_model(job_id, file_data):
-    stored_model = job_collection.find_one({"job_id": job_id})
+    query = {
+        "job_id": job_id,
+        "status": 1
+    }
+    stored_model = job_collection.find_one(query, {"item": 0, "orther_model_scores": 0})
     if 'activate' in stored_model.keys():
         if stored_model['activate'] == 1:
-            model = pickle.loads(stored_model["model"])
+            bucket_name = stored_model["model"].get("bucket_name")
+            object_name = stored_model["model"].get("object_name")
+            buffer = minIOStorage.get_object(bucket_name, object_name)
+            model = pickle.load(buffer)
+            
             list_feature = stored_model["config"]["list_feature"]
 
             contents = file_data.file.read()
@@ -384,8 +375,11 @@ def train_json_from_job(job):
         get_data_config_from_json(Item(**item))
     )
 
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
+
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
     model_data = pickle.dumps(best_model)
@@ -428,6 +422,7 @@ def get_jobs(user_id):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 # Lấy job theo job_id
 def get_one_job(id_job: str):
     try:
@@ -438,7 +433,7 @@ def get_one_job(id_job: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
-
+# Hàm này không dùng nx
 def push_train_job(item: Item, user_id, data_id, producer):
     job_id = str(uuid4())
 

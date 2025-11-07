@@ -8,8 +8,6 @@ from fastapi import (
     HTTPException,
     status,
 )
-from typing import List
-from io import BytesIO
 import pandas as pd
 from automl.engine import (
     train_process,
@@ -67,6 +65,7 @@ from kafka_consumer import (
     stop_producer
 )
 from automl.v2.master import monitor_tasks
+from database.get_dataset import preprocess_data
 import asyncio
 
 
@@ -144,33 +143,6 @@ def read_root():
 @app.get("/home")
 def ping():
     return {"AutoML": "version 1.0", "message": "Hi there :P"}
-
-
-@app.post("/upload-files")
-def api_login(files: List[UploadFile] = File(...), sep: str = Form(...)):
-    """
-    file: test.csv
-    stem => test
-    suffix => .csv
-    """
-
-    data_list = []
-    files_list = []
-    for file in files:
-        if pathlib.Path(os.path.basename(file.filename)).suffix != ".csv":
-            data_list.append(None)
-            files_list.append(file.filename)
-            continue
-
-        files_list.append(file.filename)
-        contents = file.file.read()
-        data = BytesIO(contents)
-        df = pd.read_csv(data, on_bad_lines="skip", sep=sep, engine="python")
-        data_list.append(df.values.tolist())
-        data.close()
-        file.file.close()
-
-    return {"data_list": data_list, "files_list": files_list}
 
 
 @app.get("/users")
@@ -407,7 +379,6 @@ def upload_dataset(
         raise HTTPException(status_code=404, detail=f"{str(e)}")
 
 
-
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
 def update_dataset(
@@ -462,8 +433,9 @@ def api_train_mongo():
     data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_and_config_from_MongoDB()
     )
+    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
     return {
