@@ -12,6 +12,7 @@ import { NavItems } from "@/config";
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { SideNavItem } from "./SideNavItem";
 
 export default function SideNav() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
@@ -36,7 +37,7 @@ export default function SideNav() {
     setIsSidebarExpanded(!isSidebarExpanded);
   };
 
-  const navItems = NavItems(session?.user.role || '');
+  const navItems = NavItems(session?.user.role || "");
 
   return (
     <div suppressHydrationWarning>
