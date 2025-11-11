@@ -125,7 +125,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         print(f"[Consumer] Successfully submitted job {job_id} to Master")
         
     except Exception as e:
-        print(f"[Consumer] FAILED to handle job {job_id}: {e}")
+        print(f"[Consumer] Failed to handle job {job_id}: {e}")
         raise e
 
 
