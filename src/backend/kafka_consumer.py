@@ -94,9 +94,10 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         await tracker["completion_event"].wait()
 
         # Job đã xong, thực hiện reduce
-
         final_result = await asyncio.to_thread(reduce_results_for_job, job_id)
         end = time.perf_counter()
+
+        
         print(f"[Consumer Task] Completed job {job_id}: {end-start}")
         if final_result:
             return {"job_id": job_id, "status": "success"}
