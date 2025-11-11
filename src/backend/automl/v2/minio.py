@@ -90,6 +90,28 @@ class MinIOStorage:
             raise Exception(f"Minio move error for {source_model}: {str(e)}")
 
 
+    def copy_object(self, source_bucket: str, source_key: str, dest_bucket: str, dest_key: str):
+        if not self.__client.bucket_exists(source_bucket):
+            raise Exception(f"Not found source bucket in Minio: {source_bucket}")
+        
+        try:
+            self.__client.make_bucket(dest_bucket)
+        except S3Error as e:
+            if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                pass
+            else:
+                raise Exception(f"Failed to create Minio bucket {dest_bucket}: {str(e)}")
+        
+        try:
+            self.__client.copy_object(
+                bucket_name=dest_bucket,
+                object_name=dest_key,
+                source=CopySource(source_bucket, source_key)
+            )
+        except Exception as e:
+            raise Exception(f"Minio copy error for {source_key}: {str(e)}")
+
+
     def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer):
         try:
             self.__client.make_bucket(bucket_name)

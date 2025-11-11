@@ -2,11 +2,10 @@ import pickle
 import asyncio
 import os
 import logging
-import yaml
 import signal
 import numpy as np
-
 import httpx
+import time
 import uvicorn
 from fastapi import FastAPI
 from sklearn.ensemble import RandomForestClassifier
@@ -17,33 +16,22 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-from automl.v2.minio import minIOStorage
 
+from automl.v2.minio import minIOStorage
 from automl.engine import train_process
-from database.get_dataset import dataset
 
 
 # Load file .env
 load_dotenv()
 
-# Load file .config.yml
-def load_configuration(config_path):
-    if not os.path.exists(config_path):
-        logging.error("Not found file")
-        return None
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as file:
-            config = yaml.safe_load(file)
-            return config
-    except yaml.YAMLError as e:
-        logging.error(f"Invalid file {str(e)}")
-        return None
-    except Exception as e:
-        logging.error(f"Error {str(e)}")
-        return None
-    
-config = load_configuration('.config.yml')
+
+# WORKER URL
+WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
+WORKER_PORT = int(os.getenv('WORKER_PORT', 8000))
+
+# MASTER URL
+MASTER_HOST = os.getenv('HOST_BACK_END', '0.0.0.0')
+MASTER_PORT = int(os.getenv('PORT_BACK_END', 8080))
 
 
 # ÁNH XẠ MÔ HÌNH
@@ -69,19 +57,20 @@ CACHE_ACCESS_ORDER = []
 POLLING_CLIENT = None
 WAKE_UP_EVENT = asyncio.Event()
 
-async def get_data_with_cache(id_data: str, list_feature: list, target: str):
+async def get_data_with_cache(id_data: str, cache_key: str):
     """
     Quản lý cache
     """
-    cache_bucket = "cache"
-    data_cache = f"{id_data}.npz"
     
     # Cache HIT
-    if id_data in DATASET_CACHE:
-        CACHE_ACCESS_ORDER.remove(id_data)
-        CACHE_ACCESS_ORDER.append(id_data)
-        return DATASET_CACHE[id_data]
+    if cache_key in DATASET_CACHE:
+        CACHE_ACCESS_ORDER.remove(cache_key)
+        CACHE_ACCESS_ORDER.append(cache_key)
+        return DATASET_CACHE[cache_key]
     
+    cache_bucket = "cache"
+    data_cache = f"{id_data}/{cache_key}.npz"
+
     try:
         data_buffer = await asyncio.to_thread(
             minIOStorage.get_object,
@@ -89,14 +78,13 @@ async def get_data_with_cache(id_data: str, list_feature: list, target: str):
             data_cache
         )
 
-        cached_data = np.load(data_buffer) 
-        X_processed = cached_data['X']
-        y_processed = cached_data['y']
-
+        with np.load(data_buffer) as cached_data:
+            X_processed = cached_data['X']
+            y_processed = cached_data['y']
         data_buffer.close()
-            
+
     except Exception as e:
-        X_processed, y_processed, preprocessor = await asyncio.to_thread(dataset.get_processed_data, id_data, list_feature, target)
+        raise Exception(f"Cache not found for {str(e)}")
 
     # Kiểm tra cache đầy
     if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
@@ -104,10 +92,10 @@ async def get_data_with_cache(id_data: str, list_feature: list, target: str):
         del DATASET_CACHE[lru_id]
 
     # Thêm data mới vào cache
-    DATASET_CACHE[id_data] = (X_processed, y_processed)
-    CACHE_ACCESS_ORDER.append(id_data)
+    DATASET_CACHE[cache_key] = (X_processed, y_processed)
+    CACHE_ACCESS_ORDER.append(cache_key)
 
-    return X_processed, y_processed
+    return DATASET_CACHE[cache_key]
 
 
 # =========================================================================
@@ -119,13 +107,12 @@ async def _execute_single_training_task(task: dict):
     """
     try:
         id_data = task["id_data"]
+        cache_key = task["cache_key"]
         config = task["config"]
         task_id = task["task_id"]
-        list_feature = config.get("list_feature")
-        target = config.get("target")
         search_algorithm = config.get("search_algorithm", "grid_search")
 
-        X_processed, y_processed = await get_data_with_cache(id_data, list_feature, target)
+        X_processed, y_processed = await get_data_with_cache(id_data, cache_key)
         model_info = task["model_info"]
         model_params = model_info.get('params') or {}
         models_to_train = {
@@ -165,14 +152,16 @@ async def _execute_single_training_task(task: dict):
             "model": {
                 "bucket_name": "temp",
                 "object_name": f"{task_id}.pkl"
-            }
+            },
+            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
         }
     except Exception as e:
         return {
             "success": False,
             "job_id": task["job_id"],
             "model_name": model_info["model"],
-            "error": str(e)
+            "error": str(e),
+            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
         }
     
 
@@ -181,26 +170,20 @@ async def _execute_single_training_task(task: dict):
 # =========================================================================
 async def polling_loop(client: httpx.AsyncClient):
     # Lấy ID duy nhất của worker
-    master_url = None
-    if config is not None:
-        try:
-            host = config['HOST_BACK_END']
-            port = config['PORT_BACK_END']
+    master_host_addr = MASTER_HOST
+    if MASTER_HOST == "::":
+        master_host_addr = "[::]"
 
-            if host == "::":
-                host = "[::]"
+    master_url = f"http://{master_host_addr}:{MASTER_PORT}"
 
-            master_url = f"http://{host}:{port}"
-        except KeyError as e:
-            logging.error(f"Missing important configuration in .config.yml: {str(e)}")
-        except TypeError as e:
-            logging.error(f"Configuration value is not valid {str(e)}")
-
+    
     if not master_url:
         logging.critical("Master URL does not exist. Worker will be shut down")
         os.kill(os.getpid(), signal.SIGTERM)
         return
-
+    
+    WAKE_UP_EVENT.set()
+    
     while True:
         try:
             await WAKE_UP_EVENT.wait()
@@ -213,33 +196,30 @@ async def polling_loop(client: httpx.AsyncClient):
             await asyncio.sleep(60)
             continue
 
-        
+
         try:
-            # Lấy id data dùng gần nhất
+            # Lấy cache key dùng gần nhất
             cached_hint = CACHE_ACCESS_ORDER[-1] if CACHE_ACCESS_ORDER else None
 
-            worker_url = os.getenv('WORKER_URL')
-            if not worker_url:
-                logging.error("Error: Missing 'WORKER_URL'. Worker will be shut down")
-                os.kill(os.getpid(), signal.SIGTERM)
-                return
-
+            worker_url = f"http://{WORKER_HOST}:{WORKER_PORT}"
 
             # Gọi API "GET TASK" của Master
             response = await client.get(
                 f"{master_url}/task/get",
                 params={
-                    "cached_id_data": cached_hint,
+                    "cached_key_hint": cached_hint,
                     "worker_url": worker_url
                 },
                 timeout=5.0
             )
             task = response.json().get("task")
-
             if task:
                 print(f"[Worker] Received task. Training")
+                start = time.perf_counter()
                 result = await _execute_single_training_task(task)
-                await client.post(f"{master_url}/task/submit", json=result)
+                print(f"[Worker] Time: {(time.perf_counter() - start):.2f} seconds")
+
+                await client.post(f"{master_url}/task/submit", json=result, timeout=10.0)
             else:
                 print(f"[Worker] No tasks. Return to sleep")
                 WAKE_UP_EVENT.clear()
@@ -288,9 +268,6 @@ async def check_for_work():
 async def ping():
     return {"status": "OK"}
 
-
-WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
-WORKER_PORT = int(os.getenv('WORKER_PORT', 8000)) 
 
 if __name__ == "__main__":
     uvicorn.run("worker:app", host=WORKER_HOST, port=WORKER_PORT, reload=True)

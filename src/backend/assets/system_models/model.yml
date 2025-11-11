@@ -10,28 +10,27 @@ Classification_models:
       max_depth: [5, 10, 15]
       min_samples_split: [2, 5, 10]
   1:
-    model: RandomForestClassifier
+    model: DecisionTreeClassifier
     params:
-      n_estimators: [50, 100, 200]
-      max_features: ["sqrt", "log2", 0.5, 1]
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]
   2:
-    model: KNeighborsClassifier
+    model: DecisionTreeClassifier
     params:
-      n_neighbors: [3, 5, 7, 9]
-      weights: ["uniform", "distance"]
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]
   3:
-    model: SVC
+    model: DecisionTreeClassifier
     params:
-      C: [0.1, 1, 10]
-      kernel: ["linear", "rbf"]
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]
   4:
-    model: LogisticRegression
+    model: DecisionTreeClassifier
     params:
-      C: [0.001, 0.01, 0.1, 1]
-      penalty: ["l1", "l2"]
-      solver: ["saga"]
-      max_iter: [500,1000]
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]
   5:
-    model: GaussianNB
+    model: DecisionTreeClassifier
     params:
-      var_smoothing: [0.000000001, 0.00000001, 0.0000001, 0.000001]
+      max_depth: [5, 10, 15]
+      min_samples_split: [2, 5, 10]

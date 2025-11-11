@@ -7,11 +7,11 @@ from fastapi import (
     Response,
     HTTPException,
     status,
+    Depends
 )
-import pandas as pd
+from pymongo.asynchronous.database import AsyncDatabase
+from database.database import get_db
 from automl.engine import (
-    train_process,
-    get_data_and_config_from_MongoDB,
     get_jobs,
     get_one_job,
     train_json,
@@ -21,21 +21,17 @@ from automl.model import Item
 from users.engine import User
 from users.engine import UpdateUser
 from users.engine import user_helper
-from users.engine import users_collection
-from users.engine import checkLogin
 from users.engine import LoginRequest
 from users.engine import create_access_token
 from users.engine import check_exits_username
 from users.engine import send_reset_password_email
-from starlette.config import Config
 from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import HTMLResponse, RedirectResponse
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from users.engine import ChangePassword
 from users.engine import save_otp, send_otp, generate_otp
-import io, yaml, time, json, os, uvicorn, pathlib, base64
-from fastapi.responses import StreamingResponse
+import time, json, os, uvicorn
 from users.engine import check_time_otp
 from users.engine import check_exits_email
 from users.engine import handleLogin
@@ -46,15 +42,15 @@ from users.engine import handle_signup
 from users.engine import handle_delete_user
 from users.engine import handle_contact
 from users.engine import handle_update_user
-import pathlib
 
 from automl.engine import app_train_local, inference_model
 from fastapi.middleware.cors import CORSMiddleware
 from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
-from data.engine import get_list_data, get_data_from_mongodb_by_id, get_one_data, get_user_data_list
+from data.engine import get_list_data, get_one_data, get_all_data
 from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
 from users.engine import get_current_admin
+from database.database import connection
 
 # Lấy danh sách user
 from users.engine import get_list_user
@@ -65,9 +61,12 @@ from kafka_consumer import (
     stop_producer
 )
 from automl.v2.master import monitor_tasks
-from database.get_dataset import preprocess_data
 import asyncio
+from dotenv import load_dotenv
 
+
+# Load file .env
+load_dotenv()
 
 # Lifespan Context Manager 
 @asynccontextmanager
@@ -77,21 +76,26 @@ async def lifespan(app: FastAPI):
     Trước yield là startup, sau yield là shutdown
     """
 
+    # KẾT NỐI CSDL MONGODB
+    app.state.db, app.state.client = await connection()
+
     # KHỞI TẠO VÀ START PRODUCER 
     await start_producer()
 
-    app.state.kafka_task = asyncio.create_task(kafka_consumer_process())
+    app.state.kafka_task = asyncio.create_task(kafka_consumer_process(app.state.db))
     app.state.monitor_task = asyncio.create_task(monitor_tasks())
 
     yield # Server Fastapi accepts requests
 
-    # DỪNG PRODUCER
     print("[Server Lifespan] Shutdown resources...")
-    await stop_producer()
-    
+
     app.state.kafka_task.cancel()
     app.state.monitor_task.cancel()
     await asyncio.gather(app.state.kafka_task, app.state.monitor_task, return_exceptions=True)
+    await stop_producer()
+
+    # ĐÓNG KẾT NỐI CSDL
+    await app.state.client.close()
     print("[Master] Shutdown complete.")
 
 
@@ -99,21 +103,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(SessionMiddleware, secret_key="!secret")
-file_path = ".config.yml"
-with open(file_path, "r") as f:
-    data = yaml.safe_load(f)
-
-config = Config(file_path)
-oauth = OAuth(config)
-master_api_url = f"http://{data['HOST_BACK_END']}:{data['PORT_BACK_END']}"
+oauth = OAuth()
+master_api_url = f"http://{os.getenv('HOST_BACK_END', '0.0.0.0')}:{int(os.getenv('PORT_BACK_END', 8080))}"
 
 # phương thức để đăng ký một dịch vụ OAuth
 CONF_URL = "https://accounts.google.com/.well-known/openid-configuration"
 oauth.register(
     name="google",
     server_metadata_url=CONF_URL,  # lay thong tin tu may chu
-    client_id=data["CLIENT_ID"],
-    client_secret=data["CLIENT_SECRET"],
+    client_id=os.getenv("CLIENT_ID", ""),
+    client_secret=os.getenv("CLIENT_SECRET", ""),
     client_kwargs={
         "scope": "openid email profile",
         "redirect_url": f"{master_api_url}/auth",
@@ -131,7 +130,7 @@ app.add_middleware(
 
 
 @app.get("/")
-def read_root():
+async def read_root():
     return {
         "HAutoML": "Open-Source for Automated Machine Learning",
         "Authors": "Đỗ Mạnh Quang, Chử Thị Ánh, Ngọ Công Bình, Bùi Huy Nam, Nguyễn Thị Mỹ Khánh, Nguyễn Thị Minh",
@@ -141,22 +140,23 @@ def read_root():
 
 
 @app.get("/home")
-def ping():
+async def ping():
     return {"AutoML": "version 1.0", "message": "Hi there :P"}
 
 
 @app.get("/users")
-def get_users():
-    list_user = get_list_user()
+async def get_users(db: AsyncDatabase = Depends(get_db)):
+    list_user = await get_list_user(db)
     return list_user
 
 
 # Lấy 1 user
 @app.get("/users/")
-def get_user(username: str = Query(...)):
-    if check_exits_username(username):
-        existing_user = check_exits_username(username)
-        return user_helper(existing_user)
+async def get_user(username: str = Query(...), db: AsyncDatabase = Depends(get_db)):
+    check_username = await check_exits_username(username, db)
+    if check_username:
+        return user_helper(check_username)
+
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -165,32 +165,32 @@ def get_user(username: str = Query(...)):
 
 
 @app.post("/login")
-def login(request: LoginRequest, response: Response):
+async def login(request: LoginRequest, response: Response, db: AsyncDatabase = Depends(get_db)):
     username = request.username
     password = request.password
-    user = handleLogin(username, password)
+    user = await handleLogin(username, password, db)
     # response.headers["Authorization"] = f"Bearer {user['token']}"
     return user
 
 
 # Thêm user, đăng kí user mới
 @app.post("/signup")
-def singup(new_user: User):
-    message = handle_signup(new_user)
+async def singup(new_user: User, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_signup(new_user, db)
     return message
 
 
 # Xóa user
 @app.delete("/delete/{username}")
-def delete_user(username):
-    message = handle_delete_user(username)
+async def delete_user(username, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_delete_user(username, db)
     return message
 
 
 # update user
 @app.put("/update/{username}")
-def update_user(username: str, new_user: UpdateUser):
-    message = handle_update_user(username, new_user)
+async def update_user(username: str, new_user: UpdateUser, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_update_user(username, new_user, db)
     return message
 
 
@@ -198,8 +198,8 @@ from users.engine import handle_forgot_password
 
 
 @app.post("/forgot_password/{email}")
-def forgot_password(email: str):
-    message = handle_forgot_password(email)
+async def forgot_password(email: str, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_forgot_password(email, db)
     return message
 
 
@@ -208,19 +208,20 @@ from users.engine import handle_verification_email
 
 
 @app.post("/send_email/{username}")
-def send_email(username: str):
-    message = handle_send_otp(username)
+async def send_email(username: str, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_send_otp(username, db)
     return message
 
 
 @app.post("/verification_email/{username}")
-def verification_email(username: str, otp: str):
-    message = handle_verification_email(username, otp)
+async def verification_email(username: str, otp: str, db: AsyncDatabase = Depends(get_db)):
+    message = await handle_verification_email(username, otp, db)
     return message
 
 
 @app.get("/")
 async def homepage(request: Request):
+    users_collection = request.app.state.db.tbl_User
     user = request.session.get("user")
     if user:
         username = user.get("name")
@@ -247,11 +248,11 @@ async def homepage(request: Request):
             }
         }
 
-        check_user = users_collection.find_one({"email": email})
+        check_user = await users_collection.find_one({"email": email})
         if check_user:
-            users_collection.update_one({"email": email}, update_user)
+            await users_collection.update_one({"email": email}, update_user)
         else:
-            users_collection.insert_one(new_user)
+            await users_collection.insert_one(new_user)
 
         print(user_iat)
         current_time = time.time()
@@ -291,44 +292,45 @@ async def logout(request: Request):
 
 
 @app.post("/change_password")
-def change_password(username: str, password: ChangePassword):
+async def change_password(username: str, password: ChangePassword, db: AsyncDatabase = Depends(get_db)):
     pw = password.password
     new_pw1 = password.new1_password
     new_pw2 = password.new2_password
-    masage = handle_change_password(username, pw, new_pw1, new_pw2)
+    masage = await handle_change_password(username, pw, new_pw1, new_pw2, db)
     return masage
 
 
 @app.post("/update_avatar")
-def update_avarta(username: str, avatar: UploadFile = File(...)):
-    message = handle_update_avatar(username, avatar)
+async def update_avarta(username: str, avatar: UploadFile = File(...), db: AsyncDatabase = Depends(get_db)):
+    message = await handle_update_avatar(username, avatar, db)
     return message
 
 
 @app.get("/get_avatar/{username}")
-def get_avatar(username: str):
-    avatar = handle_get_avatar(username)
+async def get_avatar(username: str, db: AsyncDatabase = Depends(get_db)):
+    avatar = await handle_get_avatar(username, db)
     return avatar
 
 
 @app.post("/contact")
-def contact_user(fullname: str = Form(...),
+async def contact_user(fullname: str = Form(...),
     email: str = Form(...),
-    message: str = Form(...)):
-    return handle_contact(fullname, email, message)
+    message: str = Form(...),
+    db: AsyncDatabase = Depends(get_db)
+):
+    return await handle_contact(fullname, email, message, db)
 
 
 @app.post("/get-list-job-by-userId")
-def api_get_list_job(user_id: str):
-    return get_jobs(user_id)
+async def api_get_list_job(user_id: str, db: AsyncDatabase = Depends(get_db)):
+    return await get_jobs(user_id, db)
 
 @app.post("/get-job-info")
-def get_job_info(id: str):
-    job = get_one_job(id_job=id)
-    return job
+async def get_job_info(id: str, db: AsyncDatabase = Depends(get_db)):
+    return await get_one_job(id_job=id, db=db)
 
 @app.post("/get-data-from-uci")
-def get_data_from_uci(id_data: int):
+async def get_data_from_uci(id_data: int):
     df_uci, class_uci = get_data_uci_where_id(id=id_data)
     output = format_data_automl(
         rows=df_uci.values, cols=df_uci.columns.to_list(), class_name=list(class_uci)
@@ -339,41 +341,30 @@ def get_data_from_uci(id_data: int):
 
 # Lấy danh sách data
 @app.post("/get-list-data-by-userid")
-def get_list_data_by_userid(id: str):
-    list_data = get_list_data(id_user=id)
+async def get_list_data_by_userid(id: str, db: AsyncDatabase = Depends(get_db)):
+    list_data = await get_list_data(id_user=id, db=db)
     return list_data
 
 
 # Lấy 1 dataset
 @app.post("/get-data-info")
-def get_data_info(id: str):
-    data = get_one_data(id_data=id)
+async def get_data_info(id: str, db: AsyncDatabase = Depends(get_db)):
+    data = await get_one_data(id_data=id, db=db)
     return data
-
-
-# Lấy bộ dữ liệu từ mongodb - yêu cầu đầu vào chuẩn
-@app.post("/get-data-from-mongodb-to-train")
-def get_data_from_mongodb_to_train(id: str):
-    df, class_data = get_data_from_mongodb_by_id(id_data=id)
-    
-    output = format_data_automl(
-        rows=df.values, cols=df.columns.to_list(), class_name=list(class_data)
-    )
-    data = {"data": output, "list_feature": df.columns.to_list()}
-    return JSONResponse(content=data)
 
 
 # Upload dataset
 @app.post("/upload-dataset")
-def upload_dataset(
+async def upload_dataset(
     user_id: str,
     data_name: str = Form(...),
     data_type: str = Form(...),
     file_data: UploadFile = File(...),
+    db: AsyncDatabase = Depends(get_db)
 ):
 
     try:
-        dataset = upload_data_to_minio(file_data, data_name, data_type, user_id)
+        dataset = await upload_data_to_minio(file_data, data_name, data_type, user_id, db)
         return dataset
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"{str(e)}")
@@ -381,11 +372,11 @@ def upload_dataset(
 
 # Update dataset
 @app.put("/update-dataset/{dataset_id}")
-def update_dataset(
-    dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None)
+async def update_dataset(
+    dataset_id: str, data_name: str = Form(None), data_type: str = Form(None), file_data: UploadFile = File(None), db: AsyncDatabase = Depends(get_db)
 ):
     try:
-        result = update_dataset_to_minio_by_id(dataset_id, data_name, data_type, file_data)
+        result = await update_dataset_to_minio_by_id(dataset_id, db, data_name, data_type, file_data)
         return {
             "sucess": result
         }
@@ -395,9 +386,9 @@ def update_dataset(
 
 # Delete dataset
 @app.delete("/delete-dataset/{dataset_id}")
-async def delete_dataset(dataset_id: str):
+async def delete_dataset(dataset_id: str, db: AsyncDatabase = Depends(get_db)):
     try:
-        result = delete_dataset_at_minio_by_id(dataset_id)
+        result = await delete_dataset_at_minio_by_id(dataset_id, db)
         return {
             "success": result
         }
@@ -407,8 +398,8 @@ async def delete_dataset(dataset_id: str):
 
 # Lấy danh sách bộ dữ liệu của người dùng cho màn admin
 @app.get("/get-list-data-user")
-def get_list_data_user():
-    list_data = get_user_data_list()
+async def get_list_data_user(db: AsyncDatabase = Depends(get_db)):
+    list_data = await get_all_data(db)
     return list_data
 
 
@@ -427,39 +418,45 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "orther_model_scores": model_scores,
     }
 
-# Không còn sử dụng được, do data đã được lưu trên HCloud
-@app.post("/training-file-mongodb")
-def api_train_mongo():
-    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
-        get_data_and_config_from_MongoDB()
-    )
-    X_processed, y_processed, preprocessor = preprocess_data(list_feature, target, data)
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
-    )
-
-    return {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores
-    }
-
 
 @app.post("/train-from-requestbody-json/")
-def api_train_json(item: Item, userId: str, id_data:str):
-    return train_json(item, userId, id_data)
+def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Depends(get_db)):
+    return train_json(item, userId, id_data, db)
 
 
-@app.post("/inference-model/")
-def api_inference_model(job_id, file_data: UploadFile):
-    return inference_model(job_id, file_data)
+# @app.post("/inference-model/")
+# def api_inference_model(job_id, file_data: UploadFile, db: AsyncDatabase = Depends(get_db)):
+#     return inference_model(job_id, file_data, db)
+
+
+@app.post("/inference-model")
+async def inference(
+    job_id: str = Form(...), 
+    user_id: str = Form(...),
+    file_data: UploadFile = File(...),
+    db: AsyncDatabase = Depends(get_db)
+):
+    try:
+        prediction_result = await inference_model(job_id, user_id, file_data, db)
+
+        if isinstance(prediction_result, dict) and "error" in prediction_result:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Prediction failed: {prediction_result['error']}"
+            )
+        
+        return prediction_result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An internal server error occurred: {str(e)}"
+        )
+
 
 
 @app.post("/activate-model")
-def api_activate_model(job_id, activate=0):
-    return update_activate_model(job_id, activate)
+def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get_db)):
+    return update_activate_model(job_id, db, activate)
 
 
 from experiment import exp
@@ -469,4 +466,4 @@ from automl.v2.master import master
 app.include_router(master)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=data["HOST_BACK_END"], port=data["PORT_BACK_END"], reload=True, log_level="info")
+    uvicorn.run("app:app", host=os.getenv('HOST_BACK_END', '0.0.0.0'), port=int(os.getenv('PORT_BACK_END', 8080)), reload=True)

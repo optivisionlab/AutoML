@@ -1,26 +1,26 @@
-from pymongo import MongoClient
-import yaml
+from pymongo import AsyncMongoClient
+from fastapi import Request
 import os
+from dotenv import load_dotenv
 
 
-# Get the directory of the current file and construct the config path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(os.path.dirname(current_dir), ".config.yml")
+# Load file .env
+load_dotenv()
 
-with open(config_path, "r") as f:
-    data = yaml.safe_load(f)
-connection_string = data['MONGODB_CONNECT']
 
-def get_database(): 
-    try:
-        client = MongoClient(connection_string)
-        return client['AutoML']
-    except:
-        return -1
+async def connection():
+    client = AsyncMongoClient(
+        os.getenv('MONGODB_CONNECT', 'localhost:27017')
+    )
+    return client['AutoML'], client
+
+
+async def get_db(request: Request):
+    return request.app.state.db
 
 
 if __name__ == "__main__":
-    dbname = get_database()
+    dbname = connection()
     # Kiểm tra kết nối đã được thiết lập thành công hay không
     if dbname is not None:
         print("Kết nối đến cơ sở dữ liệu MongoDB thành công.")
