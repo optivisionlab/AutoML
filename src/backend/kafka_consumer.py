@@ -134,7 +134,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
 async def kafka_consumer_process(db: AsyncDatabase):
     consumer = None
 
-    MAX_CONCURRENT_HANDLERS = 10
+    MAX_CONCURRENT_HANDLERS = 1
     sem = asyncio.Semaphore(MAX_CONCURRENT_HANDLERS)
 
     async def process_message_safely(msg):
