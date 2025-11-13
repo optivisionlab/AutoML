@@ -273,7 +273,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
         "job_id": job_id,
         "best_model_id": SearchStrategy.convert_numpy_types(best_model_id),
         "best_model": str(best_model),
-        "model": model_data,
+        "model": model_data, # Đang lưu trực tiếp vào mongodb
         "best_params": SearchStrategy.convert_numpy_types(best_params),
         "best_score": SearchStrategy.convert_numpy_types(best_score),
         "orther_model_scores": SearchStrategy.convert_numpy_types(model_scores),
