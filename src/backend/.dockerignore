@@ -3,12 +3,6 @@
 .git
 .vscode/
 __pycache__/
-assets/system_models/model.yml
-
-docker-compose.yml
-hautoml.nano.dockerfile
-hautoml.toolkit.dockerfile
-worker.dockerfile
 
 README.md
 ALGORITHM_INTEGRATION_REPORT.md
