@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 
-import { cn } from '@/libs/utils';
+import { cn } from '@/lib/utils';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
