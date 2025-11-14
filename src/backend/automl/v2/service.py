@@ -142,7 +142,7 @@ def convert_mongodb_document(doc: dict) -> dict:
     return doc
 
 
-async def query_jobs(id_user: str, page: int, limit: int, db: AsyncDatabase) -> tuple[list[dict], int]:
+async def query_jobs(id_user: str, page: int, limit: int, db: AsyncDatabase) -> tuple[list[dict], int, int]:
     job_collection = db.tbl_Job
 
     filter_query = {"user.id": id_user}
@@ -172,7 +172,7 @@ async def query_jobs(id_user: str, page: int, limit: int, db: AsyncDatabase) -> 
         await job_collection.find(filter_query, projection=projection_fields)
         .sort("create_at", -1)
         .skip(offset)
-        .limit(limit)
+        .limit(limit).to_list(length=None)
     )
 
     # Chuyển _id thành str
