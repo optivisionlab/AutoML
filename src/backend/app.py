@@ -122,7 +122,7 @@ oauth.register(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"{master_api_url}", "http://localhost:3000"],
+    allow_origins=[f"http://{os.getenv('HOST_FRONT_END', '0.0.0.0')}:{int(os.getenv('PORT_FRONT_END', 8080))}", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -423,10 +423,6 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
 def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Depends(get_db)):
     return train_json(item, userId, id_data, db)
 
-
-# @app.post("/inference-model/")
-# def api_inference_model(job_id, file_data: UploadFile, db: AsyncDatabase = Depends(get_db)):
-#     return inference_model(job_id, file_data, db)
 
 
 @app.post("/inference-model")

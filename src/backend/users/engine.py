@@ -61,7 +61,7 @@ def user_helper(user) -> dict:
 async def get_list_user(db: AsyncDatabase):
     users_collection = db.tbl_User
 
-    users_data = await users_collection.find({"role": "user"})  # Lọc theo role
+    users_data = await users_collection.find({"role": "user"}).to_list(length=None)  # Lọc theo role
     list_user = []
     for user in users_data:
         user['_id'] = str(user['_id'])  # Convert ObjectId to string
@@ -109,7 +109,7 @@ import jwt
 
 SECRET_KEY = os.getenv('SECRET_KEY', '')
 ALGORITHM = os.getenv('ALGORITHM', 'HS256')
-EXPIRE_MINUTES = os.getenv('EXPIRE_MINUTES', 30)
+EXPIRE_MINUTES = int(os.getenv('EXPIRE_MINUTES', 30))
    
 async def check_token(token, db: AsyncDatabase):
     users_collection = db.tbl_User
