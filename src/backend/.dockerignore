@@ -1,7 +1,8 @@
 .env
-.config.yml
-
+.gitignore
 .git
 .vscode/
 __pycache__/
-search/
+
+README.md
+ALGORITHM_INTEGRATION_REPORT.md

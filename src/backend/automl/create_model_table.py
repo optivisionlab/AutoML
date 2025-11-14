@@ -1,7 +1,8 @@
-from database.database import get_database
+from database.database import connection
+import asyncio
 
+client = asyncio.run(connection())
 
-client = get_database()
 db = client["AutoML"]
 model_collection = db["Classification_models"]
 

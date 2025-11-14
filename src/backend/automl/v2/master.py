@@ -4,13 +4,18 @@ import yaml
 import time
 import logging
 import itertools
+import hashlib
+import json
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.v2.minio import minIOStorage
-from database.get_dataset import job_update
+from database.get_dataset import MongoJob
+from database.database import get_db
+
 
 load_dotenv()
 
@@ -34,26 +39,50 @@ def get_models():
         }
 
     metric_list = data['metric_list']
-    return models, metric_list 
+    return models, metric_list
+
+
+
+def get_config_hash(id_data: str, list_feature: list, target: str) -> str:
+    """
+    Tạo một hash duy nhất dựa trên data và cấu hình tiền xử lý.
+    """
+    # Sắp xếp list_feature
+    sorted_features = sorted(list_feature)
+
+    # Tạo một chuỗi đại diện duy nhất
+    key_string = f"{id_data}-{json.dumps(sorted_features)}-{target}"
+
+    # Trả về hash MD5 của chuỗi
+    return hashlib.md5(key_string.encode('utf-8')).hexdigest()
+
 
 
 # =========================================================================
 # CẤU TRÚC DỮ LIỆU TRUNG TÂM
 # =========================================================================
 
-# Hàng đợi ưu tiên: (priority, task)
-# Ưu tiên 0 = Data Locality HIT (ưu tiên cao nhất)
-# Ưu tiên 1 = Data Locality MISS
+# Hàng đợi chung cho các task chưa phân loại
+# Ưu tiên 0 = Task bị timeout
+# Ưu tiên 1 = Task mới
 GLOBAL_TASK_QUEUE = asyncio.PriorityQueue()
 
-# Sổ theo dõi tiến độ Job
+# Hàng đợi riêng cho từng Data ID
+# Key: id_data, Value: asyncio.Queue (FIFO)
+LOCAL_QUEUES: dict[str, asyncio.Queue] = {}
+
+# Lock để bảo vệ việc tạo hàng đợi mới trong LOCAL_QUEUES
+LOCAL_QUEUE_LOCK = asyncio.Lock()
+
+# Theo dõi tiến độ Job
 # Key: job_id, Value: dict chứa thông tin job
 JOB_TRACKER: dict[str, dict] = {}
 
-# Sổ theo dõi các Task đang được giao (Dùng cho Heartbeat)
+# Theo dõi các Task đang được giao (Dùng cho Heartbeat)
 # Key: task_id, Value: dict chứa thông tin task
 ACTIVE_TASKS: dict[str, dict] = {}
-TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 300)) # 10 phút
+TASK_TIMEOUT_SECONDS = int(os.getenv("TASK_TIMEOUT_SECONDS", 3600)) # 1 giờ
+MAX_TASK_SNOOZES = int(os.getenv("MAX_TASK_SNOOZES", 1))
 
 # Bộ đếm TIE-BREAKER cho PriorityQueue
 task_counter = itertools.count()
@@ -66,8 +95,12 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
     Tạo task và bỏ vào hàng đợi ưu tiên toàn cục
     """
     was_queue_empty = GLOBAL_TASK_QUEUE.empty()
-
     models, metric_list = await asyncio.to_thread(get_models)
+
+    list_feature = config.get('list_feature')
+    target = config.get('target')
+    cache_key = get_config_hash(id_data, list_feature, target)
+    
 
     JOB_TRACKER[job_id] = {
         "total_tasks": len(models),
@@ -75,8 +108,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
         "results": [],
         "completion_event": asyncio.Event(),
         "config": config,
-        "id_user": id_user,
-        "id_data": id_data
+        "id_user": id_user
     }
 
     tasks_added = 0
@@ -87,7 +119,8 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
             "id_data": id_data,
             "config": config,
             "model_info": model_info,
-            "metrics": metric_list
+            "metrics": metric_list,
+            "cache_key": cache_key
         }
         entry_count = next(task_counter)
         await GLOBAL_TASK_QUEUE.put((1, entry_count, task))
@@ -105,7 +138,9 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
                     logging.warning(f"[{job_id}] Failed to send signal to worker {WORKERS[i]}: {res}")
 
 
-def reduce_results_for_job(job_id: str):
+
+async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
+    job_update = MongoJob(db)
     """
     Tổng hợp kết quả cuối cùng cho một job
     """
@@ -137,7 +172,8 @@ def reduce_results_for_job(job_id: str):
         version = 1
         dest_model_path = f"{tracker['id_user']}/{job_id}/{best_model_info['model_name']}_{version}.pkl"
 
-        minIOStorage.move_model(
+        await asyncio.to_thread(
+            minIOStorage.move_model,
             source_bucket=original_best_result["model"].get("bucket_name"),
             source_model=original_best_result["model"].get("object_name"),
             dest_bucket="models",
@@ -156,83 +192,150 @@ def reduce_results_for_job(job_id: str):
             "model_scores": final_model_scores
         }
 
-        job_update.update_success(job_id, final_result_payload)
+        await job_update.update_success(job_id, final_result_payload)
         return True
     
     except Exception as e:
         error_msg = f"Update failure: {str(e)}"
-        job_update.update_failure(job_id, error_msg)
+        await job_update.update_failure(job_id, error_msg)
         raise Exception(f"{error_msg}")
 
 
-async def handle_task_result_submission(result: dict):
+
+async def run_reduction_and_cleanup(job_id: str, db: AsyncDatabase):
+    job_update = MongoJob(db)
+    """
+    Chạy reduce và dọn dẹp job trong một background task
+    """
+    if job_id not in JOB_TRACKER:
+        logging.warning(f"[{job_id}] Job tracker not found for cleanup.")
+        return
+    
+    try:
+        # Chạy hàm reduce trong một thread riêng
+        await reduce_results_for_job(job_id, db)
+        print(f"[{job_id}] Reduction successful.")
+
+    except Exception as e:
+        await job_update.update_failure(job_id, f"Reduction failed: {str(e)}")
+
+    finally:
+        JOB_TRACKER.pop(job_id, None)
+
+
+
+async def handle_task_result_submission(result: dict, db: AsyncDatabase):
     """Xử lý kết quả được worker gửi về"""
     job_id = result.get("job_id")
     model_name = result.get("model_name")
-    if not job_id or not model_name:
+    worker_url = result.get("worker_url")
+
+    if not job_id or not model_name or not worker_url:
         logging.error(f"Received invalid result: {result}")
-        return {"status": "Invalid result"}
+        return {"status": "Invalid result payload"}
     
     task_id = f"{job_id}_{model_name}"
 
-    if task_id in ACTIVE_TASKS:
-        ACTIVE_TASKS.pop(task_id, None)
+    if task_id not in ACTIVE_TASKS:
+        return {"status": "stale_discarded"}
     
+    activate_task_info = ACTIVE_TASKS[task_id]
+    if activate_task_info.get("worker_url") != worker_url:
+        return {"status": "stale_discarded"}
+
+    ACTIVE_TASKS.pop(task_id, None)
+
     # Gửi kết quả cho JobTracker
     if not job_id or job_id not in JOB_TRACKER:
         logging.error(f"Received result for unknown job: {job_id}")
-        return {"status": "Failure"}
+        return {"status": "failed"}
 
     tracker = JOB_TRACKER[job_id]
     
     tracker["results"].append(result)
-    # if result.get("success"):
     tracker["completed_tasks"] += 1
 
     if tracker["completed_tasks"] >= tracker["total_tasks"]:
         print(f"[{job_id}] All tasks completed")
+        asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         tracker["completion_event"].set()
 
     return {"status": "success"}
 
 
-async def get_prioritized_task(worker_url: str, cached_id_data: str | None = None):
-    # Đẩy các task có data locality lên đầu hàng đợi
-    if cached_id_data and not GLOBAL_TASK_QUEUE.empty():
-        temp_tasks = []
-        found_local_task = False
-        while not GLOBAL_TASK_QUEUE.empty():
-            priority, entry_count, task = GLOBAL_TASK_QUEUE.get_nowait()
 
-            if priority > 0 and task.get("id_data") == cached_id_data:
-                await GLOBAL_TASK_QUEUE.put((0, entry_count, task))
-                found_local_task = True
-            else:
-                temp_tasks.append((priority, entry_count, task))
-
+async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = None):
+    """
+    Lấy task theo cơ chế ưu tiên:
+    1. Ưu tiên 1: Lấy từ hàng đợi LOCAL
+    2. Ưu tiên 2: Lấy từ hàng đợi GLOBAL
+    """
+    task = None
+    # Lấy từ hàng đợi LOCAL
+    if cached_key_hint:
+        local_queue = None
+        async with LOCAL_QUEUE_LOCK:
+            local_queue = LOCAL_QUEUES.get(cached_key_hint)
         
-        for item in temp_tasks:
-            await GLOBAL_TASK_QUEUE.put(item)
-            
-        if found_local_task:
-            print(f"[Master] Data Locality HIT for worker {worker_url} on data {cached_id_data}")
+        if local_queue:
+            try:
+                task = local_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
 
-    # Lấy task có ưu tiên cao nhất
-    try:
-        priority, entry_count, task = GLOBAL_TASK_QUEUE.get_nowait()
+    if task:
         task_id = task["task_id"]
-        
-        # Ghi lại vào sổ theo dõi Heartbeat
         ACTIVE_TASKS[task_id] = {
             "worker_url": worker_url,
             "start_time": time.time(),
             "task_data": task,
-            "entry_count": entry_count
+            "entry_count": -1, # Task từ LOCAL không cần entry_count
+            "snooze_count": 0
         }
-        
         return task
-    except asyncio.QueueEmpty:
-        return None
+
+    # Nếu không có task ở LOCAL, lấy từ GLOBAL
+    # Tìm được task phù hợp cho worker
+    # hoặc hàng đọi GLOBAL hết
+    while True:
+        try:
+            priority, entry_count, task = GLOBAL_TASK_QUEUE.get_nowait()
+        except asyncio.QueueEmpty:
+            return None
+        
+        cache_key = task.get("cache_key")
+
+        # Worker không có cache. Task nào cũng phù hợp
+        if not cached_key_hint:
+            break
+
+        # Worker có cache và task này HIT cache
+        if cached_key_hint == cache_key:
+            break
+
+        # Worker có cache nhưng task này MISS cache
+        else:
+            local_queue_miss = None
+            async with LOCAL_QUEUE_LOCK:
+                if cache_key not in LOCAL_QUEUES:
+                    LOCAL_QUEUES[cache_key] = asyncio.Queue()
+                local_queue_miss = LOCAL_QUEUES[cache_key]
+            
+            await local_queue_miss.put(task)
+            task = None
+    
+    if task:
+        task_id = task["task_id"]
+        ACTIVE_TASKS[task_id] = {
+            "worker_url": worker_url,
+            "start_time": time.time(),
+            "task_data": task,
+            "entry_count": entry_count,
+            "snooze_count": 0
+        }
+        return task
+    
+    return None
 
 
 
@@ -263,31 +366,44 @@ async def monitor_tasks():
 
                 logging.warning(f"[Monitor] Task {task_id} timed out. Checking worker {dead_worker_url}") 
 
+                requeue_task = False
                 try:
                     # Ping worker để kiểm tra
                     await monitor_client.get(f"{dead_worker_url}/health", timeout=5.0)
-                    print(f"[Monitor] Worker {dead_worker_url} is alive but slow")
+
+                    # Worker vẫn sống (ALIVE but SLOW)
+                    snooze_count = task_info.get("snooze_count", 0)
+
+                    if snooze_count < MAX_TASK_SNOOZES:
+                        if task_id in ACTIVE_TASKS:
+                            ACTIVE_TASKS[task_id]["start_time"] = time.time()
+                            ACTIVE_TASKS[task_id]["snooze_count"] = snooze_count + 1
+                        requeue_task = False # không thu hồi
+                    else:
+                        requeue_task = True # thu hồi
 
                 except (httpx.RequestError, httpx.TimeoutException):
-                    logging.error(f"[Monitor] Worker {dead_worker_url} is DEAD. Re-queueing task {task_id}")
-
+                    logging.error(f"[Monitor] Worker {dead_worker_url} is dead. Re-queueing task {task_id}")
                     WORKER_REGISTRY.pop(dead_worker_url, None)
+                    requeue_task = True
 
-                    # Đẩy task trở lại hàng đợi (với ưu tiên cao nhất)
-                    original_entry_count = task_info["entry_count"]
-                    await GLOBAL_TASK_QUEUE.put((0, original_entry_count, task_info["task_data"]))
-                    
-                    # Xóa khỏi danh sách đang theo dõi
-                    ACTIVE_TASKS.pop(task_id, None)
+                if requeue_task:
+                    original_entry_count = task_info.get("entry_count", 0)
 
-                    for worker_url, info in WORKER_REGISTRY.items():
-                        if info.get('status') == 'idle':
-                            try:
-                                await monitor_client.get(f"{worker_url}/check-for-work", timeout=5.0)
-                                break
-                            except Exception as e:
-                                logging.error(f"[Monitor] Failed to wake up replacement worker {worker_url}: {e}")
-            
+                    if task_id in ACTIVE_TASKS and ACTIVE_TASKS[task_id].get("worker_url") == dead_worker_url:
+                        await GLOBAL_TASK_QUEUE.put((0, original_entry_count, task_info["task_data"]))
+                        ACTIVE_TASKS.pop(task_id, None)
+
+                        for w_url, info in WORKER_REGISTRY.items():
+                            if info.get("status") == "idle":
+                                try:
+                                    await monitor_client.get(f"{w_url}/check-for-work", timeout=5.0)
+                                    break
+                                except Exception as e:
+                                    logging.error(f"[Monitor] Failed to wake up replacement worker {w_url}: {e}")
+                    else:
+                        # Task đã được submit hoặc giao lại cho người khác trong lúc ta đang check
+                        logging.warning(f"[Monitor] Task {task_id} was already handled. No action taken.")
 
 
 # =========================================================================
@@ -296,13 +412,13 @@ async def monitor_tasks():
 master = APIRouter()
 
 @master.get("/task/get")
-async def api_get_task(cached_id_data: str | None = None, worker_url: str | None = None):
+async def api_get_task(cached_key_hint: str | None = None, worker_url: str | None = None):
     if worker_url:
         WORKER_REGISTRY[worker_url] = {
             'status': 'idle'
         }
 
-    task = await get_prioritized_task(worker_url, cached_id_data)
+    task = await get_prioritized_task(worker_url, cached_key_hint)
     if task and worker_url:
         WORKER_REGISTRY[worker_url] = {
             'status': 'working'
@@ -312,7 +428,6 @@ async def api_get_task(cached_id_data: str | None = None, worker_url: str | None
 
 
 @master.post("/task/submit")
-async def api_submit_result(result: dict):
-    status = await handle_task_result_submission(result)
-
+async def api_submit_result(result: dict, db: AsyncDatabase = Depends(get_db)):
+    status = await handle_task_result_submission(result, db)
     return status
