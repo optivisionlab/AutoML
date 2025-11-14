@@ -109,7 +109,7 @@ import jwt
 
 SECRET_KEY = os.getenv('SECRET_KEY', '')
 ALGORITHM = os.getenv('ALGORITHM', 'HS256')
-EXPIRE_MINUTES = os.getenv('EXPIRE_MINUTES', 30)
+EXPIRE_MINUTES = int(os.getenv('EXPIRE_MINUTES', 30))
    
 async def check_token(token, db: AsyncDatabase):
     users_collection = db.tbl_User

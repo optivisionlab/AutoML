@@ -17,7 +17,7 @@ async def get_all_data(db: AsyncDatabase):
     data_collection = db.tbl_Data
     filter_query = {"activate": 1} # activate = 1 <=> kích hoạt dataset
 
-    data = await data_collection.find(filter_query, {"username": 0, "role": 0})
+    data = await data_collection.find(filter_query, {"username": 0, "role": 0}).to_list(length=None)
     list_data = []
     for item in data:
         item["_id"] = str(item["_id"])
@@ -30,7 +30,7 @@ async def get_list_data(id_user, db: AsyncDatabase):
     data_collection = db.tbl_Data
     filter_query = {"userId": id_user, "activate": 1} # activate = 1 <=> kích hoạt dataset
 
-    data = await data_collection.find(filter_query, {"username": 0, "role": 0})
+    data = await data_collection.find(filter_query, {"username": 0, "role": 0}).to_list(length=None)
     list_data = []
     for item in data:
         item["_id"] = str(item["_id"])
