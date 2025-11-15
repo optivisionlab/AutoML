@@ -122,7 +122,7 @@ oauth.register(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://{os.getenv('HOST_FRONT_END', '0.0.0.0')}:{int(os.getenv('PORT_FRONT_END', 8080))}", "http://localhost:3000"],
+    allow_origins=[f"http://{os.getenv('HOST_FRONT_END', '0.0.0.0')}:{int(os.getenv('PORT_FRONT_END', 8080))}", f"http://10.100.200.119:{int(os.getenv('PORT_FRONT_END', 8080))}"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
