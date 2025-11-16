@@ -17,7 +17,7 @@ class SearchStrategy(ABC):
 
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Return a default configuration for this strategy"""
+        """Trả về cấu hình mặc định cho strategy này"""
         cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
         return {
@@ -34,7 +34,7 @@ class SearchStrategy(ABC):
 
     @abstractmethod
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
-        """Execute the search algorithm.
+        """Thực thi thuật toán tìm kiếm.
 
         Returns:
             tuple: (best_params, best_score, cv_results)
@@ -42,23 +42,23 @@ class SearchStrategy(ABC):
         pass
 
     def set_config(self, **kwargs):
-        """Update configuration"""
+        """Cập nhật cấu hình"""
         self.config.update(kwargs)
         return self
     
 
     def create_log_file_path(self, model: BaseEstimator, strategy_name: str = None) -> Optional[str]:
-        """Create a log file path for saving search results.
+        """Tạo đường dẫn file log để lưu kết quả tìm kiếm.
         
-        This method creates a standardized log file path based on the configuration.
-        It ensures the log directory exists and generates a timestamped filename.
+        Phương thức này tạo đường dẫn file log chuẩn hóa dựa trên cấu hình.
+        Nó đảm bảo thư mục log tồn tại và tạo tên file có timestamp.
         
         Args:
-            model: The model being used for search
-            strategy_name: Optional name for the strategy (defaults to class name)
+            model: Mô hình đang được sử dụng cho tìm kiếm
+            strategy_name: Tên tùy chọn cho strategy (mặc định là tên class)
             
         Returns:
-            str: Path to the log file if save_log is True, None otherwise
+            str: Đường dẫn đến file log nếu save_log là True, None nếu ngược lại
         """
         if not self.config.get('save_log', False):
             return None
@@ -69,16 +69,16 @@ class SearchStrategy(ABC):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = model.__class__.__name__
         
-        # Use the provided strategy name or derive from the class name
+        # Sử dụng tên strategy được cung cấp hoặc tạo từ tên class
         if strategy_name is None:
-            # Convert the class name from CamelCase to snake_case
+            # Chuyển đổi tên class từ CamelCase sang snake_case
             class_name = self.__class__.__name__
-            # Remove the 'Strategy' suffix if present
+            # Loại bỏ hậu tố 'Strategy' nếu có
             if class_name.endswith('Strategy'):
                 class_name = class_name[:-8]
             if class_name.endswith('SearchStrategy'):
                 class_name = class_name[:-14]
-            # Convert to snake_case
+            # Chuyển đổi sang snake_case
             import re
             strategy_name = re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).lower()
         
@@ -88,16 +88,16 @@ class SearchStrategy(ABC):
 
     @staticmethod
     def convert_numpy_types(obj: Any) -> Any:
-        """Convert numpy types to native Python types recursively.
+        """Chuyển đổi kiểu numpy sang kiểu Python gốc một cách đệ quy.
         
-        This is important for JSON serialization and avoiding 
-        unhashable type errors.
+        Điều này quan trọng cho JSON serialization và tránh 
+        lỗi kiểu không thể hash.
         
         Args:
-            obj: Object to convert (can be dict, list, scalar, etc.)
+            obj: Đối tượng cần chuyển đổi (có thể là dict, list, scalar, v.v.)
             
         Returns:
-            Object with all numpy types converted to native Python types
+            Đối tượng với tất cả kiểu numpy đã được chuyển đổi sang kiểu Python gốc
         """
         if isinstance(obj, np.integer):
             return int(obj)
@@ -105,7 +105,7 @@ class SearchStrategy(ABC):
             return float(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
-        elif hasattr(obj, 'item'):  # numpy scalar
+        elif hasattr(obj, 'item'):
             return obj.item()
         elif isinstance(obj, dict):
             return {key: SearchStrategy.convert_numpy_types(value) 
@@ -121,22 +121,22 @@ class SearchStrategy(ABC):
 
     def _finalize_results(self, best_params: Dict[str, Any], best_score: float, 
                          best_all_scores: Dict[str, float], cv_results: Dict[str, Any]) -> Tuple:
-        """Clear caches and convert numpy types before returning results.
+        """Xóa cache và chuyển đổi kiểu numpy trước khi trả về kết quả.
         
-        This method should be called at the end of the search method to:
-        1. Clear all caches to free memory
-        2. Convert numpy types to native Python types for serialization
+        Phương thức này nên được gọi ở cuối phương thức search để:
+        1. Xóa tất cả cache để giải phóng bộ nhớ
+        2. Chuyển đổi kiểu numpy sang kiểu Python gốc để serialization
         
         Args:
-            best_params: Best parameters found
-            best_score: Best score achieved
-            best_all_scores: All metric scores for best parameters
-            cv_results: Detailed cross-validation results
+            best_params: Tham số tốt nhất tìm được
+            best_score: Điểm số tốt nhất đạt được
+            best_all_scores: Tất cả điểm số metric cho tham số tốt nhất
+            cv_results: Kết quả cross-validation chi tiết
             
         Returns:
-            tuple: (best_params, best_score, best_all_scores, cv_results) with all numpy types converted
+            tuple: (best_params, best_score, best_all_scores, cv_results) với tất cả kiểu numpy đã chuyển đổi
         """
-        # Clear caches after the search completes
+        # Xóa cache sau khi tìm kiếm hoàn thành
         if hasattr(self, '_decode_cache'):
             self._decode_cache.clear()
         if hasattr(self, '_evaluation_cache'):
@@ -144,7 +144,7 @@ class SearchStrategy(ABC):
         if hasattr(self, '_model_copies'):
             self._model_copies.clear()
         
-        # Convert all numpy types to native Python types
+        # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc
         best_params = self.convert_numpy_types(best_params)
         best_score = self.convert_numpy_types(best_score)
         best_all_scores = self.convert_numpy_types(best_all_scores)

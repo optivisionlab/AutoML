@@ -1,0 +1,306 @@
+version: "3.8"
+
+services:
+  # =====================================
+  # Frontend Service
+  # =====================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile.dev
+    container_name: nckh-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:9999
+      - NEXT_PUBLIC_GRADIO_URL=http://gradio:7860
+    volumes:
+      - ./frontend/.env:/app/.env
+    networks:
+      - nckh-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =====================================
+  # Backend API Service
+  # =====================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: hautoml.toolkit.dockerfile
+    container_name: nckh-backend
+    restart: unless-stopped
+    ports:
+      - "9999:9999"
+    environment:
+      - PYTHONPATH=/app
+      - MONGODB_URL=mongodb://mongo:27017
+      - MONGODB_CONNECT=mongodb://mongo:27017/
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_SERVER=kafka:29092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./backend:/app:rw
+      - ./backend/data:/app/data
+      - ./backend/logs:/app/logs
+      - ./backend/uploads:/app/uploads
+    networks:
+      - nckh-network
+    depends_on:
+      - mongo
+      - kafka
+      - redis
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: python app.py
+
+  # =====================================
+  # Gradio Demo Service
+  # =====================================
+  gradio:
+    build:
+      context: ./backend
+      dockerfile: hautoml.nano.dockerfile
+    container_name: nckh-gradio
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      - PYTHONPATH=/app
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+    networks:
+      - nckh-network
+    depends_on:
+      - backend
+    command: python automl/demo_gradio.py
+
+  # =====================================
+  # Worker Services
+  # =====================================
+  worker-1:
+    build:
+      context: ./backend
+      dockerfile: worker.dockerfile
+    container_name: nckh-worker-1
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    environment:
+      - PYTHONPATH=/app
+      - HOST=0.0.0.0
+      - PORT=4000
+      - WORKER_INDEX=1
+      - MONGODB_URL=mongodb://mongo:27017
+      - MONGODB_CONNECT=mongodb://mongo:27017/
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_SERVER=kafka:29092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+    networks:
+      - nckh-network
+    depends_on:
+      - kafka
+      - mongo
+      - minio
+    command: uvicorn worker:app --host 0.0.0.0 --port 4000
+
+  worker-2:
+    build:
+      context: ./backend
+      dockerfile: worker.dockerfile
+    container_name: nckh-worker-2
+    restart: unless-stopped
+    ports:
+      - "4002:4000"
+    environment:
+      - PYTHONPATH=/app
+      - HOST=0.0.0.0
+      - PORT=4000
+      - WORKER_INDEX=2
+      - MONGODB_URL=mongodb://mongo:27017
+      - MONGODB_CONNECT=mongodb://mongo:27017/
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_SERVER=kafka:29092
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+    networks:
+      - nckh-network
+    depends_on:
+      - kafka
+      - mongo
+      - minio
+    command: uvicorn worker:app --host 0.0.0.0 --port 4000
+
+  # =====================================
+  # Kafka Message Broker
+  # =====================================
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: nckh-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:29093
+      - KAFKA_LISTENERS=PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LOG_DIRS=/tmp/kraft-combined-logs
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - nckh-network
+
+  # =====================================
+  # MongoDB Database
+  # =====================================
+  mongo:
+    image: mongo:7.0
+    container_name: nckh-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=nckh_automl
+      # Uncomment to enable authentication
+      # - MONGO_INITDB_ROOT_USERNAME=admin
+      # - MONGO_INITDB_ROOT_PASSWORD=secretpassword
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    networks:
+      - nckh-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # =====================================
+  # Redis Cache
+  # =====================================
+  redis:
+    image: redis:7-alpine
+    container_name: nckh-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - nckh-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # =====================================
+  # MinIO Object Storage
+  # =====================================
+  minio:
+    image: minio/minio:latest
+    container_name: nckh-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+      - MINIO_DEFAULT_BUCKETS=models,datasets,results
+    volumes:
+      - minio-data:/data
+    networks:
+      - nckh-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # =====================================
+  # Nginx Reverse Proxy (Optional)
+  # =====================================
+  nginx:
+    image: nginx:alpine
+    container_name: nckh-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    networks:
+      - nckh-network
+    depends_on:
+      - frontend
+      - backend
+      - gradio
+    profiles:
+      - production
+
+# =====================================
+# Networks
+# =====================================
+networks:
+  nckh-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =====================================
+# Volumes
+# =====================================
+volumes:
+  mongo-data:
+    driver: local
+  mongo-config:
+    driver: local
+  kafka-data:
+    driver: local
+  redis-data:
+    driver: local
+  minio-data:
+    driver: local

@@ -1,0 +1,40 @@
+# Development Dockerfile for Frontend
+FROM node:20.19.2-alpine
+
+# Install system dependencies
+RUN apk add --no-cache libc6-compat curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci || npm install
+
+# Copy all application files
+COPY . .
+
+# Ensure PostCSS and Tailwind dependencies are installed
+RUN npm install -D tailwindcss postcss autoprefixer
+
+# Set development environment
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Expose port
+EXPOSE 3000
+
+# Create .next directory with proper permissions
+RUN mkdir -p .next/cache
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
+
+# Start the development server
+# This will compile Tailwind CSS on the fly
+CMD ["npm", "run", "dev"]
