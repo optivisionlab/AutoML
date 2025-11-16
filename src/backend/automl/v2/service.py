@@ -4,9 +4,9 @@ from uuid import uuid4
 
 # Third-party Libraries
 from bson.objectid import ObjectId
+from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Modules
-from database.get_dataset import get_database
 from kafka_consumer import get_producer
 from automl.v2.schemas import InputRequest
 
@@ -24,30 +24,30 @@ async def send_message(topic: str, key: str, message: dict):
     )
 
 
-def save_job_mongo(input: InputRequest, models_info) -> dict:
-    db = get_database()
-    user_collection = db["tbl_User"]
-    job_collection = db["tbl_Job"]
-    data_collection = db["tbl_Data"]
+# Không qua kafka
+async def save_job_mongo(input: InputRequest, models_info, job_id, db: AsyncDatabase) -> dict:
+    user_collection = db.tbl_User
+    job_collection = db.tbl_Job
+    data_collection = db.tbl_Data
 
 
     try:
         # Tìm tên người dùng
-        user_doc = user_collection.find_one({"_id": ObjectId(input.id_user)}, {"username": 1})
+        user_doc = await user_collection.find_one({"_id": ObjectId(input.id_user)}, {"username": 1})
 
         if not user_doc:
             return {"status": "error", "message": "User not found"}
         user_name = user_doc.get("username")
 
         # Tìm tên dữ liệu
-        data_doc = data_collection.find_one({"_id": ObjectId(input.id_data)}, {"dataName": 1})
+        data_doc = await data_collection.find_one({"_id": ObjectId(input.id_data)}, {"dataName": 1})
         if not data_doc:
             return {"status": "error", "message": "Data not found"}
         data_name = data_doc.get("dataName")
 
         # Tạo một bản ghi job mới
         new_job = {
-            "job_id": str(uuid4()),
+            "job_id": job_id,
             "best_model_id": models_info["best_model_id"],
             "best_model": models_info["best_model"],
             "model": models_info["model"],
@@ -69,7 +69,7 @@ def save_job_mongo(input: InputRequest, models_info) -> dict:
         }
 
         # Chèn bản ghi job vào collection
-        result = job_collection.insert_one(new_job)
+        result = await job_collection.insert_one(new_job)
 
         # Trả về kết quả
         return {
@@ -80,23 +80,23 @@ def save_job_mongo(input: InputRequest, models_info) -> dict:
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
 
-def save_job(input: InputRequest) -> str:
-    db = get_database()
-    user_collection = db["tbl_User"]
-    job_collection = db["tbl_Job"]
-    data_collection = db["tbl_Data"]
+
+
+async def save_job(input: InputRequest, db: AsyncDatabase) -> str:
+    user_collection = db.tbl_User
+    job_collection = db.tbl_Job
+    data_collection = db.tbl_Data
     
     # Tìm tên người dùng
-    user_doc = user_collection.find_one({"_id": ObjectId(input.id_user)}, {"username": 1})
+    user_doc = await user_collection.find_one({"_id": ObjectId(input.id_user)}, {"username": 1})
 
     if not user_doc:
         raise ValueError("User not found")
     user_name = user_doc.get("username")
 
     # Tìm tên dữ liệu
-    data_doc = data_collection.find_one({"_id": ObjectId(input.id_data)}, {"dataName": 1})
+    data_doc = await data_collection.find_one({"_id": ObjectId(input.id_data)}, {"dataName": 1})
     if not data_doc:
         raise ValueError("Data not found")
     data_name = data_doc.get("dataName")
@@ -117,7 +117,7 @@ def save_job(input: InputRequest) -> str:
         },
         "status": 0,
         "activate": 0,
-        "create_at": time.time()
+        "create_at": time.perf_counter()
     }
 
     msg_job = {
@@ -127,10 +127,10 @@ def save_job(input: InputRequest) -> str:
     }
 
     try:
-        job_collection.insert_one(new_job)
+        await job_collection.insert_one(new_job)
 
     except Exception as e:
-        raise Exception(f"{str(e)}");
+        raise Exception(f"{str(e)}")
     
     return job_id, msg_job
 
@@ -142,9 +142,8 @@ def convert_mongodb_document(doc: dict) -> dict:
     return doc
 
 
-def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
-    db = get_database()
-    job_collection = db["tbl_Job"]
+async def query_jobs(id_user: str, page: int, limit: int, db: AsyncDatabase) -> tuple[list[dict], int, int]:
+    job_collection = db.tbl_Job
 
     filter_query = {"user.id": id_user}
     
@@ -154,13 +153,13 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     offset = (page - 1) * limit
 
     # Tính tổng số trang
-    total_jobs = job_collection.count_documents(filter_query)
+    total_jobs = await job_collection.count_documents(filter_query)
     total_pages = (total_jobs + limit - 1) // limit if total_jobs > 0 else 1
     
     # Nếu trang yêu cầu vượt quá tổng số trang, điều chỉnh offset về trang cuối cùng
     if page > total_pages and total_pages > 0:
-         page = total_pages
-         offset = (page - 1) * limit
+        page = total_pages
+        offset = (page - 1) * limit
 
 
     # Projection để lấy các trường cần thiết, tránh tải dữ liệu lớn
@@ -170,29 +169,13 @@ def query_jobs(id_user: str, page: int, limit: int) -> tuple[list[dict], int]:
     }
 
     jobs_cursor = (
-        job_collection.find(filter_query, projection=projection_fields)
+        await job_collection.find(filter_query, projection=projection_fields)
         .sort("create_at", -1)
         .skip(offset)
-        .limit(limit)
+        .limit(limit).to_list(length=None)
     )
 
     # Chuyển _id thành str
     jobs_list_raw = [convert_mongodb_document(job) for job in jobs_cursor]
 
     return jobs_list_raw, total_pages, total_jobs
-
-
-def get_model(id: str) -> dict:
-    db = get_database()
-    job_collection = db["tbl_Job"]
-
-    model_doc = job_collection.find_one({"_id": ObjectId(id)}, {"model": 1})
-
-    if not model_doc:
-        raise ValueError("Data not found")
-    
-    model = model_doc.get("model", {})
-    bucket_name = model.get("bucket_name")
-    object_name = model.get("object_name")
-
-    return bucket_name, object_name

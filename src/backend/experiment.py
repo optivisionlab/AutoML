@@ -1,27 +1,27 @@
 # Standard Libraries
-import time
 
 # Third-party Libraries
-from fastapi import status, HTTPException, Query
+from fastapi import status, HTTPException, Query, Request, Depends
+from pymongo.asynchronous.database import AsyncDatabase
 from fastapi.routing import APIRouter
-import asyncio
-import pickle
+import os
 
 # Local Modules
-from database.get_dataset import dataset
-from kafka_consumer import data
-from automl.v2.distributed import process_async
+from database.get_dataset import MongoDataLoader
+from database.database import get_db
 from automl.v2.schemas import InputRequest
-from automl.v2.service import save_job_mongo, save_job, query_jobs, send_message, get_model
-from automl.v2.minio import minIOStorage
+from automl.v2.service import save_job, query_jobs, send_message
+
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
 # API lấy ra danh sách đặc trưng của dataset 
 @exp.get("/features")
-async def get_features_of_dataset(id_data: str): 
+async def get_features_of_dataset(id_data: str, request: Request):
+    dataset = MongoDataLoader(request.app.state.db)
     try:
-        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
+
+        features = await dataset.get_data_features(id_data)
         return {
             "features": features
         }
@@ -38,45 +38,20 @@ async def get_features_of_dataset(id_data: str):
 
 
 @exp.get("/data")
-async def get_features_of_dataset(id_data: str): 
+async def get_features_of_dataset(id_data: str, request: Request):
+    dataset = MongoDataLoader(request.app.state.db)
     try:
-        data, features = await asyncio.to_thread(dataset.get_data_and_features, id_data)
-        data_json = data.to_dict(orient='records')
+        data_preview = await dataset.get_data_preview(id_data)
 
+        if data_preview is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or cannot be read"
+            )
+        
         return {
-            "data": data_json
+            "data": data_preview.to_dict(orient='records')
         }
-    except ValueError as ve:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(ve)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-
-
-
-# API training model = client ==> server (dùng cho test)
-@exp.post("/distributed/mongodb")
-async def distributed_mongodb(input: InputRequest):
-    try:
-        start = time.time()
-
-        results, processed_workers, successful_workers = await process_async(input.id_data, input.config)
-        # Lưu vào database 
-        save_job_result:dict = await asyncio.to_thread(save_job_mongo, input, results)
-
-        save_job_result.update({
-            "processed_workers": processed_workers,
-            "successful_workers": successful_workers,
-            "executed_time": time.time() - start
-        })
-
-        return save_job_result
-
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -91,13 +66,13 @@ async def distributed_mongodb(input: InputRequest):
 
 # API huấn luyện model ==> Client -> Kafka -> Server
 @exp.post("/jobs/training")
-async def distributed_training(input: InputRequest):
+async def distributed_training(input: InputRequest, db: AsyncDatabase = Depends(get_db)):
     """Gửi message vào Kafka và huấn luyện model"""
 
     try:
-        job_id, msg_job = await asyncio.to_thread(save_job, input)
+        job_id, msg_job = await save_job(input, db)
 
-        await send_message(data['KAFKA_TOPIC'], job_id, msg_job)
+        await send_message(os.getenv('KAFKA_TOPIC'), job_id, msg_job)
 
         # Trả về kết quả thành công
         return {
@@ -118,9 +93,10 @@ async def distributed_training(input: InputRequest):
 async def get_jobs_offset(
     id_user: str,
     page: int = Query(1, ge=1),
-    limit: int = Query(5, ge=1)
+    limit: int = Query(5, ge=1),
+    db: AsyncDatabase = Depends(get_db)
 ):
-    job_list_raw, total_pages, total_jobs = query_jobs(id_user, page, limit)
+    job_list_raw, total_pages, total_jobs = await query_jobs(id_user, page, limit, db)
 
     jobs_data = [{**job, '_id': str(job['_id'])} for job in job_list_raw]
 
@@ -134,33 +110,3 @@ async def get_jobs_offset(
             "prev_page": page - 1 if page > 1 else None
         }
     }
-
-
-# API lấy model để sử dụng (mongodb + minio)
-@exp.get('jobs/prediction/{id}')
-async def get_model_by_path(
-    _id: str, 
-    data
-):
-    # model mới có dạng dict, những dữ liệu được training trước đó sẽ xảy ra lỗi.
-    bucket_name, object_name = get_model(_id)
-    model_stream = None
-    try:
-        # Lấy luồng byte từ MinIO
-        buffer = minIOStorage.get_object(bucket_name, object_name)
-        model = pickle.load(buffer)
-
-        prediction = model.predict(data)
-        return {
-            "_id": _id,
-            "prediction": prediction.tolist()
-        }
-    except Exception as e:
-        model_stream.close() if model_stream else None
-        raise HTTPException(status_code=500, detail=f"Failed to process model: {str(e)}")
-    finally:
-        if model_stream:
-            try:
-                model_stream.close()
-            except Exception:
-                pass

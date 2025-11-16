@@ -13,6 +13,13 @@ from automl.search.strategy.bayesian_search import BayesianSearchStrategy
 class SearchStrategyFactory:
     """Factory class for creating search strategy instances."""
     
+    # Registry of available search strategy
+    _strategies = {
+        'grid_search': GridSearchStrategy,
+        'genetic_algorithm': GeneticAlgorithm,
+        'bayesian_search': BayesianSearchStrategy
+    }
+    
     @classmethod
     def create_strategy(cls, strategy_name: str, config: Optional[Dict[str, Any]] = None) -> SearchStrategy:
         """

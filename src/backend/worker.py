@@ -1,23 +1,38 @@
-# Standard Libraries
 import pickle
-import base64
 import asyncio
 import os
-
-# Third-party Libraries
-from fastapi import FastAPI, Request, HTTPException
-from dotenv import load_dotenv
+import logging
+import signal
+import numpy as np
+import httpx
+import time
+import uvicorn
+from fastapi import FastAPI
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
-import uvicorn
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
-# Local Modules
+from automl.v2.minio import minIOStorage
 from automl.engine import train_process
-from database.get_dataset import dataset
+
+
+# Load file .env
+load_dotenv()
+
+
+# WORKER URL
+WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
+WORKER_PORT = int(os.getenv('WORKER_PORT', 8000))
+
+# MASTER URL
+MASTER_HOST = os.getenv('HOST_BACK_END', '0.0.0.0')
+MASTER_PORT = int(os.getenv('PORT_BACK_END', 8080))
+
 
 # ÁNH XẠ MÔ HÌNH
 MODEL_MAPPING = {
@@ -26,111 +41,233 @@ MODEL_MAPPING = {
     "SVC": SVC,
     "KNeighborsClassifier": KNeighborsClassifier,
     "LogisticRegression": LogisticRegression,
-    "GaussianNB": GaussianNB,
+    "GaussianNB": GaussianNB
 }
 
 
-app = FastAPI()
-# Load environment
-load_dotenv()
+# =========================================================================
+# QUẢN LÝ CACHE (LRU)
+# =========================================================================
+# Giới hạn cache chứa tối đa 3 bộ dữ liệu
+MAX_CACHE_SIZE = 3
+DATASET_CACHE = {}
+# Dùng list để theo dõi thứ tự truy cập
+CACHE_ACCESS_ORDER = []
 
-@app.post("/train")
-async def train_models(request: Request):
-    """
-    Huấn luyện model
-    """
+POLLING_CLIENT = None
+WAKE_UP_EVENT = asyncio.Event()
 
-    # Xử lý dữ liệu
+async def get_data_with_cache(id_data: str, cache_key: str):
+    """
+    Quản lý cache
+    """
+    
+    # Cache HIT
+    if cache_key in DATASET_CACHE:
+        CACHE_ACCESS_ORDER.remove(cache_key)
+        CACHE_ACCESS_ORDER.append(cache_key)
+        return DATASET_CACHE[cache_key]
+    
+    cache_bucket = "cache"
+    data_cache = f"{id_data}/{cache_key}.npz"
+
     try:
-        payload = await request.json()
+        data_buffer = await asyncio.to_thread(
+            minIOStorage.get_object,
+            cache_bucket,
+            data_cache
+        )
 
-        # Process data
-        try:
-            metric_list = payload["metrics"]
-            config = payload["config"]
-            
-            choose = config.get("choose")
-            list_feature = config.get("list_feature")
-            target = config.get("target")
-            metric_sort = config.get("metric_sort")
-            algorithm_search = config.get("algorithm_search")
+        with np.load(data_buffer) as cached_data:
+            X_processed = cached_data['X']
+            y_processed = cached_data['y']
+        data_buffer.close()
 
-            data, features = await asyncio.to_thread(dataset.get_data_and_features, payload["id_data"], list_feature)
-            
-        except Exception as e:
-            print(str(e))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Invalid data format: {str(e)}"
-            )
-
-        # Train models
-        models = {}
-        for id, content in payload["models"].items():
-            models[int(id)] = content # Chuyển ID mới thành int
-            content['model'] = MODEL_MAPPING[content['model']]()
-
-        try:
-            print("Training")
-            # Tác vụ huấn luyện sử dụng nhóm luồng
-            _, best_model, best_score, _, model_scores = await asyncio.to_thread(
-                train_process,
-                data,
-                choose,
-                list_feature,
-                target,
-                metric_list,
-                metric_sort,
-                models,
-                algorithm_search
-            )
-            
-            # Convert all numpy types to native Python types to avoid serialization issues
-            from automl.search.strategy.base import SearchStrategy
-            best_score = SearchStrategy.convert_numpy_types(best_score)
-            model_scores = SearchStrategy.convert_numpy_types(model_scores)
-
-            # Tuần tư hóa mô hình thành byte
-            model_bytes = pickle.dumps(best_model)
-
-            # Mã hóa chuỗi byte thành Base64 để có thể truyền qua JSON
-            model_base64 = base64.b64encode(model_bytes).decode('utf-8')
-
-            return {
-                "success": True,
-                "model_scores": model_scores,
-                "best_model": model_base64,
-                "best_score": best_score
-            }
-
-        
-        except Exception as e:
-            print(str(e))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Training failed: {str(e)}"
-            )
-            
     except Exception as e:
-        print(str(e))
-        raise HTTPException(status_code=500, detail=f"Invalid JSON: {str(e)}")
+        raise Exception(f"Cache not found for {str(e)}")
+
+    # Kiểm tra cache đầy
+    if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
+        lru_id = CACHE_ACCESS_ORDER.pop(0)
+        del DATASET_CACHE[lru_id]
+
+    # Thêm data mới vào cache
+    DATASET_CACHE[cache_key] = (X_processed, y_processed)
+    CACHE_ACCESS_ORDER.append(cache_key)
+
+    return DATASET_CACHE[cache_key]
+
+
+# =========================================================================
+# LOGIC THỰC THI TASK
+# =========================================================================
+async def _execute_single_training_task(task: dict):
+    """
+    Xử lý huấn luyện với một model
+    """
+    try:
+        id_data = task["id_data"]
+        cache_key = task["cache_key"]
+        config = task["config"]
+        task_id = task["task_id"]
+        search_algorithm = config.get("search_algorithm", "grid_search")
+
+        X_processed, y_processed = await get_data_with_cache(id_data, cache_key)
+        model_info = task["model_info"]
+        model_params = model_info.get('params') or {}
+        models_to_train = {
+            0: {
+                "model": MODEL_MAPPING[model_info["model"]](),
+                "params": model_params
+            }
+        }
+
+        best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
+            train_process,
+            X_processed,
+            y_processed,
+            task["metrics"],
+            config.get("metric_sort"),
+            models_to_train,
+            search_algorithm
+        )
+
+        model_bytes = pickle.dumps(best_model_obj)
+
+        # Lưu vào bộ nhớ tạm thay vì chuyển bằng JSON
+        await asyncio.to_thread(
+            minIOStorage.uploaded_object,
+            bucket_name="temp",
+            object_name=f"{task_id}.pkl",
+            object_bytes=model_bytes
+        )
+
+        return {
+            "success": True,
+            "job_id": task["job_id"],
+            "model_name": model_info["model"],
+            "score": best_score,
+            "scores": model_scores_list[0]["scores"],
+            "best_params": best_params,
+            "model": {
+                "bucket_name": "temp",
+                "object_name": f"{task_id}.pkl"
+            },
+            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "job_id": task["job_id"],
+            "model_name": model_info["model"],
+            "error": str(e),
+            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
+        }
+    
+
+# =========================================================================
+# VÒNG LẶP POLLING
+# =========================================================================
+async def polling_loop(client: httpx.AsyncClient):
+    # Lấy ID duy nhất của worker
+    master_host_addr = MASTER_HOST
+    if MASTER_HOST == "::":
+        master_host_addr = "[::]"
+
+    master_url = f"http://{master_host_addr}:{MASTER_PORT}"
 
     
+    if not master_url:
+        logging.critical("Master URL does not exist. Worker will be shut down")
+        os.kill(os.getpid(), signal.SIGTERM)
+        return
+    
+    WAKE_UP_EVENT.set()
+    
+    while True:
+        try:
+            await WAKE_UP_EVENT.wait()
+
+        except asyncio.CancelledError:
+            print(f"[Worker] 'wait()' was cancelled. Worker will be shut down")
+            raise
+        except Exception as e:
+            logging.error(f"[Worker] Error when wake up: {str(e)}")
+            await asyncio.sleep(60)
+            continue
+
+
+        try:
+            # Lấy cache key dùng gần nhất
+            cached_hint = CACHE_ACCESS_ORDER[-1] if CACHE_ACCESS_ORDER else None
+
+            worker_url = f"http://{WORKER_HOST}:{WORKER_PORT}"
+
+            # Gọi API "GET TASK" của Master
+            response = await client.get(
+                f"{master_url}/task/get",
+                params={
+                    "cached_key_hint": cached_hint,
+                    "worker_url": worker_url
+                },
+                timeout=5.0
+            )
+            task = response.json().get("task")
+            if task:
+                print(f"[Worker] Received task. Training")
+                start = time.perf_counter()
+                result = await _execute_single_training_task(task)
+                print(f"[Worker] Time: {(time.perf_counter() - start):.2f} seconds")
+
+                await client.post(f"{master_url}/task/submit", json=result, timeout=10.0)
+            else:
+                print(f"[Worker] No tasks. Return to sleep")
+                WAKE_UP_EVENT.clear()
+
+        except httpx.RequestError as e:
+            print(f"[Worker] Cannot connect to Master")
+            await asyncio.sleep(30)
+            continue
+        except Exception as e:
+            print(f"[Worker] Fatal error while retrieving task: {e}. Retrying...")
+            await asyncio.sleep(60)
+            continue
+
+
+# =========================================================================
+# FASTAPI APP
+# =========================================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global POLLING_CLIENT
+    POLLING_CLIENT = httpx.AsyncClient()
+    polling_task = asyncio.create_task(polling_loop(POLLING_CLIENT))
+    yield
+    polling_task.cancel()
+    try:
+        await polling_task
+    except asyncio.CancelledError:
+        print("Polling Task confirmed cancelled")
+    except Exception as e:
+        logging.error(f"Polling Task reports error when shutting down: {str(e)}")
+    finally:
+        if POLLING_CLIENT:
+            await POLLING_CLIENT.aclose()
+
+
+
+app = FastAPI(title="Worker", lifespan=lifespan)
+
+@app.get("/check-for-work")
+async def check_for_work():
+    WAKE_UP_EVENT.set()
+    return {"status": "starting"}
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    """API kiểm tra tình trạng worker"""
-    return {
-        "status": "OK",
-        "message": "Welcome to my server!"
-    }
-
-
+async def ping():
+    return {"status": "OK"}
 
 
 if __name__ == "__main__":
-    HOST = os.getenv('HOST', '0.0.0.0')
-    PORT = int(os.getenv('PORT', 8000))
-    
-    uvicorn.run("worker:app", host=HOST, port=PORT, reload=True)
+    uvicorn.run("worker:app", host=WORKER_HOST, port=WORKER_PORT, reload=True)

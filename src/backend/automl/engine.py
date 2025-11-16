@@ -1,5 +1,7 @@
 import os
 import pickle
+import joblib
+import asyncio
 import random
 from io import BytesIO
 
@@ -9,30 +11,25 @@ import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.calibration import LabelEncoder
-from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
+from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
-from database.database import get_database
+from automl.search.strategy.base import SearchStrategy
+from automl.v2.minio import minIOStorage
+from database.get_dataset import preprocess_data
 
 np.random.seed(42)
 random.seed(42)
 
 import time
 from bson import ObjectId
-# Push and get Kafka
 from uuid import uuid4
 
-# MongoDB setup
-db = get_database()
-job_collection = db["tbl_Job"]
-data_collection = db["tbl_Data"]
-user_collection = db["tbl_User"]
 
-
-def get_dataset_and_user_info(data_id, user_id):
+async def get_dataset_and_user_info(data_id, user_id, db: AsyncDatabase):
     """
     Helper function to retrieve dataset and user information from MongoDB.
 
@@ -46,33 +43,21 @@ def get_dataset_and_user_info(data_id, user_id):
     Raises:
         HTTPException: If dataset or user not found
     """
-    dataset = data_collection.find_one({"_id": ObjectId(data_id)})
+    data_collection = db.tbl_Data
+    user_collection = db.tbl_User
+
+    dataset = await data_collection.find_one({"_id": ObjectId(data_id)})
     if not dataset:
         raise HTTPException(status_code=404, detail="Không tìm thấy bộ dữ liệu")
     data_name = dataset.get("dataName")
 
-    user = user_collection.find_one({"_id": ObjectId(user_id)})
+    user = await user_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=400, detail="Không tìm thấy người dùng")
     user_name = user.get("username")
 
     return data_name, user_name
 
-# Hàm chuẩn bị dữ liệu từ các thuộc tính mà người ta chọn.
-def preprocess_data(list_feature, target, data):
-    for column in data.columns:
-        if data[column].dtype == 'object':
-            le = LabelEncoder()
-            data[column] = le.fit_transform(data[column])
-
-    X = data[list_feature]
-    y = data[target]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    X, y = X_scaled, y
-
-    return X, y
 
 
 def choose_model_version(choose):
@@ -91,21 +76,13 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def get_model():
-    # Import model classes for eval to work
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.svm import SVC
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.naive_bayes import GaussianNB
-    
+def get_model():    
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "model.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -123,33 +100,6 @@ def get_model():
     return models, metric_list
 
 
-def get_data_and_config_from_MongoDB():
-    client = get_database()
-    db = client["AutoML"]
-    csv_collection = db["file_csv"]
-    yml_collection = db["file_yaml"]
-
-    csv_data = list(csv_collection.find())
-    data = pd.DataFrame(csv_data)
-
-    if '_id' in data.columns:
-        data.drop(columns=['_id'], inplace=True)
-
-    config = yml_collection.find_one()
-
-    if '_id' in config:
-        del config['_id']
-
-    choose = config['choose']
-    list_feature = config['list_feature']
-    target = config['target']
-    metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
-
-    models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
-
-
 def get_data_config_from_json(file_content: Item):
     data = pd.DataFrame(file_content.data)
     config = file_content.config
@@ -158,13 +108,14 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
-    search_algorithm = config.get('search_algorithm', 'grid')  # Default to 'grid' if not specified
+    search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid'):
+
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -217,7 +168,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         )
         
         # Convert all numpy types to native Python types to avoid serialization issues
-        from automl.search.strategy.base import SearchStrategy
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
@@ -261,7 +211,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_params = best_params_model
     
     # Final conversion to ensure all return values are native Python types
-    from automl.search.strategy.base import SearchStrategy
     best_params = SearchStrategy.convert_numpy_types(best_params)
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
@@ -269,8 +218,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-def train_process(data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm='grid'):
-    X_train, y_train = preprocess_data(list_feature, target, data)
+
+def train_process(X_train, y_train, metric_list, metric_sort, models, search_algorithm='grid_search'):
     best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
     return best_model_id, best_model, best_score, best_params, model_scores
@@ -284,9 +233,13 @@ def app_train_local(file_data, file_config):
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
+
+    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
+
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
@@ -297,27 +250,30 @@ def serialize_mongo_doc(doc):
 
 
 # Không dùng kafka
-def train_json(item: Item, userId, id_data):
+async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
+    job_collection = db.tbl_Job
+
     data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
         get_data_config_from_json(item)
     )
 
+    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
     )
 
-    data_name, user_name = get_dataset_and_user_info(id_data, userId)
+    data_name, user_name = await get_dataset_and_user_info(id_data, userId, db)
     model_data = pickle.dumps(best_model)
     job_id = str(uuid4())
 
     # Ensure all values are properly converted to native Python types before storing
-    from automl.search.strategy.base import SearchStrategy
     
     job = {
         "job_id": job_id,
         "best_model_id": SearchStrategy.convert_numpy_types(best_model_id),
         "best_model": str(best_model),
-        "model": model_data,
+        "model": model_data, # Đang lưu trực tiếp vào mongodb
         "best_params": SearchStrategy.convert_numpy_types(best_params),
         "best_score": SearchStrategy.convert_numpy_types(best_score),
         "orther_model_scores": SearchStrategy.convert_numpy_types(model_scores),
@@ -334,7 +290,7 @@ def train_json(item: Item, userId, id_data):
         "status": 1
     }
 
-    job_result = job_collection.insert_one(job)
+    job_result = await job_collection.insert_one(job)
     if job_result.inserted_id:
         job.pop("model")
         return JSONResponse(content=serialize_mongo_doc(job))
@@ -342,85 +298,96 @@ def train_json(item: Item, userId, id_data):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
 
 
-def inference_model(job_id, file_data):
-    stored_model = job_collection.find_one({"job_id": job_id})
-    if 'activate' in stored_model.keys():
-        if stored_model['activate'] == 1:
-            model = pickle.loads(stored_model["model"])
-            list_feature = stored_model["config"]["list_feature"]
+async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
+    """
+    Chạy dự đoán trên dữ liệu mới bằng model và preprocessor đã lưu
+    """
+    job_collection = db.tbl_Job
 
-            contents = file_data.file.read()
-            data_file = BytesIO(contents)
-            data = pd.read_csv(data_file)
+    try:
+        stored_model_data = await job_collection.find_one({"job_id": job_id, "status": 1})
+        if not stored_model_data:
+            raise ValueError("Job not found or not completed")
+        if stored_model_data.get('activate') == 0:
+            return {
+                "job_id": job_id,
+                "message": "model is deactivate"
+            }
+    except Exception as e:
+        return {"error": f"Failed to retrieve model: {str(e)}"}
+    
+    list_feature = stored_model_data.get("config", {}).get("list_feature", [])
 
-            for column in data.columns:
-                if data[column].dtype == 'object':
-                    le = LabelEncoder()
-                    data[column] = le.fit_transform(data[column])
+    # Lấy config để tái tạo đường dẫn
+    try:
+        model_url = stored_model_data.get("model")
+        model_path = f"{model_url.get('object_name')}"
+        preprocessor_path = f"{user_id}/{job_id}/preprocessor.joblib"
+        target_path = f"{user_id}/{job_id}/target.joblib"
+    except Exception as e:
+        return {"error": f"Failed to construct model paths: {str(e)}"}
+    
+    async def load_artifact(bucket, path, type):
+        """Hàm helper để tải và load file"""
+        try:
+            buffer = await asyncio.to_thread(minIOStorage.get_object, bucket, path)
+            return await asyncio.to_thread(type.load, buffer)
+        except Exception as e:
+            raise ValueError(f"Failed to load artifact from {path}: {str(e)}")
+        
+    try:
+        # Tải cả 3 file song song
+        model, preprocessor, le_target = await asyncio.gather(
+            load_artifact(model_url.get('bucket_name'), model_path, pickle),
+            load_artifact(model_url.get('bucket_name'), preprocessor_path, joblib),
+            load_artifact(model_url.get('bucket_name'), target_path, joblib)
+        )
+    except Exception as e:
+        return {"error": f"Failed to load required model artifacts: {str(e)}"}
 
-            X = data[list_feature]
-            y = model.predict(X)
-            data["predict"] = y
-            data_json = data.to_dict(orient="records")
-            return data_json
-    return {
-        "job_id": job_id,
-        "message": "model is deactivate"
-    }
+    try:
+        contents = await file_data.read()
+        data_file = BytesIO(contents)
+        data = await asyncio.to_thread(pd.read_csv, data_file)
 
+        missing_cols = set(list_feature) - set(data.columns)
+        if missing_cols:
+            raise ValueError(f"Uploaded file is missing required columns: {missing_cols}")
 
-# Dùng với kafka
-def train_json_from_job(job):
-    job_id = job["job_id"]
-    item = job["item"]
-    existing_job = job_collection.find_one({"job_id": job_id})
-    if not existing_job:
-        raise HTTPException(status_code=404, detail="Không tìm thấy job")
+        data_to_predict = data[list_feature]
+    except (ValueError, KeyError) as e:
+        return {"error": f"CSV file processing error: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Cannot read file: {str(e)}"}
+    
+    try:
+        # Dùng preprocessor đã lưu
+        X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
+        
+        # Dùng model đã lưu
+        y_pred_encoded = await asyncio.to_thread(model.predict, X_new_transformed)
 
-    if existing_job.get("status") == 1:
-        return JSONResponse(content={"message": "Job đã được train", "job_id": job_id})
+        # Dùng le_target đã lưu
+        y_pred_human = await asyncio.to_thread(le_target.inverse_transform, y_pred_encoded)
+    except Exception as e:
+        return {"error": f"Failed during prediction process: {str(e)}"}
+    
+    data['predict'] = y_pred_human
+    data_json = await asyncio.to_thread(data.to_dict, orient="records")
+    return data_json
 
-    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
-        get_data_config_from_json(Item(**item))
-    )
-
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
-    )
-
-    model_data = pickle.dumps(best_model)
-
-    update_doc = {
-        "best_model_id": best_model_id,
-        "best_model": str(best_model),
-        "model": model_data,
-        "best_params": best_params,
-        "best_score": best_score,
-        "orther_model_scores": model_scores,
-        "config": item["config"],
-        "status": 1
-    }
-
-    result = job_collection.update_one(
-        {"job_id": job_id},
-        {"$set": update_doc}
-    )
-
-    if result.modified_count == 1:
-        updated_job = job_collection.find_one({"job_id": job_id}, {"model": 0})
-        return JSONResponse(content=serialize_mongo_doc(updated_job))
-    else:
-        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi cập nhật job")
 
 
 # Lấy danh sách job
-def get_jobs(user_id):
+async def get_jobs(user_id, db: AsyncDatabase):
+    job_collection = db.tbl_Job
+
     try:
         query = {}
         if user_id:
             query["user.id"] = user_id
 
-        jobs = list(job_collection.find(query, {"model": 0, "item": 0}))
+        jobs = await job_collection.find(query, {"model": 0, "item": 0}).to_list(length=None)
         for job in jobs:
             job["_id"] = str(job["_id"])  # Chuyển ObjectId thành string
         return JSONResponse(content=jobs)
@@ -428,10 +395,12 @@ def get_jobs(user_id):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 # Lấy job theo job_id
-def get_one_job(id_job: str):
+async def get_one_job(id_job: str, db: AsyncDatabase):
+    job_collection = db.tbl_Job
     try:
-        job = job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
+        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
         return JSONResponse(content=serialize_mongo_doc(job))
@@ -439,40 +408,11 @@ def get_one_job(id_job: str):
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
 
-def push_train_job(item: Item, user_id, data_id, producer):
-    job_id = str(uuid4())
 
-    data_name, user_name = get_dataset_and_user_info(data_id, user_id)
+async def update_activate_model(job_id, db: AsyncDatabase, activate=0):
+    job_collection = db.tbl_Job
 
-    job_doc = {
-        "job_id": job_id,
-        "item": item.dict(),
-        "data": {
-            "id": data_id,
-            "name": data_name
-        },
-        "user": {
-            "id": user_id,
-            "name": user_name
-        },
-        "status": 0,
-        "activate": 0,
-        "create_at": time.time()
-    }
-    # Gửi vào Kafka
-    producer.send("train-job-topic", value=job_doc)
-    producer.flush()
-
-    # Lưu vào MongoDB
-    result = job_collection.insert_one(job_doc)
-    if not result.inserted_id:
-        raise HTTPException(status_code=500, detail="Không thể lưu job vào MongoDB")
-
-    return JSONResponse(content=serialize_mongo_doc(job_doc))
-
-
-def update_activate_model(job_id, activate=0):
-    result = job_collection.update_one(
+    result = await job_collection.update_one(
         {"job_id": job_id},
         {"$set": {"activate": int(activate)}}
     )

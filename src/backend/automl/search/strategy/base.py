@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, Optional
 from sklearn.base import  BaseEstimator
 import numpy as np
+
 import os
 from datetime import datetime
 from sklearn.model_selection import StratifiedKFold
@@ -45,6 +46,7 @@ class SearchStrategy(ABC):
         self.config.update(kwargs)
         return self
     
+
     def create_log_file_path(self, model: BaseEstimator, strategy_name: str = None) -> Optional[str]:
         """Create a log file path for saving search results.
         
@@ -83,6 +85,7 @@ class SearchStrategy(ABC):
         log_file = os.path.join(log_dir, f'{strategy_name}_{model_name}_{timestamp}.csv')
         return log_file
     
+
     @staticmethod
     def convert_numpy_types(obj: Any) -> Any:
         """Convert numpy types to native Python types recursively.
@@ -112,8 +115,10 @@ class SearchStrategy(ABC):
         elif isinstance(obj, tuple):
             return tuple(SearchStrategy.convert_numpy_types(item) for item in obj)
         else:
+
             return obj
     
+
     def _finalize_results(self, best_params: Dict[str, Any], best_score: float, 
                          best_all_scores: Dict[str, float], cv_results: Dict[str, Any]) -> Tuple:
         """Clear caches and convert numpy types before returning results.

@@ -1,0 +1,8 @@
+.env
+.gitignore
+.git
+.vscode/
+__pycache__/
+
+README.md
+ALGORITHM_INTEGRATION_REPORT.md

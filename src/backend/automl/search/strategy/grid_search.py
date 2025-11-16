@@ -2,6 +2,7 @@ from typing import Dict, Any, List
 import itertools
 import copy
 import hashlib
+
 import logging
 import pandas as pd
 
@@ -12,6 +13,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from joblib import Parallel, delayed
 
 from automl.search.strategy.base import SearchStrategy
+
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -119,6 +121,7 @@ class GridSearchStrategy(SearchStrategy):
                 )
                 return results
         
+
         # Sequential evaluation only for a single parameter
         return [self._evaluate_single_params(params, model, X, y, cv, scoring_config) 
                 for params in param_combinations]
@@ -326,6 +329,7 @@ class GridSearchStrategy(SearchStrategy):
             cv=self.config['cv'],
             scoring=self.config['scoring'],
             metric_sort=self.config['metric_sort'],
+
             return_train_score=self.config.get('return_train_score', False),
             log_file=log_file
         )
