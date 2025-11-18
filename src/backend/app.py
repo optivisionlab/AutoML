@@ -49,7 +49,7 @@ from data.uci import get_data_uci_where_id, format_data_automl
 from fastapi.responses import JSONResponse
 from data.engine import get_list_data, get_one_data, get_all_data
 from data.engine import upload_data_to_minio, update_dataset_to_minio_by_id, delete_dataset_at_minio_by_id
-from users.engine import get_current_admin
+from users.engine import get_current_admin, get_current_user
 from database.database import connection
 
 # Lấy danh sách user
@@ -286,7 +286,7 @@ async def auth(request: Request):
 
 
 @app.get("/logout")
-async def logout(request: Request):
+async def logout(request: Request, ):
     request.session.pop("user", None)
     return RedirectResponse(url="/")
 

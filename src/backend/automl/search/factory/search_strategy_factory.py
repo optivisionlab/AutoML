@@ -23,7 +23,7 @@ class SearchStrategyFactory:
     @classmethod
     def create_strategy(cls, strategy_name: str, config: Optional[Dict[str, Any]] = None) -> SearchStrategy:
         """
-        Create a search strategy instance based on the strategy name.
+        Create a search strategy instance based on the strategy name
         
         Args:
             strategy_name: Name of the search strategy (e.g., 'grid', 'genetic', 'bayesian')

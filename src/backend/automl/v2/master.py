@@ -263,6 +263,17 @@ async def handle_task_result_submission(result: dict, db: AsyncDatabase):
     return {"status": "success"}
 
 
+def _register_active_task(task, worker_url, entry_count):
+    task_id = task["task_id"]
+    ACTIVE_TASKS[task_id] = {
+        "worker_url": worker_url,
+        "start_time": time.time(),
+        "task_data": task,
+        "entry_count": entry_count,
+        "snooze_count": 0
+    }
+    return task
+
 
 async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = None):
     """
@@ -284,56 +295,58 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
                 pass
 
     if task:
-        task_id = task["task_id"]
-        ACTIVE_TASKS[task_id] = {
-            "worker_url": worker_url,
-            "start_time": time.time(),
-            "task_data": task,
-            "entry_count": -1, # Task từ LOCAL không cần entry_count
-            "snooze_count": 0
-        }
-        return task
+        return _register_active_task(task, worker_url, -1)
 
-    # Nếu không có task ở LOCAL, lấy từ GLOBAL
-    # Tìm được task phù hợp cho worker
-    # hoặc hàng đọi GLOBAL hết
+    # Master sẽ rút task từ Global. Nếu task không khớp cache của worker,
+    # Master sẽ "cất" nó vào Local Queue tương ứng thay vì đưa cho worker này.
     while True:
         try:
             priority, entry_count, task = GLOBAL_TASK_QUEUE.get_nowait()
         except asyncio.QueueEmpty:
-            return None
+            break # Global hết task, thoát khỏi vòng lặp
         
-        cache_key = task.get("cache_key")
+        task_cache_key = task.get("cache_key")
 
-        # Worker không có cache. Task nào cũng phù hợp
+        # Trường hợp 1: Worker mới tinh (không có cache) -> Nhận luôn
         if not cached_key_hint:
-            break
+            return _register_active_task(task, worker_url, entry_count)
 
-        # Worker có cache và task này HIT cache
-        if cached_key_hint == cache_key:
-            break
+        # Trường hợp 2: Worker có cache, và task này khớp -> Nhận luôn
+        if cached_key_hint == task_cache_key:
+            return _register_active_task(task, worker_url, entry_count)
 
-        # Worker có cache nhưng task này MISS cache
+        # Trường hợp 3: Worker có cache, nhưng task khác cache (MISS)
         else:
+            # Cất task này vào hàng đợi Local tương ứng của nó
             local_queue_miss = None
             async with LOCAL_QUEUE_LOCK:
-                if cache_key not in LOCAL_QUEUES:
-                    LOCAL_QUEUES[cache_key] = asyncio.Queue()
-                local_queue_miss = LOCAL_QUEUES[cache_key]
+                if task_cache_key not in LOCAL_QUEUES:
+                    LOCAL_QUEUES[task_cache_key] = asyncio.Queue()
+                local_queue_miss = LOCAL_QUEUES[task_cache_key]
             
             await local_queue_miss.put(task)
             task = None
-    
-    if task:
-        task_id = task["task_id"]
-        ACTIVE_TASKS[task_id] = {
-            "worker_url": worker_url,
-            "start_time": time.time(),
-            "task_data": task,
-            "entry_count": entry_count,
-            "snooze_count": 0
-        }
-        return task
+
+    if cached_key_hint:
+        # Duyệt qua tất cả các Local Queue khác đang có task
+        async with LOCAL_QUEUE_LOCK:
+            # Lấy danh sách các key để tránh lỗi runtime khi dict thay đổi
+            all_keys = list(LOCAL_QUEUES.keys())
+        
+        for key in all_keys:
+            # Bỏ qua queue của chính worker (vì đã check rồi)
+            if key == cached_key_hint:
+                continue
+
+            target_queue = LOCAL_QUEUES.get(key)
+            if target_queue:
+                try:
+                    # Lấy trộm task từ queue của key khác
+                    task = target_queue.get_nowait()
+                    print(f"[Master] Fallback: Worker {worker_url} (Hint: {cached_key_hint}) assigned task for new key: {key}")
+                    return _register_active_task(task, worker_url, -1)
+                except asyncio.QueueEmpty:
+                    continue
     
     return None
 

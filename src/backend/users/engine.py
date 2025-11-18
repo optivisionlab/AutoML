@@ -128,7 +128,7 @@ async def check_token(token, db: AsyncDatabase):
         raise HTTPException(status_code=401, detail="Token đã hết hạn!")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Token không hợp lệ!")
-    
+
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
@@ -144,7 +144,7 @@ async def get_current_user(db: AsyncDatabase = Depends(get_db), token: str = Dep
 async def get_current_admin(current_user: dict = Depends(get_current_user)):
     if current_user.get('role') != 'Admin':
         raise HTTPException(status_code=403, detail="Quyền truy cập bị từ chối!")
-    return current_user  
+    return current_user
 
 
 async def handleLogin(username, password, db: AsyncDatabase):
