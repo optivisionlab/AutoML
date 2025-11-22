@@ -1,1 +1,7 @@
 .env
+ALGORITHM_INTEGRATION_REPORT.md
+.factory
+.idea
+.kiro
+.vscode
+.idea.backup
