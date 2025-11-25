@@ -1,6 +1,6 @@
 """
-Search Strategy Factory Pattern Implementation
-This module provides a factory for creating different search strategy instances.
+Triển khai Factory Pattern cho Search Strategy
+Module này cung cấp factory để tạo các instance của search strategy khác nhau.
 """
 
 from typing import Dict, Any, Optional
@@ -11,9 +11,9 @@ from automl.search.strategy.bayesian_search import BayesianSearchStrategy
 
 
 class SearchStrategyFactory:
-    """Factory class for creating search strategy instances."""
+    """Lớp Factory để tạo các instance của search strategy."""
     
-    # Registry of available search strategy
+    # Registry của các search strategy có sẵn
     _strategies = {
         'grid_search': GridSearchStrategy,
         'genetic_algorithm': GeneticAlgorithm,
@@ -23,22 +23,22 @@ class SearchStrategyFactory:
     @classmethod
     def create_strategy(cls, strategy_name: str, config: Optional[Dict[str, Any]] = None) -> SearchStrategy:
         """
-        Create a search strategy instance based on the strategy name.
+        Tạo một instance search strategy dựa trên tên strategy.
         
         Args:
-            strategy_name: Name of the search strategy (e.g., 'grid', 'genetic', 'bayesian')
-            config: Optional configuration dictionary for the strategy
+            strategy_name: Tên của search strategy (ví dụ: 'grid', 'genetic', 'bayesian')
+            config: Từ điển cấu hình tùy chọn cho strategy
             
         Returns:
-            SearchStrategy: An instance of the requested search strategy
+            SearchStrategy: Một instance của search strategy được yêu cầu
             
         Raises:
-            ValueError: If the strategy name is not recognized
+            ValueError: Nếu tên strategy không được nhận diện
         """
-        # Normalize strategy name to lowercase
+        # Chuẩn hóa tên strategy thành chữ thường
         strategy_name = strategy_name.lower().strip()
         
-        # Determine strategy class using startswith pattern matching
+        # Xác định lớp strategy sử dụng pattern matching startswith
         strategy_class = None
         
         if strategy_name.startswith('grid'):
@@ -49,11 +49,11 @@ class SearchStrategyFactory:
             strategy_class = BayesianSearchStrategy
         else:
             raise ValueError(
-                f"Unknown search strategy: '{strategy_name}'. "
-                f"Available strategies: grid*, genetic*/ga*, bayesian*/bayes*/skopt*"
+                f"Search strategy không xác định: '{strategy_name}'. "
+                f"Các strategy có sẵn: grid*, genetic*/ga*, bayesian*/bayes*/skopt*"
             )
         
-        # Create and return the strategy instance
+        # Tạo và trả về instance strategy
         if config:
             return strategy_class(**config)
         else:
@@ -62,23 +62,23 @@ class SearchStrategyFactory:
     @classmethod
     def get_available_strategies(cls) -> list:
         """
-        Get a list of all available strategy patterns.
+        Lấy danh sách tất cả các pattern strategy có sẵn.
         
         Returns:
-            List of strategy name patterns
+            Danh sách các pattern tên strategy
         """
         return ['grid*', 'genetic*/ga*', 'bayesian*/bayes*/skopt*']
     
     @classmethod
     def is_strategy_available(cls, strategy_name: str) -> bool:
         """
-        Check if a strategy is available in the factory.
+        Kiểm tra xem một strategy có sẵn trong factory hay không.
         
         Args:
-            strategy_name: Name of the strategy to check
+            strategy_name: Tên của strategy cần kiểm tra
             
         Returns:
-            bool: True if the strategy is available, False otherwise
+            bool: True nếu strategy có sẵn, False nếu ngược lại
         """
         strategy_name = strategy_name.lower().strip()
         return (

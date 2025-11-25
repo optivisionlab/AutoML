@@ -34,5 +34,8 @@ ultra_fast_mode: true  # Enable ultra fast mode
 skip_diversity_check: true  # Skip diversity calculations for speed
 simple_crossover: true  # Use simpler crossover for speed
 
+# Crossover settings
+alpha: 0.5  # Blending factor for BLX-α crossover
+
 # Initialization
 n_initial_random: 3  # Minimal random evaluations
