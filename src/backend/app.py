@@ -286,7 +286,7 @@ async def auth(request: Request):
 
 
 @app.get("/logout")
-async def logout(request: Request, ):
+async def logout(request: Request):
     request.session.pop("user", None)
     return RedirectResponse(url="/")
 
