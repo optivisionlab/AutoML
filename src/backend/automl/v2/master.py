@@ -68,7 +68,7 @@ def get_config_hash(id_data: str, list_feature: list, target: str) -> str:
 GLOBAL_TASK_QUEUE = asyncio.PriorityQueue()
 
 # Hàng đợi riêng cho từng Data ID
-# Key: id_data, Value: asyncio.Queue (FIFO)
+# Key: task_cache_key, Value: asyncio.Queue (FIFO)
 LOCAL_QUEUES: dict[str, asyncio.Queue] = {}
 
 # Lock để bảo vệ việc tạo hàng đợi mới trong LOCAL_QUEUES
@@ -97,8 +97,8 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
     was_queue_empty = GLOBAL_TASK_QUEUE.empty()
     models, metric_list = await asyncio.to_thread(get_models)
 
-    list_feature = config.get('list_feature')
-    target = config.get('target')
+    list_feature = config.get('list_feature', [])
+    target = config.get('target', '')
     cache_key = get_config_hash(id_data, list_feature, target)
     
 
