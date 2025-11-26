@@ -41,7 +41,7 @@ async def get_features_of_dataset(id_data: str, request: Request):
 async def get_features_of_dataset(id_data: str, request: Request):
     dataset = MongoDataLoader(request.app.state.db)
     try:
-        data_preview = await dataset.get_data_preview(id_data)
+        data_preview, total_rows = await dataset.get_data_preview(id_data)
 
         if data_preview is None:
             raise HTTPException(
@@ -50,6 +50,7 @@ async def get_features_of_dataset(id_data: str, request: Request):
             )
         
         return {
+            "rows": total_rows,
             "data": data_preview.to_dict(orient='records')
         }
     except ValueError as ve:

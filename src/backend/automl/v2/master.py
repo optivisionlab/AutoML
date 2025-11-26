@@ -90,7 +90,7 @@ task_counter = itertools.count()
 # =========================================================================
 # LOGIC CỦA JOB
 # =========================================================================
-async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict):
+async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict, cache_key: str):
     """
     Tạo task và bỏ vào hàng đợi ưu tiên toàn cục
     """
@@ -99,7 +99,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict)
 
     list_feature = config.get('list_feature', [])
     target = config.get('target', '')
-    cache_key = get_config_hash(id_data, list_feature, target)
+    # cache_key = get_config_hash(id_data, list_feature, target)
     
 
     JOB_TRACKER[job_id] = {

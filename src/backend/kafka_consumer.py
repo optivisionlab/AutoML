@@ -58,12 +58,12 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         # Sử dụng 2 định dạng:
         """
         parquet - cho việc lưu trữ lâu dài (tốn ít tài nguyên)
-        feather - cho việc đọc ghi (tối ưu hóa về tốc độ)
+        numpy array - cho việc cache dataset
         """
         cache_bucket = "cache"
         models_bucket = "models"
-        list_feature = config.get("list_feature")
-        target = config.get("target")
+        list_feature = config.get("list_feature", [])
+        target = config.get("target", "")
 
         config_hash = get_config_hash(id_data, list_feature, target)
         data_cache_path = f"{id_data}/{config_hash}.npz"
@@ -121,7 +121,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         )
             
         # Đăng ký task vào hàng đợi
-        await setup_job_tasks(job_id, id_data, id_user, config)
+        await setup_job_tasks(job_id, id_data, id_user, config, config_hash)
         print(f"[Consumer] Successfully submitted job {job_id} to Master")
     except Exception as e:
         print(f"[Consumer] Failed to handle job {job_id}: {e}")
