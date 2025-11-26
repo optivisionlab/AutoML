@@ -23,8 +23,8 @@ class SearchStrategyFactory:
     @classmethod
     def create_strategy(cls, strategy_name: str, config: Optional[Dict[str, Any]] = None) -> SearchStrategy:
         """
-        Tạo một instance search strategy dựa trên tên strategy.
-        
+        Create a search strategy instance based on the strategy name
+
         Args:
             strategy_name: Tên của search strategy (ví dụ: 'grid', 'genetic', 'bayesian')
             config: Từ điển cấu hình tùy chọn cho strategy

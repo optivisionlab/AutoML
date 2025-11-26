@@ -23,14 +23,14 @@ load_dotenv()
 # Truy cập các biến môi trường
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") 
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 
 class MinIOStorage:
     def __init__(self, endpoint, access_key, secret_key, secure=False):
         try:
             if not all([endpoint, access_key, secret_key]):
                 raise ValueError("Not found environment variables")
-            
+
             self.__client = Minio(
                 endpoint,
                 access_key=access_key,
@@ -39,7 +39,7 @@ class MinIOStorage:
             )
         except Exception as e:
             raise Exception(f"MinIO initialization error: {e}")
-    
+
 
     def uploaded_object(self, bucket_name: str, object_name: str, object_bytes: bytes):
         try:

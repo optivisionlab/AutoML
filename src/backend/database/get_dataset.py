@@ -6,19 +6,16 @@ from bson.objectid import ObjectId
 import pyarrow.parquet as pq
 import time
 from pymongo.asynchronous.database import AsyncDatabase
-from fastapi import Depends
 
 # Local Modules
 from automl.v2.minio import minIOStorage
 from automl.process_data import preprocess_data
-from database.database import get_db
 
 
 class MongoDataLoader:
     def __init__(self, db: AsyncDatabase):
         self.__data_collection = db.tbl_Data
 
-    # database đang xử lý đồng bộ
     async def _get_data_link_from_db(self, id_data: str) -> tuple[str | None, str | None]:
         """Lấy data link từ MongoDB theo ID"""
 
@@ -41,13 +38,15 @@ class MongoDataLoader:
             parquet_stream = minIOStorage.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(parquet_stream)
 
+            total_rows = len(df_retrieved)
             df_preview = df_retrieved.head(num_rows)
 
-            return df_preview
+
+            return df_preview, total_rows
         
         except Exception as e:
             print(f"Exception when get dataset preview: {str(e)}")
-            return None
+            return None, 0
 
 
     async def get_data_features(self, id_data: str) -> list | None:

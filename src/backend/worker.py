@@ -127,7 +127,7 @@ async def _execute_single_training_task(task: dict):
             X_processed,
             y_processed,
             task["metrics"],
-            config.get("metric_sort"),
+            config.get("metric_sort", "accuracy"),
             models_to_train,
             search_algorithm
         )
