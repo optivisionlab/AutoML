@@ -1,38 +1,41 @@
-# Genetic Algorithm Configuration
-# These parameters control the behavior of the genetic algorithm search strategy
+# Cấu hình Thuật toán Di truyền
+# Các tham số này điều khiển hành vi của chiến lược tìm kiếm thuật toán di truyền
 
-# Population settings
-population_size: 10  # Tiny for extreme speed
-min_population: 4  # Very small minimum
-max_population: 12  # Small maximum
+# Cài đặt quần thể
+population_size: 10  # Rất nhỏ để tăng tốc độ tối đa
+min_population: 4  # Quần thể tối thiểu rất nhỏ
+max_population: 12  # Quần thể tối đa nhỏ
 
-# Generation settings
-generation: 5  # Very few generations
-early_stopping_patience: 2  # Ultra aggressive early stopping
+# Cài đặt thế hệ
+generation: 5  # Rất ít thế hệ
+early_stopping_patience: 2  # Dừng sớm cực kỳ tích cực
 early_stopping_enabled: true
 
-# Genetic operators
-mutation_rate: 0.2  # Higher for faster exploration
-crossover_rate: 0.9  # Very high crossover
+# Toán tử di truyền
+mutation_rate: 0.2  # Cao hơn để khám phá nhanh hơn
+crossover_rate: 0.9  # Tỷ lệ lai ghép rất cao
 
-# Selection settings
-elite_size: 2  # Minimal elite
-tournament_size: 2  # Minimal tournament
+# Cài đặt chọn lọc
+elite_size: 2  # Số lượng cá thể ưu tú tối thiểu
+tournament_size: 2  # Kích thước giải đấu tối thiểu
 
-# Performance optimization
+# Tối ưu hóa hiệu suất
 parallel_evaluation: true
-use_global_cache: true  # Cache evaluations across generations
-max_cache_size: 1000  # Larger cache
+use_global_cache: true  # Lưu cache đánh giá qua các thế hệ
+max_cache_size: 1000  # Cache lớn hơn
 
-# Adaptive features
-adaptive_population: true  # Dynamic population sizing
-convergence_threshold: 0.002  # Less strict for faster convergence
+# Tính năng thích ứng
+adaptive_population: true  # Điều chỉnh kích thước quần thể động
+convergence_threshold: 0.002  # Ít nghiêm ngặt hơn để hội tụ nhanh hơn
 
-# Speed optimizations
-fast_mode: true  # Enable all speed optimizations
-ultra_fast_mode: true  # Enable ultra fast mode
-skip_diversity_check: true  # Skip diversity calculations for speed
-simple_crossover: true  # Use simpler crossover for speed
+# Tối ưu hóa tốc độ
+fast_mode: true  # Bật tất cả tối ưu hóa tốc độ
+ultra_fast_mode: true  # Bật chế độ siêu nhanh
+skip_diversity_check: true  # Bỏ qua tính toán đa dạng để tăng tốc
+simple_crossover: true  # Sử dụng lai ghép đơn giản để tăng tốc
 
-# Initialization
-n_initial_random: 3  # Minimal random evaluations
+# Cài đặt lai ghép
+alpha: 0.5  # Hệ số pha trộn cho lai ghép BLX-α
+
+# Khởi tạo
+n_initial_random: 3  # Số lượng đánh giá ngẫu nhiên tối thiểu
