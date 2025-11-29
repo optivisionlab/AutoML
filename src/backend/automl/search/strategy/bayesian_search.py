@@ -1,7 +1,9 @@
 from typing import Any, Dict, Tuple
+import os
 import numpy as np
 import pandas as pd
 import logging
+import yaml
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 from skopt import gp_minimize
@@ -75,23 +77,39 @@ class BayesianSearchStrategy(SearchStrategy):
             return 'macro'
 
     @staticmethod
+    def _load_bayesian_config() -> Dict[str, Any]:
+        """Tải cấu hình Bayesian Search từ file YAML."""
+        # Lấy thư mục chứa file này
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(current_dir, 'bayesian_search_config.yml')
+        
+        # Tải từ file YAML nếu tồn tại
+        bayesian_config = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    bayesian_config = yaml.safe_load(f) or {}
+            except Exception as e:
+                logger.warning(f"Không thể tải cấu hình Bayesian từ {config_file}: {e}")
+        
+        return bayesian_config
+
+    @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Ghi đè cấu hình mặc định để thêm các tham số cho tối ưu hóa Bayesian"""
+        """Lấy cấu hình mặc định bằng cách tải từ file."""
         base_config = SearchStrategy.get_default_config()
-        bayesian_config = {
-            'n_calls': 25,  # Giảm để runtime nhanh hơn (trước đây là 50)
-            'n_initial_points': 5,  # Giảm khám phá ngẫu nhiên ban đầu (mặc định là 10)
-            'acq_func': 'EI',  # Expected Improvement - nhanh hơn 'gp_hedge' mặc định
-            'acq_optimizer': 'sampling',  # Nhanh hơn 'lbfgs' cho acquisition
-            'scoring': 'accuracy',  # Hàm đánh giá mô hình
-            'metrics': ['accuracy', 'precision', 'recall', 'f1'],
-            'averaging': 'macro',  # Phương pháp averaging đơn nhanh hơn 'both'
-            'optimize_for': 'auto',  # 'auto', 'macro', 'weighted' 
-            'imbalance_threshold': 0.3,  # Ngưỡng để phát hiện mất cân bằng lớp (chế độ auto)
-            'early_stopping_enabled': True,  # Bật dừng sớm
-            'early_stopping_patience': 5,  # Dừng nếu không cải thiện trong số lần lặp này
-            'convergence_threshold': 0.001,  # Dừng nếu cải thiện < ngưỡng
-        }
+        
+        # Tải cấu hình Bayesian từ file YAML
+        bayesian_config = BayesianSearchStrategy._load_bayesian_config()
+        
+        # Chỉ sử dụng giá trị dự phòng hardcoded nếu file YAML hoàn toàn thiếu hoặc trống
+        if not bayesian_config:
+            logger.warning("Không tìm thấy file cấu hình Bayesian hoặc file trống, sử dụng giá trị mặc định tối thiểu")
+            bayesian_config = {
+                'n_calls': 25,
+                'n_initial_points': 5,
+            }
+        
         base_config.update(bayesian_config)
         return base_config
 
