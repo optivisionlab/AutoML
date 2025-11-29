@@ -27,7 +27,7 @@ class MongoDataLoader:
         except Exception as e:
             print(f"Exception when get dataset from MongoDB: {str(e)}")
             return None, None
-        
+    
     
     async def get_data_preview(self, id_data: str, num_rows: int = 50) -> tuple[pd.DataFrame | None, list | None]:
         bucket_name, object_name = await self._get_data_link_from_db(id_data)
@@ -113,7 +113,6 @@ class MongoJob:
                 "best_score": final_result["best_score"],
                 "orther_model_scores": final_result["model_scores"],
                 "status": 1,
-                "end_time": time.perf_counter()
             }
         }
         await self.__job_collection.update_one({"job_id": job_id}, update_data)

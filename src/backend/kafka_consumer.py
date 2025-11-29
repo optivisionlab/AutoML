@@ -119,7 +119,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
                 dest_key=target_job_path
             )
         )
-            
+         
         # Đăng ký task vào hàng đợi
         await setup_job_tasks(job_id, id_data, id_user, config, config_hash)
         print(f"[Consumer] Successfully submitted job {job_id} to Master")

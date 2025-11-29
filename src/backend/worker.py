@@ -61,7 +61,7 @@ async def get_data_with_cache(id_data: str, cache_key: str):
     """
     Quản lý cache
     """
-    
+
     # Cache HIT
     if cache_key in DATASET_CACHE:
         CACHE_ACCESS_ORDER.remove(cache_key)
