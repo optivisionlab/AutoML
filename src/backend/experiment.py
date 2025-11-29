@@ -48,7 +48,7 @@ async def get_features_of_dataset(id_data: str, request: Request):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or cannot be read"
             )
-        
+    
         return {
             "rows": total_rows,
             "data": data_preview.to_dict(orient='records')

@@ -35,4 +35,3 @@ class UserInfo(BaseModel):
 class DataInfo(BaseModel):
     id: str
     name: str
-

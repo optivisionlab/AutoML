@@ -1,6 +1,7 @@
 # Standard Libraries
 import time
 from uuid import uuid4
+from datetime import datetime, timezone
 
 # Third-party Libraries
 from bson.objectid import ObjectId
@@ -65,7 +66,7 @@ async def save_job_mongo(input: InputRequest, models_info, job_id, db: AsyncData
             },
             "status": 1,
             "activate": 0,
-            "create_at": time.time()
+            "create_at": datetime.now(timezone.utc)
         }
 
         # Chèn bản ghi job vào collection
@@ -117,7 +118,7 @@ async def save_job(input: InputRequest, db: AsyncDatabase) -> str:
         },
         "status": 0,
         "activate": 0,
-        "create_at": time.perf_counter()
+        "create_at": datetime.now(timezone.utc)
     }
 
     msg_job = {
