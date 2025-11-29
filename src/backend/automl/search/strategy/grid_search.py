@@ -303,11 +303,11 @@ class GridSearchStrategy(SearchStrategy):
         Thực hiện tối ưu hóa siêu tham số bằng grid search.
 
         Args:
-            model: The estimator to optimize
-            param_grid: Dictionary with parameters names as keys and lists of parameter settings to try
-            X: Training feature data
-            y: Training target data
-            **kwargs: Additional configuration parameters
+            model: Bộ ước lượng (estimator) cần tối ưu hóa
+            param_grid: Dictionary với tên tham số làm khóa và danh sách các giá trị tham số cần thử
+            X: Dữ liệu đặc trưng huấn luyện
+            y: Dữ liệu nhãn mục tiêu huấn luyện
+            **kwargs: Các tham số cấu hình bổ sung
 
         Returns:
             tuple: (best_params, best_score, best_all_scores, cv_results)
