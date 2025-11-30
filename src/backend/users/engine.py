@@ -330,15 +330,23 @@ async def handle_update_avatar(username, avatar, db: AsyncDatabase):
 async def handle_get_avatar(username, db: AsyncDatabase):
     users_collection = db.tbl_User
     user = await users_collection.find_one({"username": username})
-    if user and "avatar":
-        avatar_base64 = user['avatar']
-        avatar_data = base64.b64decode(avatar_base64)
-        
-        return StreamingResponse(io.BytesIO(avatar_data), media_type="image/png")
-    else:
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
+            detail=f"User not found"
+        )
+    
+    avatar_base64 = user.get('avatar')
+    if not avatar_base64:
+        return None
+    
+    try:
+        avatar_data = base64.b64decode(avatar_base64)
+        return StreamingResponse(io.BytesIO(avatar_data), media_type="image/png")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Image data on database is corrupted {str(e)}"
         )
 
 

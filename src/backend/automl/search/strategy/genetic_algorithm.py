@@ -114,18 +114,14 @@ class GeneticAlgorithm(SearchStrategy):
             if param_type == 'categorical':
                 index = int(round(value))
                 index = max(0, min(index, len(param_values) - 1))
-                param_value = param_values[index]
-                # Chuyển kiểu numpy sang kiểu Python gốc
-                if isinstance(param_value, np.integer):
-                    decoded[param_name] = int(param_value)
-                elif isinstance(param_value, np.floating):
-                    decoded[param_name] = float(param_value)
-                else:
-                    decoded[param_name] = param_value
+                decoded[param_name] = param_values[index]
             elif param_type == 'integer':
                 decoded[param_name] = int(round(value))
             else:
                 decoded[param_name] = float(value)
+
+        # Chuyển kiểu numpy sang kiểu Python gốc
+        decoded = SearchStrategy.convert_numpy_types(decoded)
 
         # Lưu kết quả vào bộ nhớ đệm
         self._decode_cache[cache_key] = decoded
@@ -198,19 +194,10 @@ class GeneticAlgorithm(SearchStrategy):
 
             model.set_params(**params)
 
-            # Lấy cấu hình điểm số
+            # Lấy cấu hình điểm số (dict từ engine.py)
             scoring_config = self.config.get('scoring')
-            
-            # Xác định sử dụng những chỉ số đánh giá nào
-            if isinstance(scoring_config, dict):
-                # Sử dụng dict scorer đã cung cấp (từ engine.py với các đối tượng make_scorer)
-                scoring_metrics = scoring_config
-                # Trích xuất tên chỉ số từ các key của dict
-                metric_names = list(scoring_config.keys())
-            else:
-                # Các chỉ số đánh giá mặc định (tương thích ngược)
-                scoring_metrics = ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro']
-                metric_names = ['accuracy', 'precision', 'recall', 'f1']
+            scoring_metrics = scoring_config
+            metric_names = list(scoring_config.keys())
 
             # sử dụng cross_validate thay vì cross_val_score để lấy điểm của mỗi fold
             scores = cross_validate(
@@ -223,18 +210,8 @@ class GeneticAlgorithm(SearchStrategy):
 
             # Xây dựng dictionary kết quả
             result = {}
-            if isinstance(scoring_config, dict):
-                # Khi scoring là dict, các key đã là tên chỉ số
-                for metric_name in metric_names:
-                    result[metric_name] = float(np.mean(scores[f'test_{metric_name}']))
-            else:
-                # Ánh xạ mặc định cho tương thích ngược
-                result = {
-                    'accuracy': float(np.mean(scores['test_accuracy'])),
-                    'precision': float(np.mean(scores['test_precision_macro'])),
-                    'recall': float(np.mean(scores['test_recall_macro'])),
-                    'f1': float(np.mean(scores['test_f1_macro']))
-                }
+            for metric_name in metric_names:
+                result[metric_name] = float(np.mean(scores[f'test_{metric_name}']))
             
             # Lưu kết quả vào bộ nhớ đệm nếu được bật
             if self.config.get('use_global_cache', True):
@@ -400,6 +377,61 @@ class GeneticAlgorithm(SearchStrategy):
         injection_indices = random.sample(range(len(population)), num_to_inject)
         for idx in injection_indices:
             new_population[idx] = self._create_individual()
+        
+        return new_population
+
+    def _create_next_generation(
+        self,
+        population: List[Dict[str, float]],
+        fitness_scores: np.ndarray,
+        diversity: float,
+        generation: int,
+        population_size: int
+    ) -> List[Dict[str, float]]:
+        """Tạo thế hệ tiếp theo từ quần thể hiện tại.
+        
+        Args:
+            population: Quần thể hiện tại
+            fitness_scores: Điểm fitness của từng cá thể
+            diversity: Độ đa dạng của quần thể
+            generation: Số thế hệ hiện tại
+            population_size: Kích thước quần thể mục tiêu
+            
+        Returns:
+            Quần thể mới cho thế hệ tiếp theo
+        """
+        new_population = []
+        
+        # Elitism: Giữ lại các cá thể tốt nhất
+        if self.config['elite_size'] > 0:
+            elite_indices = np.argpartition(fitness_scores, -self.config['elite_size'])[-self.config['elite_size']:]
+            for idx in elite_indices:
+                new_population.append(population[idx].copy())
+        
+        # Tỷ lệ lai ghép thích ứng dựa trên đa dạng
+        adaptive_crossover_rate = self.config['crossover_rate']
+        if diversity < 0.1:
+            adaptive_crossover_rate = min(1.0, adaptive_crossover_rate * 1.2)
+        
+        # Điền phần còn lại bằng selection + crossover + mutation
+        while len(new_population) < population_size:
+            parent1 = self._tournament_selection(population, fitness_scores)
+            parent2 = self._tournament_selection(population, fitness_scores)
+            
+            # Tạm thời sử dụng tỷ lệ lai ghép thích ứng
+            original_rate = self.config['crossover_rate']
+            self.config['crossover_rate'] = adaptive_crossover_rate
+            child1, child2 = self._crossover(parent1, parent2)
+            self.config['crossover_rate'] = original_rate
+            
+            # Áp dụng đột biến
+            child1 = self._mutate(child1, generation, self.config['generation'])
+            child2 = self._mutate(child2, generation, self.config['generation'])
+            
+            if len(new_population) < population_size:
+                new_population.append(child1)
+            if len(new_population) < population_size:
+                new_population.append(child2)
         
         return new_population
     
@@ -568,7 +600,6 @@ class GeneticAlgorithm(SearchStrategy):
         # Thực thi vòng lặp chính của thuật toán di truyền
         verbose = self.config.get('verbose', 1)
         if verbose > 0:
-
             logger.info(f"Starting Genetic Algorithm with {actual_population_size} individuals for {self.config['generation']} generations")
             if verbose > 1:
                 logger.info(f"Early stopping: {'Enabled' if early_stopping_enabled else 'Disabled'}" + 
@@ -610,13 +641,7 @@ class GeneticAlgorithm(SearchStrategy):
                 all_individual_scores = self._evaluate_population_parallel(population, model, X, y)
             
             # Xác định metric chính để đánh giá fitness
-            scoring_config = self.config.get('scoring', 'f1')
-            if isinstance(scoring_config, dict):
-                primary_metric = self.config.get('metric_sort', 'accuracy')
-            elif isinstance(scoring_config, str):
-                primary_metric = scoring_config.replace('_macro', '').replace('_weighted', '')
-            else:
-                primary_metric = 'f1'
+            primary_metric = self.config.get('metric_sort', 'accuracy')
             
             # Trích xuất điểm fitness và theo dõi cá thể tốt nhất
             fitness_scores = np.zeros(len(population))  # Sử dụng numpy array để hiệu suất tốt hơn
@@ -713,47 +738,10 @@ class GeneticAlgorithm(SearchStrategy):
                     population = self._inject_diversity(population, injection_rate=0.2)
                     logger.info(" Hoàn thành tiêm đa dạng!")
             
-            # --- Tạo thế hệ tiếp theo ---
-            new_population = []
-            
-            # Chủ nghĩa ưu tú: Trực tiếp chuyển các cá thể tốt nhất sang thế hệ tiếp theo
-            elite_indices = np.argpartition(fitness_scores, -self.config['elite_size'])[-self.config['elite_size']:] if self.config['elite_size'] > 0 else []
-            for idx in elite_indices:
-                new_population.append(population[idx].copy())  # Bản sao nông là đủ ở đây
-            
-            # Tỷ lệ lai ghép thích ứng dựa trên đa dạng
-            adaptive_crossover_rate = self.config['crossover_rate']
-            if diversity < 0.1:  # Đa dạng thấp, tăng khám phá
-                adaptive_crossover_rate = min(1.0, adaptive_crossover_rate * 1.2)
-            
-            # Điền phần còn lại với quần thể mới sử dụng chọn lọc, lai ghép và đột biến
-            while len(new_population) < actual_population_size:
-                # Chọn hai cá thể cha mẹ từ quần thể cũ
-                parent1 = self._tournament_selection(population, fitness_scores)
-                parent2 = self._tournament_selection(population, fitness_scores)
-                
-                # Lưu tỷ lệ lai ghép gốc và tạm thời sử dụng tỷ lệ thích ứng
-                original_rate = self.config['crossover_rate']
-                self.config['crossover_rate'] = adaptive_crossover_rate
-                
-                # Tạo hai con cái bằng cách thực hiện lai ghép trên các cha mẹ
-                child1, child2 = self._crossover(parent1, parent2)
-                
-                # Khôi phục tỷ lệ gốc
-                self.config['crossover_rate'] = original_rate
-                
-                # Áp dụng đột biến cho con cái để tạo đa dạng di truyền
-                child1 = self._mutate(child1, generation, self.config['generation'])
-                child2 = self._mutate(child2, generation, self.config['generation'])
-                
-                # Thêm con cái vào thế hệ tiếp theo
-                if len(new_population) < actual_population_size:
-                    new_population.append(child1)
-                if len(new_population) < actual_population_size:
-                    new_population.append(child2)
-            
-            # Thay thế quần thể cũ bằng quần thể mới được tạo
-            population = new_population
+            # Tạo thế hệ tiếp theo
+            population = self._create_next_generation(
+                population, fitness_scores, diversity, generation, actual_population_size
+            )
 
         # Sau tất cả các thế hệ, giải mã cá thể tốt nhất tìm được để lấy siêu tham số tốt nhất
         best_params = self._decode_individual(best_individual) if best_individual else {}

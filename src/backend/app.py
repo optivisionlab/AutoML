@@ -119,8 +119,6 @@ oauth.register(
     },
 )
 
-allow_origins=[f"http://{os.getenv('HOST_FRONT_END', '0.0.0.0')}:{int(os.getenv('PORT_FRONT_END', 8080))}", f"http://{os.getenv('HOST_SERVER', '0.0.0.0')}:{int(os.getenv('PORT_FRONT_END', 8080))}"],
-
 
 app.add_middleware(
     CORSMiddleware,

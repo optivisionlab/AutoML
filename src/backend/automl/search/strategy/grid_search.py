@@ -40,18 +40,36 @@ class GridSearchStrategy(SearchStrategy):
         self._evaluation_cache = {}  # Cache cho các tổ hợp tham số đã đánh giá
         self._model_copies = []  # Các bản sao mô hình được tạo trước cho đánh giá song song
     
-    def _get_params_hash(self, params: Dict[str, Any], model_class: str) -> str:
-        """Tạo hash để cache các tổ hợp tham số."""
+    def _get_params_hash(self, params: Dict[str, Any], model: BaseEstimator) -> str:
+        """
+        Tạo cache_key từ Hash(M.class, θ).
+        
+        Args:
+            params: Tổ hợp tham số θ cần đánh giá
+            model: Mô hình M (bao gồm cả class và cấu hình ban đầu)
+            
+        Returns:
+            str: Hash key duy nhất cho tổ hợp (model, params)
+        """
+        # Lấy thông tin đầy đủ của model class (bao gồm module và tên)
+        model_class_info = f"{model.__class__.__module__}.{model.__class__.__name__}"
+        
+        # Lấy các tham số hiện tại của model (cấu hình ban đầu)
+        model_base_params = str(sorted(model.get_params().items()))
+        
+        # Hash từ: model class + model base params + params cần đánh giá
         params_str = str(sorted(params.items()))
-        hash_input = f"{model_class}_{params_str}"
+        hash_input = f"{model_class_info}_{model_base_params}_{params_str}"
         return hashlib.md5(hash_input.encode()).hexdigest()
     
     def _evaluate_single_params(self, params: Dict[str, Any], model: BaseEstimator, 
                                X: np.ndarray, y: np.ndarray, cv, scoring_config) -> Dict[str, Any]:
         """Đánh giá một tổ hợp tham số đơn lẻ sử dụng cross-validation."""
         try:
-            # Kiểm tra cache trước
-            cache_key = self._get_params_hash(params, model.__class__.__name__)
+            # cache_key ← Hash(M.class, θ)
+            cache_key = self._get_params_hash(params, model)
+            
+            # if cache_key ∈ cache then return cache[cache_key]
             if self.config.get('cache_evaluations', True) and cache_key in self._evaluation_cache:
                 return self._evaluation_cache[cache_key].copy()
             
@@ -128,21 +146,6 @@ class GridSearchStrategy(SearchStrategy):
 
     def _grid_search_core(self, param_grid, model_func, data, targets, cv, scoring, metric_sort, return_train_score, log_file=None):
         """Triển khai cốt lõi grid search với đánh giá song song."""
-        # Chuyển đổi scoring sang định dạng tương thích với cross_validate nếu cần
-        if scoring is None:
-            from sklearn.metrics import make_scorer
-            scoring = {
-                'accuracy': make_scorer(accuracy_score),
-                'precision': make_scorer(precision_score, average='macro', zero_division=0),
-                'recall': make_scorer(recall_score, average='macro', zero_division=0),
-                'f1': make_scorer(f1_score, average='macro', zero_division=0)
-            }
-        
-        # Đảm bảo scoring ở định dạng phù hợp cho cross_validate
-        if not isinstance(scoring, dict):
-            scoring = {'score': scoring}
-            metric_sort = 'score'
-
         if metric_sort not in scoring:
             raise ValueError(f"metric_sort '{metric_sort}' không có trong các metric scoring")
 
@@ -303,11 +306,11 @@ class GridSearchStrategy(SearchStrategy):
         Thực hiện tối ưu hóa siêu tham số bằng grid search.
 
         Args:
-            model: The estimator to optimize
-            param_grid: Dictionary with parameters names as keys and lists of parameter settings to try
-            X: Training feature data
-            y: Training target data
-            **kwargs: Additional configuration parameters
+            model: Bộ ước lượng (estimator) cần tối ưu hóa
+            param_grid: Dictionary với tên tham số làm khóa và danh sách các giá trị tham số cần thử
+            X: Dữ liệu đặc trưng huấn luyện
+            y: Dữ liệu nhãn mục tiêu huấn luyện
+            **kwargs: Các tham số cấu hình bổ sung
 
         Returns:
             tuple: (best_params, best_score, best_all_scores, cv_results)

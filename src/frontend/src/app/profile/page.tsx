@@ -102,9 +102,17 @@ const Profile = () => {
         `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
         { responseType: "blob" }
       );
-      const url = URL.createObjectURL(avatar.data);
-      setAvatarUrl(url);
-      setOriginalAvatar(url);
+
+      // Kiểm tra blob rỗng
+      if (avatar.data && avatar.data.size > 0) {
+        const url = URL.createObjectURL(avatar.data);
+        setAvatarUrl(url);
+        setOriginalAvatar(url);
+      } else {
+        // blob rỗng -> set url rỗng
+        setAvatarUrl("")
+        setOriginalAvatar("");
+      }
     } catch (error) {
       console.error("❌ Lỗi khi lấy thông tin người dùng:", error);
     } finally {
