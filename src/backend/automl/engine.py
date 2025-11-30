@@ -31,17 +31,17 @@ from uuid import uuid4
 
 async def get_dataset_and_user_info(data_id, user_id, db: AsyncDatabase):
     """
-    Helper function to retrieve dataset and user information from MongoDB.
+    Hàm helper để lấy thông tin dataset và user từ MongoDB.
 
     Args:
-        data_id: The ObjectId string of the dataset
-        user_id: The ObjectId string of the user
+        data_id: Chuỗi ObjectId của dataset
+        user_id: Chuỗi ObjectId của user
 
     Returns:
         tuple: (data_name, user_name)
 
     Raises:
-        HTTPException: If dataset or user not found
+        HTTPException: Nếu không tìm thấy dataset hoặc user
     """
     data_collection = db.tbl_Data
     user_collection = db.tbl_User
@@ -125,22 +125,26 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     scoring = {}
     for metric in metric_list:
         if metric == 'accuracy':
-            scoring[metric] = make_scorer(accuracy_score)
-        elif metric == 'precision':
-            scoring[metric] = make_scorer(precision_score, average='macro')
-        elif metric == 'recall':
-            scoring[metric] = make_scorer(recall_score, average='macro')
-        elif metric == 'f1':
-            scoring[metric] = make_scorer(f1_score, average='macro')
+            scoring['accuracy'] = make_scorer(accuracy_score)
+        elif metric in ['precision', 'recall', 'f1']:
+            # Tạo scorer cho cả macro và weighted average
+            score_func = {
+                'precision': precision_score,
+                'recall': recall_score,
+                'f1': f1_score
+            }[metric]
+            scoring[f'{metric}_macro'] = make_scorer(score_func, average='macro')
+            scoring[f'{metric}_weighted'] = make_scorer(score_func, average='weighted')
         else:
-            # Try to get the score function dynamically if it's not one of the common ones
+            # Thử lấy hàm tính điểm động nếu không phải là các metric phổ biến
             score_func = globals().get(f'{metric}_score')
             if score_func:
-                scoring[metric] = make_scorer(score_func, average='macro')
+                scoring[f'{metric}_macro'] = make_scorer(score_func, average='macro')
+                scoring[f'{metric}_weighted'] = make_scorer(score_func, average='weighted')
             else:
-                raise ValueError(f"Unknown metric: {metric}")
+                raise ValueError(f"Metric không xác định: {metric}")
 
-    # Use the factory to create the search strategy with configuration
+    # Sử dụng factory để tạo chiến lược tìm kiếm với cấu hình
     strategy_config = {
         'cv': 5,
         'scoring': scoring,
@@ -152,7 +156,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     try:
         search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
     except ValueError as e:
-        print(f"Warning: {e}. Using default 'grid' search.")
+        print(f"Cảnh báo: {e}. Sử dụng tìm kiếm 'grid' mặc định.")
         search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
 
     for model_id in range(len(models)):
@@ -167,33 +171,40 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             y=y_train
         )
         
-        # Convert all numpy types to native Python types to avoid serialization issues
+        # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc để tránh lỗi serialization
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
         best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
         cv_results = SearchStrategy.convert_numpy_types(cv_results)
 
-        # Get the best estimator with the best parameters
+        # Lấy estimator tốt nhất với các tham số tốt nhất
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
 
-        # Extract scores from cv_results
-        # Convert rank list to numpy array for argmin operation
+        # Trích xuất điểm từ cv_results
+        # Chuyển danh sách rank sang numpy array để thực hiện argmin
         rank_key = f'rank_test_{metric_sort}'
         if rank_key in cv_results:
             rank_array = np.array(cv_results[rank_key])
         else:
-            # Fallback to 'rank_test_score' if specific metric rank not found
+            # Dự phòng sang 'rank_test_score' nếu không tìm thấy rank của metric cụ thể
             rank_array = np.array(cv_results.get('rank_test_score', []))
         
         best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
         
-        # Ensure scores are also converted to native types
+        # Đảm bảo các điểm cũng được chuyển đổi sang kiểu gốc
         scores_dict = {}
         for metric in metric_list:
-            if f"mean_test_{metric}" in cv_results:
-                score_value = cv_results[f"mean_test_{metric}"][best_idx]
-                # Convert to native Python float if it's a numpy type
-                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+            if metric == 'accuracy':
+                if f"mean_test_{metric}" in cv_results:
+                    score_value = cv_results[f"mean_test_{metric}"][best_idx]
+                    scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+            else:
+                # Lấy cả macro và weighted cho precision, recall, f1
+                for avg_type in ['macro', 'weighted']:
+                    key = f"mean_test_{metric}_{avg_type}"
+                    if key in cv_results:
+                        score_value = cv_results[key][best_idx]
+                        scores_dict[f"{metric}_{avg_type}"] = float(score_value) if hasattr(score_value, 'item') else score_value
         
         results = {
             "model_id": model_id,
@@ -210,7 +221,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             best_score = best_score_model
             best_params = best_params_model
     
-    # Final conversion to ensure all return values are native Python types
+    # Chuyển đổi cuối cùng để đảm bảo tất cả giá trị trả về là kiểu Python gốc
     best_params = SearchStrategy.convert_numpy_types(best_params)
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
@@ -267,7 +278,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
     model_data = pickle.dumps(best_model)
     job_id = str(uuid4())
 
-    # Ensure all values are properly converted to native Python types before storing
+    # Đảm bảo tất cả giá trị được chuyển đổi đúng sang kiểu Python gốc trước khi lưu
     
     job = {
         "job_id": job_id,
@@ -300,7 +311,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 
 async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
     """
-    Chạy dự đoán trên dữ liệu mới bằng model và preprocessor đã lưu
+    Chạy dự đoán trên dữ liệu mới bằng mô hình và preprocessor đã lưu
     """
     job_collection = db.tbl_Job
 
@@ -328,7 +339,7 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         return {"error": f"Failed to construct model paths: {str(e)}"}
     
     async def load_artifact(bucket, path, type):
-        """Hàm helper để tải và load file"""
+        """Hàm helper để tải và nạp file"""
         try:
             buffer = await asyncio.to_thread(minIOStorage.get_object, bucket, path)
             return await asyncio.to_thread(type.load, buffer)
@@ -336,7 +347,7 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
             raise ValueError(f"Failed to load artifact from {path}: {str(e)}")
         
     try:
-        # Tải cả 3 file song song
+        # Tải đồng thời cả 3 file
         model, preprocessor, le_target = await asyncio.gather(
             load_artifact(model_url.get('bucket_name'), model_path, pickle),
             load_artifact(model_url.get('bucket_name'), preprocessor_path, joblib),
@@ -361,13 +372,13 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         return {"error": f"Cannot read file: {str(e)}"}
     
     try:
-        # Dùng preprocessor đã lưu
+        # Sử dụng preprocessor đã lưu để biến đổi dữ liệu
         X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
         
-        # Dùng model đã lưu
+        # Sử dụng mô hình đã lưu để dự đoán
         y_pred_encoded = await asyncio.to_thread(model.predict, X_new_transformed)
 
-        # Dùng le_target đã lưu
+        # Sử dụng le_target đã lưu để chuyển đổi ngược nhãn
         y_pred_human = await asyncio.to_thread(le_target.inverse_transform, y_pred_encoded)
     except Exception as e:
         return {"error": f"Failed during prediction process: {str(e)}"}

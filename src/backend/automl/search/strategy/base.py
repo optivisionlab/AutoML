@@ -1,11 +1,15 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, Optional
-from sklearn.base import  BaseEstimator
+from sklearn.base import BaseEstimator
 import numpy as np
+import logging
 
 import os
 from datetime import datetime
 from sklearn.model_selection import StratifiedKFold
+
+# Cấu hình logger cho module này
+logger = logging.getLogger(__name__)
 
 
 class SearchStrategy(ABC):
