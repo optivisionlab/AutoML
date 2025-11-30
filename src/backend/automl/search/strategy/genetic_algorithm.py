@@ -22,51 +22,16 @@ class GeneticAlgorithm(SearchStrategy):
     """Triển khai Thuật toán di truyền (Genetic Algorithm) để tối ưu hóa siêu tham số"""
 
     @staticmethod
-    def _load_ga_config() -> Dict[str, Any]:
-        """Tải cấu hình thuật toán di truyền từ file YAML."""
-        # Lấy thư mục chứa file này
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(current_dir, 'genetic_algorithm_config.yml')
-
-        # Tải từ file YAML nếu tồn tại
-        ga_config = {}
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    ga_config = yaml.safe_load(f) or {}
-            except Exception as e:
-                logger.warning(f"Không thể tải cấu hình GA từ {config_file}: {e}")
-
-        return ga_config
-
-    @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Lấy cấu hình mặc định bằng cách tải từ file."""
+        """Lấy cấu hình mặc định bằng cách tải từ file YAML."""
         config = SearchStrategy.get_default_config()
 
-        # Tải cấu hình GA từ file YAML
-        ga_config = GeneticAlgorithm._load_ga_config()
+        # Tải cấu hình GA từ file YAML (sử dụng method từ base class)
+        ga_config = SearchStrategy._load_yaml_config('genetic_algorithm')
 
-        # Chỉ sử dụng giá trị dự phòng hardcoded nếu file YAML hoàn toàn thiếu hoặc trống
-        if not ga_config:
-            logger.warning("Không tìm thấy file cấu hình GA hoặc file trống, sử dụng giá trị mặc định tối thiểu")
-            ga_config = {
-                'population_size': 10,
-                'generation': 5,
-                'elite_size': 2,
-                'tournament_size': 2,
-                'mutation_rate': 0.2,
-                'crossover_rate': 0.9,
-                'early_stopping_patience': 3,
-                'early_stopping_enabled': True,
-                'convergence_threshold': 0.001,
-                'use_global_cache': True,
-                'max_cache_size': 500,
-                'adaptive_population': True,
-                'fast_mode': True,
-            }
+        if ga_config:
+            config.update(ga_config)
 
-        config.update(ga_config)
         return config
 
     def __init__(self, **kwargs):

@@ -1,0 +1,15 @@
+# Cấu hình mặc định Grid Search Strategy
+# File này được sử dụng khi không tìm thấy grid_search_config.yml
+
+# Cài đặt dispatch
+pre_dispatch: '2*n_jobs'  # Số lượng job được dispatch trước
+
+# Cài đặt training
+return_train_score: false  # Có trả về điểm train không
+
+# Cài đặt song song
+parallel_evaluation: true  # Bật đánh giá song song
+batch_size: 10  # Kích thước batch cho xử lý song song
+
+# Cài đặt cache
+cache_evaluations: true  # Cache kết quả đánh giá để tránh tính lại

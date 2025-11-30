@@ -3,6 +3,7 @@ from typing import Dict, Any, Tuple, Optional
 from sklearn.base import BaseEstimator
 import numpy as np
 import logging
+import yaml
 
 import os
 from datetime import datetime
@@ -20,21 +21,77 @@ class SearchStrategy(ABC):
         self.config.update(kwargs)
 
     @staticmethod
-    def get_default_config() -> Dict[str, Any]:
-        """Trả về cấu hình mặc định cho strategy này"""
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    def _load_yaml_config(config_name: str) -> Dict[str, Any]:
+        """
+        Tải cấu hình từ file YAML. Nếu không tìm thấy file config chính,
+        sẽ load file default config.
+        
+        Args:
+            config_name: Tên config (vd: 'base', 'grid_search', 'bayesian_search')
+            
+        Returns:
+            Dict chứa cấu hình từ file YAML
+        """
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(current_dir, f'{config_name}_config.yml')
+        default_config_file = os.path.join(current_dir, f'{config_name}_default_config.yml')
+        
+        loaded_config = {}
+        
+        # Thử load file config chính trước
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    loaded_config = yaml.safe_load(f) or {}
+                    if loaded_config:
+                        return loaded_config
+            except Exception as e:
+                logger.warning(f"Không thể tải cấu hình từ {config_file}: {e}")
+        
+        # Nếu không có file config chính hoặc file trống, load file default
+        if os.path.exists(default_config_file):
+            try:
+                with open(default_config_file, 'r', encoding='utf-8') as f:
+                    loaded_config = yaml.safe_load(f) or {}
+                    if loaded_config:
+                        logger.info(f"Đã tải cấu hình mặc định từ {default_config_file}")
+                        return loaded_config
+            except Exception as e:
+                logger.warning(f"Không thể tải cấu hình mặc định từ {default_config_file}: {e}")
+        
+        return loaded_config
 
-        return {
+    @staticmethod
+    def _load_base_config() -> Dict[str, Any]:
+        """Tải cấu hình cơ sở từ file YAML."""
+        return SearchStrategy._load_yaml_config('base')
+
+    @staticmethod
+    def get_default_config() -> Dict[str, Any]:
+        """Trả về cấu hình mặc định cho strategy này, đọc từ file YAML."""
+        # Tải config từ file YAML
+        yaml_config = SearchStrategy._load_base_config()
+        
+        # Tạo StratifiedKFold từ config
+        cv_n_splits = yaml_config.get('cv_n_splits', 5)
+        cv_shuffle = yaml_config.get('cv_shuffle', True)
+        cv_random_state = yaml_config.get('cv_random_state', 42)
+        cv = StratifiedKFold(n_splits=cv_n_splits, shuffle=cv_shuffle, random_state=cv_random_state)
+
+        # Config mặc định (fallback nếu YAML không có)
+        config = {
             'cv': cv,
             'scoring': None,
-            'metric_sort': 'accuracy',
-            'n_jobs': -1,
-            'verbose': 0,
-            'random_state': None,
-            'error_score': 'raise',
-            'log_dir': 'logs',
-            'save_log': False
+            'metric_sort': yaml_config.get('metric_sort', 'accuracy'),
+            'n_jobs': yaml_config.get('n_jobs', -1),
+            'verbose': yaml_config.get('verbose', 0),
+            'random_state': yaml_config.get('random_state'),
+            'error_score': yaml_config.get('error_score', 'raise'),
+            'log_dir': yaml_config.get('log_dir', 'logs'),
+            'save_log': yaml_config.get('save_log', False)
         }
+        
+        return config
 
     @abstractmethod
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):

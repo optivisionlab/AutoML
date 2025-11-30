@@ -77,40 +77,16 @@ class BayesianSearchStrategy(SearchStrategy):
             return 'macro'
 
     @staticmethod
-    def _load_bayesian_config() -> Dict[str, Any]:
-        """Tải cấu hình Bayesian Search từ file YAML."""
-        # Lấy thư mục chứa file này
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(current_dir, 'bayesian_search_config.yml')
-        
-        # Tải từ file YAML nếu tồn tại
-        bayesian_config = {}
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    bayesian_config = yaml.safe_load(f) or {}
-            except Exception as e:
-                logger.warning(f"Không thể tải cấu hình Bayesian từ {config_file}: {e}")
-        
-        return bayesian_config
-
-    @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Lấy cấu hình mặc định bằng cách tải từ file."""
+        """Lấy cấu hình mặc định bằng cách tải từ file YAML."""
         base_config = SearchStrategy.get_default_config()
         
-        # Tải cấu hình Bayesian từ file YAML
-        bayesian_config = BayesianSearchStrategy._load_bayesian_config()
+        # Tải cấu hình Bayesian từ file YAML (sử dụng method từ base class)
+        bayesian_config = SearchStrategy._load_yaml_config('bayesian_search')
         
-        # Chỉ sử dụng giá trị dự phòng hardcoded nếu file YAML hoàn toàn thiếu hoặc trống
-        if not bayesian_config:
-            logger.warning("Không tìm thấy file cấu hình Bayesian hoặc file trống, sử dụng giá trị mặc định tối thiểu")
-            bayesian_config = {
-                'n_calls': 25,
-                'n_initial_points': 5,
-            }
+        if bayesian_config:
+            base_config.update(bayesian_config)
         
-        base_config.update(bayesian_config)
         return base_config
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any],
