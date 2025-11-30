@@ -72,7 +72,26 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
 
         file_content_bytes = file_data.file.read()
         csv_stream = io.BytesIO(file_content_bytes)
-        df = pd.read_csv(csv_stream)
+
+        # Đọc dữ liệu
+        try:
+            df = pd.read_csv(csv_stream)
+
+            # Nếu chỉ ra 1 cột, có thể là ngăn cách cột không còn là dấu ","
+            if df.shape[1] <= 1:
+                csv_stream.seek(0)
+                df = pd.read_csv(csv_stream, sep=';', engine='python')
+        except Exception as e:
+            raise Exception("Error when read file")
+        
+        # Xóa các cột có tên là Unnamed (do thừa dấu ; hoặc , gây ra)
+        df = df.loc[:, ~df.columns.str.contains('Unnamed')]
+
+        # Xóa các cột hoàn toàn trống
+        df.dropna(axis=1, how='all', inplace=True)
+
+        # Chuẩn hóa tên cột
+        df.columns = df.columns.str.strip()
 
         parquet_buffer = io.BytesIO()
         df.to_parquet(parquet_buffer, index=False)

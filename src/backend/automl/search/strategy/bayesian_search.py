@@ -193,46 +193,12 @@ class BayesianSearchStrategy(SearchStrategy):
         def objective(**params):
             model.set_params(**params)
 
-            # Lấy cấu hình scoring - có thể là dict hoặc string
+            # Lấy cấu hình scoring (dict từ engine.py)
             scoring_config = self.config.get('scoring')
-            metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
             
             # Xác định metric chính để tối ưu hóa
-            # Nếu scoring là dict, sử dụng metric_sort; ngược lại sử dụng scoring làm metric chính
-            if isinstance(scoring_config, dict):
-                # Khi scoring là dict (từ engine.py), sử dụng metric_sort làm metric chính
-                primary_metric = self.config.get('metric_sort', 'accuracy')
-                scoring_metrics = scoring_config  # Sử dụng trực tiếp dict scoring được cung cấp
-            else:
-                # Khi scoring là string (hành vi cũ)
-                primary_metric = scoring_config if scoring_config else 'accuracy'
-                
-                # Xây dựng dict scoring metrics dựa trên cài đặt averaging
-                scoring_metrics = {}
-                
-                if averaging == 'both':
-                    # Tính toán cả macro và weighted metrics
-                    scoring_metrics['accuracy'] = 'accuracy'
-                    for metric in ['precision', 'recall', 'f1']:
-                        if metric in metrics:
-                            scoring_metrics[f'{metric}_macro'] = f'{metric}_macro'
-                            scoring_metrics[f'{metric}_weighted'] = f'{metric}_weighted'
-                    
-                    # Thêm metric scoring chính nếu chưa được bao gồm
-                    if primary_metric != 'accuracy' and primary_metric in metrics:
-                        if f'{primary_metric}_macro' not in scoring_metrics:
-                            scoring_metrics[f'{primary_metric}_macro'] = f'{primary_metric}_macro'
-                        if f'{primary_metric}_weighted' not in scoring_metrics:
-                            scoring_metrics[f'{primary_metric}_weighted'] = f'{primary_metric}_weighted'
-                            
-                else:
-                    # Chỉ sử dụng phương pháp averaging được chỉ định
-                    avg_method = averaging if averaging in ['macro', 'weighted'] else 'macro'
-                    scoring_metrics['accuracy'] = 'accuracy'
-                    for metric in metrics:
-                        if metric == 'accuracy':
-                            continue
-                        scoring_metrics[metric] = f'{metric}_{avg_method}'
+            primary_metric = self.config.get('metric_sort', 'accuracy')
+            scoring_metrics = scoring_config
 
             cv_results = cross_validate(
                 estimator=model,
