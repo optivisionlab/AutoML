@@ -23,16 +23,22 @@ class GridSearchStrategy(SearchStrategy):
 
     @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Trả về cấu hình mặc định cho strategy này"""
+        """Trả về cấu hình mặc định cho strategy này, đọc từ file YAML."""
         config = SearchStrategy.get_default_config()
-        config.update({
-            'pre_dispatch': '2*n_jobs',
-            'return_train_score': False,
-            'parallel_evaluation': True,  # Bật đánh giá song song
-            'cache_evaluations': True,  # Cache kết quả đánh giá
-            'batch_size': 10,  # Kích thước batch cho xử lý song song
-        })
-
+        
+        # Tải config từ file YAML (sử dụng method từ base class)
+        yaml_config = SearchStrategy._load_yaml_config('grid_search')
+        
+        # Config với giá trị từ YAML hoặc fallback
+        grid_defaults = {
+            'pre_dispatch': yaml_config.get('pre_dispatch', '2*n_jobs'),
+            'return_train_score': yaml_config.get('return_train_score', False),
+            'parallel_evaluation': yaml_config.get('parallel_evaluation', True),
+            'cache_evaluations': yaml_config.get('cache_evaluations', True),
+            'batch_size': yaml_config.get('batch_size', 10),
+        }
+        
+        config.update(grid_defaults)
         return config
     
     def __init__(self, **kwargs):

@@ -1,0 +1,20 @@
+# Cấu hình mặc định Bayesian Search Strategy
+# File này được sử dụng khi không tìm thấy bayesian_search_config.yml
+
+# Cài đặt tối ưu hóa
+n_calls: 25  # Số lần gọi hàm mục tiêu
+n_initial_points: 5  # Số điểm khám phá ngẫu nhiên ban đầu
+
+# Cài đặt Acquisition Function
+acq_func: 'EI'  # Expected Improvement
+acq_optimizer: 'sampling'  # Phương pháp tối ưu acquisition
+
+# Cài đặt averaging
+averaging: 'auto'  # 'auto', 'macro', 'weighted'
+optimize_for: 'auto'  # 'auto', 'macro', 'weighted'
+imbalance_threshold: 0.3  # Ngưỡng phát hiện mất cân bằng lớp
+
+# Cài đặt dừng sớm
+early_stopping_enabled: true  # Bật dừng sớm
+early_stopping_patience: 5  # Số lần lặp không cải thiện trước khi dừng
+convergence_threshold: 0.001  # Ngưỡng hội tụ
