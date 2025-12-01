@@ -1,7 +1,33 @@
-.gitignore
+# --- Git & IDE ---
 .git
+.gitignore
 .vscode/
-__pycache__/
+.idea/
 
+# --- Python Cache & Virtual Env ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+pip-log.txt
+
+# --- Secrets (BẢO MẬT) ---
+.env
+.env.*
+*.swp
+
+# --- Docker Files ---
+Dockerfile
+*.dockerfile
+docker-compose.yml
+*.docker-compose.yml
+.dockerignore
+
+# --- Documentation ---
 README.md
-ALGORITHM_INTEGRATION_REPORT.md
+LICENSE
+
+*.sh
