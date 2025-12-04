@@ -1,12 +1,18 @@
 FROM python:3.10.12
 
-# setup system
-RUN apt-get update && apt-get install vim -y
-
 # setup project
 WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
-RUN pip install -r requirements.txt
+# xóa bớt rác Python sinh ra
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH="/app"
 
-CMD ["python", "app.py"]
+# Chỉ định trong docker-compose để tận dụng luôn image
+# CMD ["python", "app.py"]
+
