@@ -66,7 +66,7 @@ async def save_job_mongo(input: InputRequest, models_info, job_id, db: AsyncData
             },
             "status": 1,
             "activate": 0,
-            "create_at": datetime.now(timezone.utc)
+            "create_at": datetime.now(timezone.utc).timestamp()
         }
 
         # Chèn bản ghi job vào collection
@@ -118,7 +118,7 @@ async def save_job(input: InputRequest, db: AsyncDatabase) -> str:
         },
         "status": 0,
         "activate": 0,
-        "create_at": datetime.now(timezone.utc)
+        "create_at": datetime.now(timezone.utc).timestamp()
     }
 
     msg_job = {

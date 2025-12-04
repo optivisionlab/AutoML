@@ -3,6 +3,7 @@ import pickle
 import joblib
 import asyncio
 import random
+from datetime import datetime, timezone
 from io import BytesIO
 
 import numpy as np
@@ -297,7 +298,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
             "id": userId,
             "name": user_name
         },
-        "create_at": time.time(),
+        "create_at": datetime.now(timezone.utc).timestamp(),
         "status": 1
     }
 
@@ -400,7 +401,12 @@ async def get_jobs(user_id, db: AsyncDatabase):
 
         jobs = await job_collection.find(query, {"model": 0, "item": 0}).to_list(length=None)
         for job in jobs:
-            job["_id"] = str(job["_id"])  # Chuyển ObjectId thành string
+            if "_id" in job:
+                job["_id"] = str(job["_id"])
+            for key, value in job.items():
+                if isinstance(value, datetime):
+                    job[key] = value.timestamp()
+
         return JSONResponse(content=jobs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -414,6 +420,9 @@ async def get_one_job(id_job: str, db: AsyncDatabase):
         job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
+        for key, value in job.items():
+            if isinstance(value, datetime):
+                job[key] = value.timestamp()
         return JSONResponse(content=serialize_mongo_doc(job))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
