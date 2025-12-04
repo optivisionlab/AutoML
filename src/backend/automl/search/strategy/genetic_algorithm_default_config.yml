@@ -1,0 +1,41 @@
+# Cấu hình mặc định Genetic Algorithm Strategy
+# File này được sử dụng khi không tìm thấy genetic_algorithm_config.yml
+
+# Cài đặt quần thể
+population_size: 10  # Kích thước quần thể
+min_population: 4  # Quần thể tối thiểu
+max_population: 12  # Quần thể tối đa
+
+# Cài đặt thế hệ
+generation: 5  # Số thế hệ
+early_stopping_patience: 2  # Số thế hệ không cải thiện trước khi dừng
+early_stopping_enabled: true  # Bật dừng sớm
+
+# Toán tử di truyền
+mutation_rate: 0.2  # Tỷ lệ đột biến
+crossover_rate: 0.9  # Tỷ lệ lai ghép
+
+# Cài đặt chọn lọc
+elite_size: 2  # Số lượng cá thể ưu tú giữ lại
+tournament_size: 2  # Kích thước giải đấu
+
+# Tối ưu hóa hiệu suất
+parallel_evaluation: true  # Đánh giá song song
+use_global_cache: true  # Cache đánh giá qua các thế hệ
+max_cache_size: 1000  # Kích thước cache tối đa
+
+# Tính năng thích ứng
+adaptive_population: true  # Điều chỉnh kích thước quần thể động
+convergence_threshold: 0.002  # Ngưỡng hội tụ
+
+# Tối ưu hóa tốc độ
+fast_mode: true  # Bật tối ưu hóa tốc độ
+ultra_fast_mode: true  # Bật chế độ siêu nhanh
+skip_diversity_check: true  # Bỏ qua tính toán đa dạng
+simple_crossover: true  # Sử dụng lai ghép đơn giản
+
+# Cài đặt lai ghép
+alpha: 0.5  # Hệ số pha trộn cho lai ghép BLX-α
+
+# Khởi tạo
+n_initial_random: 3  # Số lượng đánh giá ngẫu nhiên ban đầu

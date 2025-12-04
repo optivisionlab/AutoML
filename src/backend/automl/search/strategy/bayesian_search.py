@@ -77,40 +77,16 @@ class BayesianSearchStrategy(SearchStrategy):
             return 'macro'
 
     @staticmethod
-    def _load_bayesian_config() -> Dict[str, Any]:
-        """Tải cấu hình Bayesian Search từ file YAML."""
-        # Lấy thư mục chứa file này
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(current_dir, 'bayesian_search_config.yml')
-        
-        # Tải từ file YAML nếu tồn tại
-        bayesian_config = {}
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    bayesian_config = yaml.safe_load(f) or {}
-            except Exception as e:
-                logger.warning(f"Không thể tải cấu hình Bayesian từ {config_file}: {e}")
-        
-        return bayesian_config
-
-    @staticmethod
     def get_default_config() -> Dict[str, Any]:
-        """Lấy cấu hình mặc định bằng cách tải từ file."""
+        """Lấy cấu hình mặc định bằng cách tải từ file YAML."""
         base_config = SearchStrategy.get_default_config()
         
-        # Tải cấu hình Bayesian từ file YAML
-        bayesian_config = BayesianSearchStrategy._load_bayesian_config()
+        # Tải cấu hình Bayesian từ file YAML (sử dụng method từ base class)
+        bayesian_config = SearchStrategy._load_yaml_config('bayesian_search')
         
-        # Chỉ sử dụng giá trị dự phòng hardcoded nếu file YAML hoàn toàn thiếu hoặc trống
-        if not bayesian_config:
-            logger.warning("Không tìm thấy file cấu hình Bayesian hoặc file trống, sử dụng giá trị mặc định tối thiểu")
-            bayesian_config = {
-                'n_calls': 25,
-                'n_initial_points': 5,
-            }
+        if bayesian_config:
+            base_config.update(bayesian_config)
         
-        base_config.update(bayesian_config)
         return base_config
 
     def search(self, model: BaseEstimator, param_grid: Dict[str, Any],
@@ -168,9 +144,12 @@ class BayesianSearchStrategy(SearchStrategy):
             'rank_test_score': []
         }
         
+        # Lấy danh sách metrics từ scoring config
+        scoring_config = self.config.get('scoring', {})
+        metric_names = list(scoring_config.keys()) if scoring_config else ['accuracy']
+        
         # Thêm các trường cụ thể cho metric
-        metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
-        for metric in metrics:
+        for metric in metric_names:
             cv_results_[f'mean_test_{metric}'] = []
             cv_results_[f'std_test_{metric}'] = []
             cv_results_[f'rank_test_{metric}'] = []
@@ -193,46 +172,12 @@ class BayesianSearchStrategy(SearchStrategy):
         def objective(**params):
             model.set_params(**params)
 
-            # Lấy cấu hình scoring - có thể là dict hoặc string
+            # Lấy cấu hình scoring
             scoring_config = self.config.get('scoring')
-            metrics = self.config.get('metrics', ['accuracy', 'precision', 'recall', 'f1'])
             
             # Xác định metric chính để tối ưu hóa
-            # Nếu scoring là dict, sử dụng metric_sort; ngược lại sử dụng scoring làm metric chính
-            if isinstance(scoring_config, dict):
-                # Khi scoring là dict (từ engine.py), sử dụng metric_sort làm metric chính
-                primary_metric = self.config.get('metric_sort', 'accuracy')
-                scoring_metrics = scoring_config  # Sử dụng trực tiếp dict scoring được cung cấp
-            else:
-                # Khi scoring là string (hành vi cũ)
-                primary_metric = scoring_config if scoring_config else 'accuracy'
-                
-                # Xây dựng dict scoring metrics dựa trên cài đặt averaging
-                scoring_metrics = {}
-                
-                if averaging == 'both':
-                    # Tính toán cả macro và weighted metrics
-                    scoring_metrics['accuracy'] = 'accuracy'
-                    for metric in ['precision', 'recall', 'f1']:
-                        if metric in metrics:
-                            scoring_metrics[f'{metric}_macro'] = f'{metric}_macro'
-                            scoring_metrics[f'{metric}_weighted'] = f'{metric}_weighted'
-                    
-                    # Thêm metric scoring chính nếu chưa được bao gồm
-                    if primary_metric != 'accuracy' and primary_metric in metrics:
-                        if f'{primary_metric}_macro' not in scoring_metrics:
-                            scoring_metrics[f'{primary_metric}_macro'] = f'{primary_metric}_macro'
-                        if f'{primary_metric}_weighted' not in scoring_metrics:
-                            scoring_metrics[f'{primary_metric}_weighted'] = f'{primary_metric}_weighted'
-                            
-                else:
-                    # Chỉ sử dụng phương pháp averaging được chỉ định
-                    avg_method = averaging if averaging in ['macro', 'weighted'] else 'macro'
-                    scoring_metrics['accuracy'] = 'accuracy'
-                    for metric in metrics:
-                        if metric == 'accuracy':
-                            continue
-                        scoring_metrics[metric] = f'{metric}_{avg_method}'
+            primary_metric = self.config.get('metric_sort', 'accuracy')
+            scoring_metrics = scoring_config
 
             cv_results = cross_validate(
                 estimator=model,
@@ -248,27 +193,15 @@ class BayesianSearchStrategy(SearchStrategy):
             # Lưu trữ tất cả metrics - sẽ được chuyển đổi sau
             objective.last_metrics = {}
             
-            if averaging == 'both':
-                # Lưu trữ cả macro và weighted metrics - chuyển đổi kiểu numpy
-                objective.last_metrics['accuracy'] = float(np.mean(cv_results['test_accuracy']))
-                
-                for metric in ['precision', 'recall', 'f1']:
-                    if f'{metric}_macro' in scoring_metrics:
-                        objective.last_metrics[f'{metric}_macro'] = float(np.mean(cv_results[f'test_{metric}_macro']))
-                    if f'{metric}_weighted' in scoring_metrics:
-                        objective.last_metrics[f'{metric}_weighted'] = float(np.mean(cv_results[f'test_{metric}_weighted']))
-                
-                # Chọn điểm số nào để tối ưu hóa dựa trên cấu hình
-                if primary_metric == 'accuracy':
-                    score = objective.last_metrics['accuracy']
-                else:
-                    score = objective.last_metrics.get(f'{primary_metric}_{optimize_for}', 
-                                                      objective.last_metrics.get('accuracy', 0.0))
-            else:
-                # Phương pháp averaging đơn - chuyển đổi kiểu numpy
-                for key in scoring_metrics:
-                    objective.last_metrics[key] = float(np.mean(cv_results[f'test_{key}']))
-                score = objective.last_metrics.get(primary_metric, objective.last_metrics.get('accuracy', 0.0))
+            # Lưu trữ tất cả metrics từ scoring_config (dict từ engine.py)
+            # scoring_metrics có dạng: {'accuracy': scorer, 'precision': scorer, 'recall': scorer, 'f1': scorer}
+            for key in scoring_metrics:
+                test_key = f'test_{key}'
+                if test_key in cv_results:
+                    objective.last_metrics[key] = float(np.mean(cv_results[test_key]))
+            
+            # Chọn điểm số để tối ưu hóa
+            score = objective.last_metrics.get(primary_metric, objective.last_metrics.get('accuracy', 0.0))
 
             # gp_minimize luôn tối thiểu hóa, vì vậy trả về -score
             return -score
@@ -307,42 +240,15 @@ class BayesianSearchStrategy(SearchStrategy):
                 'model': model_name,
                 'run_type': 'bayesian_search',
                 'best_params': str(current_params),
-                'accuracy': metrics.get('accuracy', 0.0),
             }
+            # Thêm tất cả metrics vào record
+            for metric_key in metric_names:
+                record[metric_key] = metrics.get(metric_key, 0.0)
             
-            # Thêm metrics dựa trên cấu hình averaging
-            if averaging == 'both':
-                # Thêm cả metric macro và weighted
-                for metric_type in ['precision', 'recall', 'f1']:
-                    record[f'{metric_type}_macro'] = metrics.get(f'{metric_type}_macro', 0.0)
-                    record[f'{metric_type}_weighted'] = metrics.get(f'{metric_type}_weighted', 0.0)
-                
-                # In thông tin ra console với cả hai loại  
-                if self.config.get('verbose', 1) > 0:
-                    logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: ")
-                    logger.info(f"  Độ chính xác={metrics.get('accuracy', 0.0):.4f}")
-                    logger.info(f"  Macro   - P={metrics.get('precision_macro', 0.0):.4f}, "
-                          f"R={metrics.get('recall_macro', 0.0):.4f}, "
-                          f"F1={metrics.get('f1_macro', 0.0):.4f}")
-                    logger.info(f"  Weighted- P={metrics.get('precision_weighted', 0.0):.4f}, "
-                          f"R={metrics.get('recall_weighted', 0.0):.4f}, "
-                          f"F1={metrics.get('f1_weighted', 0.0):.4f}")
-                    logger.info(f"  Đang tối ưu cho: {optimize_for}")
-                
-            else:
-                # Phương pháp averaging đơn
-                avg_suffix = '' if averaging not in ['macro', 'weighted'] else f'_{averaging}'
-                for metric_type in ['precision', 'recall', 'f1']:
-                    key = f'{metric_type}{avg_suffix}' if avg_suffix else metric_type
-                    record[metric_type] = metrics.get(key, 0.0)
-                
-                # In thông tin ra console
-                if self.config.get('verbose', 1) > 0:
-                    logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: "
-                          f"Độ chính xác={metrics.get('accuracy', 0.0):.4f}, "
-                          f"Precision={record.get('precision', 0.0):.4f}, "
-                          f"Recall={record.get('recall', 0.0):.4f}, "
-                          f"F1={record.get('f1', 0.0):.4f}")
+            # In thông tin ra console
+            if self.config.get('verbose', 1) > 0:
+                metrics_str = ", ".join([f"{k}={metrics.get(k, 0.0):.4f}" for k in metric_names])
+                logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: {metrics_str}")
             
             search_history.append(record)
             
@@ -351,26 +257,10 @@ class BayesianSearchStrategy(SearchStrategy):
             cv_results_['mean_test_score'].append(current_score)
             cv_results_['std_test_score'].append(0.0)  # Bayesian opt không tính std cho mỗi iteration
             
-            # Thêm metrics vào cv_results_
-            cv_results_['mean_test_accuracy'].append(metrics.get('accuracy', 0.0))
-            cv_results_['std_test_accuracy'].append(0.0)
-            
-            if averaging == 'both':
-                # Thêm cả macro và weighted metrics
-                for metric_type in ['precision', 'recall', 'f1']:
-                    # Để tương thích, sử dụng phiên bản tối ưu
-                    if optimize_for == 'macro':
-                        cv_results_[f'mean_test_{metric_type}'].append(metrics.get(f'{metric_type}_macro', 0.0))
-                    else:
-                        cv_results_[f'mean_test_{metric_type}'].append(metrics.get(f'{metric_type}_weighted', 0.0))
-                    cv_results_[f'std_test_{metric_type}'].append(0.0)
-            else:
-                # Phương pháp averaging đơn
-                avg_suffix = '' if averaging not in ['macro', 'weighted'] else f'_{averaging}'
-                for metric_type in ['precision', 'recall', 'f1']:
-                    key = f'{metric_type}{avg_suffix}' if avg_suffix else metric_type
-                    cv_results_[f'mean_test_{metric_type}'].append(metrics.get(key, 0.0))
-                    cv_results_[f'std_test_{metric_type}'].append(0.0)
+            # Thêm tất cả metrics vào cv_results_
+            for metric_key in metric_names:
+                cv_results_[f'mean_test_{metric_key}'].append(metrics.get(metric_key, 0.0))
+                cv_results_[f'std_test_{metric_key}'].append(0.0)
             
             # Cập nhật best_all_scores nếu đây là kết quả tốt nhất cho đến nay
             if current_score >= best_score_so_far:
@@ -450,8 +340,8 @@ class BayesianSearchStrategy(SearchStrategy):
         best_score = float(-result.fun) if hasattr(result.fun, 'item') else -result.fun  # Đổi dấu để lấy giá trị dương
         
         # Tính toán xếp hạng cho cv_results_
-        for metric in metrics:
-            test_scores = cv_results_[f'mean_test_{metric}']
+        for metric in metric_names:
+            test_scores = cv_results_.get(f'mean_test_{metric}', [])
             if test_scores:
                 ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
                 cv_results_[f'rank_test_{metric}'] = ranks.tolist()
@@ -471,7 +361,5 @@ class BayesianSearchStrategy(SearchStrategy):
         if self.config['save_log']:
             logger.info(f"Đã lưu log tìm kiếm vào: {log_file}")
 
-        # Chuyển đổi tất cả kiểu numpy trong cv_results_ sang kiểu Python gốc
-        cv_results_ = SearchStrategy.convert_numpy_types(cv_results_)
-
-        return best_params, best_score, best_all_scores, cv_results_
+        # Xóa cache và chuyển đổi kiểu numpy trước khi trả về
+        return self._finalize_results(best_params, best_score, best_all_scores, cv_results_)

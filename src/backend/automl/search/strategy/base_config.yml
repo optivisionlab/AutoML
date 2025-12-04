@@ -1,0 +1,24 @@
+# Cấu hình cơ sở cho tất cả Search Strategies
+# Các tham số này được kế thừa bởi tất cả các strategy con
+
+# Cross-validation
+cv_n_splits: 5
+cv_shuffle: true
+cv_random_state: 42
+
+# Scoring
+metric_sort: 'accuracy'
+
+# Parallel processing
+n_jobs: -1  # -1 = sử dụng tất cả CPU cores
+
+# Logging
+verbose: 0
+log_dir: 'logs'
+save_log: false
+
+# Error handling
+error_score: 'raise'
+
+# Random state
+random_state: null
