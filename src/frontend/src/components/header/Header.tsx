@@ -30,8 +30,15 @@ export default function Header() {
           const res = await fetch(
             `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${session.user.username}`
           );
-          if (!res.ok) throw new Error("Avatar fetch failed");
+
           const blob = await res.blob();
+          // Kiểm tra blob rỗng
+          if (!blob || blob.size === 0) {
+            setAvatarUrl(""); // avatar rỗng
+            return;
+          }
+
+          // Có avatar -> tạo URL
           const url = URL.createObjectURL(blob);
           setAvatarUrl(url);
         } catch (error) {
@@ -58,7 +65,7 @@ export default function Header() {
             const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
             return (
               <Link
-                key={idx}
+                key={item}
                 href={{
                   pathname: "/",
                   hash: hrefs[idx].replace("#", ""),

@@ -37,29 +37,36 @@ done
 echo "--- Start creating $NUM_WORKERS Worker Services (Start Port: $DEFAULT_PORT) ---"
 
 cat > $COMPOSE_FILE << EOF
-version: '3.8'
 services:
 EOF
 
 for i in $(seq 1 $NUM_WORKERS); do
     CURRENT_PORT=$((DEFAULT_PORT + i - 1))
 
+    # --- BẮT ĐẦU KHỐI CẤU HÌNH ---
     cat >> $COMPOSE_FILE << EOF
   worker-$i:
     image: workers:latest
     build:
       context: .
       dockerfile: worker.dockerfile
-    command: uvicorn worker:app --host 0.0.0.0 --port $CURRENT_PORT --reload
+    container_name: worker-$i
+    restart: unless-stopped
     ports:
       - "$CURRENT_PORT:$CURRENT_PORT"
     volumes:
       - .:/app
     environment:
-      - HOST=0.0.0.0
-      - PORT=$CURRENT_PORT
-      - WORKER_INDEX=$i
+      MINIO_ENDPOINT: '0.0.0.0:9000'
+      MINIO_ACCESS_KEY: ''
+      MINIO_SECRET_KEY: ''
+      PORT_BACK_END: 80
+      HOST_BACK_END: '0.0.0.0'
+      WORKER_HOST: '0.0.0.0'
+      WORKER_PORT: $CURRENT_PORT
+      WORKER_INDEX: $i
 EOF
+    # --- KẾT THÚC KHỐI CẤU HÌNH ---
 done
 
 echo "Configuration file $COMPOSE_FILE created successfully"

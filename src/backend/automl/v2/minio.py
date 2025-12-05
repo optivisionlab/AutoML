@@ -14,49 +14,49 @@ import io
 # Third-party libraries
 from minio import Minio
 from minio.error import S3Error
+from minio.commonconfig import CopySource
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 load_dotenv()
 
 # Truy cập các biến môi trường
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") 
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 
 class MinIOStorage:
     def __init__(self, endpoint, access_key, secret_key, secure=False):
         try:
             if not all([endpoint, access_key, secret_key]):
                 raise ValueError("Not found environment variables")
-            
+
             self.__client = Minio(
                 endpoint,
                 access_key=access_key,
                 secret_key=secret_key,
                 secure=secure
             )
-            print("MinIO client initialized successfully.")
         except Exception as e:
             raise Exception(f"MinIO initialization error: {e}")
-    
 
-    def uploaded_model(self, bucket_name: str, object_name: str, model_bytes: bytes, ):
-        if not self.__client.bucket_exists(bucket_name):
-            try:
-                self.__client.make_bucket(bucket_name)
-            except S3Error as e:
-                if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
-                    pass 
-                else:
-                    raise Exception(f"Failed to create MinIO bucket '{bucket_name}': {e}")
 
-        with io.BytesIO(model_bytes) as data_stream:
+    def uploaded_object(self, bucket_name: str, object_name: str, object_bytes: bytes):
+        try:
+            self.__client.make_bucket(bucket_name)
+        except S3Error as e:
+            if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                pass
+            else:
+                raise Exception(f"Failed to create Minio bucket {bucket_name}: {str(e)}")
+
+        with io.BytesIO(object_bytes) as data_stream:
             try:
                 self.__client.put_object(
                     bucket_name,
                     object_name,
                     data=data_stream,
-                    length=len(model_bytes),
+                    length=len(object_bytes),
                     content_type='application/octet-stream'
                 )
                 print(f"Model uploaded to MinIO: s3://{bucket_name}/{object_name}")
@@ -67,15 +67,59 @@ class MinIOStorage:
                 raise Exception(f"MinIO upload error for {object_name}: {e}")
         
 
+    def move_model(self, source_bucket: str, source_model: str, dest_bucket: str, dest_model: str):
+        if not self.__client.bucket_exists(source_bucket):
+            raise Exception(f"Not found bucket in Minio")
+
+        try:
+            self.__client.make_bucket(dest_bucket)
+        except S3Error as e:
+            if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                pass
+            else:
+                raise Exception(f"Failed to create Minio bucket {dest_bucket}: {str(e)}")
+
+        try:
+            self.__client.copy_object(
+                bucket_name=dest_bucket,
+                object_name=dest_model,
+                source=CopySource(source_bucket, source_model)
+            )
+            self.__client.remove_object(source_bucket, source_model)
+        except Exception as e:
+            raise Exception(f"Minio move error for {source_model}: {str(e)}")
+
+
+    def copy_object(self, source_bucket: str, source_key: str, dest_bucket: str, dest_key: str):
+        if not self.__client.bucket_exists(source_bucket):
+            raise Exception(f"Not found source bucket in Minio: {source_bucket}")
+        
+        try:
+            self.__client.make_bucket(dest_bucket)
+        except S3Error as e:
+            if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                pass
+            else:
+                raise Exception(f"Failed to create Minio bucket {dest_bucket}: {str(e)}")
+        
+        try:
+            self.__client.copy_object(
+                bucket_name=dest_bucket,
+                object_name=dest_key,
+                source=CopySource(source_bucket, source_key)
+            )
+        except Exception as e:
+            raise Exception(f"Minio copy error for {source_key}: {str(e)}")
+
+
     def uploaded_dataset(self, bucket_name: str, object_name: str, parquet_buffer):
-        if not self.__client.bucket_exists(bucket_name):
-            try:
-                self.__client.make_bucket(bucket_name)
-            except S3Error as e:
-                if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
-                    pass 
-                else:
-                    raise Exception(f"Failed to create MinIO bucket '{bucket_name}': {e}")
+        try:
+            self.__client.make_bucket(bucket_name)
+        except S3Error as e:
+            if e.code == 'BucketAlreadyOwnedByYou' or e.code == 'BucketAlreadyExists':
+                pass
+            else:
+                raise Exception(f"Failed to create Minio bucket {bucket_name}: {str(e)}")
 
         try:
             self.__client.put_object(
@@ -91,6 +135,18 @@ class MinIOStorage:
         except Exception as e:
             raise Exception(f"MinIO upload error for {object_name}: {e}") 
 
+
+    def check_object_exists(self, bucket_name: str, object_name: str) -> bool:
+        try:
+            self.__client.stat_object(bucket_name, object_name)
+            return True
+        except S3Error as e:
+            if e.code == 'NoSuchKey' or e.code == 'NoSuchBucket' or '404' in str(e):
+                return False
+            raise Exception(f"Error when check fille {object_name}: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Unknown error: {str(e)}")
+            
 
     def get_object(self, bucket_name: str, object_name: str):
         data_stream = None

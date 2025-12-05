@@ -1,0 +1,28 @@
+# --- Git & IDE ---
+.git
+.gitignore
+.vscode/
+.idea/
+
+# --- Python Cache & Virtual Env ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+pip-log.txt
+
+# --- Docker Files ---
+Dockerfile
+*.dockerfile
+docker-compose.yml
+*.docker-compose.yml
+.dockerignore
+
+# --- Documentation ---
+README.md
+LICENSE
+
+*.sh

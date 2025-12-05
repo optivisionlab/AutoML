@@ -1,0 +1,20 @@
+# Cấu hình Bayesian Search
+# Các tham số này điều khiển hành vi của chiến lược tìm kiếm Bayesian
+
+# Cài đặt tối ưu hóa
+n_calls: 25  # Số lần gọi hàm mục tiêu
+n_initial_points: 5  # Số điểm khám phá ngẫu nhiên ban đầu
+
+# Cài đặt Acquisition Function
+acq_func: "EI"  # Expected Improvement - nhanh hơn 'gp_hedge' mặc định
+acq_optimizer: "sampling"  # Nhanh hơn 'lbfgs' cho acquisition
+
+# Cài đặt averaging
+averaging: "auto"  # 'auto', 'macro', 'weighted'
+optimize_for: "auto"  # 'auto', 'macro', 'weighted'
+imbalance_threshold: 0.3  # Ngưỡng để phát hiện mất cân bằng lớp (chế độ auto)
+
+# Cài đặt dừng sớm
+early_stopping_enabled: true  # Bật dừng sớm
+early_stopping_patience: 5  # Dừng nếu không cải thiện trong số lần lặp này
+convergence_threshold: 0.001  # Dừng nếu cải thiện < ngưỡng
