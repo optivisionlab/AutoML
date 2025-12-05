@@ -1,7 +1,10 @@
 # Sử dụng một image nền tảng (base image)
 FROM python:3.10.12
 
-# Đặt thư mục làm việc trong container
+# setup system
+RUN apt-get update && apt-get install vim -y
+
+# setup project
 WORKDIR /app
 
 # Sao chép file requirements.txt vào container và cài đặt thư viện
