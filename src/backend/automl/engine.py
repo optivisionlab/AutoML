@@ -20,7 +20,7 @@ from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
 from automl.search.strategy.base import SearchStrategy
 from automl.v2.minio import minIOStorage
-from database.get_dataset import preprocess_data
+from automl.process_classification import preprocess_data
 
 np.random.seed(42)
 random.seed(42)
@@ -230,10 +230,133 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
+from sklearn.model_selection import GridSearchCV
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, search_algorithm='grid_search'):
-    best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
+# =============================
+# CUSTOM SCORER
+# =============================
+def mse_score(y_true, y_pred):
+    return mean_squared_error(y_true, y_pred)
+
+def mae_score(y_true, y_pred):
+    return mean_absolute_error(y_true, y_pred)
+
+def mape_score(y_true, y_pred):
+    epsilon = 1e-10
+    return np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), epsilon))) * 100
+
+def r2_score_sklearn(y_true, y_pred):
+    return r2_score(y_true, y_pred)
+
+ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
+
+def safe_extract_score(metric_name, raw_score):
+    if raw_score is None or np.isinf(raw_score) or np.isnan(raw_score):
+        return None
+    
+    if metric_name in ERROR_METRICS:
+        return abs(raw_score)
+    
+    return raw_score
+
+
+def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo Vô cùng lớn
+    if metric_sort in ERROR_METRICS:
+        global_best_score = np.inf 
+        find_min = True  # Cờ đánh dấu: Tìm số nhỏ nhất
+    else:
+        # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo Vô cùng nhỏ
+        global_best_score = -np.inf
+        find_min = False # Cờ đánh dấu: Tìm số lớn nhất
+
+    best_model_id = None
+    best_model = None
+    best_params = {}
+    model_results = []
+
+    # Scoring dictionary
+    # Greater_is_better=False sẽ làm cho kết quả trả về là số âm
+    scoring = {
+        "mse": make_scorer(mse_score, greater_is_better=False),
+        "mae": make_scorer(mae_score, greater_is_better=False),
+        "mape": make_scorer(mape_score, greater_is_better=False),
+        "r2": make_scorer(r2_score_sklearn, greater_is_better=True),
+    }
+    
+    for model_id in range(len(models)):
+        model_info = models[model_id]
+        model = model_info['model']
+        param_grid = model_info.get('params') or {}
+
+        grid_search = GridSearchCV(
+            estimator=model,
+            param_grid=param_grid,
+            cv=5,
+            scoring=scoring,
+            refit=metric_sort,
+            n_jobs=-1
+        )
+        grid_search.fit(X_train, y_train)
+
+        # Lấy điểm raw từ Scikit-learn (MSE sẽ là âm, R2 là dương)
+        raw_best_score = grid_search.best_score_
+        
+        # Đưa về số dương chuẩn (giống code bạn)
+        current_model_score = safe_extract_score(metric_sort, raw_best_score)
+        
+        # Nếu gặp lỗi NaN/Inf thì bỏ qua model này
+        if current_model_score is None:
+            continue
+
+        clean_scores = {}
+        best_idx = grid_search.best_index_
+        for metric in metric_list:
+            key = f"mean_test_{metric}"
+            if key in grid_search.cv_results_:
+                raw_val = grid_search.cv_results_[key][best_idx]
+                clean_scores[metric] = safe_extract_score(metric, raw_val)
+            else:
+                clean_scores[metric] = None
+
+        results = {
+            'model_id': model_id,
+            'model_name': model.__class__.__name__,
+            'best_params': grid_search.best_params_,
+            "scores": clean_scores
+        }
+        model_results.append(results)
+        
+        is_better = False
+            
+        if find_min:
+            # Logic cho MSE/MAE: Càng nhỏ càng tốt
+            if current_model_score < global_best_score:
+                is_better = True
+        else:
+            # Logic cho R2: Càng lớn càng tốt
+            if current_model_score > global_best_score:
+                is_better = True
+        
+        if is_better:
+            global_best_score = current_model_score
+            best_model_id = model_id
+            best_model = grid_search.best_estimator_
+            best_params = grid_search.best_params_
+
+    return best_model_id, best_model, global_best_score, best_params, model_results
+
+
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type='classification', search_algorithm='grid_search'):
+    best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
+
+    if problem_type == 'classification':
+        best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm)
+    if problem_type == 'regression':
+        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm)
+    
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
@@ -246,7 +369,7 @@ def app_train_local(file_data, file_config):
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
 
-    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
         X_processed, y_processed, metric_list, metric_sort, models, search_algorithm

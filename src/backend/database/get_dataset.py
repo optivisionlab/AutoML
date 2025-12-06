@@ -4,12 +4,12 @@
 import pandas as pd
 from bson.objectid import ObjectId
 import pyarrow.parquet as pq
-import time
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Modules
 from automl.v2.minio import minIOStorage
-from automl.process_data import preprocess_data
+from automl.process_classification import preprocess_data as classification
+from automl.process_regression import preprocess_data as regression
 
 
 class MongoDataLoader:
@@ -66,23 +66,30 @@ class MongoDataLoader:
             return None
 
 
-    async def get_processed_data(self, id_data: str, list_features: list, target: str) -> tuple[pd.DataFrame, pd.DataFrame, object] | tuple[None, None, None]:
+    async def get_processed_data(self, id_data: str, list_features: list, target: str, problem_type: str) -> tuple[pd.DataFrame, pd.DataFrame, object, object] | tuple[None, None, None, None]:
         """Load dataset từ MinIO"""
         bucket_name, object_name = await self._get_data_link_from_db(id_data)
         if not (bucket_name and object_name):
-            return None, None, None
+            return None, None, None, None
         
         try:
             parquet_stream = minIOStorage.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(parquet_stream)
-
-            X_processed, y_processed, preprocessor, le_target = preprocess_data(list_features, target, df_retrieved)
+            
+            X_processed, y_processed, preprocessor, le_target = None, None, None, None
+            
+            if problem_type == "classification":
+                # Classification processs
+                X_processed, y_processed, preprocessor, le_target = classification(list_features, target, df_retrieved)
+            else:
+                # Regression process
+                X_processed, y_processed, preprocessor, le_target = regression(list_features, target, df_retrieved)
 
             return X_processed, y_processed, preprocessor, le_target
 
         except Exception as e:
             print(f"Exception when read dataset from MinIO: {str(e)}")
-            return None, None, None
+            return None, None, None, None
 
 
 
