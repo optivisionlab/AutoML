@@ -23,3 +23,6 @@ minio==7.2.18
 pyarrow==21.0.0
 fastparquet==2024.11.0
 scikit-optimize==0.10.2
+xgboost==3.1.2
+openpyxl==3.1.5
+xlrd==2.0.2

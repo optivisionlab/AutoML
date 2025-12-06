@@ -14,11 +14,6 @@ venv/
 env/
 pip-log.txt
 
-# --- Secrets (BẢO MẬT) ---
-.env
-.env.*
-*.swp
-
 # --- Docker Files ---
 Dockerfile
 *.dockerfile
