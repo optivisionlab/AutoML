@@ -5,7 +5,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
 
-
 # =========================================================================
 # PREPROCESS DATA
 # =========================================================================
