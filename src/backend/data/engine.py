@@ -10,7 +10,7 @@ import pandas as pd
 import io
 import time
 from datetime import datetime, timezone
-import hashlib
+import uuid
 
 from automl.v2.minio import minIOStorage
 
@@ -61,11 +61,6 @@ def encode_csv_to_base64(file_path):
 def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
-
-
-def minio_hash(time: datetime, data_name: str):
-    key_string = f"{time.timestamp()}_{data_name}"
-    return hashlib.md5(key_string.encode('utf-8')).hexdigest()
 
 
 async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: AsyncDatabase):
@@ -125,8 +120,6 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
 
-        data_name_copy = dataName.strip().replace(' ', '_').lower()
-
         username = user.get("username")
         role = user.get("role")
         
@@ -134,7 +127,7 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         if role == "admin":
             userId = "0"
 
-        storage_place = minio_hash(now, data_name_copy)
+        storage_place = uuid.uuid4()
 
         minIOStorage.uploaded_dataset(
             bucket_name="dataset",
