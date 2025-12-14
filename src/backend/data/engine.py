@@ -9,6 +9,8 @@ import base64
 import pandas as pd
 import io
 import time
+from datetime import datetime, timezone
+import hashlib
 
 from automl.v2.minio import minIOStorage
 
@@ -60,8 +62,15 @@ def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
+
+def minio_hash(time: datetime, data_name: str):
+    key_string = f"{time.timestamp()}_{data_name}"
+    return hashlib.md5(key_string.encode('utf-8')).hexdigest()
+
+
 async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: AsyncDatabase):
-    now = time.time()
+    now = datetime.now(timezone.utc)
+
     user_collection = db.tbl_User
     data_collection = db.tbl_Data
 
@@ -88,7 +97,7 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
                     dialect = sniffer.sniff(sample_str, delimiters=[',', ';', '\t', '|'])
                     detected_delimiter = dialect.delimiter
                 except csv.Error:
-                    # Nếu sniffer bó tay (file chỉ có 1 cột hoặc định dạng lạ)
+                    # Nếu file chỉ có 1 cột hoặc định dạng lạ
                     # Thì fallback về mặc định là dấu phẩy
                     detected_delimiter = ','
 
@@ -125,9 +134,11 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         if role == "admin":
             userId = "0"
 
+        storage_place = minio_hash(now, data_name_copy)
+
         minIOStorage.uploaded_dataset(
             bucket_name="dataset",
-            object_name=f"{userId}/{data_name_copy}.parquet",
+            object_name=f"{userId}/{storage_place}.parquet",
             parquet_buffer=parquet_buffer
         )
 
@@ -136,7 +147,7 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
             "dataType": dataType,
             "data_link": {
                 "bucket_name": "dataset",
-                "object_name": f"{userId}/{data_name_copy}.parquet"
+                "object_name": f"{userId}/{storage_place}.parquet"
             },
             "latestUpdate": now,
             "createDate": now,
