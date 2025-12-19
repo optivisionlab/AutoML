@@ -62,7 +62,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         """
         cache_bucket = "cache"
         models_bucket = "models"
-        problem_type = config.get("problem_type")
+        problem_type = config.get("problem_type") or 'classification'
         list_feature = config.get("list_feature", [])
         target = config.get("target", "")
 

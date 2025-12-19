@@ -142,9 +142,9 @@ async def _execute_single_training_task(task: dict):
             X_processed,
             y_processed,
             task["metrics"],
-            config.get("metric_sort", "accuracy"),
+            config.get("metric_sort") or "accuracy",
             models_to_train,
-            config.get("problem_type", "classification"),
+            config.get("problem_type") or 'classification',
             search_algorithm
         )
         model_bytes = pickle.dumps(best_model_obj)

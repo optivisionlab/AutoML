@@ -348,7 +348,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     return best_model_id, best_model, global_best_score, best_params, model_results
 
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type='classification', search_algorithm='grid_search'):
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search'):
     best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
@@ -433,6 +433,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
 
 
+# Suy luận kết quả
 async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
     """
     Chạy dự đoán trên dữ liệu mới bằng mô hình và preprocessor đã lưu
@@ -458,7 +459,7 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         model_url = stored_model_data.get("model")
         model_path = f"{model_url.get('object_name')}"
         preprocessor_path = f"{user_id}/{job_id}/preprocessor.joblib"
-        target_path = f"{user_id}/{job_id}/target.joblib"
+        target_path = f"{user_id}/{job_id}/target.joblib" 
     except Exception as e:
         return {"error": f"Failed to construct model paths: {str(e)}"}
     
@@ -500,17 +501,23 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
         
         # Sử dụng mô hình đã lưu để dự đoán
-        y_pred_encoded = await asyncio.to_thread(model.predict, X_new_transformed)
+        y_pred_raw = await asyncio.to_thread(model.predict, X_new_transformed)
+        
+        if hasattr(y_pred_raw, 'ravel'):
+            y_pred_raw = y_pred_raw.ravel()
 
-        # Sử dụng le_target đã lưu để chuyển đổi ngược nhãn
-        y_pred_human = await asyncio.to_thread(le_target.inverse_transform, y_pred_encoded)
+        if le_target:
+            # Sử dụng le_target đã lưu để chuyển đổi ngược nhãn
+            y_pred_final = await asyncio.to_thread(le_target.inverse_transform, y_pred_raw)
+        else:
+            y_pred_final = y_pred_raw
     except Exception as e:
         return {"error": f"Failed during prediction process: {str(e)}"}
     
-    data['predict'] = y_pred_human
+    data['predict'] = y_pred_final
+
     data_json = await asyncio.to_thread(data.to_dict, orient="records")
     return data_json
-
 
 
 # Lấy danh sách job

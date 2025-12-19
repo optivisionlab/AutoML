@@ -99,7 +99,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
     Tạo task và bỏ vào hàng đợi ưu tiên toàn cục
     """
     was_queue_empty = GLOBAL_TASK_QUEUE.empty()
-    models, metric_list = await asyncio.to_thread(get_models, config.get('problem_type', None))    
+    models, metric_list = await asyncio.to_thread(get_models, config.get('problem_type', 'classification'))    
 
     JOB_TRACKER[job_id] = {
         "total_tasks": len(models),
