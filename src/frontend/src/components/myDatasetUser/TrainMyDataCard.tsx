@@ -79,6 +79,29 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
     }
   };
 
+  // Chọn tất cả thuộc tính
+  const selectableFeatures = listFeature.filter((f) => f !== selectedTarget);
+
+  const isAllSelected =
+    selectableFeatures.length > 0 &&
+    selectableFeatures.every((f) => selectedFeatures.includes(f));
+
+  const handleSelectAllFeatures = () => {
+    let updated: string[];
+
+    if (isAllSelected) {
+      // Bỏ chọn tất cả
+      updated = [];
+    } else {
+      // Chọn tất cả trừ target
+      updated = selectableFeatures;
+    }
+
+    setSelectedFeatures(updated);
+    sessionStorage.setItem("list_feature", JSON.stringify(updated));
+  };
+
+  // Xử lý chọn/bỏ chọn tất cả thuộc tính
   const handleTargetChange = (value: string) => {
     setSelectedTarget(value);
     sessionStorage.setItem("target", value);
@@ -108,7 +131,7 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   };
 
   return (
-    <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
+    <Card className="max-w-5xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
       <CardHeader className="text-center text-xl font-semibold text-[#3b6cf5]">
         Huấn luyện cho bộ dữ liệu: {datasetName}
       </CardHeader>
@@ -208,10 +231,11 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
               <Label className="block font-medium text-gray-700 mb-2">
                 Thuộc tính mục tiêu:
               </Label>
+
               <RadioGroup
                 value={selectedTarget}
                 onValueChange={handleTargetChange}
-                className="grid grid-cols-2 gap-4"
+                className="grid grid-cols-4 gap-4"
               >
                 {listFeature.map((feature) => (
                   <div
@@ -233,7 +257,16 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
               <Label className="block font-medium text-gray-700 mb-2">
                 Thuộc tính đưa vào huấn luyện:
               </Label>
-              <div className="grid grid-cols-2 gap-3">
+
+              <Button
+                variant={isAllSelected ? "secondary" : "default"}
+                className="mb-5"
+                onClick={handleSelectAllFeatures}
+              >
+                {isAllSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+              </Button>
+
+              <div className="grid grid-cols-4 gap-3">
                 {listFeature.map((feature) => (
                   <div key={feature} className="flex items-center gap-2">
                     <Checkbox
@@ -255,6 +288,7 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
               <Label className="block font-medium text-gray-700 mb-2">
                 Chỉ số đánh giá:
               </Label>
+
               <RadioGroup
                 defaultValue={sessionStorage.getItem("metric_sort") || ""}
                 onValueChange={(val) => {
