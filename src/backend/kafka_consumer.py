@@ -79,7 +79,7 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
 
         if not cache_exists:
             X_processed, y_processed, preprocessor, le_target = await dataset.get_processed_data(
-                id_data, 
+                id_data,
                 list_feature,
                 target,
                 problem_type

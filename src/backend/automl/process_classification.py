@@ -49,7 +49,7 @@ categorical_transformer = Pipeline(steps=[
 
 text_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='constant', fill_value='')),
-    ('reshape', FunctionTransformer(to_1d_array, validate=False))
+    ('reshape', FunctionTransformer(to_1d_array, validate=False)),
     ('tfidf', TfidfVectorizer(max_features=50, preprocessor=convert_to_string))
 ])
 
@@ -73,7 +73,7 @@ def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
 
     if text_cols:
         for col in text_cols:
-            transformers.append((f"text_{col}", text_transformer, col))
+            transformers.append((f"text_{col}", text_transformer, [col]))
 
     if not transformers:
         X_processed = data_process.values
@@ -85,6 +85,9 @@ def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
             sparse_threshold=0.3
         )
         X_processed = preprocessor.fit_transform(data_process)
+
+    if hasattr(X_processed, "toarray"):
+            X_processed = X_processed.toarray()
 
     if target in data.columns:
         le_target = LabelEncoder()

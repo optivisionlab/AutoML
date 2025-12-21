@@ -11,9 +11,10 @@ import pandas as pd  # type: ignore
 import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from sklearn.calibration import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
+from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
@@ -230,9 +231,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
-from sklearn.model_selection import GridSearchCV
-
 # =============================
 # CUSTOM SCORER
 # =============================
@@ -262,12 +260,12 @@ def safe_extract_score(metric_name, raw_score):
 
 
 def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
-    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo Vô cùng lớn
+    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo vô cùng lớn
     if metric_sort in ERROR_METRICS:
         global_best_score = np.inf 
         find_min = True  # Cờ đánh dấu: Tìm số nhỏ nhất
     else:
-        # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo Vô cùng nhỏ
+        # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo vô cùng nhỏ
         global_best_score = -np.inf
         find_min = False # Cờ đánh dấu: Tìm số lớn nhất
 
@@ -285,6 +283,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         "r2": make_scorer(r2_score_sklearn, greater_is_better=True),
     }
     
+    cv_strategy = KFold(n_splits=5, shuffle=True, random_state=42)
+
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
@@ -293,7 +293,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         grid_search = GridSearchCV(
             estimator=model,
             param_grid=param_grid,
-            cv=5,
+            cv=cv_strategy,
             scoring=scoring,
             refit=metric_sort,
             n_jobs=-1
@@ -303,7 +303,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         # Lấy điểm raw từ Scikit-learn (MSE sẽ là âm, R2 là dương)
         raw_best_score = grid_search.best_score_
         
-        # Đưa về số dương chuẩn (giống code bạn)
+        # Đưa về số dương chuẩn
         current_model_score = safe_extract_score(metric_sort, raw_best_score)
         
         # Nếu gặp lỗi NaN/Inf thì bỏ qua model này
@@ -500,6 +500,12 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         # Sử dụng preprocessor đã lưu để biến đổi dữ liệu
         X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
         
+        if isinstance(X_new_transformed, np.ndarray):
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
+        elif hasattr(X_new_transformed, "toarray"): # Nếu là sparse matrix
+            X_new_transformed = X_new_transformed.toarray()
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
+
         # Sử dụng mô hình đã lưu để dự đoán
         y_pred_raw = await asyncio.to_thread(model.predict, X_new_transformed)
         
@@ -515,6 +521,7 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         return {"error": f"Failed during prediction process: {str(e)}"}
     
     data['predict'] = y_pred_final
+    data = data.replace({np.nan: None})
 
     data_json = await asyncio.to_thread(data.to_dict, orient="records")
     return data_json

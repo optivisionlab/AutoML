@@ -26,3 +26,9 @@ README.md
 LICENSE
 
 *.sh
+assets/end_users
+assets/online_shoppers
+assets/iris.data.csv
+assets/desc.md
+assets/assets/config-data-iris.yaml
+
