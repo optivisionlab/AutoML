@@ -145,11 +145,32 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             else:
                 raise ValueError(f"Metric không xác định: {metric}")
 
+    # Chuẩn hóa metric_sort để khớp với key trong scoring
+    # Hỗ trợ các format: 'f1', 'f1_macro', 'f1_weighted', 'precision', 'precision_macro', 'precision_weighted', etc.
+    normalized_metric_sort = metric_sort
+    if metric_sort in ['precision', 'recall', 'f1']:
+        # Nếu metric_sort không có suffix, kiểm tra cả macro và weighted trong scoring
+        macro_key = f'{metric_sort}_macro'
+        weighted_key = f'{metric_sort}_weighted'
+        
+        if macro_key in scoring:
+            normalized_metric_sort = macro_key
+        elif weighted_key in scoring:
+            normalized_metric_sort = weighted_key
+        else:
+            available_metrics = list(scoring.keys())
+            raise ValueError(f"metric_sort '{metric_sort}' không tìm thấy variant '_macro' hoặc '_weighted' trong scoring: {available_metrics}")
+    
+    # Kiểm tra metric_sort có trong scoring không (cho trường hợp user chỉ định đầy đủ như 'f1_weighted')
+    if normalized_metric_sort not in scoring:
+        available_metrics = list(scoring.keys())
+        raise ValueError(f"metric_sort '{metric_sort}' (normalized: '{normalized_metric_sort}') không có trong các metric scoring: {available_metrics}")
+
     # Sử dụng factory để tạo chiến lược tìm kiếm với cấu hình
     strategy_config = {
         'cv': 5,
         'scoring': scoring,
-        'metric_sort': metric_sort,
+        'metric_sort': normalized_metric_sort,
         'error_score': "raise",
         'return_train_score': True
     }
