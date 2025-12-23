@@ -55,7 +55,10 @@ text_transformer = Pipeline(steps=[
 
 
 # main function
-def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):    
+def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
+    if target in list_feature:
+        list_feature.remove(target)
+
     try:
         data_process = data[list_feature].copy()
     except KeyError as ke:

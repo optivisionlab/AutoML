@@ -451,8 +451,8 @@ async def inference(
 
 
 @app.post("/activate-model")
-def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get_db)):
-    return update_activate_model(job_id, db, activate)
+async def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get_db)):
+    return await update_activate_model(job_id, db, activate)
 
 
 from experiment import exp
