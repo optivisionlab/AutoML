@@ -1,5 +1,5 @@
 # Sử dụng một image nền tảng (base image)
-FROM python:3.10-slim
+FROM python:3.10.12
 
 # setup system
 RUN apt-get update && apt-get install vim -y
