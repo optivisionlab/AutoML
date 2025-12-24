@@ -123,48 +123,55 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     best_params = {}
     model_results = []
 
+    def parse_metric(metric_str):
+        """
+        Phân tích metric string để trả về (base_metric, average_type).
+        - 'accuracy' -> ('accuracy', None)
+        - 'f1_macro' -> ('f1', 'macro')
+        - 'f1_weighted' -> ('f1', 'weighted')
+        - 'precision_macro' -> ('precision', 'macro')
+        - 'f1' -> ('f1', None) # backward compatibility
+        """
+        if metric_str == 'accuracy':
+            return 'accuracy', None
+        
+        if metric_str.endswith('_macro'):
+            return metric_str[:-6], 'macro'
+        elif metric_str.endswith('_weighted'):
+            return metric_str[:-9], 'weighted'
+        else:
+            return metric_str, None
+
+    # Tạo scoring dict từ metric_list
     scoring = {}
     for metric in metric_list:
-        if metric == 'accuracy':
+        base_metric, avg_type = parse_metric(metric)
+        
+        if base_metric == 'accuracy':
             scoring['accuracy'] = make_scorer(accuracy_score)
-        elif metric in ['precision', 'recall', 'f1']:
-            # Tạo scorer cho cả macro và weighted average
+        elif base_metric in ['precision', 'recall', 'f1']:
             score_func = {
                 'precision': precision_score,
                 'recall': recall_score,
                 'f1': f1_score
-            }[metric]
-            scoring[f'{metric}_macro'] = make_scorer(score_func, average='macro')
-            scoring[f'{metric}_weighted'] = make_scorer(score_func, average='weighted')
+            }[base_metric]
+            scoring[metric] = make_scorer(score_func, average=avg_type)
+
         else:
             # Thử lấy hàm tính điểm động nếu không phải là các metric phổ biến
-            score_func = globals().get(f'{metric}_score')
+            score_func = globals().get(f'{base_metric}_score')
             if score_func:
-                scoring[f'{metric}_macro'] = make_scorer(score_func, average='macro')
-                scoring[f'{metric}_weighted'] = make_scorer(score_func, average='weighted')
+                scoring[metric] = make_scorer(score_func, average=avg_type)
             else:
                 raise ValueError(f"Metric không xác định: {metric}")
 
-    # Chuẩn hóa metric_sort để khớp với key trong scoring
-    # Hỗ trợ các format: 'f1', 'f1_macro', 'f1_weighted', 'precision', 'precision_macro', 'precision_weighted', etc.
-    normalized_metric_sort = metric_sort
-    if metric_sort in ['precision', 'recall', 'f1']:
-        # Nếu metric_sort không có suffix, kiểm tra cả macro và weighted trong scoring
-        macro_key = f'{metric_sort}_macro'
-        weighted_key = f'{metric_sort}_weighted'
-        
-        if macro_key in scoring:
-            normalized_metric_sort = macro_key
-        elif weighted_key in scoring:
-            normalized_metric_sort = weighted_key
-        else:
-            available_metrics = list(scoring.keys())
-            raise ValueError(f"metric_sort '{metric_sort}' không tìm thấy variant '_macro' hoặc '_weighted' trong scoring: {available_metrics}")
+    # Chuẩn hóa metric_sort
+    base_metric_sort, avg_type_sort = parse_metric(metric_sort)
     
-    # Kiểm tra metric_sort có trong scoring không (cho trường hợp user chỉ định đầy đủ như 'f1_weighted')
-    if normalized_metric_sort not in scoring:
-        available_metrics = list(scoring.keys())
-        raise ValueError(f"metric_sort '{metric_sort}' (normalized: '{normalized_metric_sort}') không có trong các metric scoring: {available_metrics}")
+    if base_metric_sort == 'accuracy':
+        normalized_metric_sort = 'accuracy'
+    else:
+        normalized_metric_sort = metric_sort
 
     # Sử dụng factory để tạo chiến lược tìm kiếm với cấu hình
     strategy_config = {
@@ -204,7 +211,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
 
         # Trích xuất điểm từ cv_results
         # Chuyển danh sách rank sang numpy array để thực hiện argmin
-        rank_key = f'rank_test_{metric_sort}'
+        rank_key = f'rank_test_{normalized_metric_sort}'
         if rank_key in cv_results:
             rank_array = np.array(cv_results[rank_key])
         else:
@@ -216,17 +223,10 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         # Đảm bảo các điểm cũng được chuyển đổi sang kiểu gốc
         scores_dict = {}
         for metric in metric_list:
-            if metric == 'accuracy':
-                if f"mean_test_{metric}" in cv_results:
-                    score_value = cv_results[f"mean_test_{metric}"][best_idx]
-                    scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
-            else:
-                # Lấy cả macro và weighted cho precision, recall, f1
-                for avg_type in ['macro', 'weighted']:
-                    key = f"mean_test_{metric}_{avg_type}"
-                    if key in cv_results:
-                        score_value = cv_results[key][best_idx]
-                        scores_dict[f"{metric}_{avg_type}"] = float(score_value) if hasattr(score_value, 'item') else score_value
+            key = f"mean_test_{metric}"
+            if key in cv_results:
+                score_value = cv_results[key][best_idx]
+                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
         
         results = {
             "model_id": model_id,
