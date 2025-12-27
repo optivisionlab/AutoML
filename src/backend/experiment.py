@@ -1,10 +1,13 @@
 # Standard Libraries
+import os
+import yaml
 
 # Third-party Libraries
 from fastapi import status, HTTPException, Query, Request, Depends
 from pymongo.asynchronous.database import AsyncDatabase
 from fastapi.routing import APIRouter
-import os
+import aiofiles
+
 
 # Local Modules
 from database.get_dataset import MongoDataLoader
@@ -17,11 +20,11 @@ exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
 # API lấy ra danh sách đặc trưng của dataset 
 @exp.get("/features")
-async def get_features_of_dataset(id_data: str, request: Request):
+async def get_features_of_dataset(id_data: str, problem_type: str, request: Request):
     dataset = MongoDataLoader(request.app.state.db)
     try:
-
-        features = await dataset.get_data_features(id_data)
+        features = await dataset.get_features_suggest_target(id_data, problem_type)
+            
         return {
             "features": features
         }
@@ -38,7 +41,7 @@ async def get_features_of_dataset(id_data: str, request: Request):
 
 
 @exp.get("/data")
-async def get_features_of_dataset(id_data: str, request: Request):
+async def get_data_of_dataset(id_data: str, request: Request):
     dataset = MongoDataLoader(request.app.state.db)
     try:
         data_preview, total_rows = await dataset.get_data_preview(id_data)
@@ -110,4 +113,37 @@ async def get_jobs_offset(
             "next_page": page + 1 if page < total_pages else None,
             "prev_page": page - 1 if page > 1 else None
         }
+    }
+
+
+# API lấy danh sách độ đo
+async def read_yaml_async(file_path: str):
+    async with aiofiles.open(file_path, mode='r', encoding='utf-8') as file:
+        content = await file.read()
+
+    metrics = yaml.safe_load(content)
+    return metrics['metric_list']
+
+
+@exp.get('/metrics')
+async def metrics(
+    problem_type: str
+) -> dict:
+    if not problem_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Not recognizing the type of problem"
+        )
+
+    base_dir = "assets/system_models"
+    metrics = None
+    if problem_type == 'classification':
+        file_path = os.path.join(base_dir, "model.yml")
+        metrics = await read_yaml_async(file_path=file_path)
+    elif problem_type == 'regression':
+        file_path = os.path.join(base_dir, "regression.yml")
+        metrics = await read_yaml_async(file_path=file_path)
+
+    return {
+        "metrics": metrics
     }

@@ -1,7 +1,10 @@
 # Standard Libraries
+import re
+from io import BytesIO
 
 # Third-party Libraries
 import pandas as pd
+import numpy as np
 from bson.objectid import ObjectId
 import pyarrow.parquet as pq
 from pymongo.asynchronous.database import AsyncDatabase
@@ -49,18 +52,79 @@ class MongoDataLoader:
             return None, 0
 
 
-    async def get_data_features(self, id_data: str) -> list | None:
+    @classmethod
+    def analyze_column_for_target(cls, series: pd.Series, threshold_unique=20) -> str:
+        # Loại bài toán, lý do và cảnh báo
+        try:
+            # Xử lý dữ liệu null
+            clean_series = series.dropna()
+            if clean_series.empty:
+                return "none"
+            
+            if pd.api.types.is_datetime64_any_dtype(clean_series) or pd.api.types.is_timedelta64_dtype(clean_series):
+                return "none"
+
+            # Nếu là Text hoặc Boolean -> Classification
+            if pd.api.types.is_string_dtype(clean_series) or pd.api.types.is_bool_dtype(clean_series):
+                return "classification"
+
+            # Nếu là số (numeric)
+            if pd.api.types.is_numeric_dtype(clean_series):
+                # # Kiểm tra số thập phân -> Regression
+                if np.any(np.mod(clean_series, 1) != 0):
+                    return "regression"
+
+                # Nếu là số nguyên
+                num_unique = clean_series.nunique()
+                if num_unique <= threshold_unique:
+                    return "classification"
+
+                return "regression"
+            
+            return "none"
+        except Exception as e:
+            return "none"
+
+
+    async def get_features_suggest_target(self, id_data: str, selected_problem_type: str, num_row: int = 1000) -> dict | None:
         bucket_name, object_name = await self._get_data_link_from_db(id_data)
         if not (bucket_name and object_name):
             return None
         
+        # Loại bỏ các cột là ID
+        pattern = r"^(?i:id|stt|no|key|code|uuid|guid)$|(?i:.*_id)$|.*ID$"
+
+        features = {}
+
         try:
-            # Lấy file stream
-            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+            # Lấy data stream từ MinIO
+            response = minIOStorage.get_object(bucket_name, object_name)
+            file_buffer = BytesIO(response.read()) 
             
-            schema = pq.read_schema(parquet_stream)
-            
-            return schema.names
+            # Đọc metadata & preview data
+            parquet_file = pq.ParquetFile(file_buffer)
+            schema_names = parquet_file.schema.names
+
+            table = parquet_file.read_row_group(0)
+            df_preview = table.to_pandas().head(num_row)
+
+            for col_name in schema_names:
+                if re.match(pattern, col_name):
+                    features[col_name] = False
+                    continue
+
+                series: pd.Series = df_preview[col_name]
+                if series.isnull().all():
+                    features[col_name] = False
+                    continue
+
+                suggested_type = self.analyze_column_for_target(series)
+                if selected_problem_type == suggested_type:
+                    features[col_name] = True
+                else:
+                    features[col_name] = False
+
+            return features
         except Exception as e:
             print(f"Exception when get dataset schema: {str(e)}")
             return None
@@ -90,7 +154,7 @@ class MongoDataLoader:
         except Exception as e:
             print(f"Exception when read dataset from MinIO: {str(e)}")
             return None, None, None, None
-
+    
 
 
 class MongoJob:

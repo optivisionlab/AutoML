@@ -175,17 +175,10 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     else:
         # CLASSIFICATION / R2 -> Tìm MAX
         # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf')) để nó không bao giờ được chọn là Max
-        if metric_sort in MACRO_WEIGHTED_METRICS:
-            metric_sort = f"{metric_sort}_macro"
-            best_model_info = max(
-                final_model_scores, 
-                key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
-            )
-        else:
-            best_model_info = max(
-                final_model_scores, 
-                key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
-            )
+        best_model_info = max(
+            final_model_scores, 
+            key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
+        )
 
     original_best_result = next(
         r for r in valid_results if r['model_name'] == best_model_info['model_name']
