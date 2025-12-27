@@ -64,24 +64,33 @@ class MongoDataLoader:
             if pd.api.types.is_datetime64_any_dtype(clean_series) or pd.api.types.is_timedelta64_dtype(clean_series):
                 return "none"
 
-            # Nếu là Text hoặc Boolean -> Classification
-            if pd.api.types.is_string_dtype(clean_series) or pd.api.types.is_bool_dtype(clean_series):
+            series_numeric = pd.to_numeric(clean_series, errors='coerce').dropna()
+
+            if len(series_numeric) < 0.5 * len(clean_series):
+                # Nếu là Text hoặc Boolean
+                if pd.api.types.is_string_dtype(clean_series) or pd.api.types.is_bool_dtype(clean_series):
+                    return "classification"
+            else:
+                # Nếu ép kiểu thành công, dùng series số này để phân tích tiếp
+                clean_series = series_numeric
+
+            if clean_series.nunique() <= 2:
                 return "classification"
 
-            # Nếu là số (numeric)
+            # Phân tích số học (Regression vs Classification)
             if pd.api.types.is_numeric_dtype(clean_series):
-                # # Kiểm tra số thập phân -> Regression
-                if np.any(np.mod(clean_series, 1) != 0):
+                is_integer = np.all(np.isclose(clean_series % 1, 0))
+                
+                if not is_integer:
                     return "regression"
 
-                # Nếu là số nguyên
+                # Nếu là số nguyên (Integer)
                 num_unique = clean_series.nunique()
+                
+                # Nếu ít giá trị unique -> Classification
                 if num_unique <= threshold_unique:
                     return "classification"
-
-                if set(clean_series.nunique()) == {-1, 1}:
-                    return "classification"
-
+                
                 return "regression"
             
             return "none"
