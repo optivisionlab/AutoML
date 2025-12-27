@@ -78,6 +78,9 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
@@ -110,6 +113,9 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
@@ -125,7 +131,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     model_results = []
 
     # Chuẩn hóa đầu vào
-    metric_sort = metric_sort.lower().replace(' ', '_')
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     def parse_metric(metric_str):
         """
@@ -165,11 +171,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             # Thử lấy hàm tính điểm động nếu không phải là các metric phổ biến
             score_func = globals().get(f'{base_metric}_score')
             if score_func:
-                if avg_type:
-                    scoring[metric] = make_scorer(score_func, average=avg_type)
-                else:
-                    scoring[f'{base_metric}_macro'] = make_scorer(score_func, average='macro')
-                    scoring[f'{base_metric}_weighted'] = make_scorer(score_func, average='weighted')
+                scoring[metric] = make_scorer(score_func, average=avg_type)
             else:
                 raise ValueError(f"Metric không xác định: {metric}")
 
@@ -180,11 +182,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         normalized_metric_sort = 'accuracy'
     else:
         normalized_metric_sort = metric_sort
-    
-    # Kiểm tra metric_sort có trong scoring không
-    if normalized_metric_sort not in scoring:
-        available_metrics = list(scoring.keys())
-        raise ValueError(f"metric_sort '{metric_sort}' (normalized: '{normalized_metric_sort}') không có trong các metric scoring: {available_metrics}")
 
     # Sử dụng factory để tạo chiến lược tìm kiếm với cấu hình
     strategy_config = {
@@ -294,7 +291,7 @@ def safe_extract_score(metric_name, raw_score):
 
 def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     # Chuẩn hóa đầu vào
-    metric_sort = metric_sort.lower().replace(' ', '_')
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo vô cùng lớn
     if metric_sort in ERROR_METRICS:

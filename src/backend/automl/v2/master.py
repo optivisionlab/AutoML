@@ -157,7 +157,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         score_entry = {
             "model_id": i,
             "model_name": result.get("model_name", ""),
-            "scores": result.get("scores"), # bao gồm cả 4 tiêu chí
+            "scores": result.get("scores"), # bao gồm tất cả tiêu chí
             "best_params": result.get("best_params") or {}
         }
         final_model_scores.append(score_entry)
@@ -165,6 +165,10 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     # --- LOGIC CHỌN BEST MODEL ---
     # Lấy config metric người dùng muốn sort
     metric_sort = tracker["config"].get("metric_sort", "")
+    
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
 
     if metric_sort in ERROR_METRICS:
         # REGRESSION (MSE, MAE...) -> Tìm MIN
@@ -174,7 +178,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         )
     else:
         # CLASSIFICATION / R2 -> Tìm MAX
-        # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf')) để nó không bao giờ được chọn là Max
+        # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf'))
         best_model_info = max(
             final_model_scores, 
             key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
@@ -186,7 +190,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
 
     # Thao tác với Cloud và Database
     try:
-        # Move model tốt nhất lưu ở bộ nhớ tạm vào folder chính
+        # Move model tốt nhất lưu ở bộ nhớ tạm vào nơi lưu trữ chính
         version = 1
         dest_model_path = f"{tracker['id_user']}/{job_id}/{best_model_info['model_name']}_{version}.pkl"
 
