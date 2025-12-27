@@ -33,7 +33,13 @@ async def get_list_data(id_user, db: AsyncDatabase):
     data_collection = db.tbl_Data
     filter_query = {"userId": id_user, "activate": 1} # activate = 1 <=> kích hoạt dataset
 
-    data = await data_collection.find(filter_query, {"username": 0, "role": 0}).to_list(length=None)
+    data = await data_collection.find(filter_query, {"username": 0, "role": 0, "userId": 0, "data_link": 0}).to_list(length=None)
+
+    for info in data:
+        for key, value in info.items():
+            if isinstance(value, datetime):
+                info[key] = value.timestamp()
+
     list_data = []
     for item in data:
         item["_id"] = str(item["_id"])
@@ -44,7 +50,12 @@ async def get_list_data(id_user, db: AsyncDatabase):
 async def get_one_data(id_data: str, db: AsyncDatabase):
     data_collection = db.tbl_Data
     try:
-        data = await data_collection.find_one({"_id": ObjectId(id_data)})
+        data = await data_collection.find_one({"_id": ObjectId(id_data)}, {"username": 0, "role": 0, "userId": 0, "data_link": 0})
+
+        for key, value in data.items():
+            if isinstance(value, datetime):
+                data[key] = value.timestamp()
+
         if not data:
             raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu với ID đã cho.")
         return JSONResponse(content=serialize_mongo_doc(data))
@@ -64,7 +75,7 @@ def serialize_mongo_doc(doc):
 
 
 async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: AsyncDatabase):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).timestamp()
 
     user_collection = db.tbl_User
     data_collection = db.tbl_Data
@@ -211,7 +222,7 @@ async def update_dataset_to_minio_by_id(dataset_id: str, db: AsyncDatabase, data
                 data_changed = True
 
         if data_changed:
-            update_fields["latestUpdate"] = time.time()
+            update_fields["latestUpdate"] = datetime.now(timezone.utc).timestamp()
             await data_collection.update_one(
                 {"_id": ObjectId(dataset_id)},
                 {"$set": update_fields}

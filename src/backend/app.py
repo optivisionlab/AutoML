@@ -347,7 +347,7 @@ async def get_list_data_by_userid(id: str, db: AsyncDatabase = Depends(get_db)):
 
 
 # Lấy 1 dataset
-@app.post("/get-data-info")
+@app.get("/get-data-info")
 async def get_data_info(id: str, db: AsyncDatabase = Depends(get_db)):
     data = await get_one_data(id_data=id, db=db)
     return data

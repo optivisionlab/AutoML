@@ -23,7 +23,7 @@ async def get_features_of_dataset(id_data: str, problem_type: str, request: Requ
     dataset = MongoDataLoader(request.app.state.db)
     try:
         features = await dataset.get_features_suggest_target(id_data, problem_type)
-            
+
         return {
             "features": features
         }
