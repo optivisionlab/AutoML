@@ -122,6 +122,9 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     best_params = {}
     model_results = []
 
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(" ", "_")
+
     def parse_metric(metric_str):
         """
         Phân tích metric string để trả về (base_metric, average_type).
@@ -282,6 +285,9 @@ def safe_extract_score(metric_name, raw_score):
 
 
 def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(" ", "_")
+
     # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo Vô cùng lớn
     if metric_sort in ERROR_METRICS:
         global_best_score = np.inf 
