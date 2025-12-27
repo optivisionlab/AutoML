@@ -569,7 +569,7 @@ async def get_jobs(user_id, db: AsyncDatabase):
         if user_id:
             query["user.id"] = user_id
 
-        jobs = await job_collection.find(query, {"model": 0, "item": 0}).to_list(length=None)
+        jobs = await job_collection.find(query, {"model": 0, "item": 0, "data": 0, "user": 0}).to_list(length=None)
         for job in jobs:
             if "_id" in job:
                 job["_id"] = str(job["_id"])
@@ -587,7 +587,7 @@ async def get_jobs(user_id, db: AsyncDatabase):
 async def get_one_job(id_job: str, db: AsyncDatabase):
     job_collection = db.tbl_Job
     try:
-        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
+        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "data": 0, "user": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
         for key, value in job.items():
