@@ -194,7 +194,8 @@ class BayesianSearchStrategy(SearchStrategy):
             objective.last_metrics = {}
             
             # Lưu trữ tất cả metrics từ scoring_config (dict từ engine.py)
-            # scoring_metrics có dạng: {'accuracy': scorer, 'precision': scorer, 'recall': scorer, 'f1': scorer}
+            # scoring_metrics có dạng: {'accuracy': scorer, 'precision_macro': scorer, 'precision_weighted': scorer, 
+            #                          'recall_macro': scorer, 'recall_weighted': scorer, 'f1_macro': scorer, 'f1_weighted': scorer}
             for key in scoring_metrics:
                 test_key = f'test_{key}'
                 if test_key in cv_results:
