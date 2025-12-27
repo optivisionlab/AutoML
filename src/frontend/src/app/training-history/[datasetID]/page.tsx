@@ -38,6 +38,7 @@ const ResultPage = ({ params }: Props) => {
 
   const [showChart, setShowChart] = useState(false);
 
+
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -50,6 +51,29 @@ const ResultPage = ({ params }: Props) => {
 
     unwrapParams();
   }, [params]);
+
+  // Lấy danh sách độ đo theo loại bài toán
+  type MetricOb = Record<string, string>;
+  const [metrics, setMetrics] = useState<MetricOb>({});
+
+  const getMetrics = useCallback((type: string) => {
+    fetch(
+      `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/metrics?problem_type=${type}`,
+      {
+        method: "GET",
+        headers: { accept: "application/json" },
+      }
+    )
+      .then((res) => res.json())
+      .then(({ metrics }) => {
+        console.log(metrics);
+        setMetrics(metrics);
+      })
+      .catch((err) => {
+        console.error("Lỗi khi gọi API:", err);
+        alert("Không thể tải dữ liệu huấn luyện.");
+      });
+  }, []);
 
   // Fetch data train từ API đầu tiên
   const fetchDataResult = useCallback(async () => {
@@ -68,6 +92,21 @@ const ResultPage = ({ params }: Props) => {
         const data = await response.json();
         console.log("Dữ liệu từ API:", data);
         setResult(data);
+
+        const problemType = data.config?.problem_type || "classification";
+        const test_value = data?.orther_model_scores[0]?.scores?.f1
+
+        if (!test_value && problemType) {
+          getMetrics(problemType);
+        }else {
+          setMetrics({
+            0: "accuracy",
+            1: "f1",
+            2: "precision",
+            3: "recall"
+          })
+        }
+      
       } catch (err) {
         console.log("Lỗi khi gọi API:", err);
         setError(
@@ -77,11 +116,10 @@ const ResultPage = ({ params }: Props) => {
         setIsLoading(false);
       }
     }
-  }, [datasetID]);
+  }, [datasetID, getMetrics]);
 
   useEffect(() => {
     fetchDataResult();
-    getMetrics();
   }, [datasetID, fetchDataResult]);
 
   if (error) {
@@ -102,28 +140,6 @@ const ResultPage = ({ params }: Props) => {
     );
   }
 
-  // Lấy danh sách độ đo theo loại bài toán
-  type MetricOb = Record<string, string>;
-  const [metrics, setMetrics] = useState<MetricOb>({});
-
-  const getMetrics = () => {
-    fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/metrics?problem_type=classification`,
-      {
-        method: "GET",
-        headers: { accept: "application/json" },
-      }
-    )
-      .then((res) => res.json())
-      .then(({ metrics }) => {
-        console.log(metrics);
-        setMetrics(metrics);
-      })
-      .catch((err) => {
-        console.error("Lỗi khi gọi API:", err);
-        alert("Không thể tải dữ liệu huấn luyện.");
-      });
-  };
 
   // Setup biểu đồ
   // Chart config
