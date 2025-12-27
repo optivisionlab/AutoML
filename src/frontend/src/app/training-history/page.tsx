@@ -129,7 +129,7 @@ const TrainingHistory = () => {
                       Ngày huấn luyện {sortAsc ? "↑" : "↓"}
                     </Button>
                   </TableHead>
-                  <TableHead>Trạng thái</TableHead>
+                  <TableHead className="text-center">Trạng thái</TableHead>
                   <TableHead className="text-center">Hành động</TableHead>
                 </TableRow>
               </TableHeader>
@@ -148,7 +148,7 @@ const TrainingHistory = () => {
                         : "Đang xử lý"}
                     </TableCell>
                     <TableCell>{formatDate(job.create_at)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       {job.status === 1 ? (
                         <Badge
                           variant="outline"
@@ -156,12 +156,19 @@ const TrainingHistory = () => {
                         >
                           Đã hoàn thành
                         </Badge>
-                      ) : (
+                      ) : job.status === 0 ? (
                         <Badge
                           variant="secondary"
                           className="bg-yellow-100 text-yellow-800"
                         >
                           Đang training
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="default"
+                          className="bg-[#ef6363] text-[#fff] px-5 py-2"
+                        >
+                          Có lỗi xảy ra
                         </Badge>
                       )}
                     </TableCell>

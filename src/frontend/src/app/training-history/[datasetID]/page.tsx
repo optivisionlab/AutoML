@@ -66,10 +66,11 @@ const ResultPage = ({ params }: Props) => {
         const data = await response.json();
         console.log("Dữ liệu từ API:", data);
         setResult(data);
-
       } catch (err) {
         console.log("Lỗi khi gọi API:", err);
-        setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
+        setError(
+          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -80,14 +81,15 @@ const ResultPage = ({ params }: Props) => {
     fetchDataResult();
   }, [datasetID, fetchDataResult]);
 
-
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-muted/50 px-4">
         <Card className="w-full max-w-md shadow-lg border border-red-300">
           <CardHeader className="flex flex-row items-center gap-3">
             <AlertCircle className="text-red-500" />
-            <CardTitle className="text-red-600 text-lg">Đã xảy ra lỗi</CardTitle>
+            <CardTitle className="text-red-600 text-lg">
+              Đã xảy ra lỗi
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-700">{error}</p>
@@ -171,23 +173,29 @@ const ResultPage = ({ params }: Props) => {
             </p>
 
             <Table className="mt-4 p-4">
-            <TableHeader>
-              <TableRow className="text-center">
-                <TableHead className="text-center">Mô hình huấn luyện</TableHead>
-                <TableHead className="text-center">Thuộc tính mục tiêu</TableHead>
-                <TableHead className="text-center">Thuộc tính huấn luyện</TableHead>
-                <TableHead className="text-center">Chỉ số đánh giá</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell>{result.config.choose}</TableCell>
-                <TableCell>{result.config.target}</TableCell>
-                <TableCell>{result.config.list_feature.join(", ")}</TableCell>
-                <TableCell>{result.config.metric_sort}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+              <TableHeader>
+                <TableRow className="text-center">
+                  <TableHead className="text-center">
+                    Mô hình huấn luyện
+                  </TableHead>
+                  <TableHead className="text-center">
+                    Thuộc tính mục tiêu
+                  </TableHead>
+                  <TableHead className="text-center">
+                    Thuộc tính huấn luyện
+                  </TableHead>
+                  <TableHead className="text-center">Chỉ số đánh giá</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>{result.config.choose}</TableCell>
+                  <TableCell>{result.config.target}</TableCell>
+                  <TableCell>{result.config.list_feature.join(", ")}</TableCell>
+                  <TableCell>{result.config.metric_sort}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Bảng thông tin các mô hình khác */}
@@ -221,11 +229,7 @@ const ResultPage = ({ params }: Props) => {
                       value.replace(/([a-z])([A-Z])/g, "$1 $2")
                     }
                   />
-                  <YAxis
-                    domain={[0, 1]}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <YAxis domain={[0, 1]} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Bar
