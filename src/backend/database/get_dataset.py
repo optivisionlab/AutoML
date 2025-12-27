@@ -53,47 +53,50 @@ class MongoDataLoader:
 
 
     @classmethod
-    def analyze_column_for_target(cls, series: pd.Series, threshold_unique=20) -> str:
-        # Loại bài toán, lý do và cảnh báo
+    def analyze_column_for_target(cls, series: pd.Series, threshold_unique=50) -> str:
+        """
+        Trả về: 'classification', 'regression', hoặc 'both' (nếu không chắc chắn)
+        """
         try:
             # Xử lý dữ liệu null
             clean_series = series.dropna()
-            if clean_series.empty:
-                return "none"
+            if clean_series.empty: return "none"
             
+            # Ngày tháng thường không làm Target trực tiếp (trừ Time Series Forecasting đặc thù)
             if pd.api.types.is_datetime64_any_dtype(clean_series) or pd.api.types.is_timedelta64_dtype(clean_series):
                 return "none"
 
+            # Thử ép sang kiểu số
             series_numeric = pd.to_numeric(clean_series, errors='coerce').dropna()
+            is_numeric_column = len(series_numeric) >= 0.5 * len(clean_series)
 
-            if len(series_numeric) < 0.5 * len(clean_series):
-                # Nếu là Text hoặc Boolean
-                if pd.api.types.is_string_dtype(clean_series) or pd.api.types.is_bool_dtype(clean_series):
-                    return "classification"
+            if not is_numeric_column:
+                # Dạng Text/Boolean -> Classification
+                return "classification"
             else:
-                # Nếu ép kiểu thành công, dùng series số này để phân tích tiếp
                 clean_series = series_numeric
 
+            # Binary (0/1, True/False) -> Classification
             if clean_series.nunique() <= 2:
                 return "classification"
+            
+            # Số thực (Float) có phần thập phân -> Regression
+            is_float = not np.all(np.isclose(clean_series % 1, 0))
+            if is_float:
+                return "regression"
 
-            # Phân tích số học (Regression vs Classification)
-            if pd.api.types.is_numeric_dtype(clean_series):
-                is_integer = np.all(np.isclose(clean_series % 1, 0))
-                
-                if not is_integer:
-                    return "regression"
+            # Số nguyên (Integer) -> Vùng nhập nhằng (Gray Area)
+            num_unique = clean_series.nunique()
 
-                # Nếu là số nguyên (Integer)
-                num_unique = clean_series.nunique()
-                
-                # Nếu ít giá trị unique -> Classification
-                if num_unique <= threshold_unique:
-                    return "classification"
-                
+            # Nếu unique quá lớn so với số dòng -> Regression
+            if num_unique > 0.9 * len(clean_series):
                 return "regression"
             
-            return "none"
+            # Nếu unique nhỏ -> Ưu tiên Classification, nhưng Regression vẫn khả thi
+            if num_unique <= threshold_unique:
+                return "both"
+            
+            return "regression"
         except Exception as e:
             return "none"
 
@@ -104,7 +107,7 @@ class MongoDataLoader:
             return None
         
         # Loại bỏ các cột là ID
-        pattern = r"^(?i:id|stt|no|key|code|uuid|guid)$|(?i:.*_id)$|.*ID$"
+        pattern = r"^(?i:id|stt|no|key|code|uuid|guid)$|(?i:.*_id)$|^ID_.*$"
 
         features = {}
 
@@ -126,13 +129,27 @@ class MongoDataLoader:
                     continue
 
                 series: pd.Series = df_preview[col_name]
-                if series.isnull().all():
+    
+                if series.isnull().all() or series.nunique() <= 1:
                     features[col_name] = False
                     continue
 
                 suggested_type = self.analyze_column_for_target(series)
-                if selected_problem_type == suggested_type:
-                    features[col_name] = True
+
+                if selected_problem_type == "classification":
+                    # classification & both
+                    if suggested_type in ["classification", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+                
+                elif selected_problem_type == "regression":
+                    # regression & both
+                    if suggested_type in ["regression", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+
                 else:
                     features[col_name] = False
 
