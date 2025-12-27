@@ -79,6 +79,9 @@ class MongoDataLoader:
                 if num_unique <= threshold_unique:
                     return "classification"
 
+                if set(clean_series.nunique()) == {-1, 1}:
+                    return "classification"
+
                 return "regression"
             
             return "none"
