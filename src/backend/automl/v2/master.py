@@ -25,17 +25,21 @@ WORKER_LIST = os.getenv("WORKER_LIST", '')
 WORKERS = [f"{WORKER_LIST.split(',')[i]}" for i in range(NUMBER_WORKERS)]
 
 
-def get_models():
+def get_models(problem_type: str):
     base_dir = "assets/system_models"
-    file_path = os.path.join(base_dir, "model.yml")
+    if problem_type == 'classification':
+        file_path = os.path.join(base_dir, "model.yml")
+    else:
+        file_path = os.path.join(base_dir, 'regression.yml')
+
     with open(file_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
     
     models = {}
-    for key, model_info in data['Classification_models'].items():
+    for key, model_info in data[f'{problem_type.capitalize()}_models'].items():
         models[key] = {
             "model": model_info["model"],
-            "params": model_info['params']
+            "params": model_info['params'] if model_info['params'] is not None else {} 
         }
 
     metric_list = data['metric_list']
@@ -43,7 +47,7 @@ def get_models():
 
 
 
-def get_config_hash(id_data: str, list_feature: list, target: str) -> str:
+def get_config_hash(id_data: str, list_feature: list, target: str, problem_type: str) -> str:
     """
     Tạo một hash duy nhất dựa trên data và cấu hình tiền xử lý.
     """
@@ -51,7 +55,7 @@ def get_config_hash(id_data: str, list_feature: list, target: str) -> str:
     sorted_features = sorted(list_feature)
 
     # Tạo một chuỗi đại diện duy nhất
-    key_string = f"{id_data}-{json.dumps(sorted_features)}-{target}"
+    key_string = f"{id_data}-{json.dumps(sorted_features)}-{target}-{problem_type}"
 
     # Trả về hash MD5 của chuỗi
     return hashlib.md5(key_string.encode('utf-8')).hexdigest()
@@ -95,12 +99,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
     Tạo task và bỏ vào hàng đợi ưu tiên toàn cục
     """
     was_queue_empty = GLOBAL_TASK_QUEUE.empty()
-    models, metric_list = await asyncio.to_thread(get_models)
-
-    list_feature = config.get('list_feature', [])
-    target = config.get('target', '')
-    # cache_key = get_config_hash(id_data, list_feature, target)
-    
+    models, metric_list = await asyncio.to_thread(get_models, config.get('problem_type', None))    
 
     JOB_TRACKER[job_id] = {
         "total_tasks": len(models),
@@ -138,6 +137,8 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
                     logging.warning(f"[{job_id}] Failed to send signal to worker {WORKERS[i]}: {res}")
 
 
+# Danh sách các metric cần tìm MIN (Càng nhỏ càng tốt)
+ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
 
 async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     job_update = MongoJob(db)
@@ -145,6 +146,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     Tổng hợp kết quả cuối cùng cho một job
     """
     tracker = JOB_TRACKER[job_id]
+
     valid_results = [r for r in tracker["results"] if r.get("success")]
     if not valid_results:
         raise ValueError("No successful results from workers")
@@ -155,12 +157,27 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
             "model_id": i,
             "model_name": result.get("model_name", ""),
             "scores": result.get("scores"), # bao gồm cả 4 tiêu chí
-            "best_params": result.get("best_params", {})
+            "best_params": result.get("best_params") or {}
         }
         final_model_scores.append(score_entry)
 
-    metric = tracker["config"].get("metric_sort", "accuracy")
-    best_model_info = max(final_model_scores, key=lambda x: x['scores'].get(metric, -1.0))
+    # --- LOGIC CHỌN BEST MODEL ---
+    # Lấy config metric người dùng muốn sort
+    metric_sort = tracker["config"].get("metric_sort", "")
+
+    if metric_sort in ERROR_METRICS:
+        # REGRESSION (MSE, MAE...) -> Tìm MIN
+        best_model_info = min(
+            final_model_scores, 
+            key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else float('inf')
+        )
+    else:
+        # CLASSIFICATION / R2 -> Tìm MAX
+        # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf')) để nó không bao giờ được chọn là Max
+        best_model_info = max(
+            final_model_scores, 
+            key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
+        )
 
     original_best_result = next(
         r for r in valid_results if r['model_name'] == best_model_info['model_name']
@@ -199,7 +216,6 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         error_msg = f"Update failure: {str(e)}"
         await job_update.update_failure(job_id, error_msg)
         raise Exception(f"{error_msg}")
-
 
 
 async def run_reduction_and_cleanup(job_id: str, db: AsyncDatabase):

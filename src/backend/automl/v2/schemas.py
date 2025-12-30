@@ -20,6 +20,7 @@ class InputRequest(BaseModel):
                             "B",
                             "..."
                         ],
+                        "problem_type": "",
                         "search_algorithm": "",
                         "target": "Revenue"
                     }

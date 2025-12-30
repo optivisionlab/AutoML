@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from pymongo.asynchronous.database import AsyncDatabase
+import csv
 
 import base64
 import pandas as pd
@@ -70,19 +71,37 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         if not user:
             raise Exception(f"Not found user")
 
-        file_content_bytes = file_data.file.read()
+
+        file_content_bytes = await file_data.read()
         csv_stream = io.BytesIO(file_content_bytes)
 
         # Đọc dữ liệu
         try:
-            df = pd.read_csv(csv_stream)
+            if file_data.filename.endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(csv_stream)
+            else:
+                # Đọc 2048 bytes đầu tiên ra string
+                sample_str = file_content_bytes[:2048].decode('utf-8', errors='ignore')
+                try:
+                    # Dùng csv.Sniffer để đoán dấu phân cách
+                    sniffer = csv.Sniffer()
+                    dialect = sniffer.sniff(sample_str, delimiters=[',', ';', '\t', '|'])
+                    detected_delimiter = dialect.delimiter
+                except csv.Error:
+                    # Nếu sniffer bó tay (file chỉ có 1 cột hoặc định dạng lạ)
+                    # Thì fallback về mặc định là dấu phẩy
+                    detected_delimiter = ','
 
-            # Nếu chỉ ra 1 cột, có thể là ngăn cách cột không còn là dấu ","
-            if df.shape[1] <= 1:
+                # Đọc file với separator vừa tìm được
                 csv_stream.seek(0)
-                df = pd.read_csv(csv_stream, sep=';', engine='python')
+                df = pd.read_csv(
+                    csv_stream,
+                    sep=detected_delimiter,
+                    engine='python',
+                    on_bad_lines='skip' # Bỏ qua dòng lỗi
+                )
         except Exception as e:
-            raise Exception("Error when read file")
+            raise Exception(f"Error when read file {str(e)}")
         
         # Xóa các cột có tên là Unnamed (do thừa dấu ; hoặc , gây ra)
         df = df.loc[:, ~df.columns.str.contains('Unnamed')]

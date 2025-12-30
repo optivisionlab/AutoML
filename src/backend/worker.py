@@ -8,12 +8,20 @@ import httpx
 import time
 import uvicorn
 from fastapi import FastAPI
+# Classification Model
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
+
+# Regression Model
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from xgboost import XGBRegressor
+
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
@@ -41,7 +49,12 @@ MODEL_MAPPING = {
     "SVC": SVC,
     "KNeighborsClassifier": KNeighborsClassifier,
     "LogisticRegression": LogisticRegression,
-    "GaussianNB": GaussianNB
+    "GaussianNB": GaussianNB,
+    "LinearRegression": LinearRegression,
+    "DecisionTreeRegressor": DecisionTreeRegressor,
+    "RandomForestRegressor": RandomForestRegressor,
+    "GradientBoostingRegressor": GradientBoostingRegressor,
+    "XGBRegressor": XGBRegressor
 }
 
 
@@ -111,10 +124,12 @@ async def _execute_single_training_task(task: dict):
         config = task["config"]
         task_id = task["task_id"]
         search_algorithm = config.get("search_algorithm", "grid_search")
-
-        X_processed, y_processed = await get_data_with_cache(id_data, cache_key)
         model_info = task["model_info"]
         model_params = model_info.get('params') or {}
+
+        # Lấy dữ liệu
+        X_processed, y_processed = await get_data_with_cache(id_data, cache_key)
+        
         models_to_train = {
             0: {
                 "model": MODEL_MAPPING[model_info["model"]](),
@@ -129,9 +144,9 @@ async def _execute_single_training_task(task: dict):
             task["metrics"],
             config.get("metric_sort", "accuracy"),
             models_to_train,
+            config.get("problem_type", "classification"),
             search_algorithm
         )
-
         model_bytes = pickle.dumps(best_model_obj)
 
         # Lưu vào bộ nhớ tạm thay vì chuyển bằng JSON
@@ -156,6 +171,7 @@ async def _execute_single_training_task(task: dict):
             "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
         }
     except Exception as e:
+        print(str(e))
         return {
             "success": False,
             "job_id": task["job_id"],

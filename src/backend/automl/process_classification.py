@@ -8,7 +8,7 @@ import pandas as pd
 # =========================================================================
 # PREPROCESS DATA
 # =========================================================================
-def detect_column_types(df: pd.DataFrame, text_cardinality_threshold: int = 50):
+def detect_column_types(df: pd.DataFrame, text_cardinality_threshold: int = 20):
     numeric_cols = []
     categorical_cols = []
     text_cols = []
@@ -47,7 +47,7 @@ text_transformer = Pipeline(steps=[
     ('tfidf', TfidfVectorizer(max_features=100, preprocessor=convert_to_string))
 ])
 
-
+# =========================================================================
 def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
     data_process = data[list_feature]
     numeric_cols, categorical_cols, text_cols = detect_column_types(data_process)
@@ -70,4 +70,5 @@ def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
     y_processed = le_target.fit_transform(y_imputed_as_str)
 
     return X_processed, y_processed, preprocessor, le_target
+
 # =========================================================================

@@ -62,10 +62,11 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
         """
         cache_bucket = "cache"
         models_bucket = "models"
+        problem_type = config.get("problem_type")
         list_feature = config.get("list_feature", [])
         target = config.get("target", "")
 
-        config_hash = get_config_hash(id_data, list_feature, target)
+        config_hash = get_config_hash(id_data, list_feature, target, problem_type)
         data_cache_path = f"{id_data}/{config_hash}.npz"
         preprocessor_cache_path = f"{id_data}/{config_hash}_preprocessor.joblib"
         le_target_cache_path = f"{id_data}/{config_hash}_le_target.joblib"
@@ -80,7 +81,8 @@ async def handle_training_job(job_id: str, id_data: str, id_user: str, config: d
             X_processed, y_processed, preprocessor, le_target = await dataset.get_processed_data(
                 id_data, 
                 list_feature,
-                target
+                target,
+                problem_type
             )
 
             with io.BytesIO() as f_data, io.BytesIO() as f_pre, io.BytesIO() as f_target:
