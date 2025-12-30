@@ -122,7 +122,6 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
 
 
-
 def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     best_model_id = None
     best_model = None
@@ -293,14 +292,14 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     # Chuẩn hóa đầu vào
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
-    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo vô cùng lớn
+    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt)
     if metric_sort in ERROR_METRICS:
         global_best_score = np.inf 
-        find_min = True  # Cờ đánh dấu: Tìm số nhỏ nhất
+        find_min = True  # Flag: Tìm số nhỏ nhất
     else:
         # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo vô cùng nhỏ
         global_best_score = -np.inf
-        find_min = False # Cờ đánh dấu: Tìm số lớn nhất
+        find_min = False # Flag: Tìm số lớn nhất
 
     best_model_id = None
     best_model = None
