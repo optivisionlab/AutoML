@@ -8,25 +8,15 @@ import httpx
 import time
 import uvicorn
 from fastapi import FastAPI
-# Classification Model
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
-
-# Regression Model
-from sklearn.linear_model import LinearRegression
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from xgboost import XGBRegressor
 
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
 from automl.v2.minio import minIOStorage
 from automl.engine import train_process
+
+# Import machine learning models
+from cluster import *
 
 
 # Load file .env
@@ -286,4 +276,4 @@ async def ping():
 
 
 if __name__ == "__main__":
-    uvicorn.run("worker:app", host=WORKER_HOST, port=WORKER_PORT, reload=True)
+    uvicorn.run("cluster.worker:app", host=WORKER_HOST, port=WORKER_PORT, reload=True)

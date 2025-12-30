@@ -28,7 +28,7 @@ WORKERS = [f"{WORKER_LIST.split(',')[i]}" for i in range(NUMBER_WORKERS)]
 def get_models(problem_type: str):
     base_dir = "assets/system_models"
     if problem_type == 'classification':
-        file_path = os.path.join(base_dir, "model.yml")
+        file_path = os.path.join(base_dir, "classification.yml")
     else:
         file_path = os.path.join(base_dir, 'regression.yml')
 

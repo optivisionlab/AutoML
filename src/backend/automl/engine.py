@@ -89,7 +89,7 @@ def get_config(file):
 
 def get_model():    
     base_dir = "assets/system_models"
-    file_path = os.path.join(base_dir, "model.yml")
+    file_path = os.path.join(base_dir, "classification.yml")
     with open(file_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
 

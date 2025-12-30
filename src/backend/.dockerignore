@@ -32,3 +32,7 @@ assets/iris.data.csv
 assets/desc.md
 assets/assets/config-data-iris.yaml
 
+__pycache__/
+
+*.dockerfile
+docker-compose.yaml
