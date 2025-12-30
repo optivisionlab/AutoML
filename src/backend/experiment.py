@@ -137,7 +137,7 @@ async def metrics(
     base_dir = "assets/system_models"
     metrics = None
     if problem_type == 'classification':
-        file_path = os.path.join(base_dir, "model.yml")
+        file_path = os.path.join(base_dir, "classification.yml")
         metrics = await read_yaml_async(file_path=file_path)
     elif problem_type == 'regression':
         file_path = os.path.join(base_dir, "regression.yml")
