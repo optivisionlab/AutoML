@@ -111,14 +111,14 @@ app.include_router(exp)
 app.include_router(master)
 
 
-# @app.get("/")
-# async def read_root():
-#     return {
-#         "HAutoML": "Open-Source for Automated Machine Learning",
-#         "Authors": "Đỗ Mạnh Quang, Chử Thị Ánh, Ngọ Công Bình, Bùi Huy Nam, Nguyễn Thị Mỹ Khánh, Nguyễn Thị Minh",
-#         "Lab": "OptiVisionLab",
-#         "University": "School of Information and Communications Technology, Hanoi University of Industry"
-#     }
+@app.get("/")
+async def read_root():
+    return {
+        "HAutoML": "Open-Source for Automated Machine Learning",
+        "Authors": "Đỗ Mạnh Quang, Chử Thị Ánh, Ngọ Công Bình, Bùi Huy Nam, Nguyễn Thị Mỹ Khánh, Nguyễn Thị Minh",
+        "Lab": "OptiVisionLab",
+        "University": "School of Information and Communications Technology, Hanoi University of Industry"
+    }
 
 
 @app.get("/home")
@@ -210,87 +210,10 @@ async def verification_email(username: str, otp: str, db: AsyncDatabase = Depend
     message = await handle_verification_email(username, otp, db)
     return message
 
+
 """
-Logic thừa, không dùng tới
+Logic đổi password không còn chính xác
 """
-import time, json
-from fastapi.responses import HTMLResponse
-
-@app.get("/")
-async def homepage(request: Request):
-    users_collection = request.app.state.db.tbl_User
-    user = request.session.get("user")
-    if user:
-        username = user.get("name")
-        email = user.get("email")
-        role = "User"
-        user_iat = user.get("iat")
-
-        new_user = {
-            "username": username,
-            "email": email,
-            "gender": "",
-            "date": "",
-            "number": "",
-            "role": role,
-            "avatar": "",
-            "time_start": user_iat,
-        }
-        update_user = {
-            "$set": {
-                "username": username,
-                "email": email,
-                "role": role,
-                "time_start": user_iat,
-            }
-        }
-
-        check_user = await users_collection.find_one({"email": email})
-        if check_user:
-            await users_collection.update_one({"email": email}, update_user)
-        else:
-            await users_collection.insert_one(new_user)
-
-        print(user_iat)
-        current_time = time.time()
-        print(current_time)
-        if current_time - user_iat > data["SESSION_TIMEOUT"]:
-            request.session.pop("user", None)
-            return HTMLResponse('<a href="/login">login</a>')
-        request.session["last_activity_time"] = time.time()
-        data = json.dumps(user)
-        html = f"<pre>{data}</pre>" '<a href="/logout">logout</a>'
-        return HTMLResponse(html)
-    return HTMLResponse('<a href="/login_google">login</a>')
-
-# # google
-# @app.get("/login_google")
-# async def login(request: Request):
-#     redirect_uri = request.url_for("auth")
-#     return await oauth.google.authorize_redirect(request, redirect_uri)
-
-
-# @app.get("/auth")
-# async def auth(request: Request):
-#     try:
-#         token = await oauth.google.authorize_access_token(request)
-#     except OAuthError as error:
-#         return HTMLResponse(f"<h1>{error.error}</h1>")
-#     user = token.get("userinfo")
-#     if user:
-#         request.session["user"] = dict(user)
-#     return RedirectResponse(url="/")
-# # google
-
-
-# @app.get("/logout")
-# async def logout(request: Request):
-#     request.session.pop("user", None)
-#     return RedirectResponse(url="/")
-"""
-Logic thừa, không dùng tới
-"""
-
 @app.post("/change_password")
 async def change_password(username: str, password: ChangePassword, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     if current_user['role'] == 'user' and current_user['username'] != username:
