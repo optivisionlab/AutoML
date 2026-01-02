@@ -183,9 +183,7 @@ async def update_user(username: str, new_user: UpdateUser, db: AsyncDatabase = D
     message = await handle_update_user(username, new_user, db)
     return message
 
-"""
-Logic đổi password không còn chính xác
-"""
+
 from users.engine import handle_forgot_password
 
 
@@ -211,9 +209,6 @@ async def verification_email(username: str, otp: str, db: AsyncDatabase = Depend
     return message
 
 
-"""
-Logic đổi password không còn chính xác
-"""
 @app.post("/change_password")
 async def change_password(username: str, password: ChangePassword, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     if current_user['role'] == 'user' and current_user['username'] != username:
@@ -222,14 +217,12 @@ async def change_password(username: str, password: ChangePassword, db: AsyncData
             detail="Permission denied",
         )
 
-    pw = password.password
-    new_pw1 = password.new1_password
-    new_pw2 = password.new2_password
-    masage = await handle_change_password(username, pw, new_pw1, new_pw2, db)
+    current_password = password.current_password
+    new_password = password.new_password
+    verified_password = password.verified_password
+    masage = await handle_change_password(username, current_password, new_password, verified_password, db)
     return masage
-"""
-Logic đổi password không còn chính xác
-"""
+
 
 @app.post("/update_avatar")
 async def update_avarta(username: str, avatar: UploadFile = File(...), db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
