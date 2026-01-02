@@ -837,13 +837,14 @@ async def get_one_job(id_job: str, db: AsyncDatabase):
         job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "user": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
+
         for key, value in job.items():
             if isinstance(value, datetime):
                 job[key] = value.timestamp()
+
         return JSONResponse(content=serialize_mongo_doc(job))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
-
 
 
 async def update_activate_model(job_id, db: AsyncDatabase, activate=0):
