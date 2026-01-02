@@ -7,7 +7,7 @@ def validate_password_strength(v: SecretStr) -> SecretStr:
     pw = v.get_secret_value()
     regex = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$'
     if not re.match(regex, pw):
-        raise ValueError('Password weak: Cần 1 hoa, 1 thường, 1 số, 1 ký tự đặc biệt')
+        raise ValueError('Weak password: Must contain at least 1 uppercase, 1 lowercase, 1 number, and 1 special character')
     return v
 
 

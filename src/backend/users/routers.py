@@ -59,7 +59,7 @@ async def register(user_data: UserRegisterRequest, db: AsyncDatabase = Depends(g
         "user_id": user_id,
         "provider": "local",
         "provider_id": user_data.email,
-        "password": user_data.password, # HashHelper.get_password_hash(user_data.password)
+        "password": user_data.password.get_secret_value(), # HashHelper.get_password_hash(user_data.password)
         "created_at": datetime.now(timezone.utc).timestamp()
     }
 
@@ -87,13 +87,13 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
             headers={"WWW-Authenticate": "Bearer"}
         )
     
-    if user['password'] and user_login.password != user['password']:
+    if user.get('password') and user_login.password != user['password']:
         raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect login information",
                 headers={"WWW-Authenticate": "Bearer"}
             )
-    elif not user['password']:
+    elif not user.get('password'):
         account = await db.linked_accounts.find_one({
             'user_id': user['_id'],
             'provider': 'local'
