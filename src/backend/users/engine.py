@@ -32,9 +32,9 @@ class UpdateUser(BaseModel):  # Dùng cho cập nhật thông tin người dùng
 
 
 class ChangePassword(BaseModel):
-    password: str
-    new1_password: str 
-    new2_password: str
+    current_password: str
+    new_password: str 
+    verified_password: str
 
 
 # Hàm chuyển đổi objectID thành chuỗi
@@ -118,7 +118,7 @@ async def remove_otp(username, db: AsyncDatabase):
 
 async def save_otp(username, value_otp, db: AsyncDatabase):
     users_collection = db.tbl_User
-    create_at_otp = datetime.datetime.now()  # Lưu trữ thời gian theo múi giờ UTC
+    create_at_otp = datetime.datetime.now(datetime.timezone.utc).timestamp()  # Lưu trữ thời gian theo múi giờ UTC
     value_set = {"$set":{
         "otp": value_otp,
         "createAtOTP": create_at_otp
@@ -159,36 +159,62 @@ async def check_time_otp(username, db: AsyncDatabase):
         False
 
 
-async def handle_change_password(username, pw, new_pw1, new_pw2, db: AsyncDatabase):
+async def handle_change_password(username, current_password, new_password, verified_password, db: AsyncDatabase):
     users_collection = db.tbl_User
     user = await users_collection.find_one({"username": username})
-    if user:
-        if pw == user['password']:
-            if new_pw1 == new_pw2:
-                value_set = {"$set":{
-                    "password": new_pw1
-                }}
-                await users_collection.update_one({"_id": user["_id"]}, value_set)
-                raise HTTPException(
-                    status_code=status.HTTP_200_OK,
-                    detail=f"Thay đổi mật khẩu thành công!"
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Mật khẩu mới chưa trùng khớp!"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Mật khẩu không chính xác!"
-            )
-    else:
+
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
+            detail="Not found user"
         )
-    
+
+    if new_password != verified_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Passwords do not match"
+        )
+
+    if user.get('password'):
+        if not current_password == user.get('password'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password"
+            )
+
+        await users_collection.update_one(
+            {"_id": user['_id']},
+            {"$set": {'password': new_password}}
+        )
+
+        return {
+            "message": "Change password successfully"
+        }
+
+    else:
+        linked_acc = await db.linked_accounts.find_one({'user_id': user['_id']})
+
+        if not linked_acc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not found user"
+            )
+        
+        if not current_password == linked_acc.get('password'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password"
+            )
+
+        await db.linked_accounts.update_one(
+            {"_id": linked_acc['_id']},
+            {"$set": {'password': new_password}}
+        )
+
+        return {
+            "message": "Change password successfully"
+        }
+
     
 import base64, io
 from fastapi.responses import StreamingResponse
@@ -284,17 +310,24 @@ async def handle_forgot_password(email, db: AsyncDatabase):
     users_collection = db.tbl_User
 
     user = await users_collection.find_one({"email": email})
-    if user:
-        send_reset_password_email(email, user['password'])
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"Password đã gửi về email: {email}"
-        )
-    else:
+
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {email} không tồn tại"
+            detail=f"No account with email address {email} found"
         )
+    password = None
+    if user.get('password'):
+        password = user.get('password')
+    else:
+        result = await db.linked_accounts.find_one({'user_id': user.get('_id')})
+        password = result.get('password')
+
+    if password:
+        send_reset_password_email(email, password)
+        return {
+            "message": f"Password đã gửi về email: {email}"
+        }
 
 
 async def handle_send_otp(username, db: AsyncDatabase):
@@ -305,10 +338,9 @@ async def handle_send_otp(username, db: AsyncDatabase):
         otp = generate_otp()
         await save_otp(username, otp, db)
         send_otp(user['email'], otp)
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"OTP đã gửi về email: {user['email']}"
-        )
+        return {
+            "message": f"OTP đã gửi về email: {user['email']}"
+        }
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -324,10 +356,9 @@ async def handle_verification_email(username, otp, db: AsyncDatabase):
         check_time = await check_time_otp(username, db)
         if otp == user['otp']:
             if check_time:
-                raise HTTPException(
-                    status_code=status.HTTP_200_OK,
-                    detail=f"Xác thực email {user['email']} thành công"
-                )
+                return {
+                    "message": f"Xác thực email {user['email']} thành công"
+                }
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -382,6 +413,6 @@ async def handle_contact(fullname: str, email: str, message: str, db: AsyncDatab
 
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lỗi khi gửi email hoặc lưu liên hệ: {str(e)}"
         )
