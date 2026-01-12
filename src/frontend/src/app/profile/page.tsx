@@ -30,6 +30,7 @@ import { z } from "zod";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
 import React, { useCallback, useEffect, useState } from "react";
+import { useApi } from "@/hooks/useApi";
 
 interface User {
   _id: string;
@@ -74,6 +75,8 @@ const formSchema = z.object({
 });
 
 const Profile = () => {
+  const { put, get } = useApi();
+
   const { data: session, status } = useSession();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,26 +94,22 @@ const Profile = () => {
       const username = session?.user?.username;
       if (!username) return;
 
-      const res = await axios.get(
-        `${process.env.NEXT_PUBLIC_BASE_API}/users/?username=${username}`,
-        { headers: { accept: "application/json" } }
-      );
-      setUser(res.data);
-      setEditFormData(res.data);
+      const res = await get(`/users/?username=${username}`);
+      setUser(res);
+      setEditFormData(res);
 
-      const avatar = await axios.get(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
-        { responseType: "blob" }
+      const avatar = await get(
+        `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`
       );
 
       // Kiểm tra blob rỗng
-      if (avatar.data && avatar.data.size > 0) {
+      if (avatar && avatar.size > 0) {
         const url = URL.createObjectURL(avatar.data);
         setAvatarUrl(url);
         setOriginalAvatar(url);
       } else {
         // blob rỗng -> set url rỗng
-        setAvatarUrl("")
+        setAvatarUrl("");
         setOriginalAvatar("");
       }
     } catch (error) {
@@ -151,7 +150,6 @@ const Profile = () => {
     }
   };
 
-
   useEffect(() => {
     if (!isEditing) {
       setFile(null);
@@ -182,15 +180,16 @@ const Profile = () => {
         window.dispatchEvent(new Event("avatar-updated"));
       }
 
-      await axios.put(
-        `${process.env.NEXT_PUBLIC_BASE_API}/update/${username}`,
-        editFormData,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      // await axios.put(
+      //   `${process.env.NEXT_PUBLIC_BASE_API}/update/${username}`,
+      //   editFormData,
+      //   {
+      //     headers: {
+      //       "Content-Type": "application/json",
+      //     },
+      //   }
+      // );
+      await put(`/update/${username}`, editFormData);
 
       toast({
         title: "Cập nhật thành công!",
@@ -280,27 +279,29 @@ const Profile = () => {
     );
   }
 
-const InfoRow = ({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: any;
-  label: string;
-  value: string;
-}) => (
-  <div className="flex items-start gap-4 p-4 border rounded-lg shadow-sm bg-white dark:bg-[#1e1e1e]">
-    <div className="flex-shrink-0 mt-1">
-      <div className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 rounded-full p-2 flex items-center justify-center w-10 h-10">
-        <Icon className="w-6 h-6" />
+  const InfoRow = ({
+    icon: Icon,
+    label,
+    value,
+  }: {
+    icon: any;
+    label: string;
+    value: string;
+  }) => (
+    <div className="flex items-start gap-4 p-4 border rounded-lg shadow-sm bg-white dark:bg-[#1e1e1e]">
+      <div className="flex-shrink-0 mt-1">
+        <div className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 rounded-full p-2 flex items-center justify-center w-10 h-10">
+          <Icon className="w-6 h-6" />
+        </div>
+      </div>
+      <div className="flex flex-col">
+        <Label className="text-sm text-muted-foreground">{label}</Label>
+        <span className="text-base font-medium text-gray-900 dark:text-gray-100">
+          {value}
+        </span>
       </div>
     </div>
-    <div className="flex flex-col">
-      <Label className="text-sm text-muted-foreground">{label}</Label>
-      <span className="text-base font-medium text-gray-900 dark:text-gray-100">{value}</span>
-    </div>
-  </div>
-);
+  );
 
   return (
     <>
@@ -521,8 +522,8 @@ const InfoRow = ({
                   user?.gender === "male"
                     ? "Nam"
                     : user?.gender === "female"
-                      ? "Nữ"
-                      : "Khác"
+                    ? "Nữ"
+                    : "Khác"
                 }
               />
               <InfoRow
