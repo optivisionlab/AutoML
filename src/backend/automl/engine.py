@@ -11,9 +11,10 @@ import pandas as pd  # type: ignore
 import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from sklearn.calibration import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.metrics import make_scorer
+from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
@@ -77,6 +78,9 @@ def get_config(file):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
@@ -85,7 +89,7 @@ def get_config(file):
 
 def get_model():    
     base_dir = "assets/system_models"
-    file_path = os.path.join(base_dir, "model.yml")
+    file_path = os.path.join(base_dir, "classification.yml")
     with open(file_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
 
@@ -109,6 +113,9 @@ def get_data_config_from_json(file_content: Item):
     list_feature = config['list_feature']
     target = config['target']
     metric_sort = config['metric_sort']
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
 
     models, metric_list = get_model()
@@ -123,7 +130,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     model_results = []
 
     # Chuẩn hóa đầu vào
-    metric_sort = metric_sort.strip().lower().replace(" ", "_")
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     def parse_metric(metric_str):
         """
@@ -253,9 +260,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     return best_model_id, best_model, best_score, best_params, model_results
 
 
-from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
-from sklearn.model_selection import GridSearchCV
-
 # =============================
 # CUSTOM SCORER
 # =============================
@@ -286,16 +290,16 @@ def safe_extract_score(metric_name, raw_score):
 
 def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
     # Chuẩn hóa đầu vào
-    metric_sort = metric_sort.strip().lower().replace(" ", "_")
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
-    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt) -> Khởi tạo Vô cùng lớn
+    # Nếu sort theo MSE/MAE (càng nhỏ càng tốt)
     if metric_sort in ERROR_METRICS:
         global_best_score = np.inf 
-        find_min = True  # Cờ đánh dấu: Tìm số nhỏ nhất
+        find_min = True  # Flag: Tìm số nhỏ nhất
     else:
-        # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo Vô cùng nhỏ
+        # Nếu sort theo R2/Accuracy (càng lớn càng tốt) -> Khởi tạo vô cùng nhỏ
         global_best_score = -np.inf
-        find_min = False # Cờ đánh dấu: Tìm số lớn nhất
+        find_min = False # Flag: Tìm số lớn nhất
 
     best_model_id = None
     best_model = None
@@ -311,6 +315,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         "r2": make_scorer(r2_score_sklearn, greater_is_better=True),
     }
     
+    cv_strategy = KFold(n_splits=5, shuffle=True, random_state=42)
+
     for model_id in range(len(models)):
         model_info = models[model_id]
         model = model_info['model']
@@ -319,7 +325,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         grid_search = GridSearchCV(
             estimator=model,
             param_grid=param_grid,
-            cv=5,
+            cv=cv_strategy,
             scoring=scoring,
             refit=metric_sort,
             n_jobs=-1
@@ -329,7 +335,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         # Lấy điểm raw từ Scikit-learn (MSE sẽ là âm, R2 là dương)
         raw_best_score = grid_search.best_score_
         
-        # Đưa về số dương chuẩn (giống code bạn)
+        # Đưa về số dương chuẩn
         current_model_score = safe_extract_score(metric_sort, raw_best_score)
         
         # Nếu gặp lỗi NaN/Inf thì bỏ qua model này
@@ -374,7 +380,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     return best_model_id, best_model, global_best_score, best_params, model_results
 
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type='classification', search_algorithm='grid_search'):
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search'):
     best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
@@ -459,6 +465,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
 
 
+# Suy luận kết quả
 async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
     """
     Chạy dự đoán trên dữ liệu mới bằng mô hình và preprocessor đã lưu
@@ -484,7 +491,7 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         model_url = stored_model_data.get("model")
         model_path = f"{model_url.get('object_name')}"
         preprocessor_path = f"{user_id}/{job_id}/preprocessor.joblib"
-        target_path = f"{user_id}/{job_id}/target.joblib"
+        target_path = f"{user_id}/{job_id}/target.joblib" 
     except Exception as e:
         return {"error": f"Failed to construct model paths: {str(e)}"}
     
@@ -525,18 +532,31 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
         # Sử dụng preprocessor đã lưu để biến đổi dữ liệu
         X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
         
-        # Sử dụng mô hình đã lưu để dự đoán
-        y_pred_encoded = await asyncio.to_thread(model.predict, X_new_transformed)
+        if isinstance(X_new_transformed, np.ndarray):
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
+        elif hasattr(X_new_transformed, "toarray"): # Nếu là sparse matrix
+            X_new_transformed = X_new_transformed.toarray()
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # Sử dụng le_target đã lưu để chuyển đổi ngược nhãn
-        y_pred_human = await asyncio.to_thread(le_target.inverse_transform, y_pred_encoded)
+        # Sử dụng mô hình đã lưu để dự đoán
+        y_pred_raw = await asyncio.to_thread(model.predict, X_new_transformed)
+        
+        if hasattr(y_pred_raw, 'ravel'):
+            y_pred_raw = y_pred_raw.ravel()
+
+        if le_target:
+            # Sử dụng le_target đã lưu để chuyển đổi ngược nhãn
+            y_pred_final = await asyncio.to_thread(le_target.inverse_transform, y_pred_raw)
+        else:
+            y_pred_final = y_pred_raw
     except Exception as e:
         return {"error": f"Failed during prediction process: {str(e)}"}
     
-    data['predict'] = y_pred_human
+    data['predict'] = y_pred_final
+    data = data.replace({np.nan: None})
+
     data_json = await asyncio.to_thread(data.to_dict, orient="records")
     return data_json
-
 
 
 # Lấy danh sách job
@@ -548,7 +568,7 @@ async def get_jobs(user_id, db: AsyncDatabase):
         if user_id:
             query["user.id"] = user_id
 
-        jobs = await job_collection.find(query, {"model": 0, "item": 0}).to_list(length=None)
+        jobs = await job_collection.find(query, {"model": 0, "item": 0, "user": 0}).to_list(length=None)
         for job in jobs:
             if "_id" in job:
                 job["_id"] = str(job["_id"])
@@ -566,7 +586,7 @@ async def get_jobs(user_id, db: AsyncDatabase):
 async def get_one_job(id_job: str, db: AsyncDatabase):
     job_collection = db.tbl_Job
     try:
-        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0})
+        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "user": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
         for key, value in job.items():

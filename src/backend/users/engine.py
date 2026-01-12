@@ -61,7 +61,7 @@ def user_helper(user) -> dict:
 async def get_list_user(db: AsyncDatabase):
     users_collection = db.tbl_User
 
-    users_data = await users_collection.find({"role": "user"}).to_list(length=None)  # Lọc theo role
+    users_data = await users_collection.find({"role": "user"}, {"password": 0}).to_list(length=None)  # Lọc theo role
     list_user = []
     for user in users_data:
         user['_id'] = str(user['_id'])  # Convert ObjectId to string
@@ -73,7 +73,7 @@ async def get_list_user(db: AsyncDatabase):
 async def check_exits_username(username, db: AsyncDatabase):
     users_collection = db.tbl_User
 
-    existing_user = await users_collection.find_one({"username": username})
+    existing_user = await users_collection.find_one({"username": username}, {"password": 0})
     if existing_user:
         return existing_user
     else:
@@ -417,8 +417,8 @@ async def handle_update_user(username: str, new_user: UpdateUser, db: AsyncDatab
     check_username = await check_exits_username(username, db)
 
     if check_username:
-        old_user = await users_collection.find_one({"username": username})
-        new_value = {"$set": new_user.dict()}
+        old_user = await users_collection.find_one({"username": username}, {"password": 0})
+        new_value = {"$set": new_user.model_dump()}
         result = await users_collection.update_one({"_id": old_user["_id"]}, new_value)
 
         if result.modified_count > 0:
@@ -440,7 +440,7 @@ async def handle_update_user(username: str, new_user: UpdateUser, db: AsyncDatab
 async def handle_forgot_password(email, db: AsyncDatabase):
     users_collection = db.tbl_User
 
-    user = await users_collection.find_one({"email":email})
+    user = await users_collection.find_one({"email": email})
     if user:
         send_reset_password_email(email, user['password'])
         raise HTTPException(

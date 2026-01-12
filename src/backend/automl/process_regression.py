@@ -1,30 +1,42 @@
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, FunctionTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
+import numpy as np
 
-# =========================================================================
-# PREPROCESS DATA
-# =========================================================================
+
+# helper functions
 def detect_column_types(df: pd.DataFrame, text_cardinality_threshold: int = 50):
     numeric_cols = []
     categorical_cols = []
     text_cols = []
+    
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
             numeric_cols.append(col)
-        elif pd.api.types.is_object_dtype(df[col]):
+        elif pd.api.types.is_object_dtype(df[col]) or isinstance(df[col].dtype, pd.CategoricalDtype):
             if df[col].nunique() > text_cardinality_threshold:
                 text_cols.append(col)
             else:
                 categorical_cols.append(col)
+
     return numeric_cols, categorical_cols, text_cols
+
+
+def to_1d_array(x):
+    if hasattr(x, 'values'):
+        return x.values.ravel()
+    if isinstance(x, np.ndarray):
+        return x.ravel()
+    return np.array(x).ravel()
 
 def convert_to_string(x):
     return str(x) if x is not None else ""
 
+
+# pipeline definitions
 numeric_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='median')),
     ('scaler', StandardScaler())
@@ -32,49 +44,64 @@ numeric_transformer = Pipeline(steps=[
 
 categorical_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='most_frequent')),
-    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=True))
 ])
 
 text_transformer = Pipeline(steps=[
     ('imputer', SimpleImputer(strategy='constant', fill_value='')),
-    ('tfidf', TfidfVectorizer(max_features=100, preprocessor=convert_to_string))
+    ('reshape', FunctionTransformer(to_1d_array, validate=False)),
+    ('tfidf', TfidfVectorizer(max_features=50, preprocessor=convert_to_string))
 ])
 
 
-# =========================================================================
-def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):    
-    # Loại bỏ dòng mà target bị thiếu trước
-    data = data.dropna(subset=[target]).copy()
+# main function
+def preprocess_data(list_feature: list, target: str, data: pd.DataFrame):
+    if target in list_feature:
+        list_feature.remove(target)
 
-    # Ép kiểu target sang số thực. 'coerce' biến chữ cái/lỗi thành NaN
-    y_series = pd.to_numeric(data[target], errors='coerce')
-    
-    # Lọc bỏ các dòng bị NaN sau khi ép kiểu
-    valid_indices = y_series.notna()
-    data = data.loc[valid_indices]
-    
-    y_processed = y_series[valid_indices].values
+    try:
+        data_process = data[list_feature].copy()
+    except KeyError as ke:
+        raise KeyError(f"Not found feature {str(ke)}")
 
-    data_process = data[list_feature]
+    if target in data.columns:
+        y_series = pd.to_numeric(data[target], errors='coerce')
+        
+        valid_mask = y_series.notna()
+        y_processed = y_series[valid_mask].values
+        
+        data_process = data_process.loc[valid_mask]
+        
+        le_target = None
+    else:
+        raise KeyError(f"Target '{target}' not exist")
+
     numeric_cols, categorical_cols, text_cols = detect_column_types(data_process)
 
-    transformers_list = [
-        ('num', numeric_transformer, numeric_cols),
-        ('cat', categorical_transformer, categorical_cols)
-    ]
-    
-    # Thêm text transformer nếu có cột text (để tránh lỗi)
+    transformers = []
+
+    if numeric_cols:
+        transformers.append(('num', numeric_transformer, numeric_cols))
+
+    if categorical_cols:
+        transformers.append(('cat', categorical_transformer, categorical_cols))
+
     if text_cols:
-        transformers_list.append(('text', text_transformer, text_cols[0]))
+        for col in text_cols:
+            transformers.append((f"text_{col}", text_transformer, [col]))
+    
+    if not transformers:
+        X_processed = data_process.values
+        preprocessor = None
+    else:
+        preprocessor = ColumnTransformer(
+            transformers=transformers,
+            remainder='passthrough',
+            sparse_threshold=0.3
+        )
+        X_processed = preprocessor.fit_transform(data_process)
 
-    preprocessor = ColumnTransformer(
-        transformers=transformers_list,
-        remainder='drop' # Chỉ giữ lại các cột đã xử lý
-    )
-
-    X_processed = preprocessor.fit_transform(data_process)
-
-    le_target = None
+    if hasattr(X_processed, "toarray"):
+            X_processed = X_processed.toarray()
 
     return X_processed, y_processed, preprocessor, le_target
-# =========================================================================

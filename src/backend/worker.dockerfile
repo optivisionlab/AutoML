@@ -18,4 +18,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH="/app"
 
 # Lệnh mặc định khi container chạy, nhưng sẽ ghi đè bằng Docker Compose
-CMD [ "python", "worker.py" ]
+# CMD [ "python", "-m", "cluster.worker" ]

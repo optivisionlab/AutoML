@@ -28,7 +28,7 @@ WORKERS = [f"{WORKER_LIST.split(',')[i]}" for i in range(NUMBER_WORKERS)]
 def get_models(problem_type: str):
     base_dir = "assets/system_models"
     if problem_type == 'classification':
-        file_path = os.path.join(base_dir, "model.yml")
+        file_path = os.path.join(base_dir, "classification.yml")
     else:
         file_path = os.path.join(base_dir, 'regression.yml')
 
@@ -99,7 +99,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
     Tạo task và bỏ vào hàng đợi ưu tiên toàn cục
     """
     was_queue_empty = GLOBAL_TASK_QUEUE.empty()
-    models, metric_list = await asyncio.to_thread(get_models, config.get('problem_type', None))    
+    models, metric_list = await asyncio.to_thread(get_models, config.get('problem_type', 'classification'))    
 
     JOB_TRACKER[job_id] = {
         "total_tasks": len(models),
@@ -139,6 +139,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
 
 # Danh sách các metric cần tìm MIN (Càng nhỏ càng tốt)
 ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
+MACRO_WEIGHTED_METRICS = {'f1', 'recall', 'precision'}
 
 async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     job_update = MongoJob(db)
@@ -156,7 +157,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         score_entry = {
             "model_id": i,
             "model_name": result.get("model_name", ""),
-            "scores": result.get("scores"), # bao gồm cả 4 tiêu chí
+            "scores": result.get("scores"), # bao gồm tất cả tiêu chí
             "best_params": result.get("best_params") or {}
         }
         final_model_scores.append(score_entry)
@@ -164,6 +165,10 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     # --- LOGIC CHỌN BEST MODEL ---
     # Lấy config metric người dùng muốn sort
     metric_sort = tracker["config"].get("metric_sort", "")
+    
+    # Chuẩn hóa đầu vào
+    metric_sort = metric_sort.strip().lower().replace(' ', '_')
+
 
     if metric_sort in ERROR_METRICS:
         # REGRESSION (MSE, MAE...) -> Tìm MIN
@@ -173,7 +178,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         )
     else:
         # CLASSIFICATION / R2 -> Tìm MAX
-        # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf')) để nó không bao giờ được chọn là Max
+        # Lambda logic: Nếu không có điểm thì gán là Âm vô cực (-float('inf'))
         best_model_info = max(
             final_model_scores, 
             key=lambda x: x['scores'].get(metric_sort) if x['scores'].get(metric_sort) is not None else -float('inf')
@@ -185,7 +190,7 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
 
     # Thao tác với Cloud và Database
     try:
-        # Move model tốt nhất lưu ở bộ nhớ tạm vào folder chính
+        # Move model tốt nhất lưu ở bộ nhớ tạm vào nơi lưu trữ chính
         version = 1
         dest_model_path = f"{tracker['id_user']}/{job_id}/{best_model_info['model_name']}_{version}.pkl"
 

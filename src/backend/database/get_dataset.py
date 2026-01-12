@@ -1,7 +1,10 @@
 # Standard Libraries
+import re
+from io import BytesIO
 
 # Third-party Libraries
 import pandas as pd
+import numpy as np
 from bson.objectid import ObjectId
 import pyarrow.parquet as pq
 from pymongo.asynchronous.database import AsyncDatabase
@@ -49,18 +52,108 @@ class MongoDataLoader:
             return None, 0
 
 
-    async def get_data_features(self, id_data: str) -> list | None:
+    @classmethod
+    def analyze_column_for_target(cls, series: pd.Series, threshold_unique=50) -> str:
+        """
+        Trả về: 'classification', 'regression', hoặc 'both' (nếu không chắc chắn)
+        """
+        try:
+            # Xử lý dữ liệu null
+            clean_series = series.dropna()
+            if clean_series.empty: return "none"
+            
+            # Ngày tháng thường không làm Target trực tiếp (trừ Time Series Forecasting đặc thù)
+            if pd.api.types.is_datetime64_any_dtype(clean_series) or pd.api.types.is_timedelta64_dtype(clean_series):
+                return "none"
+
+            # Thử ép sang kiểu số
+            series_numeric = pd.to_numeric(clean_series, errors='coerce').dropna()
+            is_numeric_column = len(series_numeric) >= 0.5 * len(clean_series)
+
+            if not is_numeric_column:
+                # Dạng Text/Boolean -> Classification
+                return "classification"
+            else:
+                clean_series = series_numeric
+
+            # Binary (0/1, True/False) -> Classification
+            if clean_series.nunique() <= 2:
+                return "classification"
+            
+            # Số thực (Float) có phần thập phân -> Regression
+            is_float = not np.all(np.isclose(clean_series % 1, 0))
+            if is_float:
+                return "regression"
+
+            # Số nguyên (Integer) -> Vùng nhập nhằng (Gray Area)
+            num_unique = clean_series.nunique()
+
+            # Nếu unique quá lớn so với số dòng -> Regression
+            if num_unique > 0.9 * len(clean_series):
+                return "regression"
+            
+            # Nếu unique nhỏ -> Ưu tiên Classification, nhưng Regression vẫn khả thi
+            if num_unique <= threshold_unique:
+                return "both"
+            
+            return "regression"
+        except Exception as e:
+            return "none"
+
+
+    async def get_features_suggest_target(self, id_data: str, selected_problem_type: str, num_row: int = 1000) -> dict | None:
         bucket_name, object_name = await self._get_data_link_from_db(id_data)
         if not (bucket_name and object_name):
             return None
         
+        # Loại bỏ các cột là ID
+        pattern = r"^(?i:id|stt|no|key|code|uuid|guid)$|(?i:.*_id)$|^ID_.*$"
+
+        features = {}
+
         try:
-            # Lấy file stream
-            parquet_stream = minIOStorage.get_object(bucket_name, object_name)
+            # Lấy data stream từ MinIO
+            response = minIOStorage.get_object(bucket_name, object_name)
+            file_buffer = BytesIO(response.read()) 
             
-            schema = pq.read_schema(parquet_stream)
-            
-            return schema.names
+            # Đọc metadata & preview data
+            parquet_file = pq.ParquetFile(file_buffer)
+            schema_names = parquet_file.schema.names
+
+            table = parquet_file.read_row_group(0)
+            df_preview = table.to_pandas().head(num_row)
+
+            for col_name in schema_names:
+                if re.match(pattern, col_name):
+                    features[col_name] = False
+                    continue
+
+                series: pd.Series = df_preview[col_name]
+    
+                if series.isnull().all() or series.nunique() <= 1:
+                    features[col_name] = False
+                    continue
+
+                suggested_type = self.analyze_column_for_target(series)
+
+                if selected_problem_type == "classification":
+                    # classification & both
+                    if suggested_type in ["classification", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+                
+                elif selected_problem_type == "regression":
+                    # regression & both
+                    if suggested_type in ["regression", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+
+                else:
+                    features[col_name] = False
+
+            return features
         except Exception as e:
             print(f"Exception when get dataset schema: {str(e)}")
             return None
@@ -90,7 +183,7 @@ class MongoDataLoader:
         except Exception as e:
             print(f"Exception when read dataset from MinIO: {str(e)}")
             return None, None, None, None
-
+    
 
 
 class MongoJob:

@@ -19,6 +19,7 @@ import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
 import React from "react";
+import toTitleLabel from "@/utils/toTitleLable";
 
 type Props = {
   params: Promise<{
@@ -29,12 +30,14 @@ type Props = {
 const ResultPage = ({ params }: Props) => {
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { data: session } = useSession();
 
   const [showChart, setShowChart] = useState(false);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -48,6 +51,29 @@ const ResultPage = ({ params }: Props) => {
 
     unwrapParams();
   }, [params]);
+
+  // Lấy danh sách độ đo theo loại bài toán
+  type MetricOb = Record<string, string>;
+  const [metrics, setMetrics] = useState<MetricOb>({});
+
+  const getMetrics = useCallback((type: string) => {
+    fetch(
+      `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/metrics?problem_type=${type}`,
+      {
+        method: "GET",
+        headers: { accept: "application/json" },
+      }
+    )
+      .then((res) => res.json())
+      .then(({ metrics }) => {
+        console.log(metrics);
+        setMetrics(metrics);
+      })
+      .catch((err) => {
+        console.error("Lỗi khi gọi API:", err);
+        alert("Không thể tải dữ liệu huấn luyện.");
+      });
+  }, []);
 
   // Fetch data train từ API đầu tiên
   const fetchDataResult = useCallback(async () => {
@@ -67,19 +93,34 @@ const ResultPage = ({ params }: Props) => {
         console.log("Dữ liệu từ API:", data);
         setResult(data);
 
+        const problemType = data.config?.problem_type || "classification";
+        const test_value = data?.orther_model_scores[0]?.scores?.f1
+
+        if (!test_value && problemType) {
+          getMetrics(problemType);
+        }else {
+          setMetrics({
+            0: "accuracy",
+            1: "f1",
+            2: "precision",
+            3: "recall"
+          })
+        }
+      
       } catch (err) {
         console.log("Lỗi khi gọi API:", err);
-        setError("Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.");
+        setError(
+          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính."
+        );
       } finally {
         setIsLoading(false);
       }
     }
-  }, [datasetID]);
+  }, [datasetID, getMetrics]);
 
   useEffect(() => {
     fetchDataResult();
   }, [datasetID, fetchDataResult]);
-
 
   if (error) {
     return (
@@ -87,7 +128,9 @@ const ResultPage = ({ params }: Props) => {
         <Card className="w-full max-w-md shadow-lg border border-red-300">
           <CardHeader className="flex flex-row items-center gap-3">
             <AlertCircle className="text-red-500" />
-            <CardTitle className="text-red-600 text-lg">Đã xảy ra lỗi</CardTitle>
+            <CardTitle className="text-red-600 text-lg">
+              Đã xảy ra lỗi
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-700">{error}</p>
@@ -97,34 +140,35 @@ const ResultPage = ({ params }: Props) => {
     );
   }
 
-  // Chart data
-  const chartData = result?.orther_model_scores?.map((model: any) => ({
-    name: model.model_name,
-    accuracy: model.scores.accuracy,
-    f1: model.scores.f1,
-    precision: model.scores.precision,
-    recall: model.scores.recall,
-  }));
 
+  // Setup biểu đồ
   // Chart config
-  const chartConfig = {
-    accuracy: {
-      label: "Accuracy",
-      color: "#102E50",
+  const randomColor = () => `hsl(${Math.floor(Math.random() * 360)}, 70%, 45%)`;
+
+  const chartConfig = Object.entries(metrics).reduce(
+    (config: any, [key, value]) => {
+      config[key] = {
+        label: value, // <-- HIỂN THỊ CHỮ NÀY
+        value: value, // dùng để map scores
+        color: randomColor(),
+      };
+      return config;
     },
-    f1: {
-      label: "F1",
-      color: "#EAB308",
-    },
-    precision: {
-      label: "Precision",
-      color: "#F43F5E",
-    },
-    recall: {
-      label: "Recall",
-      color: "#169976",
-    },
-  } satisfies ChartConfig;
+    {}
+  ) satisfies ChartConfig;
+
+  // Chart data
+  const chartData = result?.orther_model_scores?.map((model: any) => {
+    const row: any = {
+      name: model.model_name,
+    };
+
+    Object.entries(chartConfig).forEach(([key, metric]: any) => {
+      row[key] = model.scores?.[metric.value]; // map đúng
+    });
+
+    return row;
+  });
 
   return (
     <div className="relative p-6">
@@ -171,23 +215,29 @@ const ResultPage = ({ params }: Props) => {
             </p>
 
             <Table className="mt-4 p-4">
-            <TableHeader>
-              <TableRow className="text-center">
-                <TableHead className="text-center">Mô hình huấn luyện</TableHead>
-                <TableHead className="text-center">Thuộc tính mục tiêu</TableHead>
-                <TableHead className="text-center">Thuộc tính huấn luyện</TableHead>
-                <TableHead className="text-center">Chỉ số đánh giá</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell>{result.config.choose}</TableCell>
-                <TableCell>{result.config.target}</TableCell>
-                <TableCell>{result.config.list_feature.join(", ")}</TableCell>
-                <TableCell>{result.config.metric_sort}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+              <TableHeader>
+                <TableRow className="text-center">
+                  <TableHead className="text-center">
+                    Mô hình huấn luyện
+                  </TableHead>
+                  <TableHead className="text-center">
+                    Thuộc tính mục tiêu
+                  </TableHead>
+                  <TableHead className="text-center">
+                    Thuộc tính huấn luyện
+                  </TableHead>
+                  <TableHead className="text-center">Chỉ số đánh giá</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>{result.config.choose}</TableCell>
+                  <TableCell>{result.config.target}</TableCell>
+                  <TableCell>{result.config.list_feature.join(", ")}</TableCell>
+                  <TableCell>{result.config.metric_sort}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Bảng thông tin các mô hình khác */}
@@ -212,6 +262,7 @@ const ResultPage = ({ params }: Props) => {
               >
                 <BarChart accessibilityLayer data={chartData}>
                   <CartesianGrid vertical={false} />
+
                   <XAxis
                     dataKey="name"
                     tickLine={false}
@@ -221,25 +272,22 @@ const ResultPage = ({ params }: Props) => {
                       value.replace(/([a-z])([A-Z])/g, "$1 $2")
                     }
                   />
-                  <YAxis
-                    domain={[0, 1]}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+
+                  <YAxis domain={[0, 1]} tickLine={false} axisLine={false} />
+
                   <ChartTooltip content={<ChartTooltipContent />} />
+
+                  {/* Chú thích */}
                   <ChartLegend content={<ChartLegendContent />} />
-                  <Bar
-                    dataKey="accuracy"
-                    fill="var(--color-accuracy)"
-                    radius={4}
-                  />
-                  <Bar dataKey="f1" fill="var(--color-f1)" radius={4} />
-                  <Bar
-                    dataKey="precision"
-                    fill="var(--color-precision)"
-                    radius={4}
-                  />
-                  <Bar dataKey="recall" fill="var(--color-recall)" radius={4} />
+
+                  {Object.entries(chartConfig).map(([key]) => (
+                    <Bar
+                      key={key}
+                      dataKey={key} //
+                      fill={`var(--color-${key})`}
+                      radius={4}
+                    />
+                  ))}
                 </BarChart>
               </ChartContainer>
             ) : (
@@ -247,21 +295,24 @@ const ResultPage = ({ params }: Props) => {
                 <TableHeader>
                   <TableRow className="text-center">
                     <TableHead className="text-center">Model</TableHead>
-                    <TableHead className="text-center">Accuracy</TableHead>
-                    <TableHead className="text-center">F1</TableHead>
-                    <TableHead className="text-center">Precision</TableHead>
-                    <TableHead className="text-center">Recall</TableHead>
+                    {Object.entries(metrics).map(([metric, value]) => (
+                      <TableHead key={metric} className="text-center">
+                        {toTitleLabel(value)}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {result.orther_model_scores.map(
                     (model: any, index: number) => (
-                      <TableRow key={index}>
+                      <TableRow key={index} className="text-center">
                         <TableCell>{model.model_name}</TableCell>
-                        <TableCell>{model.scores.accuracy}</TableCell>
-                        <TableCell>{model.scores.f1}</TableCell>
-                        <TableCell>{model.scores.precision}</TableCell>
-                        <TableCell>{model.scores.recall}</TableCell>
+
+                        {Object.values(metrics).map((metricKey: string) => (
+                          <TableCell key={metricKey}>
+                            {model.scores?.[metricKey]?.toFixed(6) ?? "-"}
+                          </TableCell>
+                        ))}
                       </TableRow>
                     )
                   )}

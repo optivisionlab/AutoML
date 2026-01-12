@@ -18,4 +18,3 @@ ENV PYTHONPATH="/app"
 
 # Chỉ định trong docker-compose để tận dụng luôn image
 # CMD ["python", "app.py"]
-
