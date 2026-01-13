@@ -28,6 +28,7 @@ import { AppDispatch } from "@/redux/store";
 import { registerAsync } from "@/redux/slices/registerSlice";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+import { signIn } from "next-auth/react";
 
 const registerSchema = z
   .object({
@@ -49,7 +50,7 @@ const registerSchema = z
     date: z.string(),
     number: z.string().regex(/^0(3|5|7|8|9)[0-9]{8}$/, {
       message: "Số điện thoại không hợp lệ",
-    }),    
+    }),
     password: z
       .string()
       .min(8, {
@@ -113,6 +114,13 @@ const RegisterForm = () => {
         className: "bg-green-100 text-green-800 border border-green-300",
         description: "Bạn đã đăng ký thành công!",
       });
+
+      signIn("credentials", {
+        username: values.username,
+        password: values.password,
+        redirect: false,
+        callbackUrl: "/",
+      });
     } catch (error) {
       toast({
         title: "Đăng ký thất bại",
@@ -143,7 +151,12 @@ const RegisterForm = () => {
                   <FormItem>
                     <FormLabel>Họ và tên</FormLabel>
                     <FormControl>
-                      <Input {...field} type="text" placeholder="Nguyễn Văn A" value={field.value ?? ""}/>
+                      <Input
+                        {...field}
+                        type="text"
+                        placeholder="Nguyễn Văn A"
+                        value={field.value ?? ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -316,7 +329,10 @@ const RegisterForm = () => {
               )}
             />
           </div>
-          <Button type="submit" className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]">
+          <Button
+            type="submit"
+            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+          >
             Đăng ký
           </Button>
         </form>
