@@ -1,8 +1,6 @@
 import copy
 import logging
-import os
 import random
-import yaml
 from datetime import datetime
 from typing import List, Dict, Any, Tuple
 
@@ -12,7 +10,7 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 
-from automl.search.strategy.base import SearchStrategy, validate_param_grid
+from automl.search.strategy.base import SearchStrategy, normalize_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -51,84 +49,75 @@ class GeneticAlgorithm(SearchStrategy):
     def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
         """Mã hóa lưới tham số cho thuật toán di truyền.
         
-        Hỗ trợ list-of-dicts format. Mỗi dict trong list được xử lý riêng biệt,
-        và các cá thể sẽ được gán vào một grid_idx cụ thể.
+        Hỗ trợ list-of-dicts format. Mỗi grid có encoding riêng để đảm bảo
+        decode đúng giá trị.
         """
-        # Xóa ranh giới và kiểu tham số trước đó để tránh nhiễm chéo giữa các mô hình
+        # Xóa dữ liệu cũ
         self.param_bounds.clear()
         self.param_types.clear()
-        
-        # Validate và xử lý list-of-dicts format
-        param_grid_list = validate_param_grid(param_grid)
-        
-        # Lưu danh sách các grid để sử dụng sau
+
+        # Chuẩn hóa param_grid về list-of-dicts format
+        param_grid_list = normalize_param_grid(param_grid)
+
+        # Lưu danh sách các grid
         self._param_grid_list = param_grid_list
         self._num_grids = len(param_grid_list)
-        
-        # Gộp tất cả các tham số từ tất cả các grid
-        all_params = {}
-        for single_grid in param_grid_list:
+
+        # Tạo encoding riêng cho từng grid
+        self._grid_encodings = []
+        for grid_idx, single_grid in enumerate(param_grid_list):
+            grid_encoding = {
+                'param_bounds': {},
+                'param_types': {}
+            }
             for param_name, param_values in single_grid.items():
-                if param_name not in all_params:
-                    all_params[param_name] = set()
                 if isinstance(param_values, list):
-                    all_params[param_name].update(param_values)
+                    grid_encoding['param_bounds'][param_name] = (0, len(param_values) - 1)
+                    grid_encoding['param_types'][param_name] = ('categorical', param_values)
                 elif isinstance(param_values, tuple) and len(param_values) == 2:
-                    all_params[param_name] = param_values  # Range tuple
+                    min_val, max_val = param_values
+                    grid_encoding['param_bounds'][param_name] = (min_val, max_val)
+                    if isinstance(min_val, int) and isinstance(max_val, int):
+                        grid_encoding['param_types'][param_name] = ('integer', None)
+                    else:
+                        grid_encoding['param_types'][param_name] = ('continuous', None)
+            self._grid_encodings.append(grid_encoding)
 
-        encoded_grid = {}
+        # Tạo param_bounds và param_types tổng hợp (cho compatibility)
+        # Sử dụng grid đầu tiên làm mặc định
+        if self._grid_encodings:
+            self.param_bounds = self._grid_encodings[0]['param_bounds'].copy()
+            self.param_types = self._grid_encodings[0]['param_types'].copy()
 
-        for param_name, param_values in all_params.items():
-            if isinstance(param_values, set):
-                param_values = sorted(list(param_values), key=lambda x: (x is None, str(x)))
-            
-            if isinstance(param_values, list):
-                encoded_grid[param_name] = list(range(len(param_values)))
-                self.param_bounds[param_name] = (0, len(param_values) - 1)
-                self.param_types[param_name] = ('categorical', param_values)
-            elif isinstance(param_values, tuple) and len(param_values) == 2:
-                min_val, max_val = param_values
-                encoded_grid[param_name] = (min_val, max_val)
-                self.param_bounds[param_name] = (min_val, max_val)
-                if isinstance(min_val, int) and isinstance(max_val, int):
-                    self.param_types[param_name] = ('integer', None)
-                else:
-                    self.param_types[param_name] = ('continuous', None)
-            else:
-                raise ValueError(f"Kiểu tham số không được hỗ trợ cho {param_name}: {type(param_values)}")
-
-        return encoded_grid
+        return {}
 
     def _decode_individual(self, individual: Dict[str, float]) -> Dict[str, Any]:
-        """Giải mã cá thể từ biểu diễn di truyền sang giá trị tham số thực tế với bộ nhớ đệm."""
+        """Giải mã cá thể từ biểu diễn di truyền sang giá trị tham số thực tế."""
         # Kiểm tra bộ nhớ đệm trước
         cache_key = self._make_hashable(individual)
         if cache_key in self._decode_cache:
             return self._decode_cache[cache_key].copy()
 
         decoded = {}
-        
+
         # Lấy grid_idx từ cá thể
         grid_idx = int(individual.get('_grid_idx', 0))
-        
-        # Lấy các tham số thuộc grid này
-        grid_params = set()
-        if hasattr(self, '_param_grid_list') and self._param_grid_list and grid_idx < len(self._param_grid_list):
-            grid_params = set(self._param_grid_list[grid_idx].keys())
+
+        # Lấy encoding của grid này
+        if hasattr(self, '_grid_encodings') and grid_idx < len(self._grid_encodings):
+            grid_encoding = self._grid_encodings[grid_idx]
+            param_types = grid_encoding['param_types']
+        else:
+            param_types = self.param_types
 
         for param_name, value in individual.items():
-            # Bỏ qua trường _grid_idx
             if param_name == '_grid_idx':
                 continue
-                
-            # Chỉ decode các tham số thuộc grid của cá thể này
-            if grid_params and param_name not in grid_params:
+
+            if param_name not in param_types:
                 continue
-            
-            if param_name not in self.param_types:
-                continue
-                
-            param_type, param_values = self.param_types[param_name]
+
+            param_type, param_values = param_types[param_name]
 
             if param_type == 'categorical':
                 index = int(round(value))
@@ -139,10 +128,7 @@ class GeneticAlgorithm(SearchStrategy):
             else:
                 decoded[param_name] = float(value)
 
-        # Chuyển kiểu numpy sang kiểu Python gốc
         decoded = SearchStrategy.convert_numpy_types(decoded)
-
-        # Lưu kết quả vào bộ nhớ đệm
         self._decode_cache[cache_key] = decoded
         return decoded
 
@@ -153,66 +139,39 @@ class GeneticAlgorithm(SearchStrategy):
             grid_idx: Chỉ số của grid trong list-of-dicts. Nếu None, chọn ngẫu nhiên.
         """
         individual = {}
-        
+
         # Chọn grid_idx nếu chưa được chỉ định
         if grid_idx is None:
             grid_idx = random.randint(0, self._num_grids - 1) if self._num_grids > 0 else 0
-        
+
         # Lưu grid_idx vào cá thể
         individual['_grid_idx'] = float(grid_idx)
-        
-        # Lấy các tham số từ grid được chọn
-        if hasattr(self, '_param_grid_list') and self._param_grid_list:
-            selected_grid = self._param_grid_list[grid_idx] if grid_idx < len(self._param_grid_list) else {}
-            
-            for param_name, (min_val, max_val) in self.param_bounds.items():
-                if param_name in selected_grid:
-                    # Tham số thuộc grid này - tạo giá trị ngẫu nhiên trong phạm vi
-                    individual[param_name] = random.uniform(min_val, max_val)
-                else:
-                    # Tham số không thuộc grid này - đặt giá trị mặc định (0)
-                    individual[param_name] = 0.0
+
+        # Lấy encoding của grid được chọn
+        if hasattr(self, '_grid_encodings') and grid_idx < len(self._grid_encodings):
+            grid_encoding = self._grid_encodings[grid_idx]
+            param_bounds = grid_encoding['param_bounds']
         else:
-            # Fallback cho trường hợp không có _param_grid_list
-            for param_name, (min_val, max_val) in self.param_bounds.items():
-                individual[param_name] = random.uniform(min_val, max_val)
+            param_bounds = self.param_bounds
+
+        # Tạo giá trị ngẫu nhiên cho các tham số của grid này
+        for param_name, (min_val, max_val) in param_bounds.items():
+            individual[param_name] = random.uniform(min_val, max_val)
 
         return individual
 
     def _create_smart_population(self, size: int) -> List[Dict[str, float]]:
-        """Tạo quần thể ban đầu sử dụng khởi tạo thông minh (lưới và ngẫu nhiên)."""
+        """Tạo quần thể ban đầu sử dụng khởi tạo thông minh."""
         population = []
 
-        # Tạo lưới nhỏ cho mỗi tham số (2-3 điểm mỗi tham số)
-        grid_points = {}
-        for param_name, (min_val, max_val) in self.param_bounds.items():
-            param_type, _ = self.param_types[param_name]
-            if param_type == 'categorical':
-                # Với kiểu phân loại, lấy mẫu đều
-                n_values = int(max_val - min_val + 1)
-                if n_values <= 3:
-                    grid_points[param_name] = [float(i) for i in range(int(min_val), int(max_val) + 1)]
-                    continue
+        # Phân bổ đều số cá thể cho mỗi grid
+        individuals_per_grid = max(1, size // self._num_grids) if self._num_grids > 0 else size
 
-            # Với các trường hợp khác (phân loại với > 3 giá trị, liên tục, nguyên), dùng 3 điểm: min, giữa, max
-            grid_points[param_name] = [min_val, (min_val + max_val) / 2, max_val]
-
-        # Tạo các tổ hợp lưới (nhưng giới hạn theo kích thước quần thể)
-        import itertools
-        all_combinations = list(itertools.product(*[grid_points[p] for p in self.param_bounds.keys()]))
-
-        # Nếu có ít tổ hợp hơn kích thước quần thể, dùng tất cả
-        if len(all_combinations) <= size:
-            for combo in all_combinations:
-                individual = dict(zip(self.param_bounds.keys(), combo))
-                population.append(individual)
-        else:
-            # Lấy mẫu từ các tổ hợp
-            selected_indices = random.sample(range(len(all_combinations)), min(size // 2, len(all_combinations)))
-            for idx in selected_indices:
-                combo = all_combinations[idx]
-                individual = dict(zip(self.param_bounds.keys(), combo))
-                population.append(individual)
+        for grid_idx in range(self._num_grids):
+            for _ in range(individuals_per_grid):
+                if len(population) >= size:
+                    break
+                population.append(self._create_individual(grid_idx))
 
         # Điền phần còn lại bằng các cá thể ngẫu nhiên
         while len(population) < size:
@@ -279,9 +238,45 @@ class GeneticAlgorithm(SearchStrategy):
             else:
                 return {'accuracy': 0.0}
 
-    def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores) -> Dict[
-        str, float]:
-        """Chọn cá thể sử dụng chọn lọc đấu trường với tối ưu hóa numpy."""
+    def _get_adaptive_tournament_size(self, diversity: float, population_size: int) -> int:
+        """
+        Tính tournament size thích ứng dựa trên diversity.
+        
+        - Diversity thấp: giảm tournament size để tăng exploration
+        - Diversity cao: tăng tournament size để tăng exploitation
+        
+        Args:
+            diversity: Độ đa dạng của quần thể (0-1)
+            population_size: Kích thước quần thể
+            
+        Returns:
+            int: Tournament size tối ưu
+        """
+        base_size = self.config.get('tournament_size', 3)
+
+        if not self.config.get('adaptive_tournament_size', False):
+            return min(base_size, population_size)
+
+        if diversity < 0.1:
+            # Diversity thấp: giảm selection pressure để tăng exploration
+            adaptive_size = max(2, base_size - 1)
+        elif diversity > 0.5:
+            # Diversity cao: tăng selection pressure để tăng exploitation
+            adaptive_size = min(population_size // 2, base_size + 1)
+        else:
+            adaptive_size = base_size
+
+        return min(adaptive_size, population_size)
+
+    def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores, diversity: float = None) -> Dict[str, float]:
+        """
+        Chọn cá thể sử dụng chọn lọc đấu trường với tối ưu hóa numpy.
+        
+        Args:
+            population: Danh sách các cá thể
+            fitness_scores: Điểm fitness của từng cá thể
+            diversity: Độ đa dạng quần thể (optional, cho adaptive tournament size)
+        """
         # Xử lý cả kiểu numpy array và list
         if not population:
             raise ValueError("Quần thể không thể trống")
@@ -291,8 +286,12 @@ class GeneticAlgorithm(SearchStrategy):
         elif not fitness_scores:
             raise ValueError("Điểm độ thích nghi không thể trống")
 
-        # Đảm bảo kích thước đấu trường không vượt quá kích thước quần thể
-        tournament_size = min(self.config['tournament_size'], len(population))
+        # Sử dụng adaptive tournament size nếu có diversity
+        if diversity is not None and self.config.get('adaptive_tournament_size', False):
+            tournament_size = self._get_adaptive_tournament_size(diversity, len(population))
+        else:
+            tournament_size = min(self.config['tournament_size'], len(population))
+
         # Sử dụng numpy để chọn nhanh hơn nếu fitness_scores là numpy array
         if isinstance(fitness_scores, np.ndarray):
             tournament_indices = np.random.choice(len(population), size=tournament_size, replace=False)
@@ -312,18 +311,26 @@ class GeneticAlgorithm(SearchStrategy):
         """
         if random.random() > self.config['crossover_rate']:
             return parent1.copy(), parent2.copy()
-        
+
         # Kiểm tra xem hai cá thể có thuộc cùng grid group không
         grid_idx1 = int(parent1.get('_grid_idx', 0))
         grid_idx2 = int(parent2.get('_grid_idx', 0))
-        
+
         # Nếu khác grid group, không lai ghép - trả về bản sao
         if grid_idx1 != grid_idx2:
             return parent1.copy(), parent2.copy()
 
+        # Lấy encoding của grid
+        if hasattr(self, '_grid_encodings') and grid_idx1 < len(self._grid_encodings):
+            grid_encoding = self._grid_encodings[grid_idx1]
+            param_bounds = grid_encoding['param_bounds']
+            param_types = grid_encoding['param_types']
+        else:
+            param_bounds = self.param_bounds
+            param_types = self.param_types
+
         # Lai ghép đơn giản siêu nhanh
         if self.config.get('simple_crossover', False):
-            # Lai ghép đồng nhất đơn giản - chỉ hoán đổi một nửa tham số
             child1 = parent1.copy()
             child2 = parent2.copy()
             params = [p for p in parent1.keys() if p != '_grid_idx']
@@ -337,36 +344,30 @@ class GeneticAlgorithm(SearchStrategy):
         child2 = parent2.copy()
 
         for param_name in parent1.keys():
-            # Bỏ qua trường _grid_idx
             if param_name == '_grid_idx':
                 continue
-                
-            if param_name not in self.param_types:
+
+            if param_name not in param_types:
                 continue
-                
-            param_type, param_values = self.param_types[param_name]
+
+            param_type, param_values = param_types[param_name]
 
             if param_type == 'categorical':
-                # Với tham số phân loại, sử dụng lai ghép đồng nhất
                 if random.random() < 0.5:
                     child1[param_name], child2[param_name] = child2[param_name], child1[param_name]
             else:
-                # Với tham số liên tục/nguyên, sử dụng lai ghép pha trộn (BLX-α)
-                alpha = self.config.get('alpha', 0.5)  # Hệ số pha trộn
+                alpha = self.config.get('alpha', 0.5)
                 min_val = min(parent1[param_name], parent2[param_name])
                 max_val = max(parent1[param_name], parent2[param_name])
                 range_val = max_val - min_val
 
-                # Mở rộng khoảng theo hệ số alpha ở cả hai phía
                 lower = min_val - alpha * range_val
                 upper = max_val + alpha * range_val
 
-                # Đảm bảo tuân thủ ranh giới
-                param_min, param_max = self.param_bounds[param_name]
+                param_min, param_max = param_bounds[param_name]
                 lower = max(lower, param_min)
                 upper = min(upper, param_max)
 
-                # Tạo giá trị ngẫu nhiên trong phạm vi mở rộng
                 child1[param_name] = random.uniform(lower, upper)
                 child2[param_name] = random.uniform(lower, upper)
 
@@ -374,43 +375,43 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _mutate(self, individual: Dict[str, float], generation: int = 0, max_generation: int = None) -> Dict[
         str, float]:
-        """Đột biến cá thể với cường độ đột biến thích nghi.
-        
-        Args:
-            individual: Cá thể cần đột biến
-            generation: Số thế hệ hiện tại (cho đột biến thích nghi)
-            max_generation: Số thế hệ tối đa (cho đột biến thích nghi)
-        """
+        """Đột biến cá thể với cường độ đột biến thích nghi."""
         mutated = individual.copy()
 
-        # Tỷ lệ đột biến thích nghi giảm dần khi các thế hệ tiến triển
+        # Lấy grid_idx và encoding tương ứng
+        grid_idx = int(individual.get('_grid_idx', 0))
+        if hasattr(self, '_grid_encodings') and grid_idx < len(self._grid_encodings):
+            grid_encoding = self._grid_encodings[grid_idx]
+            param_bounds = grid_encoding['param_bounds']
+            param_types = grid_encoding['param_types']
+        else:
+            param_bounds = self.param_bounds
+            param_types = self.param_types
+
+        # Tỷ lệ đột biến thích nghi
         if max_generation and max_generation > 0:
             adaptive_rate = self.config['mutation_rate'] * (1 - generation / max_generation)
         else:
             adaptive_rate = self.config['mutation_rate']
 
         for param_name in mutated.keys():
-            # Bỏ qua trường _grid_idx - không đột biến
             if param_name == '_grid_idx':
                 continue
-                
-            if param_name not in self.param_bounds or param_name not in self.param_types:
-                continue
-                
-            if random.random() < adaptive_rate:
-                min_val, max_val = self.param_bounds[param_name]
-                param_type, param_values = self.param_types[param_name]
 
+            if param_name not in param_bounds or param_name not in param_types:
+                continue
+
+            if random.random() < adaptive_rate:
+                min_val, max_val = param_bounds[param_name]
+                param_type, param_values = param_types[param_name]
                 current_val = mutated[param_name]
 
                 if param_type == 'categorical':
-                    # Với kiểu phân loại, chọn một giá trị khác ngẫu nhiên
                     possible_values = list(range(int(min_val), int(max_val) + 1))
                     if len(possible_values) > 1:
                         possible_values.remove(int(round(current_val)))
                         mutated[param_name] = float(random.choice(possible_values))
                 else:
-                    # Với kiểu liên tục/nguyên, dùng đột biến Gauss với cường độ thích nghi
                     mutation_strength = (max_val - min_val) * (
                         0.2 * (1 - generation / (max_generation + 1)) if max_generation else 0.1)
                     new_val = current_val + random.gauss(0, mutation_strength)
@@ -474,8 +475,9 @@ class GeneticAlgorithm(SearchStrategy):
 
         # Điền phần còn lại bằng selection + crossover + mutation
         while len(new_population) < population_size:
-            parent1 = self._tournament_selection(population, fitness_scores)
-            parent2 = self._tournament_selection(population, fitness_scores)
+            # Truyền diversity cho adaptive tournament selection
+            parent1 = self._tournament_selection(population, fitness_scores, diversity)
+            parent2 = self._tournament_selection(population, fitness_scores, diversity)
 
             # Tạm thời sử dụng tỷ lệ lai ghép thích ứng
             original_rate = self.config['crossover_rate']
@@ -494,46 +496,148 @@ class GeneticAlgorithm(SearchStrategy):
 
         return new_population
 
-    def _calculate_population_diversity(self, population: List[Dict[str, float]]) -> float:
-        """Tính độ đa dạng của quần thể sử dụng khoảng cách trung bình theo cặp."""
+    def _calculate_population_diversity_fast(self, population: List[Dict[str, float]]) -> float:
+        """
+        Tính độ đa dạng của quần thể với độ phức tạp O(n).
+        
+        Sử dụng variance của mỗi parameter thay vì so sánh pairwise.
+        Nhanh hơn nhiều cho quần thể lớn.
+        
+        Args:
+            population: Danh sách các cá thể
+            
+        Returns:
+            float: Độ đa dạng normalized (0-1)
+        """
         if len(population) < 2:
             return 0.0
 
+        # Nhóm cá thể theo grid
+        grid_groups = {}
+        for ind in population:
+            grid_idx = int(ind.get('_grid_idx', 0))
+            if grid_idx not in grid_groups:
+                grid_groups[grid_idx] = []
+            grid_groups[grid_idx].append(ind)
+
+        total_diversity = 0.0
+        total_weight = 0
+
+        for grid_idx, group in grid_groups.items():
+            if len(group) < 2:
+                continue
+
+            # Lấy encoding của grid
+            if hasattr(self, '_grid_encodings') and grid_idx < len(self._grid_encodings):
+                param_bounds = self._grid_encodings[grid_idx]['param_bounds']
+                param_types = self._grid_encodings[grid_idx]['param_types']
+            else:
+                param_bounds = self.param_bounds
+                param_types = self.param_types
+
+            # Tính variance cho mỗi parameter
+            param_diversities = []
+            for param_name in param_bounds.keys():
+                if param_name == '_grid_idx':
+                    continue
+
+                values = [ind.get(param_name, 0) for ind in group]
+                param_type, _ = param_types.get(param_name, ('continuous', None))
+
+                if param_type == 'categorical':
+                    # Cho categorical: tính tỷ lệ unique values
+                    unique_ratio = len(set(values)) / len(values)
+                    param_diversities.append(unique_ratio)
+                else:
+                    # Cho continuous/integer: tính normalized variance
+                    min_val, max_val = param_bounds[param_name]
+                    if max_val != min_val:
+                        normalized_values = [(v - min_val) / (max_val - min_val) for v in values]
+                        variance = np.var(normalized_values)
+                        # Chuẩn hóa phương sai (phương sai lý thuyết tối đa là 0.25 đối với phân phối đều)
+                        param_diversities.append(min(1.0, variance * 4))
+                    else:
+                        param_diversities.append(0.0)
+
+            if param_diversities:
+                group_diversity = np.mean(param_diversities)
+                total_diversity += group_diversity * len(group)
+                total_weight += len(group)
+
+        # Thêm diversity từ việc có nhiều grids
+        if len(grid_groups) > 1:
+            grid_diversity = len(grid_groups) / self._num_grids if self._num_grids > 0 else 0
+            total_diversity = (total_diversity / total_weight if total_weight > 0 else 0) * 0.7 + grid_diversity * 0.3
+        elif total_weight > 0:
+            total_diversity = total_diversity / total_weight
+
+        return total_diversity
+
+    def _calculate_population_diversity(self, population: List[Dict[str, float]]) -> float:
+        """
+        Tính độ đa dạng của quần thể.
+        
+        Tự động chọn phương pháp tối ưu dựa trên kích thước quần thể:
+        - Quần thể nhỏ (< 20): sử dụng pairwise comparison (chính xác hơn)
+        - Quần thể lớn (>= 20): sử dụng variance-based (nhanh hơn)
+        """
+        if len(population) < 2:
+            return 0.0
+
+        # Sử dụng fast method cho quần thể lớn
+        use_fast = self.config.get('fast_diversity', True)
+        if use_fast and len(population) >= 20:
+            return self._calculate_population_diversity_fast(population)
+
+        # Pairwise comparison cho quần thể nhỏ (chính xác hơn)
         total_distance = 0
         count = 0
 
         for i in range(len(population)):
             for j in range(i + 1, len(population)):
-                distance = 0
-                param_count = 0
-                for param_name in population[i].keys():
-                    # Bỏ qua trường _grid_idx
-                    if param_name == '_grid_idx':
-                        continue
-                    if param_name not in self.param_types:
-                        continue
-                        
-                    param_type, _ = self.param_types[param_name]
-                    param_count += 1
-                    if param_type == 'categorical':
-                        # Với kiểu phân loại, dùng khoảng cách 0/1
-                        distance += 0 if population[i][param_name] == population[j][param_name] else 1
-                    else:
-                        # Với kiểu liên tục/nguyên, chuẩn hóa khoảng cách
-                        min_val, max_val = self.param_bounds[param_name]
-                        if max_val != min_val:
-                            normalized_diff = abs(population[i][param_name] - population[j][param_name]) / (
-                                    max_val - min_val)
-                            distance += normalized_diff
+                # Chỉ so sánh cá thể cùng grid
+                grid_i = int(population[i].get('_grid_idx', 0))
+                grid_j = int(population[j].get('_grid_idx', 0))
 
-                if param_count > 0:
-                    total_distance += distance / param_count  # Trung bình trên các tham số
+                if grid_i != grid_j:
+                    distance = 1.0  # Khác grid = khoảng cách tối đa
+                else:
+                    # Lấy encoding của grid
+                    if hasattr(self, '_grid_encodings') and grid_i < len(self._grid_encodings):
+                        param_bounds = self._grid_encodings[grid_i]['param_bounds']
+                        param_types = self._grid_encodings[grid_i]['param_types']
+                    else:
+                        param_bounds = self.param_bounds
+                        param_types = self.param_types
+
+                    distance = 0
+                    param_count = 0
+                    for param_name in population[i].keys():
+                        if param_name == '_grid_idx':
+                            continue
+                        if param_name not in param_types:
+                            continue
+
+                        param_type, _ = param_types[param_name]
+                        param_count += 1
+                        if param_type == 'categorical':
+                            distance += 0 if population[i][param_name] == population[j][param_name] else 1
+                        else:
+                            min_val, max_val = param_bounds[param_name]
+                            if max_val != min_val:
+                                normalized_diff = abs(population[i][param_name] - population[j][param_name]) / (max_val - min_val)
+                                distance += normalized_diff
+
+                    if param_count > 0:
+                        distance = distance / param_count
+
+                total_distance += distance
                 count += 1
 
         return total_distance / count if count > 0 else 0.0
 
-    def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator,
-                                      X: np.ndarray, y: np.ndarray) -> List[Dict[str, float]]:
+    def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator, X: np.ndarray,
+                                      y: np.ndarray) -> List[Dict[str, float]]:
         """Evaluate all individuals in parallel with smart optimization."""
         n_jobs = self.config.get('n_jobs', -1)
 
@@ -570,15 +674,13 @@ class GeneticAlgorithm(SearchStrategy):
             backend = 'threading' if cv_folds <= 3 else 'loky'
 
             results = Parallel(n_jobs=optimal_jobs, backend=backend)(
-                delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y)
-                for individual in population
-            )
+                delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y) for individual in population)
             return results
         else:
             # Tuần tự nhanh hơn cho quần thể nhỏ
             return [self._evaluate_individual(individual, model, X, y) for individual in population]
 
-    def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
+    def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]], X: np.ndarray, y: np.ndarray, **kwargs):
         """Thực thi tìm kiếm thuật toán di truyền với các tính năng vòng lặp nâng cao.
 
                Args:
@@ -758,13 +860,14 @@ class GeneticAlgorithm(SearchStrategy):
             # Theo dõi hội tụ với các phép toán numpy
             mean_fitness = fitness_scores.mean()
             std_fitness = fitness_scores.std()
-            convergence_history.append({
-                'generation': generation + 1,
-                'best': best_score,
-                'mean': mean_fitness,
-                'std': std_fitness,
-                'diversity': diversity
-            })
+            convergence_history.append(
+                {
+                    'generation': generation + 1,
+                    'best': best_score,
+                    'mean': mean_fitness,
+                    'std': std_fitness,
+                    'diversity': diversity
+                })
 
             # Cập nhật tiến trình với kết quả thế hệ
             generation_time = (datetime.now() - generation_start_time).total_seconds()
@@ -812,9 +915,7 @@ class GeneticAlgorithm(SearchStrategy):
                     logger.info(" Hoàn thành tiêm đa dạng!")
 
             # Tạo thế hệ tiếp theo
-            population = self._create_next_generation(
-                population, fitness_scores, diversity, generation, actual_population_size
-            )
+            population = self._create_next_generation(population, fitness_scores, diversity, generation, actual_population_size)
 
         # Sau tất cả các thế hệ, giải mã cá thể tốt nhất tìm được để lấy siêu tham số tốt nhất
         best_params = self._decode_individual(best_individual) if best_individual else {}

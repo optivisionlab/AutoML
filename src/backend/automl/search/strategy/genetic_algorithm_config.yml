@@ -14,6 +14,7 @@ early_stopping_enabled: true
 # Toán tử di truyền
 mutation_rate: 0.2  # Cao hơn để khám phá nhanh hơn
 crossover_rate: 0.9  # Tỷ lệ lai ghép rất cao
+adaptive_tournament_size: true  # Tự động điều chỉnh tournament size theo diversity
 
 # Cài đặt chọn lọc
 elite_size: 2  # Số lượng cá thể ưu tú tối thiểu
@@ -31,8 +32,9 @@ convergence_threshold: 0.002  # Ít nghiêm ngặt hơn để hội tụ nhanh h
 # Tối ưu hóa tốc độ
 fast_mode: true  # Bật tất cả tối ưu hóa tốc độ
 ultra_fast_mode: true  # Bật chế độ siêu nhanh
-skip_diversity_check: true  # Bỏ qua tính toán đa dạng để tăng tốc
+skip_diversity_check: false  # Tính toán đa dạng cho adaptive operators
 simple_crossover: true  # Sử dụng lai ghép đơn giản để tăng tốc
+fast_diversity: true  # Sử dụng O(n) diversity calculation thay vì O(n²)
 
 # Cài đặt lai ghép
 alpha: 0.5  # Hệ số pha trộn cho lai ghép BLX-α
