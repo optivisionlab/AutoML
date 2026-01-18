@@ -37,9 +37,13 @@ def get_models(problem_type: str):
     
     models = {}
     for key, model_info in data[f'{problem_type.capitalize()}_models'].items():
+        params = model_info.get('params')
+        # Xử lý None/empty params - trả về list với dict rỗng
+        if params is None or params == []:
+            params = [{}]
         models[key] = {
             "model": model_info["model"],
-            "params": model_info['params'] if model_info['params'] is not None else {} 
+            "params": params
         }
 
     metric_list = data['metric_list']

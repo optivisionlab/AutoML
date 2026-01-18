@@ -11,7 +11,7 @@ from skopt.space import Categorical
 from skopt.utils import use_named_args
 from collections import Counter
 
-from automl.search.strategy.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy, validate_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         Args:
             model (BaseEstimator): Mô hình scikit-learn.
-            param_grid (Dict[str, Any]): Một dictionary trong đó key là tên tham số và 
+            param_grid (Dict[str, Any]): Một list-of-dicts trong đó mỗi dict chứa key là tên tham số và 
                                          value là một dimension của skopt (Real, Integer, Categorical).
             X (np.ndarray): Dữ liệu features.
             y (np.ndarray): Dữ liệu target.
@@ -110,6 +110,63 @@ class BayesianSearchStrategy(SearchStrategy):
                 - cv_results_: Từ điển với kết quả cross-validation chi tiết
         """
         self.set_config(**kwargs)
+        
+        # Validate và xử lý list-of-dicts format
+        param_grid_list = validate_param_grid(param_grid)
+        
+        # Chạy tối ưu hóa trên từng grid và trả về kết quả tốt nhất
+        all_results = []
+        all_cv_results = []
+        
+        for grid_idx, single_grid in enumerate(param_grid_list):
+            if not single_grid:
+                continue
+            
+            if self.config.get('verbose', 1) > 0:
+                logger.info(f"Đang tối ưu hóa grid {grid_idx + 1}/{len(param_grid_list)}")
+            
+            result = self._search_single_grid(model, single_grid, X, y, **kwargs)
+            all_results.append(result)
+            all_cv_results.append(result[3])  # cv_results_
+        
+        # Nếu không có grid nào, trả về kết quả mặc định
+        if not all_results:
+            return {}, 0.0, {}, {}
+        
+        # Chọn kết quả tốt nhất dựa trên best_score
+        best_idx = max(range(len(all_results)), key=lambda i: all_results[i][1])
+        best_params, best_score, best_all_scores, _ = all_results[best_idx]
+        
+        # Gộp tất cả cv_results
+        combined_cv_results = self._combine_cv_results(all_cv_results)
+        
+        return self._finalize_results(best_params, best_score, best_all_scores, combined_cv_results)
+    
+    def _combine_cv_results(self, cv_results_list: list) -> Dict[str, Any]:
+        """Gộp cv_results từ nhiều grid thành một."""
+        if not cv_results_list:
+            return {}
+        
+        combined = {}
+        for key in cv_results_list[0].keys():
+            combined[key] = []
+            for cv_results in cv_results_list:
+                if key in cv_results:
+                    combined[key].extend(cv_results[key])
+        
+        # Tính lại rank
+        if 'mean_test_score' in combined and combined['mean_test_score']:
+            test_scores = combined['mean_test_score']
+            ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
+            combined['rank_test_score'] = ranks.tolist()
+        
+        return combined
+    
+    def _search_single_grid(self, model: BaseEstimator, param_grid: Dict[str, Any],
+               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict[str, Any], float, Dict[str, float], Dict[str, Any]]:
+        """
+        Thực thi thuật toán tìm kiếm trên một grid đơn lẻ.
+        """
 
         # Tạo đường dẫn file log sử dụng phương thức lớp cơ sở
         log_file = self.create_log_file_path(model, 'bayesian_search')

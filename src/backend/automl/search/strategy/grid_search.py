@@ -12,7 +12,7 @@ from sklearn.model_selection import cross_validate
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from joblib import Parallel, delayed
 
-from automl.search.strategy.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy, validate_param_grid
 
 
 # Cấu hình logger cho module này
@@ -155,10 +155,17 @@ class GridSearchStrategy(SearchStrategy):
         if metric_sort not in scoring:
             raise ValueError(f"metric_sort '{metric_sort}' không có trong các metric scoring")
 
-        # Tạo tất cả các tổ hợp tham số
-        keys = list(param_grid.keys())
-        combinations = list(itertools.product(*(param_grid[key] for key in keys)))
-        all_params = [dict(zip(keys, combo)) for combo in combinations]
+        # Validate và xử lý list-of-dicts format
+        param_grid_list = validate_param_grid(param_grid)
+        
+        # Tạo tất cả các tổ hợp tham số từ mỗi dict trong list
+        all_params = []
+        for single_grid in param_grid_list:
+            if not single_grid:
+                continue
+            keys = list(single_grid.keys())
+            combinations = list(itertools.product(*(single_grid[key] for key in keys)))
+            all_params.extend([dict(zip(keys, combo)) for combo in combinations])
         
         logger.info(f"Grid Search: Đang đánh giá {len(all_params)} tổ hợp tham số...")
         

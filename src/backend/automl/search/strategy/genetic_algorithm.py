@@ -12,7 +12,7 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 
-from automl.search.strategy.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy, validate_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -49,14 +49,39 @@ class GeneticAlgorithm(SearchStrategy):
         return tuple(sorted(individual.items()))
 
     def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
-        """Mã hóa lưới tham số cho thuật toán di truyền."""
+        """Mã hóa lưới tham số cho thuật toán di truyền.
+        
+        Hỗ trợ list-of-dicts format. Mỗi dict trong list được xử lý riêng biệt,
+        và các cá thể sẽ được gán vào một grid_idx cụ thể.
+        """
         # Xóa ranh giới và kiểu tham số trước đó để tránh nhiễm chéo giữa các mô hình
         self.param_bounds.clear()
         self.param_types.clear()
+        
+        # Validate và xử lý list-of-dicts format
+        param_grid_list = validate_param_grid(param_grid)
+        
+        # Lưu danh sách các grid để sử dụng sau
+        self._param_grid_list = param_grid_list
+        self._num_grids = len(param_grid_list)
+        
+        # Gộp tất cả các tham số từ tất cả các grid
+        all_params = {}
+        for single_grid in param_grid_list:
+            for param_name, param_values in single_grid.items():
+                if param_name not in all_params:
+                    all_params[param_name] = set()
+                if isinstance(param_values, list):
+                    all_params[param_name].update(param_values)
+                elif isinstance(param_values, tuple) and len(param_values) == 2:
+                    all_params[param_name] = param_values  # Range tuple
 
         encoded_grid = {}
 
-        for param_name, param_values in param_grid.items():
+        for param_name, param_values in all_params.items():
+            if isinstance(param_values, set):
+                param_values = sorted(list(param_values), key=lambda x: (x is None, str(x)))
+            
             if isinstance(param_values, list):
                 encoded_grid[param_name] = list(range(len(param_values)))
                 self.param_bounds[param_name] = (0, len(param_values) - 1)
@@ -82,8 +107,27 @@ class GeneticAlgorithm(SearchStrategy):
             return self._decode_cache[cache_key].copy()
 
         decoded = {}
+        
+        # Lấy grid_idx từ cá thể
+        grid_idx = int(individual.get('_grid_idx', 0))
+        
+        # Lấy các tham số thuộc grid này
+        grid_params = set()
+        if hasattr(self, '_param_grid_list') and self._param_grid_list and grid_idx < len(self._param_grid_list):
+            grid_params = set(self._param_grid_list[grid_idx].keys())
 
         for param_name, value in individual.items():
+            # Bỏ qua trường _grid_idx
+            if param_name == '_grid_idx':
+                continue
+                
+            # Chỉ decode các tham số thuộc grid của cá thể này
+            if grid_params and param_name not in grid_params:
+                continue
+            
+            if param_name not in self.param_types:
+                continue
+                
             param_type, param_values = self.param_types[param_name]
 
             if param_type == 'categorical':
@@ -102,12 +146,36 @@ class GeneticAlgorithm(SearchStrategy):
         self._decode_cache[cache_key] = decoded
         return decoded
 
-    def _create_individual(self) -> Dict[str, float]:
-        """Tạo một cá thể cho thuật toán di truyền."""
+    def _create_individual(self, grid_idx: int = None) -> Dict[str, float]:
+        """Tạo một cá thể cho thuật toán di truyền.
+        
+        Args:
+            grid_idx: Chỉ số của grid trong list-of-dicts. Nếu None, chọn ngẫu nhiên.
+        """
         individual = {}
-
-        for param_name, (min_val, max_val) in self.param_bounds.items():
-            individual[param_name] = random.uniform(min_val, max_val)
+        
+        # Chọn grid_idx nếu chưa được chỉ định
+        if grid_idx is None:
+            grid_idx = random.randint(0, self._num_grids - 1) if self._num_grids > 0 else 0
+        
+        # Lưu grid_idx vào cá thể
+        individual['_grid_idx'] = float(grid_idx)
+        
+        # Lấy các tham số từ grid được chọn
+        if hasattr(self, '_param_grid_list') and self._param_grid_list:
+            selected_grid = self._param_grid_list[grid_idx] if grid_idx < len(self._param_grid_list) else {}
+            
+            for param_name, (min_val, max_val) in self.param_bounds.items():
+                if param_name in selected_grid:
+                    # Tham số thuộc grid này - tạo giá trị ngẫu nhiên trong phạm vi
+                    individual[param_name] = random.uniform(min_val, max_val)
+                else:
+                    # Tham số không thuộc grid này - đặt giá trị mặc định (0)
+                    individual[param_name] = 0.0
+        else:
+            # Fallback cho trường hợp không có _param_grid_list
+            for param_name, (min_val, max_val) in self.param_bounds.items():
+                individual[param_name] = random.uniform(min_val, max_val)
 
         return individual
 
@@ -238,8 +306,19 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _crossover(self, parent1: Dict[str, float], parent2: Dict[str, float]) -> Tuple[
         Dict[str, float], Dict[str, float]]:
-        """Thực hiện lai ghép giữa hai cá thể sử dụng chiến lược khác nhau dựa trên kiểu tham số."""
+        """Thực hiện lai ghép giữa hai cá thể sử dụng chiến lược khác nhau dựa trên kiểu tham số.
+        
+        Chỉ thực hiện lai ghép nếu hai cá thể thuộc cùng một grid group.
+        """
         if random.random() > self.config['crossover_rate']:
+            return parent1.copy(), parent2.copy()
+        
+        # Kiểm tra xem hai cá thể có thuộc cùng grid group không
+        grid_idx1 = int(parent1.get('_grid_idx', 0))
+        grid_idx2 = int(parent2.get('_grid_idx', 0))
+        
+        # Nếu khác grid group, không lai ghép - trả về bản sao
+        if grid_idx1 != grid_idx2:
             return parent1.copy(), parent2.copy()
 
         # Lai ghép đơn giản siêu nhanh
@@ -247,7 +326,7 @@ class GeneticAlgorithm(SearchStrategy):
             # Lai ghép đồng nhất đơn giản - chỉ hoán đổi một nửa tham số
             child1 = parent1.copy()
             child2 = parent2.copy()
-            params = list(parent1.keys())
+            params = [p for p in parent1.keys() if p != '_grid_idx']
             if len(params) > 1:
                 swap_point = len(params) // 2
                 for param in params[:swap_point]:
@@ -258,6 +337,13 @@ class GeneticAlgorithm(SearchStrategy):
         child2 = parent2.copy()
 
         for param_name in parent1.keys():
+            # Bỏ qua trường _grid_idx
+            if param_name == '_grid_idx':
+                continue
+                
+            if param_name not in self.param_types:
+                continue
+                
             param_type, param_values = self.param_types[param_name]
 
             if param_type == 'categorical':
@@ -304,6 +390,13 @@ class GeneticAlgorithm(SearchStrategy):
             adaptive_rate = self.config['mutation_rate']
 
         for param_name in mutated.keys():
+            # Bỏ qua trường _grid_idx - không đột biến
+            if param_name == '_grid_idx':
+                continue
+                
+            if param_name not in self.param_bounds or param_name not in self.param_types:
+                continue
+                
             if random.random() < adaptive_rate:
                 min_val, max_val = self.param_bounds[param_name]
                 param_type, param_values = self.param_types[param_name]
@@ -412,8 +505,16 @@ class GeneticAlgorithm(SearchStrategy):
         for i in range(len(population)):
             for j in range(i + 1, len(population)):
                 distance = 0
+                param_count = 0
                 for param_name in population[i].keys():
+                    # Bỏ qua trường _grid_idx
+                    if param_name == '_grid_idx':
+                        continue
+                    if param_name not in self.param_types:
+                        continue
+                        
                     param_type, _ = self.param_types[param_name]
+                    param_count += 1
                     if param_type == 'categorical':
                         # Với kiểu phân loại, dùng khoảng cách 0/1
                         distance += 0 if population[i][param_name] == population[j][param_name] else 1
@@ -425,7 +526,8 @@ class GeneticAlgorithm(SearchStrategy):
                                     max_val - min_val)
                             distance += normalized_diff
 
-                total_distance += distance / len(population[i])  # Trung bình trên các tham số
+                if param_count > 0:
+                    total_distance += distance / param_count  # Trung bình trên các tham số
                 count += 1
 
         return total_distance / count if count > 0 else 0.0

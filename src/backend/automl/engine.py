@@ -96,7 +96,10 @@ def get_model():
     models = {}
     for key, model_info in data['Classification_models'].items():
         model_class = eval(model_info['model'])
-        params = model_info['params']
+        params = model_info.get('params')
+        # Xử lý None/empty params - trả về list rỗng hoặc list với dict rỗng
+        if params is None or params == []:
+            params = [{}]
         models[key] = {
             "model": model_class(),
             "params": params

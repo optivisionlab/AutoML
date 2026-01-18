@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List, Union
 from sklearn.base import BaseEstimator
 import numpy as np
 import logging
@@ -11,6 +11,27 @@ from sklearn.model_selection import StratifiedKFold
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
+
+
+def validate_param_grid(param_grid: Union[List[Dict], None]) -> List[Dict]:
+    """
+    Validate parameter grid is in list-of-dicts format.
+    
+    Args:
+        param_grid: Parameter grid in list-of-dicts format
+        
+    Returns:
+        List of parameter dictionaries
+        
+    Raises:
+        ValueError: If param_grid format is invalid
+    """
+    if param_grid is None:
+        return [{}]
+    if isinstance(param_grid, list):
+        if all(isinstance(d, dict) for d in param_grid):
+            return param_grid
+    raise ValueError(f"Invalid param_grid format: expected list of dicts, got {type(param_grid)}")
 
 
 class SearchStrategy(ABC):
