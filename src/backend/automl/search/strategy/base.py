@@ -1,38 +1,46 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Optional, List, Union
-from sklearn.base import BaseEstimator
-import numpy as np
 import logging
-import yaml
-
 import os
+import time
+from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Dict, Any, Tuple, Optional, List, Union
+
+import numpy as np
+import yaml
+from sklearn.base import BaseEstimator
 from sklearn.model_selection import StratifiedKFold
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
 
 
-def validate_param_grid(param_grid: Union[List[Dict], None]) -> List[Dict]:
+def normalize_param_grid(param_grid: Union[Dict, List[Dict], None]) -> List[Dict]:
     """
-    Validate parameter grid is in list-of-dicts format.
+    Chuẩn hóa param_grid về định dạng list-of-dicts.
     
     Args:
-        param_grid: Parameter grid in list-of-dicts format
+        param_grid: dict đơn lẻ, list of dicts, hoặc None
         
     Returns:
         List of parameter dictionaries
         
     Raises:
-        ValueError: If param_grid format is invalid
+        ValueError: Nếu định dạng không hợp lệ
     """
     if param_grid is None:
         return [{}]
+
+    if isinstance(param_grid, dict):
+        return [param_grid]
+
     if isinstance(param_grid, list):
+        if len(param_grid) == 0:
+            return [{}]
         if all(isinstance(d, dict) for d in param_grid):
             return param_grid
-    raise ValueError(f"Invalid param_grid format: expected list of dicts, got {type(param_grid)}")
+        raise ValueError(f"param_grid list chứa phần tử không phải dict")
 
+    raise ValueError(f"param_grid phải là dict hoặc list of dicts, nhận được {type(param_grid)}")
 
 class SearchStrategy(ABC):
     """Base class for all search strategies."""
@@ -40,6 +48,70 @@ class SearchStrategy(ABC):
     def __init__(self, **kwargs):
         self.config = self.get_default_config()
         self.config.update(kwargs)
+        self._search_start_time = None
+        self._time_limit_reached = False
+
+    # ==========================================================================
+    # Timer Utilities cho Time Limit
+    # ==========================================================================
+
+    def _start_timer(self):
+        """
+        Bắt đầu đếm thời gian cho search.
+        Gọi method này ở đầu hàm search.
+        """
+        self._search_start_time = time.time()
+        self._time_limit_reached = False
+
+        max_time = self.config.get('max_time')
+        if max_time is not None and self.config.get('verbose', 0) > 0:
+            logger.info(f"Time limit: {max_time} giây")
+
+    def _check_time_limit(self) -> bool:
+        """
+        Kiểm tra đã vượt quá time limit chưa.
+        
+        Returns:
+            bool: True nếu đã hết thời gian, False nếu chưa
+        """
+        max_time = self.config.get('max_time')
+        if max_time is None:
+            return False
+
+        if self._search_start_time is None:
+            return False
+
+        elapsed = time.time() - self._search_start_time
+        if elapsed >= max_time:
+            self._time_limit_reached = True
+            return True
+
+        return False
+
+    def _get_elapsed_time(self) -> float:
+        """
+        Trả về thời gian đã trôi qua từ khi bắt đầu search.
+        
+        Returns:
+            float: Thời gian (đơn vị giây)
+        """
+        if self._search_start_time is None:
+            return 0.0
+        return time.time() - self._search_start_time
+
+    def _get_remaining_time(self) -> Optional[float]:
+        """
+        Trả về thời gian còn lại trước khi đạt time limit.
+        
+        Returns:
+            float: Thời gian còn lại (giây), None nếu không có time limit
+        """
+        max_time = self.config.get('max_time')
+        if max_time is None:
+            return None
+
+        elapsed = self._get_elapsed_time()
+        return max(0.0, max_time - elapsed)
 
     @staticmethod
     def _load_yaml_config(config_name: str) -> Dict[str, Any]:
@@ -56,9 +128,9 @@ class SearchStrategy(ABC):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         config_file = os.path.join(current_dir, f'{config_name}_config.yml')
         default_config_file = os.path.join(current_dir, f'{config_name}_default_config.yml')
-        
+
         loaded_config = {}
-        
+
         # Thử load file config chính trước
         if os.path.exists(config_file):
             try:
@@ -68,7 +140,7 @@ class SearchStrategy(ABC):
                         return loaded_config
             except Exception as e:
                 logger.warning(f"Không thể tải cấu hình từ {config_file}: {e}")
-        
+
         # Nếu không có file config chính hoặc file trống, load file default
         if os.path.exists(default_config_file):
             try:
@@ -79,7 +151,7 @@ class SearchStrategy(ABC):
                         return loaded_config
             except Exception as e:
                 logger.warning(f"Không thể tải cấu hình mặc định từ {default_config_file}: {e}")
-        
+
         return loaded_config
 
     @staticmethod
@@ -92,7 +164,7 @@ class SearchStrategy(ABC):
         """Trả về cấu hình mặc định cho strategy này, đọc từ file YAML."""
         # Tải config từ file YAML
         yaml_config = SearchStrategy._load_base_config()
-        
+
         # Tạo StratifiedKFold từ config
         cv_n_splits = yaml_config.get('cv_n_splits', 5)
         cv_shuffle = yaml_config.get('cv_shuffle', True)
@@ -111,15 +183,23 @@ class SearchStrategy(ABC):
             'log_dir': yaml_config.get('log_dir', 'logs'),
             'save_log': yaml_config.get('save_log', False)
         }
-        
+
         return config
 
     @abstractmethod
-    def search(self, model: BaseEstimator, param_grid: Dict[str, Any], X: np.ndarray, y: np.ndarray, **kwargs):
+    def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]], X: np.ndarray, y: np.ndarray, **kwargs):
         """Thực thi thuật toán tìm kiếm.
+        
+        Args:
+            model: Mô hình scikit-learn cần tối ưu hóa
+            param_grid: List of dicts, mỗi dict chứa các tham số cần tìm kiếm.
+                        Ví dụ: [{'kernel': ['rbf'], 'C': [1, 10]}, {'kernel': ['linear'], 'C': [1, 10]}]
+            X: Dữ liệu features
+            y: Dữ liệu target
+            **kwargs: Các tham số bổ sung
 
         Returns:
-            tuple: (best_params, best_score, cv_results)
+            tuple: (best_params, best_score, best_all_scores, cv_results)
         """
         pass
 
@@ -127,7 +207,6 @@ class SearchStrategy(ABC):
         """Cập nhật cấu hình"""
         self.config.update(kwargs)
         return self
-    
 
     def create_log_file_path(self, model: BaseEstimator, strategy_name: str = None) -> Optional[str]:
         """Tạo đường dẫn file log để lưu kết quả tìm kiếm.
@@ -144,13 +223,13 @@ class SearchStrategy(ABC):
         """
         if not self.config.get('save_log', False):
             return None
-            
+
         log_dir = self.config.get('log_dir', 'logs')
         os.makedirs(log_dir, exist_ok=True)
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_name = model.__class__.__name__
-        
+
         # Sử dụng tên strategy được cung cấp hoặc tạo từ tên class
         if strategy_name is None:
             # Chuyển đổi tên class từ CamelCase sang snake_case
@@ -163,10 +242,9 @@ class SearchStrategy(ABC):
             # Chuyển đổi sang snake_case
             import re
             strategy_name = re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).lower()
-        
+
         log_file = os.path.join(log_dir, f'{strategy_name}_{model_name}_{timestamp}.csv')
         return log_file
-    
 
     @staticmethod
     def convert_numpy_types(obj: Any) -> Any:
@@ -190,8 +268,8 @@ class SearchStrategy(ABC):
         elif hasattr(obj, 'item'):
             return obj.item()
         elif isinstance(obj, dict):
-            return {key: SearchStrategy.convert_numpy_types(value) 
-                   for key, value in obj.items()}
+            return {key: SearchStrategy.convert_numpy_types(value)
+                    for key, value in obj.items()}
         elif isinstance(obj, list):
             return [SearchStrategy.convert_numpy_types(item) for item in obj]
         elif isinstance(obj, tuple):
@@ -199,10 +277,9 @@ class SearchStrategy(ABC):
         else:
 
             return obj
-    
 
-    def _finalize_results(self, best_params: Dict[str, Any], best_score: float, 
-                         best_all_scores: Dict[str, float], cv_results: Dict[str, Any]) -> Tuple:
+    def _finalize_results(self, best_params: Dict[str, Any], best_score: float,
+                          best_all_scores: Dict[str, float], cv_results: Dict[str, Any]) -> Tuple:
         """Xóa cache và chuyển đổi kiểu numpy trước khi trả về kết quả.
         
         Phương thức này nên được gọi ở cuối phương thức search để:
@@ -225,11 +302,11 @@ class SearchStrategy(ABC):
             self._evaluation_cache.clear()
         if hasattr(self, '_model_copies'):
             self._model_copies.clear()
-        
+
         # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc
         best_params = self.convert_numpy_types(best_params)
         best_score = self.convert_numpy_types(best_score)
         best_all_scores = self.convert_numpy_types(best_all_scores)
         cv_results = self.convert_numpy_types(cv_results)
-        
+
         return best_params, best_score, best_all_scores, cv_results

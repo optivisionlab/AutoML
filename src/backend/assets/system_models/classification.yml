@@ -1,4 +1,4 @@
-vset D:\IDE\Python312 is python envmetric_list:
+metric_list:
   - accuracy
   - precision_macro
   - precision_weighted
