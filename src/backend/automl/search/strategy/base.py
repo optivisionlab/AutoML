@@ -67,27 +67,6 @@ class SearchStrategy(ABC):
         if max_time is not None and self.config.get('verbose', 0) > 0:
             logger.info(f"Time limit: {max_time} giây")
 
-    def _check_time_limit(self) -> bool:
-        """
-        Kiểm tra đã vượt quá time limit chưa.
-        
-        Returns:
-            bool: True nếu đã hết thời gian, False nếu chưa
-        """
-        max_time = self.config.get('max_time')
-        if max_time is None:
-            return False
-
-        if self._search_start_time is None:
-            return False
-
-        elapsed = time.time() - self._search_start_time
-        if elapsed >= max_time:
-            self._time_limit_reached = True
-            return True
-
-        return False
-
     def _get_elapsed_time(self) -> float:
         """
         Trả về thời gian đã trôi qua từ khi bắt đầu search.
@@ -99,6 +78,22 @@ class SearchStrategy(ABC):
             return 0.0
         return time.time() - self._search_start_time
 
+    def _check_time_limit(self) -> bool:
+        """
+        Kiểm tra đã vượt quá time limit chưa.
+        
+        Returns:
+            bool: True nếu đã hết thời gian, False nếu chưa
+        """
+        max_time = self.config.get('max_time')
+        if max_time is None:
+            return False
+
+        if self._get_elapsed_time() >= max_time:
+            self._time_limit_reached = True
+            return True
+        return False
+
     def _get_remaining_time(self) -> Optional[float]:
         """
         Trả về thời gian còn lại trước khi đạt time limit.
@@ -109,9 +104,7 @@ class SearchStrategy(ABC):
         max_time = self.config.get('max_time')
         if max_time is None:
             return None
-
-        elapsed = self._get_elapsed_time()
-        return max(0.0, max_time - elapsed)
+        return max(0.0, max_time - self._get_elapsed_time())
 
     @staticmethod
     def _load_yaml_config(config_name: str) -> Dict[str, Any]:
