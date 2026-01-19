@@ -777,6 +777,12 @@ class GeneticAlgorithm(SearchStrategy):
                             (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
 
         for generation in range(self.config['generation']):
+            # Kiểm tra time limit trước mỗi thế hệ
+            _, is_exceeded = self._check_time_status()
+            if is_exceeded:
+                logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search tại thế hệ {generation + 1}.")
+                break
+
             generation_start_time = datetime.now()
 
             # Tính đa dạng quần thể (bỏ qua trong chế độ siêu nhanh)
