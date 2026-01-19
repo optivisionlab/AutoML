@@ -22,6 +22,11 @@ class BayesianSearchStrategy(SearchStrategy):
         sử dụng thư viện scikit-optimize.
     """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._optimizer_state = {}  # Lưu trạng thái optimizer cho warm start
+        self._cache_dir = kwargs.get('cache_dir', '.bayesian_cache')
+
     def _detect_class_imbalance(self, y: np.ndarray) -> bool:
         """
         Phát hiện xem tập dữ liệu có mất cân bằng lớp hay không.
@@ -88,11 +93,6 @@ class BayesianSearchStrategy(SearchStrategy):
             base_config.update(bayesian_config)
 
         return base_config
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._optimizer_state = {}  # Lưu trạng thái optimizer cho warm start
-        self._cache_dir = kwargs.get('cache_dir', '.bayesian_cache')
 
     def _get_search_space_hash(self, search_space: List) -> str:
         """
@@ -398,7 +398,8 @@ class BayesianSearchStrategy(SearchStrategy):
             best_score_history.append(best_score_so_far)
 
             # Kiểm tra time limit
-            if self._check_time_limit():
+            _, is_exceeded = self._check_time_status()
+            if is_exceeded:
                 logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search.")
                 return True  # Dừng gp_minimize
 

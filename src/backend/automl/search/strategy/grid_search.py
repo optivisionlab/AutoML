@@ -279,12 +279,14 @@ class GridSearchStrategy(SearchStrategy):
         batch_size = self.config.get('batch_size', 10)
         all_results = []
         early_stopped = False
+        time_limit_stopped = False
 
         for batch_idx, i in enumerate(range(0, len(all_params), batch_size)):
             # Kiểm tra time limit
-            if self._check_time_limit():
+            _, is_exceeded = self._check_time_status()
+            if is_exceeded:
                 logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search.")
-                early_stopped = True
+                time_limit_stopped = True
                 break
 
             batch_params = all_params[i:i + batch_size]
@@ -327,7 +329,7 @@ class GridSearchStrategy(SearchStrategy):
 
         # Log tổng thời gian
         total_time = time.time() - self._start_time
-        if self._time_limit_reached:
+        if time_limit_stopped:
             logger.info(f"Grid Search hoàn thành (time limit) trong {total_time:.2f}s")
         elif early_stopped:
             logger.info(f"Grid Search hoàn thành (early stopped) trong {total_time:.2f}s")

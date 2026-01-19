@@ -49,7 +49,6 @@ class SearchStrategy(ABC):
         self.config = self.get_default_config()
         self.config.update(kwargs)
         self._search_start_time = None
-        self._time_limit_reached = False
 
     # ==========================================================================
     # Timer Utilities cho Time Limit
@@ -61,50 +60,34 @@ class SearchStrategy(ABC):
         Gọi method này ở đầu hàm search.
         """
         self._search_start_time = time.time()
-        self._time_limit_reached = False
 
         max_time = self.config.get('max_time')
         if max_time is not None and self.config.get('verbose', 0) > 0:
             logger.info(f"Time limit: {max_time} giây")
 
-    def _get_elapsed_time(self) -> float:
+    def _check_time_status(self) -> Tuple[Optional[float], bool]:
         """
-        Trả về thời gian đã trôi qua từ khi bắt đầu search.
+        Kiểm tra trạng thái thời gian của quá trình search.
         
         Returns:
-            float: Thời gian (đơn vị giây)
-        """
-        if self._search_start_time is None:
-            return 0.0
-        return time.time() - self._search_start_time
-
-    def _check_time_limit(self) -> bool:
-        """
-        Kiểm tra đã vượt quá time limit chưa.
-        
-        Returns:
-            bool: True nếu đã hết thời gian, False nếu chưa
+            Tuple[Optional[float], bool]: 
+                - remaining_time: Thời gian còn lại (giây), None nếu không có time limit
+                - is_exceeded: True nếu đã vượt quá time limit, False nếu chưa
         """
         max_time = self.config.get('max_time')
-        if max_time is None:
-            return False
-
-        if self._get_elapsed_time() >= max_time:
-            self._time_limit_reached = True
-            return True
-        return False
-
-    def _get_remaining_time(self) -> Optional[float]:
-        """
-        Trả về thời gian còn lại trước khi đạt time limit.
         
-        Returns:
-            float: Thời gian còn lại (giây), None nếu không có time limit
-        """
-        max_time = self.config.get('max_time')
+        # Nếu không có time limit
         if max_time is None:
-            return None
-        return max(0.0, max_time - self._get_elapsed_time())
+            return None, False
+            
+        # Tính thời gian đã trôi qua
+        elapsed = 0.0 if self._search_start_time is None else time.time() - self._search_start_time
+        remaining = max(0.0, max_time - elapsed)
+        
+        # Kiểm tra đã vượt quá chưa
+        is_exceeded = elapsed >= max_time
+            
+        return remaining, is_exceeded
 
     @staticmethod
     def _load_yaml_config(config_name: str) -> Dict[str, Any]:
@@ -148,15 +131,10 @@ class SearchStrategy(ABC):
         return loaded_config
 
     @staticmethod
-    def _load_base_config() -> Dict[str, Any]:
-        """Tải cấu hình cơ sở từ file YAML."""
-        return SearchStrategy._load_yaml_config('base')
-
-    @staticmethod
     def get_default_config() -> Dict[str, Any]:
         """Trả về cấu hình mặc định cho strategy này, đọc từ file YAML."""
         # Tải config từ file YAML
-        yaml_config = SearchStrategy._load_base_config()
+        yaml_config = SearchStrategy._load_yaml_config('base')
 
         # Tạo StratifiedKFold từ config
         cv_n_splits = yaml_config.get('cv_n_splits', 5)
