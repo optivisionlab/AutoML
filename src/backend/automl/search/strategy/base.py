@@ -49,6 +49,7 @@ class SearchStrategy(ABC):
         self.config = self.get_default_config()
         self.config.update(kwargs)
         self._search_start_time = None
+        self._time_limit_reached = False
 
     # ==========================================================================
     # Timer Utilities cho Time Limit
@@ -60,6 +61,7 @@ class SearchStrategy(ABC):
         Gọi method này ở đầu hàm search.
         """
         self._search_start_time = time.time()
+        self._time_limit_reached = False
 
         max_time = self.config.get('max_time')
         if max_time is not None and self.config.get('verbose', 0) > 0:
@@ -86,6 +88,8 @@ class SearchStrategy(ABC):
         
         # Kiểm tra đã vượt quá chưa
         is_exceeded = elapsed >= max_time
+        if is_exceeded:
+            self._time_limit_reached = True
             
         return remaining, is_exceeded
 
