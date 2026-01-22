@@ -262,6 +262,11 @@ class GridSearchStrategy(SearchStrategy):
             combinations = list(itertools.product(*(single_grid[key] for key in keys)))
             all_params.extend([dict(zip(keys, combo)) for combo in combinations])
 
+        # Kiểm tra nếu không có tổ hợp tham số nào
+        if not all_params:
+            logger.warning("Grid Search: Không có tổ hợp tham số nào để đánh giá. Kiểm tra lại param_grid.")
+            return {}, float('-inf'), {}, {}
+
         logger.info(f"Grid Search: Đang đánh giá {len(all_params)} tổ hợp tham số...")
 
         # Tạo instance mô hình để đánh giá

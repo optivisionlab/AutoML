@@ -159,14 +159,18 @@ class BayesianSearchStrategy(SearchStrategy):
         return None, None
 
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]],
-               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict[str, Any], float, Dict[str, float], Dict[str, Any]]:
+               X: np.ndarray, y: np.ndarray, **kwargs) -> tuple[dict[Any, Any], float, dict[Any, Any], dict[
+        Any, Any]] | tuple:
         """
         Thực thi thuật toán tìm kiếm.
 
         Args:
             model (BaseEstimator): Mô hình scikit-learn.
-            param_grid (Dict[str, Any]): Một list-of-dicts trong đó mỗi dict chứa key là tên tham số và 
-                                         value là một dimension của skopt (Real, Integer, Categorical).
+            param_grid (List[Dict[str, Any]]): Một list-of-dicts hoặc một dict đơn lẻ, trong đó mỗi dict 
+                                         chứa key là tên tham số và value có thể là:
+                                         - Một dimension của skopt (Real, Integer, Categorical)
+                                         - Một list các giá trị (sẽ được chuyển thành Categorical)
+                                         - Một tuple các giá trị (sẽ được chuyển thành Categorical)
             X (np.ndarray): Dữ liệu features.
             y (np.ndarray): Dữ liệu target.
             **kwargs: Các tham số bổ sung cho gp_minimize.
@@ -217,10 +221,20 @@ class BayesianSearchStrategy(SearchStrategy):
         if not cv_results_list:
             return {}
 
+        # Filter out empty dictionaries
+        non_empty_results = [cv for cv in cv_results_list if cv]
+        if not non_empty_results:
+            return {}
+
+        # Collect all unique keys from all cv_results dictionaries
+        all_keys = set()
+        for cv_results in non_empty_results:
+            all_keys.update(cv_results.keys())
+
         combined = {}
-        for key in cv_results_list[0].keys():
+        for key in all_keys:
             combined[key] = []
-            for cv_results in cv_results_list:
+            for cv_results in non_empty_results:
                 if key in cv_results:
                     combined[key].extend(cv_results[key])
 

@@ -59,6 +59,9 @@ class GeneticAlgorithm(SearchStrategy):
         # Chuẩn hóa param_grid về list-of-dicts format
         param_grid_list = normalize_param_grid(param_grid)
 
+        # Lọc bỏ các grid rỗng
+        param_grid_list = [grid for grid in param_grid_list if grid]
+
         # Lưu danh sách các grid
         self._param_grid_list = param_grid_list
         self._num_grids = len(param_grid_list)
@@ -137,12 +140,22 @@ class GeneticAlgorithm(SearchStrategy):
         
         Args:
             grid_idx: Chỉ số của grid trong list-of-dicts. Nếu None, chọn ngẫu nhiên.
+            
+        Returns:
+            Dict[str, float]: Cá thể với các tham số được mã hóa.
+            
+        Raises:
+            ValueError: Nếu không có grid nào được định nghĩa.
         """
+        # Kiểm tra xem có grid nào không
+        if self._num_grids == 0:
+            raise ValueError("Không thể tạo cá thể: không có grid tham số nào được định nghĩa.")
+
         individual = {}
 
         # Chọn grid_idx nếu chưa được chỉ định
         if grid_idx is None:
-            grid_idx = random.randint(0, self._num_grids - 1) if self._num_grids > 0 else 0
+            grid_idx = random.randint(0, self._num_grids - 1)
 
         # Lưu grid_idx vào cá thể
         individual['_grid_idx'] = float(grid_idx)
@@ -567,7 +580,8 @@ class GeneticAlgorithm(SearchStrategy):
         # Thêm diversity từ việc có nhiều grids
         if len(grid_groups) > 1:
             grid_diversity = len(grid_groups) / self._num_grids if self._num_grids > 0 else 0
-            total_diversity = (total_diversity / total_weight if total_weight > 0 else 0) * 0.7 + grid_diversity * 0.3
+            weighted_diversity = total_diversity / total_weight if total_weight > 0 else 0
+            total_diversity = weighted_diversity * 0.7 + grid_diversity * 0.3
         elif total_weight > 0:
             total_diversity = total_diversity / total_weight
 
