@@ -305,14 +305,9 @@ class GeneticAlgorithm(SearchStrategy):
         else:
             tournament_size = min(self.config['tournament_size'], len(population))
 
-        # Sử dụng numpy để chọn nhanh hơn nếu fitness_scores là numpy array
-        if isinstance(fitness_scores, np.ndarray):
-            tournament_indices = np.random.choice(len(population), size=tournament_size, replace=False)
-            winner_index = tournament_indices[np.argmax(fitness_scores[tournament_indices])]
-        else:
-            tournament_indices = random.sample(range(len(population)), tournament_size)
-            tournament_fitness = [fitness_scores[i] for i in tournament_indices]
-            winner_index = tournament_indices[np.argmax(tournament_fitness)]
+        # Sử dụng numpy để chọn nhanh hơn
+        tournament_indices = np.random.choice(len(population), size=tournament_size, replace=False)
+        winner_index = tournament_indices[np.argmax(fitness_scores[tournament_indices])]
         # Trả về bản sao nông vì sẽ deepcopy khi cần
         return population[winner_index].copy()
 
