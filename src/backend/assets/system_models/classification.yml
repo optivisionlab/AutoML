@@ -1,5 +1,6 @@
 metric_list:
   - accuracy
+  - balanced_accuracy
   - precision_macro
   - precision_weighted
   - recall_macro

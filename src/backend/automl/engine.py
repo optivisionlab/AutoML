@@ -11,7 +11,7 @@ import pandas as pd  # type: ignore
 import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, balanced_accuracy_score
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import KFold, GridSearchCV
 from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
@@ -147,6 +147,9 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         if metric_str == 'accuracy':
             return 'accuracy', None
         
+        if metric_str == 'balanced_accuracy':
+            return 'balanced_accuracy', None
+        
         if metric_str.endswith('_macro'):
             return metric_str[:-6], 'macro'
         elif metric_str.endswith('_weighted'):
@@ -161,6 +164,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         
         if base_metric == 'accuracy':
             scoring['accuracy'] = make_scorer(accuracy_score)
+        elif base_metric == 'balanced_accuracy':
+            scoring['balanced_accuracy'] = make_scorer(balanced_accuracy_score)
         elif base_metric in ['precision', 'recall', 'f1']:
             score_func = {
                 'precision': precision_score,
@@ -180,8 +185,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     # Chuẩn hóa metric_sort
     base_metric_sort, avg_type_sort = parse_metric(metric_sort)
     
-    if base_metric_sort == 'accuracy':
-        normalized_metric_sort = 'accuracy'
+    if base_metric_sort in ['accuracy', 'balanced_accuracy']:
+        normalized_metric_sort = base_metric_sort
     else:
         normalized_metric_sort = metric_sort
 
