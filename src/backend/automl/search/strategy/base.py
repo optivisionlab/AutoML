@@ -93,6 +93,26 @@ class SearchStrategy(ABC):
             
         return remaining, is_exceeded
 
+    def _should_apply_early_stopping(self) -> bool:
+        """
+        Xác định có nên áp dụng early stopping hay không.
+        
+        Logic:
+        - Nếu max_time được set: KHÔNG áp dụng early stopping (ưu tiên time)  
+        - Nếu không có max_time: Áp dụng early stopping theo cấu hình
+        
+        Returns:
+            bool: True nếu nên áp dụng early stopping, False nếu không
+        """
+        max_time = self.config.get('max_time')
+        
+        # Nếu có time limit, không áp dụng early stopping
+        if max_time is not None:
+            return False
+        
+        # Không có time limit, áp dụng early stopping theo config    
+        return True
+
     @staticmethod
     def _load_yaml_config(config_name: str) -> Dict[str, Any]:
         """

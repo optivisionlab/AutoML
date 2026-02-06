@@ -417,16 +417,16 @@ class BayesianSearchStrategy(SearchStrategy):
                 logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search.")
                 return True  # Dừng gp_minimize
 
-            # Kiểm tra điều kiện dừng sớm
-            if early_stopping_enabled and iteration >= early_stopping_patience:
+            # Kiểm tra điều kiện dừng sớm (chỉ khi không có time limit)
+            if early_stopping_enabled and self._should_apply_early_stopping() and iteration >= early_stopping_patience:
                 # Kiểm tra nếu không có cải thiện trong số lần lặp patience
                 recent_scores = best_score_history[-early_stopping_patience:]
                 if len(set(recent_scores)) == 1:  # Không có cải thiện
                     logger.info(f"Dừng sớm tại iteration {iteration} (không có cải thiện trong {early_stopping_patience} lần lặp)")
                     return True  # Điều này sẽ dừng gp_minimize
 
-                # Kiểm tra ngưỡng hội tụ
-                if len(best_score_history) > 1:
+                # Kiểm tra ngưỡng hội tụ (chỉ khi không có time limit)
+                if self._should_apply_early_stopping() and len(best_score_history) > 1:
                     recent_improvement = best_score_history[-1] - best_score_history[-2]
                     if abs(recent_improvement) < convergence_threshold:
                         logger.info(f"Phát hiện hội tụ tại iteration {iteration} (cải thiện < {convergence_threshold:.4f})")

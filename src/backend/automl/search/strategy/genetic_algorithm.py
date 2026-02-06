@@ -899,9 +899,9 @@ class GeneticAlgorithm(SearchStrategy):
             if not generation_improved:
                 generations_without_improvement += 1
 
-            # Kiểm tra ngưỡng hội tụ (cải thiện rất nhỏ)
+            # Kiểm tra ngưỡng hội tụ (cải thiện rất nhỏ) - chỉ khi không có time limit
             convergence_threshold = self.config.get('convergence_threshold', 0.001)
-            if generation > 0 and len(convergence_history) > 1:
+            if self._should_apply_early_stopping() and generation > 0 and len(convergence_history) > 1:
                 recent_improvement = convergence_history[-1]['best'] - convergence_history[-2]['best']
                 if abs(recent_improvement) < convergence_threshold and generations_without_improvement >= 2:
                     logger.info(
@@ -909,7 +909,8 @@ class GeneticAlgorithm(SearchStrategy):
                     logger.info(f"Điểm số tốt nhất {best_score:.4f} đạt được tại thế hệ {best_generation + 1}")
                     break
 
-            if early_stopping_enabled and generations_without_improvement >= early_stopping_patience:
+            # Kiểm tra early stopping - chỉ khi không có time limit
+            if self._should_apply_early_stopping() and early_stopping_enabled and generations_without_improvement >= early_stopping_patience:
                 logger.info(
                     f"Dừng sớm được kích hoạt tại thế hệ {generation + 1} (không cải thiện trong {early_stopping_patience} thế hệ)")
                 logger.info(f"Điểm số tốt nhất {best_score:.4f} đạt được tại thế hệ {best_generation + 1}")

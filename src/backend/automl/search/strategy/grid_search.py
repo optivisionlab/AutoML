@@ -120,6 +120,10 @@ class GridSearchStrategy(SearchStrategy):
         Returns:
             bool: True nếu nên dừng sớm
         """
+        # Không áp dụng early stopping nếu có time limit (ưu tiên time)
+        if not self._should_apply_early_stopping():
+            return False
+            
         if not self.config.get('early_stopping_enabled', False):
             return False
 
