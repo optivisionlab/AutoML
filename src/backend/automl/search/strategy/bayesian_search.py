@@ -158,6 +158,57 @@ class BayesianSearchStrategy(SearchStrategy):
 
         return None, None
 
+    def _evaluate_default_params(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> Tuple[Dict, float, Dict, Dict]:
+        """Đánh giá model với default params khi không có hyperparameters để tối ưu.
+
+        Args:
+            model: Mô hình scikit-learn
+            X: Dữ liệu features
+            y: Dữ liệu target
+
+        Returns:
+            Tuple: (best_params, best_score, best_all_scores, cv_results_)
+        """
+        scoring_config = self.config.get('scoring', {})
+        metric_names = list(scoring_config.keys()) if scoring_config else ['accuracy']
+        primary_metric = self.config.get('metric_sort', 'accuracy')
+
+        scores = cross_validate(
+            estimator=model,
+            X=X,
+            y=y,
+            cv=self.config['cv'],
+            n_jobs=self.config['n_jobs'],
+            scoring=scoring_config,
+            error_score=self.config['error_score'],
+            return_train_score=False
+        )
+
+        # Tính mean score cho mỗi metric
+        all_scores = {}
+        for metric in metric_names:
+            test_key = f'test_{metric}'
+            if test_key in scores:
+                all_scores[metric] = float(np.mean(scores[test_key]))
+
+        best_score = all_scores.get(primary_metric, 0.0)
+
+        # Xây dựng cv_results_ format
+        cv_results_ = {
+            'params': [{}],
+            'mean_test_score': [best_score],
+            'std_test_score': [0.0],
+            'rank_test_score': [1],
+        }
+        for metric in metric_names:
+            cv_results_[f'mean_test_{metric}'] = [all_scores.get(metric, 0.0)]
+            cv_results_[f'std_test_{metric}'] = [0.0]
+            cv_results_[f'rank_test_{metric}'] = [1]
+
+        logger.info(f"Đánh giá {model.__class__.__name__} với default params: {primary_metric}={best_score:.4f}")
+
+        return {}, best_score, all_scores, cv_results_
+
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]],
                X: np.ndarray, y: np.ndarray, **kwargs) -> tuple[dict[Any, Any], float, dict[Any, Any], dict[
         Any, Any]] | tuple:
@@ -194,6 +245,10 @@ class BayesianSearchStrategy(SearchStrategy):
 
         for grid_idx, single_grid in enumerate(param_grid_list):
             if not single_grid:
+                # Model không có hyperparameters → đánh giá với default params
+                result = self._evaluate_default_params(model, X, y)
+                all_results.append(result)
+                all_cv_results.append(result[3])
                 continue
 
             if self.config.get('verbose', 1) > 0:

@@ -260,8 +260,6 @@ class GridSearchStrategy(SearchStrategy):
         # Tạo tất cả các tổ hợp tham số từ mỗi dict trong list
         all_params = []
         for single_grid in param_grid_list:
-            if not single_grid:
-                continue
             keys = list(single_grid.keys())
             combinations = list(itertools.product(*(single_grid[key] for key in keys)))
             all_params.extend([dict(zip(keys, combo)) for combo in combinations])

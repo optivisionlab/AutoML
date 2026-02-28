@@ -62,6 +62,11 @@ class GeneticAlgorithm(SearchStrategy):
         # Lọc bỏ các grid rỗng
         param_grid_list = [grid for grid in param_grid_list if grid]
 
+        # Nếu không còn grid nào (model không có hyperparameter), giữ lại 1 grid rỗng
+        # để GA có thể đánh giá model với default params
+        if not param_grid_list:
+            param_grid_list = [{}]
+
         # Lưu danh sách các grid
         self._param_grid_list = param_grid_list
         self._num_grids = len(param_grid_list)
