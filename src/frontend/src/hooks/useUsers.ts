@@ -22,7 +22,7 @@ export default function useUsers() {
   const fetchUsers = async () => {
     try {
       const data = await get(`${process.env.NEXT_PUBLIC_BASE_API}/users`);
-      const users = setUsers(data);
+      setUsers(data);
     } catch (error) {
       console.error("Failed to fetch users:", error);
     }

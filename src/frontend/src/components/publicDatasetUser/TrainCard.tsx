@@ -23,6 +23,7 @@ import StepModel from "./StepChooseModel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import toTitleLabel from "@/utils/toTitleLable";
 import { cn } from "@/lib/utils";
+import { useApi } from "@/hooks/useApi";
 
 interface TrainCardProps {
   datasetID?: string;
@@ -30,6 +31,8 @@ interface TrainCardProps {
 }
 
 const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
+  const { get } = useApi();
+
   const router = useRouter();
 
   const [step, setStep] = useState(1);
@@ -50,17 +53,10 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   // 31. Lấy dữ liệu dataset theo datasetID chọn
   useEffect(() => {
     if (step === 4 && datasetID) {
-      fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}&problem_type=${problemType}`,
-        {
-          method: "GET",
-          headers: { accept: "application/json" },
-        }
-      )
-        .then((res) => res.json())
-        .then(({ features }) => {
-          console.log(features);
-          setListFeature(features);
+      get(`/v2/auto/features?id_data=${datasetID}&problem_type=${problemType}`)
+        .then((data) => {
+          console.log(data.features);
+          setListFeature(data.features);
         })
         .catch((err) => {
           console.error("Lỗi khi gọi API:", err);
@@ -94,7 +90,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
 
   // Chọn tất cả thuộc tính
   const selectableFeatures = Object.keys(listFeature).filter(
-    (f) => f !== selectedTarget
+    (f) => f !== selectedTarget,
   );
 
   const isAllSelected =
@@ -149,24 +145,16 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
   type MetricOb = Record<string, string>;
   const [metrics, setMetrics] = useState<MetricOb>({});
 
-  const getMetrics = () => {
-    console.log(problemType);
-    fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/metrics?problem_type=${problemType}`,
-      {
-        method: "GET",
-        headers: { accept: "application/json" },
-      }
-    )
-      .then((res) => res.json())
-      .then(({ metrics }) => {
-        console.log(metrics);
-        setMetrics(metrics);
-      })
-      .catch((err) => {
-        console.error("Lỗi khi gọi API:", err);
-        alert("Không thể tải dữ liệu huấn luyện.");
-      });
+  const getMetrics = async () => {
+    try {
+      const data = await get(`/v2/auto/metrics?problem_type=${problemType}`);
+
+      console.log(data.metrics);
+      setMetrics(data.metrics);
+    } catch (err) {
+      console.error("Lỗi khi gọi API:", err);
+      alert("Không thể tải dữ liệu huấn luyện.");
+    }
   };
 
   return (
@@ -283,7 +271,7 @@ const TrainCard = ({ datasetID, datasetName }: TrainCardProps) => {
                         "flex items-center p-4 border rounded-lg cursor-pointer transition-all duration-200",
                         value
                           ? "border-emerald-500 bg-emerald-50 shadow-sm"
-                          : "border-border hover:border-emerald-300"
+                          : "border-border hover:border-emerald-300",
                       )}
                     >
                       <RadioGroupItem

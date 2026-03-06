@@ -17,8 +17,10 @@ import { GithubIcon, LogOut, Menu, User2, X } from "lucide-react";
 import Image from "next/image";
 import ModeToggle from "@/components/mode-toggle";
 import { FaGithub } from "react-icons/fa";
+import { useApi } from "@/hooks/useApi";
 
 export default function Header() {
+  const { get } = useApi();
   const { data: session } = useSession();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -27,18 +29,17 @@ export default function Header() {
     const fetchAvatar = async () => {
       if (session?.user?.username) {
         try {
-          const res = await fetch(
-            `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${session.user.username}`
+          const blob = await get(
+            `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${session.user.username}`,
           );
 
-          const blob = await res.blob();
           // Kiểm tra blob rỗng
           if (!blob || blob.size === 0) {
-            setAvatarUrl(""); // avatar rỗng
+            setAvatarUrl("");
             return;
           }
 
-          // Có avatar -> tạo URL
+          // tạo url từ blob
           const url = URL.createObjectURL(blob);
           setAvatarUrl(url);
         } catch (error) {
@@ -50,34 +51,41 @@ export default function Header() {
     fetchAvatar();
     const handleAvatarUpdate = () => fetchAvatar();
     window.addEventListener("avatar-updated", handleAvatarUpdate);
-    return () => window.removeEventListener("avatar-updated", handleAvatarUpdate);
+    return () =>
+      window.removeEventListener("avatar-updated", handleAvatarUpdate);
   }, [session?.user?.username]);
 
   return (
     <header className="w-full h-16 border-b px-4 md:px-6 flex items-center justify-between z-50 bg-background">
-      <Link href="/" className="flex items-center gap-2 shrink-0" prefetch={false}>
+      <Link
+        href="/"
+        className="flex items-center gap-2 shrink-0"
+        prefetch={false}
+      >
         <Image src="/image.png" priority width={120} height={120} alt="logo" />
       </Link>
 
       <div className="hidden md:flex items-center gap-10">
         {!session &&
-          ["TRANG CHỦ", "GIỚI THIỆU", "VỀ CHÚNG TÔI", "LIÊN HỆ"].map((item, idx) => {
-            const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
-            return (
-              <Link
-                key={item}
-                href={{
-                  pathname: "/",
-                  hash: hrefs[idx].replace("#", ""),
-                }}
-                scroll={true}
-                onClick={() => setMobileMenuOpen(false)}
-                className="block text-base font-medium text-center py-3 text-foreground hover:text-[#376FF9] transition-colors duration-200"
-              >
-                {item}
-              </Link>
-            );
-          })}
+          ["TRANG CHỦ", "GIỚI THIỆU", "VỀ CHÚNG TÔI", "LIÊN HỆ"].map(
+            (item, idx) => {
+              const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
+              return (
+                <Link
+                  key={item}
+                  href={{
+                    pathname: "/",
+                    hash: hrefs[idx].replace("#", ""),
+                  }}
+                  scroll={true}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-base font-medium text-center py-3 text-foreground hover:text-[#376FF9] transition-colors duration-200"
+                >
+                  {item}
+                </Link>
+              );
+            },
+          )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -110,7 +118,9 @@ export default function Header() {
                 </Button>
                 {/* <span >Hoặc</span> */}
                 <Button className="bg-[#376FF9] text-white hover:bg-[#2F5ED6]">
-                  <Link href={"/register"} className="text-base">ĐĂNG KÝ</Link>
+                  <Link href={"/register"} className="text-base">
+                    ĐĂNG KÝ
+                  </Link>
                 </Button>
               </div>
             )}
@@ -126,7 +136,10 @@ export default function Header() {
           )}
         </DropdownMenu>
 
-        <button className="md:hidden ml-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <button
+          className="md:hidden ml-2"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
@@ -134,19 +147,21 @@ export default function Header() {
       {/* Mobile Menu */}
       {mobileMenuOpen && !session && (
         <div className="absolute top-16 left-0 w-full bg-background px-4 py-3 flex flex-col gap-3 md:hidden z-40 shadow-md border-t">
-          {["Trang chủ", "Giới thiệu", "Về chúng tôi", "Liên hệ"].map((item, idx) => {
-            const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
-            return (
-              <Link
-                key={idx}
-                href={hrefs[idx]}
-                className="w-full text-center py-4 border-b border-gray-200 last:border-none text-sm font-medium text-foreground hover:text-[#376FF9] hover:bg-gray-100 transition-colors duration-200"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {item}
-              </Link>
-            );
-          })}
+          {["Trang chủ", "Giới thiệu", "Về chúng tôi", "Liên hệ"].map(
+            (item, idx) => {
+              const hrefs = ["#home", "#introduction", "#about-us", "#contact"];
+              return (
+                <Link
+                  key={idx}
+                  href={hrefs[idx]}
+                  className="w-full text-center py-4 border-b border-gray-200 last:border-none text-sm font-medium text-foreground hover:text-[#376FF9] hover:bg-gray-100 transition-colors duration-200"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {item}
+                </Link>
+              );
+            },
+          )}
 
           <Button
             onClick={() => signIn()}

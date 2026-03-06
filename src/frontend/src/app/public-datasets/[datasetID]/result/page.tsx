@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle, LoaderCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import React from "react";
 import { useRouter } from "next/navigation";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   params: Promise<{
@@ -14,6 +15,8 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
+  const { post } = useApi();
+
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
@@ -101,30 +104,15 @@ const ResultPage = ({ params }: Props) => {
       // api 33 -> gửi dữ liệu lên tiến hành train
       try {
         console.log(JSON.stringify(requestBody));
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/jobs/training`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              accept: "application/json",
-            },
-            body: JSON.stringify(requestBody),
-          }
-        );
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Lỗi API: ${response.status} - ${errorText}`);
-        }
+        const resultData = await post(`/v2/auto/jobs/training`, requestBody);
 
-        const resultData = await response.json();
         setResult(resultData);
         setJobStatus(resultData.status || null);
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
         setError(
-          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính."
+          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.",
         );
       } finally {
         setIsLoading(false);

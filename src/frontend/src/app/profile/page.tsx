@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import axios from "axios";
+
 import {
   Calendar,
   Mail,
@@ -75,7 +75,7 @@ const formSchema = z.object({
 });
 
 const Profile = () => {
-  const { put, get } = useApi();
+  const { put, get, post } = useApi();
 
   const { data: session, status } = useSession();
   const [user, setUser] = useState<User | null>(null);
@@ -99,7 +99,7 @@ const Profile = () => {
       setEditFormData(res);
 
       const avatar = await get(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`
+        `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
       );
 
       // Kiểm tra blob rỗng
@@ -167,28 +167,11 @@ const Profile = () => {
         const formData = new FormData();
         formData.append("avatar", file);
 
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_BASE_API}/update_avatar?username=${username}`,
-          formData,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
+        await post(`/update_avatar?username=${username}`, formData);
 
         window.dispatchEvent(new Event("avatar-updated"));
       }
 
-      // await axios.put(
-      //   `${process.env.NEXT_PUBLIC_BASE_API}/update/${username}`,
-      //   editFormData,
-      //   {
-      //     headers: {
-      //       "Content-Type": "application/json",
-      //     },
-      //   }
-      // );
       await put(`/update/${username}`, editFormData);
 
       toast({
@@ -522,8 +505,8 @@ const Profile = () => {
                   user?.gender === "male"
                     ? "Nam"
                     : user?.gender === "female"
-                    ? "Nữ"
-                    : "Khác"
+                      ? "Nữ"
+                      : "Khác"
                 }
               />
               <InfoRow

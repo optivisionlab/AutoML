@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/pagination";
 
 import PaginationCustom from "@/components/common/Panigation";
+import { useApi } from "@/hooks/useApi";
 
 type TrainingJob = {
   _id: string;
@@ -60,6 +61,8 @@ const formatDate = (timestamp?: number) => {
 };
 
 const ImplementProject = () => {
+  const { post } = useApi();
+
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -75,15 +78,10 @@ const ImplementProject = () => {
     if (!session?.user?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-list-job-by-userId?user_id=${session.user.id}`,
-        {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        }
+      const data = await post(
+        `/get-list-job-by-userId?user_id=${session.user.id}`,
       );
-      if (!res.ok) throw new Error("Lỗi khi gọi API");
-      const data = await res.json();
+
       setJobs(data || []);
     } catch (err) {
       console.error("Lỗi khi lấy lịch sử huấn luyện:", err);
@@ -99,14 +97,8 @@ const ImplementProject = () => {
   const handleConfirm = async () => {
     if (!selectedJobId) return;
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/activate-model?job_id=${selectedJobId}&activate=1`,
-        {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        }
-      );
-      if (!res.ok) throw new Error("Kích hoạt mô hình thất bại");
+      await post(`/activate-model?job_id=${selectedJobId}&activate=1`);
+
       router.push(`/implement-project/${selectedJobId}`);
     } catch (err) {
       console.error("Lỗi khi kích hoạt mô hình:", err);
@@ -126,7 +118,7 @@ const ImplementProject = () => {
   const totalPages = Math.ceil(sortedJobs.length / itemsPerPage);
   const paginatedJobs = sortedJobs.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
   );
 
   return (
