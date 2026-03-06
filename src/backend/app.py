@@ -296,7 +296,7 @@ async def get_data_from_uci(id_data: int):
 # Lấy danh sách data
 @app.post("/get-list-data-by-userid")
 async def get_list_data_by_userid(id: str, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
-    if current_user['_id'] != id:
+    if current_user['_id'] != id and id != "0":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied",
