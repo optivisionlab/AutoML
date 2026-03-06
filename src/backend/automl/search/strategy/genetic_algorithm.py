@@ -714,6 +714,7 @@ class GeneticAlgorithm(SearchStrategy):
         # Cập nhật cấu hình của thuật toán với bất kỳ đối số keyword nào được cung cấp
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
         self._start_timer()  # Bắt đầu đếm thời gian
+        self._init_search_log()
 
         # Đặt seed ngẫu nhiên để tái tạo được kết quả
         if self.config.get('random_state') is not None:
@@ -731,6 +732,24 @@ class GeneticAlgorithm(SearchStrategy):
 
         # Chuyển đổi lưới siêu tham số sang định dạng phù hợp cho thuật toán di truyền
         self._encode_parameters(param_grid)
+
+        # Tính tổng số tổ hợp tham số cho không gian categorical nhỏ
+        total_grid_combinations = 0
+        is_all_categorical = True
+        for grid in self._param_grid_list:
+            if not grid:
+                total_grid_combinations += 1
+                continue
+            grid_combos = 1
+            for param_name, param_values in grid.items():
+                if isinstance(param_values, list):
+                    grid_combos *= len(param_values)
+                else:
+                    is_all_categorical = False
+                    break
+            if not is_all_categorical:
+                break
+            total_grid_combinations += grid_combos
 
         # Điều chỉnh kích thước quần thể dựa trên độ phức tạp không gian tham số
         if self.config.get('adaptive_population', True) and self.config.get('fast_mode', True):
@@ -751,6 +770,24 @@ class GeneticAlgorithm(SearchStrategy):
         else:
             actual_population_size = self.config['population_size']
 
+        # Tự động điều chỉnh cho không gian categorical nhỏ
+        # Đảm bảo tổng evaluations (population * generations) >= total_combinations
+        # để GA có thể duyệt đủ không gian và tìm kết quả tối ưu giống Grid Search
+        if is_all_categorical and total_grid_combinations <= 100:
+            min_total_evaluations = total_grid_combinations * 2  # Ít nhất 2x coverage
+            current_total = actual_population_size * self.config['generation']
+            if current_total < min_total_evaluations:
+                # Tăng population hoặc generation để đủ coverage
+                new_pop = max(actual_population_size, min(total_grid_combinations, 30))
+                new_gen = max(self.config['generation'], (min_total_evaluations // new_pop) + 1)
+                logger.info(
+                    f"GA: Không gian categorical nhỏ ({total_grid_combinations} tổ hợp). "
+                    f"Điều chỉnh population {actual_population_size}→{new_pop}, "
+                    f"generation {self.config['generation']}→{new_gen}"
+                )
+                actual_population_size = new_pop
+                self.config['generation'] = new_gen
+
         # Tạo quần thể ban đầu sử dụng khởi tạo thông minh hoặc ngẫu nhiên
         if self.config.get('ultra_fast_mode', False):
             # Trong chế độ siêu nhanh, sử dụng chủ yếu quần thể ngẫu nhiên
@@ -763,8 +800,7 @@ class GeneticAlgorithm(SearchStrategy):
         # Danh sách để lưu lịch sử của tất cả các cá thể và điểm số của chúng qua tất cả các thế hệ
         all_individuals = []
         all_scores = []
-        all_metric_scores = []  # Lưu tất cả điểm số metric cho mỗi cá thể
-        generation_history = []  # Lưu lịch sử để logging
+        all_metric_scores = []
 
         # Khởi tạo các biến để theo dõi giải pháp tốt nhất tìm được cho đến nay
         best_individual = None
@@ -844,10 +880,10 @@ class GeneticAlgorithm(SearchStrategy):
                 score = scores.get(primary_metric, 0.0)
                 fitness_scores[idx] = score
 
-                # Ghi lại cho lịch sử
-                all_individuals.append(self._decode_individual(individual))
+                decoded_params = self._decode_individual(individual)
+                all_individuals.append(decoded_params)
                 all_scores.append(score)
-                all_metric_scores.append(scores.copy())  # Lưu tất cả điểm số metric
+                all_metric_scores.append(scores.copy())
 
                 # Theo dõi tốt nhất của thế hệ
                 if score > generation_best_score:
@@ -862,21 +898,15 @@ class GeneticAlgorithm(SearchStrategy):
                     generation_improved = True
                     generations_without_improvement = 0
 
-                # Lưu vào lịch sử thế hệ để logging
-                if self.config['save_log']:
-                    history_entry = {
-                        'generation': generation + 1,
-                        'individual_id': len(generation_history) + 1,
-                        'best_params': str(self._decode_individual(individual)),
-                        'fitness_score': score,
-                        'is_best_so_far': score == best_score,
-                        'diversity': diversity,
-                        'generation_best': generation_best_score
-                    }
-                    # Thêm tất cả metrics từ scores
-                    for metric_key, metric_value in scores.items():
-                        history_entry[metric_key] = metric_value
-                    generation_history.append(history_entry)
+                # Log kết quả đánh giá
+                self._log_evaluation(
+                    model_name=model.__class__.__name__,
+                    strategy_name='genetic_algorithm',
+                    params=decoded_params,
+                    scores=scores,
+                    iteration=len(all_individuals),
+                    total=actual_population_size * self.config['generation']
+                )
 
             # Theo dõi hội tụ với các phép toán numpy
             mean_fitness = fitness_scores.mean()
@@ -923,8 +953,7 @@ class GeneticAlgorithm(SearchStrategy):
 
             # Lưu log sau mỗi thế hệ
             if self.config['save_log'] and log_file:
-                df = pd.DataFrame(generation_history)
-                df.to_csv(log_file, index=False)
+                self._save_search_log(log_file, silent=True)
 
             # Kiểm tra xem quần thể đã hội tụ (đa dạng thấp) - bỏ qua trong chế độ siêu nhanh
             if not self.config.get('ultra_fast_mode', False):
@@ -997,9 +1026,9 @@ class GeneticAlgorithm(SearchStrategy):
                 f"Hiệu quả cache: {self._cache_hits}/{self._total_evaluations} ({cache_efficiency:.1f}% tỷ lệ trúng)")
             logger.info(f"Đánh giá duy nhất: {self._total_evaluations - self._cache_hits}")
 
-        # In vị trí file log nếu logging được bật
+        # Lưu log tìm kiếm vào file CSV
         if self.config['save_log'] and log_file:
-            logger.info(f"Log chi tiết đã lưu vào: {log_file}")
+            self._save_search_log(log_file)
 
         # Xóa cache và chuyển đổi kiểu numpy trước khi trả về
         return self._finalize_results(best_params, best_score, best_all_scores, cv_results)

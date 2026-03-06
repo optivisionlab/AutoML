@@ -302,15 +302,32 @@ class GridSearchStrategy(SearchStrategy):
             )
             all_results.extend(batch_results)
 
-            # Cập nhật best score cho early stopping
-            for result in batch_results:
+            # Log và cập nhật best score cho early stopping
+            for j, result in enumerate(batch_results):
+                eval_num = i + j + 1
+                scores_for_log = {}
                 if result.get('test_scores') is not None:
                     test_scores = result['test_scores']
+                    for metric in scoring.keys():
+                        metric_key = f'test_{metric}'
+                        if metric_key in test_scores:
+                            scores_for_log[metric] = float(np.mean(test_scores[metric_key]))
                     metric_key = f'test_{metric_sort}'
                     if metric_key in test_scores:
                         score = np.mean(test_scores[metric_key])
                         if score > best_score_so_far:
                             best_score_so_far = score
+                else:
+                    scores_for_log = {metric: 0.0 for metric in scoring.keys()}
+
+                self._log_evaluation(
+                    model_name=model.__class__.__name__,
+                    strategy_name='grid_search',
+                    params=result['params'],
+                    scores=scores_for_log,
+                    iteration=eval_num,
+                    total=len(all_params)
+                )
 
             self._best_scores_history.append(best_score_so_far)
 
@@ -319,20 +336,6 @@ class GridSearchStrategy(SearchStrategy):
                 early_stopped = True
                 logger.info(f"Dừng sớm sau khi đánh giá {len(all_results)}/{len(all_params)} tổ hợp")
                 break
-
-            # Hiển thị tiến trình với ước tính thời gian
-            if self.config.get('show_progress', True) and self.config.get('verbose', 1) > 0:
-                completed = min(i + batch_size, len(all_params))
-                elapsed = time.time() - self._start_time
-
-                progress_msg = f"Tiến trình: {completed}/{len(all_params)} tổ hợp đã đánh giá"
-
-                if self.config.get('show_time_estimate', True) and completed < len(all_params):
-                    remaining = self._estimate_remaining_time(completed, len(all_params), elapsed)
-                    progress_msg += f" | Còn lại: ~{remaining}"
-
-                progress_msg += f" | Best: {best_score_so_far:.4f}"
-                logger.info(progress_msg)
 
         # Log tổng thời gian
         total_time = time.time() - self._start_time
@@ -441,29 +444,6 @@ class GridSearchStrategy(SearchStrategy):
         ranks = np.argsort(np.argsort(-np.array(test_scores))) + 1
         cv_results_['rank_test_score'] = ranks.tolist()
 
-        # Lưu kết quả vào file log nếu logging được bật
-        if log_file and self.config.get('save_log', False):
-            # Tạo DataFrame với kết quả tìm kiếm
-            log_data = []
-            for i in range(len(cv_results_['params'])):
-                row = {
-                    'rank': cv_results_['rank_test_score'][i],
-                    'mean_test_score': cv_results_['mean_test_score'][i],
-                    'std_test_score': cv_results_['std_test_score'][i]
-                }
-                # Thêm giá trị tham số
-                row.update(cv_results_['params'][i])
-                # Thêm điểm số metric
-                for metric in scoring.keys():
-                    row[f'mean_test_{metric}'] = cv_results_[f'mean_test_{metric}'][i]
-                    row[f'std_test_{metric}'] = cv_results_[f'std_test_{metric}'][i]
-                log_data.append(row)
-
-            # Lưu vào CSV
-            df = pd.DataFrame(log_data)
-            df = df.sort_values('rank')
-            df.to_csv(log_file, index=False)
-
         # Xóa cache và chuyển đổi kiểu numpy trước khi trả về
         return self._finalize_results(best_params, best_score, best_all_scores, cv_results_)
 
@@ -487,6 +467,7 @@ class GridSearchStrategy(SearchStrategy):
         """
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
         self._start_timer()  # Bắt đầu đếm thời gian
+        self._init_search_log()
 
         # Tạo đường dẫn file log sử dụng phương thức lớp cơ sở
         log_file = self.create_log_file_path(model, 'grid_search')
@@ -504,8 +485,8 @@ class GridSearchStrategy(SearchStrategy):
             log_file=log_file
         )
 
-        # Ghi log thông báo hoàn thành nếu logging được bật
+        # Lưu log tìm kiếm vào file CSV
         if self.config.get('save_log', False) and log_file:
-            logger.info(f"Log grid search đã lưu vào: {log_file}")
+            self._save_search_log(log_file)
 
         return best_params, best_score, best_all_scores, cv_results

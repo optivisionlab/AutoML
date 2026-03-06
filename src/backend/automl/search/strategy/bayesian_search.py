@@ -205,7 +205,12 @@ class BayesianSearchStrategy(SearchStrategy):
             cv_results_[f'std_test_{metric}'] = [0.0]
             cv_results_[f'rank_test_{metric}'] = [1]
 
-        logger.info(f"Đánh giá {model.__class__.__name__} với default params: {primary_metric}={best_score:.4f}")
+        self._log_evaluation(
+            model_name=model.__class__.__name__,
+            strategy_name='bayesian_search',
+            params={},
+            scores=all_scores
+        )
 
         return {}, best_score, all_scores, cv_results_
 
@@ -235,6 +240,9 @@ class BayesianSearchStrategy(SearchStrategy):
         """
         self.set_config(**kwargs)
         self._start_timer()  # Bắt đầu đếm thời gian
+        self._init_search_log()
+
+        log_file = self.create_log_file_path(model, 'bayesian_search')
 
         # Chuẩn hóa param_grid về list-of-dicts format
         param_grid_list = normalize_param_grid(param_grid)
@@ -268,6 +276,10 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # Gộp tất cả cv_results
         combined_cv_results = self._combine_cv_results(all_cv_results)
+
+        # Lưu log tìm kiếm vào file CSV
+        if self.config.get('save_log', False) and log_file:
+            self._save_search_log(log_file)
 
         return self._finalize_results(best_params, best_score, best_all_scores, combined_cv_results)
 
@@ -307,9 +319,6 @@ class BayesianSearchStrategy(SearchStrategy):
         Thực thi thuật toán tìm kiếm trên một grid đơn lẻ.
         """
 
-        # Tạo đường dẫn file log sử dụng phương thức lớp cơ sở
-        log_file = self.create_log_file_path(model, 'bayesian_search')
-
         # Chuyển đổi param_grid thành danh sách các dimension
         search_space = []
         param_names = []
@@ -328,9 +337,6 @@ class BayesianSearchStrategy(SearchStrategy):
                 param_names.append(param_name)
             else:
                 raise ValueError(f"Invalid parameter type for {param_name}: {type(param_value)}")
-
-        # Danh sách để lưu lịch sử tìm kiếm
-        search_history = []
 
         # Khởi tạo từ điển cv_results_ tương tự grid_search
         cv_results_ = {
@@ -432,22 +438,15 @@ class BayesianSearchStrategy(SearchStrategy):
             raw_metrics = getattr(objective, 'last_metrics', {})
             metrics = SearchStrategy.convert_numpy_types(raw_metrics)
 
-            # Tạo bản ghi cho lịch sử
-            record = {
-                'model': model_name,
-                'run_type': 'bayesian_search',
-                'best_params': str(current_params),
-            }
-            # Thêm tất cả metrics vào record
-            for metric_key in metric_names:
-                record[metric_key] = metrics.get(metric_key, 0.0)
-
-            # In thông tin ra console
-            if self.config.get('verbose', 1) > 0:
-                metrics_str = ", ".join([f"{k}={metrics.get(k, 0.0):.4f}" for k in metric_names])
-                logger.info(f"Lần lặp {iteration}/{self.config['n_calls']}: {metrics_str}")
-
-            search_history.append(record)
+            # Log kết quả đánh giá
+            self._log_evaluation(
+                model_name=model_name,
+                strategy_name='bayesian_search',
+                params=current_params,
+                scores={k: metrics.get(k, 0.0) for k in metric_names},
+                iteration=iteration,
+                total=self.config['n_calls']
+            )
 
             # Điền dữ liệu vào cv_results_
             cv_results_['params'].append(current_params)
@@ -486,11 +485,6 @@ class BayesianSearchStrategy(SearchStrategy):
                     if abs(recent_improvement) < convergence_threshold:
                         logger.info(f"Phát hiện hội tụ tại iteration {iteration} (cải thiện < {convergence_threshold:.4f})")
                         return True
-
-            # Lưu log sau mỗi iteration nếu được yêu cầu
-            if self.config['save_log']:
-                df = pd.DataFrame(search_history)
-                df.to_csv(log_file, index=False)
 
             # Trả về False để tiếp tục tối ưu hóa (True sẽ dừng)
             return False
@@ -575,10 +569,6 @@ class BayesianSearchStrategy(SearchStrategy):
         if best_all_scores is None:
             raw_metrics = getattr(objective, 'last_metrics', {})
             best_all_scores = SearchStrategy.convert_numpy_types(raw_metrics)
-
-        # In thông báo về vị trí file log
-        if self.config['save_log']:
-            logger.info(f"Đã lưu log tìm kiếm vào: {log_file}")
 
         # Xóa cache và chuyển đổi kiểu numpy trước khi trả về
         return self._finalize_results(best_params, best_score, best_all_scores, cv_results_)

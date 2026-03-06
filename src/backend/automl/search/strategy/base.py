@@ -305,3 +305,38 @@ class SearchStrategy(ABC):
         cv_results = self.convert_numpy_types(cv_results)
 
         return best_params, best_score, best_all_scores, cv_results
+
+    def _init_search_log(self):
+        """Khởi tạo danh sách log cho quá trình tìm kiếm."""
+        self._search_log = []
+
+    def _log_evaluation(self, model_name: str, strategy_name: str,
+                        params: Dict[str, Any], scores: Dict[str, float],
+                        iteration: int = None, total: int = None):
+        """Ghi log kết quả đánh giá một tổ hợp tham số ra console và lưu vào danh sách."""
+        if not hasattr(self, '_search_log'):
+            self._search_log = []
+
+        record = {
+            'model': model_name,
+            'run_type': strategy_name,
+            'best_params': str(params),
+        }
+        record.update(scores)
+        self._search_log.append(record)
+
+        if self.config.get('verbose', 0) > 0:
+            progress = f"[{iteration}/{total}] " if iteration is not None and total is not None else ""
+            scores_str = ", ".join([f"{k}={v:.4f}" for k, v in scores.items()])
+            logger.info(f"{progress}{model_name} | {strategy_name} | {params} | {scores_str}")
+
+    def _save_search_log(self, log_file: Optional[str], silent: bool = False):
+        """Lưu log tìm kiếm vào file CSV theo format chuẩn."""
+        if not log_file or not hasattr(self, '_search_log') or not self._search_log:
+            return
+
+        import pandas as pd
+        df = pd.DataFrame(self._search_log)
+        df.to_csv(log_file, index=False)
+        if not silent:
+            logger.info(f"Log tìm kiếm đã lưu vào: {log_file}")
