@@ -16,6 +16,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import KFold
 from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
+from sklearn.base import clone
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
@@ -253,7 +254,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
-            "scores": scores_dict
+            "scores": scores_dict,
+            "cv_results": cv_results  # Toàn bộ kết quả CV cho tất cả tổ hợp tham số
         }
 
         model_results.append(results)
@@ -357,6 +359,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         'error_score': "raise",
         'return_train_score': False,
         'n_jobs': -1,
+        'random_state': 42,  # Đảm bảo reproducibility cho Bayesian và GA
     }
     
     # Tạo search strategy từ factory
@@ -368,7 +371,15 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
 
     for model_id in range(len(models)):
         model_info = models[model_id]
-        model = model_info['model']
+        # Clone model để tránh thay đổi model gốc (shared state)
+        # Đảm bảo mỗi lần gọi training_regression đều có model độc lập
+        model = clone(model_info['model'])
+        
+        # Đặt random_state cho các model có tham số này để đảm bảo
+        # kết quả CV giống nhau cho cùng tổ hợp tham số, bất kể thứ tự đánh giá
+        if hasattr(model, 'random_state'):
+            model.set_params(random_state=42)
+        
         param_grid = model_info.get('params') or [{}]
 
         # Sử dụng search strategy thống nhất
@@ -391,8 +402,10 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         if current_model_score is None:
             continue
 
-        # Lấy estimator tốt nhất với các tham số tốt nhất
-        best_estimator = model.set_params(**best_params_model)
+        # Clone model mới và fit với best params để trả về model độc lập
+        best_estimator = clone(model).set_params(**best_params_model)
+        if hasattr(best_estimator, 'random_state'):
+            best_estimator.set_params(random_state=42)
         best_estimator.fit(X_train, y_train)
 
         # Trích xuất điểm từ cv_results
@@ -421,7 +434,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
             'model_id': model_id,
             'model_name': model.__class__.__name__,
             'best_params': best_params_model,
-            "scores": clean_scores
+            "scores": clean_scores,
+            "cv_results": cv_results  # Toàn bộ kết quả CV cho tất cả tổ hợp tham số
         }
         model_results.append(results)
         

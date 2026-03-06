@@ -714,7 +714,6 @@ class GeneticAlgorithm(SearchStrategy):
         # Cập nhật cấu hình của thuật toán với bất kỳ đối số keyword nào được cung cấp
         self.set_config(**{k: v for k, v in kwargs.items() if k in self.config})
         self._start_timer()  # Bắt đầu đếm thời gian
-        self._init_search_log()
 
         # Đặt seed ngẫu nhiên để tái tạo được kết quả
         if self.config.get('random_state') is not None:
@@ -800,7 +799,8 @@ class GeneticAlgorithm(SearchStrategy):
         # Danh sách để lưu lịch sử của tất cả các cá thể và điểm số của chúng qua tất cả các thế hệ
         all_individuals = []
         all_scores = []
-        all_metric_scores = []
+        all_metric_scores = []  # Lưu tất cả điểm số metric cho mỗi cá thể
+        generation_history = []  # Lưu lịch sử để logging
 
         # Khởi tạo các biến để theo dõi giải pháp tốt nhất tìm được cho đến nay
         best_individual = None
@@ -880,10 +880,10 @@ class GeneticAlgorithm(SearchStrategy):
                 score = scores.get(primary_metric, 0.0)
                 fitness_scores[idx] = score
 
-                decoded_params = self._decode_individual(individual)
-                all_individuals.append(decoded_params)
+                # Ghi lại cho lịch sử
+                all_individuals.append(self._decode_individual(individual))
                 all_scores.append(score)
-                all_metric_scores.append(scores.copy())
+                all_metric_scores.append(scores.copy())  # Lưu tất cả điểm số metric
 
                 # Theo dõi tốt nhất của thế hệ
                 if score > generation_best_score:
@@ -898,15 +898,21 @@ class GeneticAlgorithm(SearchStrategy):
                     generation_improved = True
                     generations_without_improvement = 0
 
-                # Log kết quả đánh giá
-                self._log_evaluation(
-                    model_name=model.__class__.__name__,
-                    strategy_name='genetic_algorithm',
-                    params=decoded_params,
-                    scores=scores,
-                    iteration=len(all_individuals),
-                    total=actual_population_size * self.config['generation']
-                )
+                # Lưu vào lịch sử thế hệ để logging
+                if self.config['save_log']:
+                    history_entry = {
+                        'generation': generation + 1,
+                        'individual_id': len(generation_history) + 1,
+                        'best_params': str(self._decode_individual(individual)),
+                        'fitness_score': score,
+                        'is_best_so_far': score == best_score,
+                        'diversity': diversity,
+                        'generation_best': generation_best_score
+                    }
+                    # Thêm tất cả metrics từ scores
+                    for metric_key, metric_value in scores.items():
+                        history_entry[metric_key] = metric_value
+                    generation_history.append(history_entry)
 
             # Theo dõi hội tụ với các phép toán numpy
             mean_fitness = fitness_scores.mean()
@@ -953,7 +959,8 @@ class GeneticAlgorithm(SearchStrategy):
 
             # Lưu log sau mỗi thế hệ
             if self.config['save_log'] and log_file:
-                self._save_search_log(log_file, silent=True)
+                df = pd.DataFrame(generation_history)
+                df.to_csv(log_file, index=False)
 
             # Kiểm tra xem quần thể đã hội tụ (đa dạng thấp) - bỏ qua trong chế độ siêu nhanh
             if not self.config.get('ultra_fast_mode', False):
@@ -1026,9 +1033,9 @@ class GeneticAlgorithm(SearchStrategy):
                 f"Hiệu quả cache: {self._cache_hits}/{self._total_evaluations} ({cache_efficiency:.1f}% tỷ lệ trúng)")
             logger.info(f"Đánh giá duy nhất: {self._total_evaluations - self._cache_hits}")
 
-        # Lưu log tìm kiếm vào file CSV
+        # In vị trí file log nếu logging được bật
         if self.config['save_log'] and log_file:
-            self._save_search_log(log_file)
+            logger.info(f"Log chi tiết đã lưu vào: {log_file}")
 
         # Xóa cache và chuyển đổi kiểu numpy trước khi trả về
         return self._finalize_results(best_params, best_score, best_all_scores, cv_results)
