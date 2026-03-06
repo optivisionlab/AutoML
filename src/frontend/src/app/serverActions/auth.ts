@@ -1,9 +1,11 @@
 "use server";
 
-import { error } from "console";
+import { getSession } from "next-auth/react";
 
 // Quên mật khẩu -> gọi yêu cầu gửi
 export async function forgotPassword(email: string) {
+  const session = await getSession();
+
   try {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_BASE_API}/forgot_password/${email}`,
@@ -11,8 +13,9 @@ export async function forgotPassword(email: string) {
         method: "POST",
         headers: {
           accept: "application/json",
+          Authorization: `Bearer ${session?.user?.access_token}`,
         },
-      }
+      },
     );
 
     if (!res.ok) {
@@ -31,8 +34,10 @@ export async function changePassword(
   username: string,
   password: string,
   new1_password: string,
-  new2_password: string
+  new2_password: string,
 ) {
+  const session = await getSession();
+
   const res = await fetch(
     `${process.env.NEXT_PUBLIC_BASE_API}/change_password?username=${username}`,
     {
@@ -40,6 +45,7 @@ export async function changePassword(
       headers: {
         accept: "application/json",
         "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.user?.access_token}`,
       },
       body: JSON.stringify({
         username,
@@ -47,7 +53,7 @@ export async function changePassword(
         new1_password,
         new2_password,
       }),
-    }
+    },
   );
   const data = await res.json();
 
