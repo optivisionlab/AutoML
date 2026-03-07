@@ -98,20 +98,36 @@ const Profile = () => {
       setUser(res);
       setEditFormData(res);
 
-      const avatar = await get(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
-      );
+      // const avatar = await get(
+      //   `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
+      // );
 
-      // Kiểm tra blob rỗng
-      if (avatar && avatar.size > 0) {
-        const url = URL.createObjectURL(avatar.data);
-        setAvatarUrl(url);
-        setOriginalAvatar(url);
-      } else {
-        // blob rỗng -> set url rỗng
-        setAvatarUrl("");
-        setOriginalAvatar("");
-      }
+      // console.log(res.avatar);
+      const avatarBase64 = res.avatar || "";
+
+      const avatar = avatarBase64
+        ? `data:image/png;base64,${avatarBase64}`
+        : "";
+
+      setAvatarUrl(avatar);
+      setOriginalAvatar(avatar);
+      // const avatar = session?.user?.avatar || "";
+      // console.log(res);
+      // console.log(session?.user?.avatar);
+
+      // setAvatarUrl(avatar);
+      // setOriginalAvatar(avatar);
+
+      // // Kiểm tra blob rỗng
+      // if (avatar && avatar.size > 0) {
+      //   const url = URL.createObjectURL(avatar.data);
+      //   setAvatarUrl(url);
+      //   setOriginalAvatar(url);
+      // } else {
+      //   // blob rỗng -> set url rỗng
+      //   setAvatarUrl("");
+      //   setOriginalAvatar("");
+      // }
     } catch (error) {
       console.error("❌ Lỗi khi lấy thông tin người dùng:", error);
     } finally {
@@ -310,10 +326,12 @@ const Profile = () => {
             <div className="relative w-24 h-24">
               <Avatar className="w-full h-full cursor-pointer">
                 <AvatarImage
-                  src={avatarUrl ?? undefined}
+                  key={avatarUrl}
+                  src={avatarUrl || ""}
                   alt="avatar"
                   className="object-cover"
                 />
+
                 <AvatarFallback className="bg-gray-100">
                   <User2 className="w-10 h-10" />
                 </AvatarFallback>
