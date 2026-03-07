@@ -18,3 +18,7 @@ imbalance_threshold: 0.3  # Ngưỡng để phát hiện mất cân bằng lớp
 early_stopping_enabled: true  # Bật dừng sớm
 early_stopping_patience: 5  # Dừng nếu không cải thiện trong số lần lặp này
 convergence_threshold: 0.001  # Dừng nếu cải thiện < ngưỡng
+
+# Cài đặt warm start
+warm_start_enabled: false  # Bật warm start từ kết quả lần chạy trước
+save_optimizer_state: true  # Lưu trạng thái optimizer để sử dụng lại

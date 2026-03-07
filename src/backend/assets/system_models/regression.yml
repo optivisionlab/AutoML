@@ -6,29 +6,29 @@ metric_list:
 Regression_models:
   0:
     model: LinearRegression
-    params:
+    params: []
   1:
     model: DecisionTreeRegressor
     params:
-      max_depth: [3, 5, 10, null]
-      min_samples_split: [2, 5, 10]
-      min_samples_leaf: [1, 2, 4]
+      - max_depth: [3, 5, 10, null]
+        min_samples_split: [2, 5, 10]
+        min_samples_leaf: [1, 2, 4]
   2:
     model: RandomForestRegressor
     params:
-      n_estimators: [50, 100, 200]
-      max_depth: [3, 5, 10, null]
-      max_features: ["sqrt", "log2"]
+      - n_estimators: [50, 100, 200]
+        max_depth: [3, 5, 10, null]
+        max_features: ["sqrt", "log2"]
   3:
     model: GradientBoostingRegressor
     params:
-      n_estimators: [100, 200]
-      learning_rate: [0.01, 0.05, 0.1]
-      max_depth: [3, 5, 10]
+      - n_estimators: [100, 200]
+        learning_rate: [0.01, 0.05, 0.1]
+        max_depth: [3, 5, 10]
   4:
     model: XGBRegressor
     params:
-      n_estimators: [100, 200]
-      learning_rate: [0.05, 0.1]
-      max_depth: [3, 5]
-      colsample_bytree: [0.7, 0.9]
+      - n_estimators: [100, 200]
+        learning_rate: [0.05, 0.1]
+        max_depth: [3, 5]
+        colsample_bytree: [0.7, 0.9]

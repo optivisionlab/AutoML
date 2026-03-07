@@ -1,3 +1,4 @@
+import logging
 import os
 import pickle
 import joblib
@@ -11,10 +12,11 @@ import pandas as pd  # type: ignore
 import yaml
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, balanced_accuracy_score
 from sklearn.metrics import make_scorer
-from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.model_selection import KFold
 from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
+from sklearn.base import clone
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
@@ -25,6 +27,9 @@ from automl.process_classification import preprocess_data
 
 np.random.seed(42)
 random.seed(42)
+
+# Cấu hình logger cho module này
+logger = logging.getLogger(__name__)
 
 import time
 from bson import ObjectId
@@ -96,7 +101,10 @@ def get_model():
     models = {}
     for key, model_info in data['Classification_models'].items():
         model_class = eval(model_info['model'])
-        params = model_info['params']
+        params = model_info.get('params')
+        # Xử lý None/empty params - trả về list rỗng hoặc list với dict rỗng
+        if params is None or params == []:
+            params = [{}]
         models[key] = {
             "model": model_class(),
             "params": params
@@ -144,6 +152,9 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         if metric_str == 'accuracy':
             return 'accuracy', None
         
+        if metric_str == 'balanced_accuracy':
+            return 'balanced_accuracy', None
+        
         if metric_str.endswith('_macro'):
             return metric_str[:-6], 'macro'
         elif metric_str.endswith('_weighted'):
@@ -158,6 +169,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         
         if base_metric == 'accuracy':
             scoring['accuracy'] = make_scorer(accuracy_score)
+        elif base_metric == 'balanced_accuracy':
+            scoring['balanced_accuracy'] = make_scorer(balanced_accuracy_score)
         elif base_metric in ['precision', 'recall', 'f1']:
             score_func = {
                 'precision': precision_score,
@@ -177,8 +190,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     # Chuẩn hóa metric_sort
     base_metric_sort, avg_type_sort = parse_metric(metric_sort)
     
-    if base_metric_sort == 'accuracy':
-        normalized_metric_sort = 'accuracy'
+    if base_metric_sort in ['accuracy', 'balanced_accuracy']:
+        normalized_metric_sort = base_metric_sort
     else:
         normalized_metric_sort = metric_sort
 
@@ -209,11 +222,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             y=y_train
         )
         
-        # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc để tránh lỗi serialization
-        best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
-        best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
-        cv_results = SearchStrategy.convert_numpy_types(cv_results)
-
         # Lấy estimator tốt nhất với các tham số tốt nhất
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
@@ -229,24 +237,23 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         
         best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
         
-        # Đảm bảo các điểm cũng được chuyển đổi sang kiểu gốc
         scores_dict = {}
         for metric in metric_list:
             key = f"mean_test_{metric}"
             if key in cv_results:
-                score_value = cv_results[key][best_idx]
-                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+                scores_dict[metric] = cv_results[key][best_idx]
         
         results = {
             "model_id": model_id,
             "model_name": model.__class__.__name__,
             "best_params": best_params_model,
-            "scores": scores_dict
+            "scores": scores_dict,
+            "cv_results": cv_results  # Toàn bộ kết quả CV cho tất cả tổ hợp tham số
         }
 
         model_results.append(results)
 
-        if best_score_model > best_score:
+        if best_score_model >= best_score:
             best_model_id = model_id
             best_model = best_estimator
             best_score = best_score_model
@@ -289,6 +296,25 @@ def safe_extract_score(metric_name, raw_score):
 
 
 def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+    """
+    Huấn luyện các mô hình regression với tối ưu hóa siêu tham số.
+    
+    Hỗ trợ nhiều thuật toán tìm kiếm:
+    - 'grid_search': Grid Search (tìm kiếm toàn diện)
+    - 'bayesian_search': Bayesian Optimization (tối ưu hóa Bayesian)
+    - 'genetic_algorithm': Genetic Algorithm (thuật toán di truyền)
+    
+    Args:
+        models: Dictionary các mô hình với param grids tương ứng
+        metric_list: Danh sách các độ đo để đánh giá (vd: ['mse', 'mae', 'r2'])
+        metric_sort: Độ đo chính để chọn mô hình tốt nhất (vd: 'mse', 'r2')
+        X_train: Dữ liệu đặc trưng huấn luyện
+        y_train: Dữ liệu nhãn mục tiêu huấn luyện
+        search_algorithm: Thuật toán tìm kiếm ('grid_search', 'bayesian_search', 'genetic_algorithm')
+    
+    Returns:
+        Tuple: (best_model_id, best_model, best_score, best_params, model_results)
+    """
     # Chuẩn hóa đầu vào
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
@@ -306,8 +332,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     best_params = {}
     model_results = []
 
-    # Scoring dictionary
-    # Greater_is_better=False sẽ làm cho kết quả trả về là số âm
+    # Scoring dictionary cho regression
+    # Greater_is_better=False sẽ làm cho kết quả trả về là số âm (dùng cho scikit-learn internal)
     scoring = {
         "mse": make_scorer(mse_score, greater_is_better=False),
         "mae": make_scorer(mae_score, greater_is_better=False),
@@ -315,39 +341,84 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         "r2": make_scorer(r2_score_sklearn, greater_is_better=True),
     }
     
+    # Sử dụng KFold cho regression (không StratifiedKFold vì target là continuous)
     cv_strategy = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    # Cấu hình cho SearchStrategyFactory
+    strategy_config = {
+        'cv': cv_strategy,
+        'scoring': scoring,
+        'metric_sort': metric_sort,
+        'error_score': "raise",
+        'return_train_score': False,
+        'n_jobs': -1,
+        'random_state': 42,  # Đảm bảo reproducibility cho Bayesian và GA
+    }
+    
+    # Tạo search strategy từ factory
+    try:
+        search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
+    except ValueError as e:
+        logger.warning(f"Cảnh báo: {e}. Sử dụng tìm kiếm 'grid_search' mặc định.")
+        search_strategy = SearchStrategyFactory.create_strategy('grid_search', strategy_config)
 
     for model_id in range(len(models)):
         model_info = models[model_id]
-        model = model_info['model']
-        param_grid = model_info.get('params') or {}
-
-        grid_search = GridSearchCV(
-            estimator=model,
-            param_grid=param_grid,
-            cv=cv_strategy,
-            scoring=scoring,
-            refit=metric_sort,
-            n_jobs=-1
-        )
-        grid_search.fit(X_train, y_train)
-
-        # Lấy điểm raw từ Scikit-learn (MSE sẽ là âm, R2 là dương)
-        raw_best_score = grid_search.best_score_
+        # Clone model để tránh thay đổi model gốc (shared state)
+        # Đảm bảo mỗi lần gọi training_regression đều có model độc lập
+        model = clone(model_info['model'])
         
-        # Đưa về số dương chuẩn
-        current_model_score = safe_extract_score(metric_sort, raw_best_score)
+        # Đặt random_state cho các model có tham số này để đảm bảo
+        # kết quả CV giống nhau cho cùng tổ hợp tham số, bất kể thứ tự đánh giá
+        if hasattr(model, 'random_state'):
+            model.set_params(random_state=42)
+        
+        param_grid = model_info.get('params') or [{}]
+
+        # Sử dụng search strategy thống nhất
+        best_params_model, best_score_model, best_all_scores_model, cv_results = search_strategy.search(
+            model=model,
+            param_grid=param_grid,
+            X=X_train,
+            y=y_train
+        )
+        
+        # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc
+        best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
+        best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
+        cv_results = SearchStrategy.convert_numpy_types(cv_results)
+
+        # Xử lý điểm số cho regression metrics (sử dụng safe_extract_score để xử lý abs và NaN/Inf)
+        current_model_score = safe_extract_score(metric_sort, best_score_model)
         
         # Nếu gặp lỗi NaN/Inf thì bỏ qua model này
         if current_model_score is None:
             continue
 
+        # Clone model mới và fit với best params để trả về model độc lập
+        best_estimator = clone(model).set_params(**best_params_model)
+        if hasattr(best_estimator, 'random_state'):
+            best_estimator.set_params(random_state=42)
+        best_estimator.fit(X_train, y_train)
+
+        # Trích xuất điểm từ cv_results
         clean_scores = {}
-        best_idx = grid_search.best_index_
+        
+        # Tìm index của kết quả tốt nhất
+        rank_key = f'rank_test_{metric_sort}'
+        if rank_key in cv_results and cv_results[rank_key]:
+            rank_array = np.array(cv_results[rank_key])
+            best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
+        elif 'rank_test_score' in cv_results and cv_results['rank_test_score']:
+            rank_array = np.array(cv_results['rank_test_score'])
+            best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
+        else:
+            best_idx = 0
+            
         for metric in metric_list:
             key = f"mean_test_{metric}"
-            if key in grid_search.cv_results_:
-                raw_val = grid_search.cv_results_[key][best_idx]
+            if key in cv_results and len(cv_results[key]) > best_idx:
+                raw_val = cv_results[key][best_idx]
                 clean_scores[metric] = safe_extract_score(metric, raw_val)
             else:
                 clean_scores[metric] = None
@@ -355,27 +426,22 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         results = {
             'model_id': model_id,
             'model_name': model.__class__.__name__,
-            'best_params': grid_search.best_params_,
-            "scores": clean_scores
+            'best_params': best_params_model,
+            "scores": clean_scores,
+            "cv_results": cv_results  # Toàn bộ kết quả CV cho tất cả tổ hợp tham số
         }
         model_results.append(results)
-        
-        is_better = False
-            
+
         if find_min:
-            # Logic cho MSE/MAE: Càng nhỏ càng tốt
-            if current_model_score < global_best_score:
-                is_better = True
+            is_better = current_model_score <= global_best_score
         else:
-            # Logic cho R2: Càng lớn càng tốt
-            if current_model_score > global_best_score:
-                is_better = True
+            is_better = current_model_score >= global_best_score
         
         if is_better:
             global_best_score = current_model_score
             best_model_id = model_id
-            best_model = grid_search.best_estimator_
-            best_params = grid_search.best_params_
+            best_model = best_estimator
+            best_params = best_params_model
 
     return best_model_id, best_model, global_best_score, best_params, model_results
 
