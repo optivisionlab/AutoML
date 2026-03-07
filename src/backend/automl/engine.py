@@ -222,11 +222,6 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
             y=y_train
         )
         
-        # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc để tránh lỗi serialization
-        best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
-        best_score_model = SearchStrategy.convert_numpy_types(best_score_model)
-        cv_results = SearchStrategy.convert_numpy_types(cv_results)
-
         # Lấy estimator tốt nhất với các tham số tốt nhất
         best_estimator = model.set_params(**best_params_model)
         best_estimator.fit(X_train, y_train)
@@ -242,13 +237,11 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         
         best_idx = rank_array.argmin() if len(rank_array) > 0 else 0
         
-        # Đảm bảo các điểm cũng được chuyển đổi sang kiểu gốc
         scores_dict = {}
         for metric in metric_list:
             key = f"mean_test_{metric}"
             if key in cv_results:
-                score_value = cv_results[key][best_idx]
-                scores_dict[metric] = float(score_value) if hasattr(score_value, 'item') else score_value
+                scores_dict[metric] = cv_results[key][best_idx]
         
         results = {
             "model_id": model_id,
@@ -260,7 +253,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
 
         model_results.append(results)
 
-        if best_score_model > best_score:
+        if best_score_model >= best_score:
             best_model_id = model_id
             best_model = best_estimator
             best_score = best_score_model
@@ -438,17 +431,11 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
             "cv_results": cv_results  # Toàn bộ kết quả CV cho tất cả tổ hợp tham số
         }
         model_results.append(results)
-        
-        is_better = False
-            
+
         if find_min:
-            # Logic cho MSE/MAE: Càng nhỏ càng tốt
-            if current_model_score < global_best_score:
-                is_better = True
+            is_better = current_model_score <= global_best_score
         else:
-            # Logic cho R2: Càng lớn càng tốt
-            if current_model_score > global_best_score:
-                is_better = True
+            is_better = current_model_score >= global_best_score
         
         if is_better:
             global_best_score = current_model_score

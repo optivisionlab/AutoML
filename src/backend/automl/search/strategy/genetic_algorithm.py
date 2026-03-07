@@ -886,11 +886,11 @@ class GeneticAlgorithm(SearchStrategy):
                 all_metric_scores.append(scores.copy())  # Lưu tất cả điểm số metric
 
                 # Theo dõi tốt nhất của thế hệ
-                if score > generation_best_score:
+                if score >= generation_best_score:
                     generation_best_score = score
 
                 # Cập nhật tốt nhất toàn cục nếu cải thiện
-                if score > best_score:
+                if score >= best_score:
                     best_score = score
                     best_individual = copy.deepcopy(individual)
                     best_all_scores = scores.copy()

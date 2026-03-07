@@ -315,7 +315,7 @@ class GridSearchStrategy(SearchStrategy):
                     metric_key = f'test_{metric_sort}'
                     if metric_key in test_scores:
                         score = np.mean(test_scores[metric_key])
-                        if score > best_score_so_far:
+                        if score >= best_score_so_far:
                             best_score_so_far = score
                 else:
                     scores_for_log = {metric: 0.0 for metric in scoring.keys()}
@@ -428,7 +428,7 @@ class GridSearchStrategy(SearchStrategy):
 
             # Theo dõi điểm số tốt nhất
             current_score = average_score.get(metric_sort, 0.0)
-            if current_score > best_score:
+            if current_score >= best_score:
                 best_score = current_score
                 best_params = params
                 best_all_scores = average_score
