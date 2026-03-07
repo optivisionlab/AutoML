@@ -98,11 +98,6 @@ const Profile = () => {
       setUser(res);
       setEditFormData(res);
 
-      // const avatar = await get(
-      //   `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${username}`,
-      // );
-
-      // console.log(res.avatar);
       const avatarBase64 = res.avatar || "";
 
       const avatar = avatarBase64
@@ -111,23 +106,6 @@ const Profile = () => {
 
       setAvatarUrl(avatar);
       setOriginalAvatar(avatar);
-      // const avatar = session?.user?.avatar || "";
-      // console.log(res);
-      // console.log(session?.user?.avatar);
-
-      // setAvatarUrl(avatar);
-      // setOriginalAvatar(avatar);
-
-      // // Kiểm tra blob rỗng
-      // if (avatar && avatar.size > 0) {
-      //   const url = URL.createObjectURL(avatar.data);
-      //   setAvatarUrl(url);
-      //   setOriginalAvatar(url);
-      // } else {
-      //   // blob rỗng -> set url rỗng
-      //   setAvatarUrl("");
-      //   setOriginalAvatar("");
-      // }
     } catch (error) {
       console.error("❌ Lỗi khi lấy thông tin người dùng:", error);
     } finally {
