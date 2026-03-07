@@ -31,6 +31,7 @@ export default function Header() {
         try {
           const blob = await get(
             `${process.env.NEXT_PUBLIC_BASE_API}/get_avatar/${session.user.username}`,
+            { responseType: "blob" },
           );
 
           // Kiểm tra blob rỗng

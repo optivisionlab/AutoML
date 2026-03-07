@@ -1,10 +1,14 @@
 import axiosClient from "@/api/axiosClient";
 
 export function useApi() {
-  async function get(url: string) {
-    const res = await axiosClient.get(url);
+  // async function get(url: string) {
+  //   const res = await axiosClient.get(url);
+  //   return res.data;
+  // }
+  const get = async (url: string, config = {}) => {
+    const res = await axiosClient.get(url, config);
     return res.data;
-  }
+  };
 
   async function post(url: string, data?: any) {
     const res = data
