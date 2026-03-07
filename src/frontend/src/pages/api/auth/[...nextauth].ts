@@ -155,7 +155,6 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email as string;
         session.user.id = token.id as string;
         session.user.role = token.role as string;
-        session.user.avatar = token.avatar as string;
         session.user.access_token = token.access_token as string;
         session.user.refresh_token = token.refresh_token as string;
       }
