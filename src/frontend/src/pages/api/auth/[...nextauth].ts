@@ -103,7 +103,6 @@ export const authOptions: NextAuthOptions = {
               username: userInf.username,
               email: userInf.email,
               role: userInf.role,
-              avatar: userInf.avatar,
               access_token: data.access_token,
               refresh_token: data.refresh_token,
               accessTokenExpires: decoded.exp * 1000,
@@ -127,7 +126,6 @@ export const authOptions: NextAuthOptions = {
         token.username = user.username;
         token.email = user.email;
         token.role = user.role;
-        token.avatar = user.avatar;
         token.access_token = user.access_token;
         token.refresh_token = user.refresh_token;
         token.accessTokenExpires = user.accessTokenExpires;
