@@ -226,7 +226,7 @@ class SearchStrategy(ABC):
             'error_score': yaml_config.get('error_score', 'raise'),
             'log_dir': yaml_config.get('log_dir', 'logs'),
             'save_log': yaml_config.get('save_log', False),
-            'max_time': yaml_config.get('max_time', 900)
+            'max_time': yaml_config.get('max_time', None)
         }
 
         return config

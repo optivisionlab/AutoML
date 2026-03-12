@@ -24,4 +24,4 @@ error_score: 'raise'
 random_state: null
 
 # Time limit
-max_time: 900  # Thời gian tối đa cho search (giây), mặc định 900s = 15 phút
+max_time: null  # null = không giới hạn thời gian, dùng early stopping thay thế. Người dùng có thể truyền giá trị (giây) để bật time limit.
