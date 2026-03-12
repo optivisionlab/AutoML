@@ -22,3 +22,6 @@ error_score: 'raise'
 
 # Random state
 random_state: null
+
+# Time limit
+max_time: null  # Không giới hạn thời gian mặc định

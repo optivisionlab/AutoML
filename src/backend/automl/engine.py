@@ -68,6 +68,15 @@ async def get_dataset_and_user_info(data_id, user_id, db: AsyncDatabase):
 
 
 def choose_model_version(choose):
+    """
+    Xác định danh sách ID các mô hình cần huấn luyện dựa trên lựa chọn của người dùng.
+
+    Args:
+        choose: Lựa chọn của người dùng ('new model' hoặc tên model cụ thể)
+
+    Returns:
+        list: Danh sách ID các mô hình cần tìm kiếm siêu tham số
+    """
     if choose == "new model":
         list_model_search = [0, 1, 2, 3]
     else:
@@ -78,6 +87,19 @@ def choose_model_version(choose):
     return list_model_search
 
 def get_config(file):
+    """
+    Đọc cấu hình huấn luyện từ file YAML.
+
+    Trích xuất các thông tin: lựa chọn model, danh sách đặc trưng, biến mục tiêu,
+    độ đo sắp xếp, thuật toán tìm kiếm và giới hạn thời gian.
+
+    Args:
+        file: File object hoặc stream chứa nội dung YAML
+
+    Returns:
+        tuple: (choose, list_feature, target, metric_list, metric_sort,
+                models, search_algorithm, max_time)
+    """
     config = yaml.safe_load(file)
     choose = config['choose']
     list_feature = config['list_feature']
@@ -93,7 +115,18 @@ def get_config(file):
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
-def get_model():    
+def get_model():
+    """
+    Tải danh sách các mô hình classification và metric từ file YAML hệ thống.
+
+    Đọc file `assets/system_models/classification.yml`, khởi tạo từng model
+    cùng với param grid tương ứng.
+
+    Returns:
+        tuple: (models, metric_list)
+            - models: Dict {id: {'model': estimator, 'params': list[dict]}}
+            - metric_list: Danh sách các metric đánh giá
+    """
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "classification.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -115,6 +148,16 @@ def get_model():
 
 
 def get_data_config_from_json(file_content: Item):
+    """
+    Trích xuất dữ liệu và cấu hình huấn luyện từ request JSON (Item).
+
+    Args:
+        file_content: Đối tượng Item chứa data (list[dict]) và config (dict)
+
+    Returns:
+        tuple: (data, choose, list_feature, target, metric_list, metric_sort,
+                models, search_algorithm, max_time)
+    """
     data = pd.DataFrame(file_content.data)
     config = file_content.config
 
@@ -133,6 +176,26 @@ def get_data_config_from_json(file_content: Item):
 
 
 def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
+    """
+    Huấn luyện các mô hình classification với tối ưu hóa siêu tham số.
+
+    Hỗ trợ nhiều thuật toán tìm kiếm:
+    - 'grid_search': Grid Search (tìm kiếm toàn diện)
+    - 'bayesian_search': Bayesian Optimization (tối ưu hóa Bayesian)
+    - 'genetic_algorithm': Genetic Algorithm (thuật toán di truyền)
+
+    Args:
+        models: Dictionary các mô hình với param grids tương ứng
+        metric_list: Danh sách các độ đo để đánh giá (vd: ['accuracy', 'f1_macro'])
+        metric_sort: Độ đo chính để chọn mô hình tốt nhất (vd: 'accuracy')
+        X_train: Dữ liệu đặc trưng huấn luyện
+        y_train: Dữ liệu nhãn mục tiêu huấn luyện
+        search_algorithm: Thuật toán tìm kiếm ('grid_search', 'bayesian_search', 'genetic_algorithm')
+        max_time: Thời gian tối đa (giây), None = không giới hạn
+
+    Returns:
+        tuple: (best_model_id, best_model, best_score, best_params, model_results)
+    """
     best_model_id = None
     best_model = None
     best_score = -1
@@ -275,21 +338,38 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
 # CUSTOM SCORER
 # =============================
 def mse_score(y_true, y_pred):
+    """Tính Mean Squared Error (MSE) giữa giá trị thực và dự đoán."""
     return mean_squared_error(y_true, y_pred)
 
 def mae_score(y_true, y_pred):
+    """Tính Mean Absolute Error (MAE) giữa giá trị thực và dự đoán."""
     return mean_absolute_error(y_true, y_pred)
 
 def mape_score(y_true, y_pred):
+    """Tính Mean Absolute Percentage Error (MAPE), trả về giá trị phần trăm (%)."""
     epsilon = 1e-10
     return np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), epsilon))) * 100
 
 def r2_score_sklearn(y_true, y_pred):
+    """Wrapper cho sklearn r2_score, tính hệ số xác định R²."""
     return r2_score(y_true, y_pred)
 
 ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
 
 def safe_extract_score(metric_name, raw_score):
+    """
+    Chuyển đổi điểm thô từ cross-validation thành giá trị an toàn.
+
+    Xử lý NaN/Inf và lấy giá trị tuyệt đối cho error metrics
+    (vì sklearn trả về giá trị âm cho greater_is_better=False).
+
+    Args:
+        metric_name: Tên metric (vd: 'mse', 'mae', 'r2')
+        raw_score: Điểm thô từ cv_results
+
+    Returns:
+        float hoặc None: Giá trị đã xử lý, None nếu NaN/Inf
+    """
     if raw_score is None or np.isinf(raw_score) or np.isnan(raw_score):
         return None
     
@@ -453,6 +533,24 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
 
 
 def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
+    """
+    Điều phối quá trình huấn luyện dựa trên loại bài toán.
+
+    Gọi `training()` cho classification hoặc `training_regression()` cho regression.
+
+    Args:
+        X_train: Dữ liệu đặc trưng huấn luyện
+        y_train: Dữ liệu nhãn mục tiêu
+        metric_list: Danh sách các độ đo đánh giá
+        metric_sort: Độ đo chính để xếp hạng
+        models: Dictionary các mô hình và param grids
+        problem_type: Loại bài toán ('classification' hoặc 'regression')
+        search_algorithm: Thuật toán tìm kiếm siêu tham số
+        max_time: Thời gian tối đa (giây), None = không giới hạn
+
+    Returns:
+        tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+    """
     best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
@@ -465,6 +563,19 @@ def train_process(X_train, y_train, metric_list, metric_sort, models, problem_ty
 
 
 def app_train_local(file_data, file_config):
+    """
+    Huấn luyện mô hình từ file CSV và file config YAML upload trực tiếp.
+
+    Đọc dữ liệu từ file_data (CSV), cấu hình từ file_config (YAML),
+    tiền xử lý rồi gọi train_process.
+
+    Args:
+        file_data: File upload chứa dữ liệu CSV
+        file_config: File upload chứa cấu hình YAML
+
+    Returns:
+        tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+    """
     contents = file_data.file.read()
     data_file = BytesIO(contents)
     data = pd.read_csv(data_file)
@@ -482,14 +593,41 @@ def app_train_local(file_data, file_config):
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
-# chuyển đổi ObjectId sang string để trả về cho client
+# Chuyển đổi ObjectId sang string để trả về cho client
 def serialize_mongo_doc(doc):
+    """
+    Chuyển đổi ObjectId trong document MongoDB sang string.
+
+    Args:
+        doc: Document dict từ MongoDB
+
+    Returns:
+        dict: Document đã chuyển đổi _id sang string
+    """
     doc["_id"] = str(doc["_id"])
     return doc
 
 
 # Không dùng kafka
 async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
+    """
+    API endpoint xử lý huấn luyện mô hình từ dữ liệu JSON.
+
+    Nhận dữ liệu và cấu hình từ Item, thực hiện tiền xử lý, huấn luyện,
+    lưu kết quả vào MongoDB và trả về thông tin job.
+
+    Args:
+        item: Đối tượng Item chứa data và config từ client
+        userId: ID của người dùng
+        id_data: ID của dataset
+        db: Kết nối AsyncDatabase MongoDB
+
+    Returns:
+        JSONResponse: Thông tin job đã tạo
+
+    Raises:
+        HTTPException: Nếu lưu job thất bại
+    """
     job_collection = db.tbl_Job
 
     data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = (
@@ -540,7 +678,19 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 # Suy luận kết quả
 async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
     """
-    Chạy dự đoán trên dữ liệu mới bằng mô hình và preprocessor đã lưu
+    Chạy dự đoán trên dữ liệu mới bằng mô hình đã huấn luyện.
+
+    Tải model, preprocessor và label encoder từ MinIO, biến đổi dữ liệu
+    đầu vào rồi thực hiện dự đoán.
+
+    Args:
+        job_id: ID của job huấn luyện đã hoàn thành
+        user_id: ID của người dùng sở hữu job
+        file_data: File upload chứa dữ liệu CSV cần dự đoán
+        db: Kết nối AsyncDatabase MongoDB
+
+    Returns:
+        list[dict]: Dữ liệu gốc kèm cột 'predict' chứa kết quả dự đoán
     """
     job_collection = db.tbl_Job
 
@@ -633,6 +783,19 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
 
 # Lấy danh sách job
 async def get_jobs(user_id, db: AsyncDatabase):
+    """
+    Lấy danh sách tất cả job huấn luyện từ MongoDB.
+
+    Args:
+        user_id: ID người dùng để lọc (None = lấy tất cả)
+        db: Kết nối AsyncDatabase MongoDB
+
+    Returns:
+        JSONResponse: Danh sách job (không bao gồm model binary và user info)
+
+    Raises:
+        HTTPException: Nếu truy vấn thất bại
+    """
     job_collection = db.tbl_Job
 
     try:
@@ -656,6 +819,19 @@ async def get_jobs(user_id, db: AsyncDatabase):
 
 # Lấy job theo job_id
 async def get_one_job(id_job: str, db: AsyncDatabase):
+    """
+    Lấy thông tin chi tiết một job theo ID.
+
+    Args:
+        id_job: ID của job cần truy vấn
+        db: Kết nối AsyncDatabase MongoDB
+
+    Returns:
+        JSONResponse: Thông tin chi tiết job
+
+    Raises:
+        HTTPException: Nếu không tìm thấy job hoặc truy vấn lỗi
+    """
     job_collection = db.tbl_Job
     try:
         job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "user": 0})
@@ -671,6 +847,17 @@ async def get_one_job(id_job: str, db: AsyncDatabase):
 
 
 async def update_activate_model(job_id, db: AsyncDatabase, activate=0):
+    """
+    Cập nhật trạng thái kích hoạt/vô hiệu hóa của mô hình.
+
+    Args:
+        job_id: ID của job chứa mô hình
+        db: Kết nối AsyncDatabase MongoDB
+        activate: Trạng thái mới (0 = vô hiệu hóa, 1 = kích hoạt)
+
+    Returns:
+        JSONResponse: Xác nhận cập nhật thành công
+    """
     job_collection = db.tbl_Job
 
     result = await job_collection.update_one(
