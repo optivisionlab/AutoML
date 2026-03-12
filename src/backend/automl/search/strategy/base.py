@@ -62,6 +62,7 @@ class SearchStrategy(ABC):
         """
         self._search_start_time = time.time()
         self._time_limit_reached = False
+        self._iteration_time_ema = None  # Reset EMA cho mỗi lần search mới
 
         max_time = self.config.get('max_time')
         if max_time is not None and self.config.get('verbose', 0) > 0:
@@ -92,6 +93,54 @@ class SearchStrategy(ABC):
             self._time_limit_reached = True
             
         return remaining, is_exceeded
+
+    def _should_start_next_iteration(self, iteration_duration: float = None) -> bool:
+        """
+        Kiểm tra xem có nên bắt đầu iteration tiếp theo không, dựa trên 
+        thời gian còn lại và ước tính thời gian mỗi iteration.
+        
+        Phương thức này sử dụng EMA (exponential moving average) để ước tính
+        thời gian cho iteration tiếp theo. Nếu thời gian ước tính vượt quá 
+        thời gian còn lại, trả về False để dừng sớm (proactive stop).
+        
+        Args:
+            iteration_duration: Thời gian iteration vừa hoàn thành (giây).
+                              Nếu None, chỉ kiểm tra time exceeded.
+        
+        Returns:
+            bool: True nếu nên tiếp tục, False nếu nên dừng.
+        """
+        remaining_time, is_exceeded = self._check_time_status()
+        
+        # Đã vượt quá time limit
+        if is_exceeded:
+            return False
+        
+        # Không có time limit
+        if remaining_time is None:
+            return True
+        
+        # Cập nhật EMA nếu có iteration_duration
+        if iteration_duration is not None:
+            if not hasattr(self, '_iteration_time_ema') or self._iteration_time_ema is None:
+                self._iteration_time_ema = iteration_duration
+            else:
+                # EMA: 70% giá trị mới, 30% giá trị cũ
+                self._iteration_time_ema = 0.7 * iteration_duration + 0.3 * self._iteration_time_ema
+        
+        # Kiểm tra proactive: ước tính iteration tiếp theo có vượt quá không
+        if hasattr(self, '_iteration_time_ema') and self._iteration_time_ema is not None:
+            # Nhân 1.2x safety factor (iteration tiếp có thể chậm hơn)
+            estimated_next = self._iteration_time_ema * 1.2
+            if estimated_next > remaining_time:
+                logger.info(
+                    f"Dừng proactive: ước tính iteration tiếp ~{estimated_next:.1f}s "
+                    f"nhưng chỉ còn {remaining_time:.1f}s"
+                )
+                self._time_limit_reached = True
+                return False
+        
+        return True
 
     def _should_apply_early_stopping(self) -> bool:
         """
@@ -176,7 +225,8 @@ class SearchStrategy(ABC):
             'random_state': yaml_config.get('random_state'),
             'error_score': yaml_config.get('error_score', 'raise'),
             'log_dir': yaml_config.get('log_dir', 'logs'),
-            'save_log': yaml_config.get('save_log', False)
+            'save_log': yaml_config.get('save_log', False),
+            'max_time': yaml_config.get('max_time', 900)
         }
 
         return config

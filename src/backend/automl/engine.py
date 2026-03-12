@@ -68,6 +68,15 @@ async def get_dataset_and_user_info(data_id, user_id, db: AsyncDatabase):
 
 
 def choose_model_version(choose):
+    """
+    Xác định danh sách model cần huấn luyện dựa trên lựa chọn của người dùng.
+
+    Args:
+        choose: 'new model' để train tất cả, hoặc giá trị khác để train lại model cụ thể
+
+    Returns:
+        list: Danh sách model_id cần huấn luyện
+    """
     if choose == "new model":
         list_model_search = [0, 1, 2, 3]
     else:
@@ -78,6 +87,17 @@ def choose_model_version(choose):
     return list_model_search
 
 def get_config(file):
+    """
+    Đọc cấu hình huấn luyện từ file YAML.
+
+    Args:
+        file: File object chứa nội dung YAML với các key:
+            choose, list_feature, target, metric_sort, search_algorithm, max_time
+
+    Returns:
+        tuple: (choose, list_feature, target, metric_list, metric_sort,
+                models, search_algorithm, max_time)
+    """
     config = yaml.safe_load(file)
     choose = config['choose']
     list_feature = config['list_feature']
@@ -87,12 +107,24 @@ def get_config(file):
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
+    max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
     models, metric_list = get_model()
-    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
-def get_model():    
+def get_model():
+    """
+    Tải danh sách mô hình classification và metric từ file YAML.
+
+    Đọc ``assets/system_models/classification.yml``, tạo instance cho mỗi model
+    bằng ``eval()`` và chuẩn hóa param grid (None/[] → [{}]).
+
+    Returns:
+        tuple: (models, metric_list)
+            - models: Dict[int, {'model': BaseEstimator, 'params': list}]
+            - metric_list: List[str] các metric cần đánh giá
+    """
     base_dir = "assets/system_models"
     file_path = os.path.join(base_dir, "classification.yml")
     with open(file_path, "r", encoding="utf-8") as file:
@@ -114,6 +146,16 @@ def get_model():
 
 
 def get_data_config_from_json(file_content: Item):
+    """
+    Trích xuất dữ liệu và cấu hình huấn luyện từ request JSON (Pydantic Item).
+
+    Args:
+        file_content: Pydantic Item chứa ``data`` (list of dicts) và ``config`` (dict)
+
+    Returns:
+        tuple: (data, choose, list_feature, target, metric_list, metric_sort,
+                models, search_algorithm, max_time)
+    """
     data = pd.DataFrame(file_content.data)
     config = file_content.config
 
@@ -125,12 +167,33 @@ def get_data_config_from_json(file_content: Item):
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
+    max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
+    """
+    Huấn luyện các mô hình classification với tối ưu hóa siêu tham số.
+
+    Hỗ trợ nhiều thuật toán tìm kiếm:
+    - 'grid_search': Grid Search (tìm kiếm toàn diện)
+    - 'bayesian_search': Bayesian Optimization (tối ưu hóa Bayesian)
+    - 'genetic_algorithm': Genetic Algorithm (thuật toán di truyền)
+
+    Args:
+        models: Dictionary các mô hình với param grids tương ứng
+        metric_list: Danh sách các độ đo để đánh giá (vd: ['accuracy', 'f1_macro'])
+        metric_sort: Độ đo chính để chọn mô hình tốt nhất (vd: 'accuracy')
+        X_train: Dữ liệu đặc trưng huấn luyện
+        y_train: Dữ liệu nhãn mục tiêu huấn luyện
+        search_algorithm: Thuật toán tìm kiếm ('grid_search', 'bayesian_search', 'genetic_algorithm')
+        max_time: Thời gian tối đa cho phép cho quá trình tìm kiếm (giây)
+
+    Returns:
+        Tuple: (best_model_id, best_model, best_score, best_params, model_results)
+    """
     best_model_id = None
     best_model = None
     best_score = -1
@@ -203,6 +266,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         'error_score': "raise",
         'return_train_score': True
     }
+    if max_time is not None:
+        strategy_config['max_time'] = max_time
     
     try:
         search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
@@ -271,21 +336,38 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
 # CUSTOM SCORER
 # =============================
 def mse_score(y_true, y_pred):
+    """Tính Mean Squared Error giữa giá trị thực và dự đoán."""
     return mean_squared_error(y_true, y_pred)
 
 def mae_score(y_true, y_pred):
+    """Tính Mean Absolute Error giữa giá trị thực và dự đoán."""
     return mean_absolute_error(y_true, y_pred)
 
 def mape_score(y_true, y_pred):
+    """Tính Mean Absolute Percentage Error (%), dùng epsilon tránh chia cho 0."""
     epsilon = 1e-10
     return np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), epsilon))) * 100
 
 def r2_score_sklearn(y_true, y_pred):
+    """Wrapper cho sklearn r2_score để dùng với make_scorer."""
     return r2_score(y_true, y_pred)
 
 ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
 
 def safe_extract_score(metric_name, raw_score):
+    """
+    Chuyển đổi điểm thô từ cross-validation sang giá trị hiển thị an toàn.
+
+    - Trả về None nếu score là NaN hoặc Inf
+    - Lấy abs() cho error metrics (vì sklearn trả về số âm khi greater_is_better=False)
+
+    Args:
+        metric_name: Tên metric (vd: 'mse', 'r2')
+        raw_score: Điểm thô từ cross-validation
+
+    Returns:
+        float hoặc None: Điểm đã xử lý
+    """
     if raw_score is None or np.isinf(raw_score) or np.isnan(raw_score):
         return None
     
@@ -295,7 +377,7 @@ def safe_extract_score(metric_name, raw_score):
     return raw_score
 
 
-def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
     """
     Huấn luyện các mô hình regression với tối ưu hóa siêu tham số.
     
@@ -311,6 +393,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         X_train: Dữ liệu đặc trưng huấn luyện
         y_train: Dữ liệu nhãn mục tiêu huấn luyện
         search_algorithm: Thuật toán tìm kiếm ('grid_search', 'bayesian_search', 'genetic_algorithm')
+        max_time: Thời gian tối đa cho phép cho quá trình tìm kiếm (giây)
     
     Returns:
         Tuple: (best_model_id, best_model, best_score, best_params, model_results)
@@ -354,6 +437,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         'n_jobs': -1,
         'random_state': 42,  # Đảm bảo reproducibility cho Bayesian và GA
     }
+    if max_time is not None:
+        strategy_config['max_time'] = max_time
     
     # Tạo search strategy từ factory
     try:
@@ -446,54 +531,96 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     return best_model_id, best_model, global_best_score, best_params, model_results
 
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search'):
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
+    """
+    Dispatcher: chuyển hướng sang training() hoặc training_regression() dựa trên problem_type.
+
+    Args:
+        X_train: Dữ liệu đặc trưng huấn luyện
+        y_train: Dữ liệu nhãn mục tiêu huấn luyện
+        metric_list: Danh sách các độ đo đánh giá
+        metric_sort: Độ đo chính để chọn mô hình tốt nhất
+        models: Dictionary các mô hình với param grids
+        problem_type: 'classification' hoặc 'regression'
+        search_algorithm: Thuật toán tìm kiếm siêu tham số
+        max_time: Thời gian tối đa (giây), None = không giới hạn
+
+    Returns:
+        Tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+    """
     best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
         best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train, search_algorithm)
+                                                                                X_train, y_train, search_algorithm, max_time)
     if problem_type == 'regression':
-        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm)
+        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
     
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
 def app_train_local(file_data, file_config):
+    """
+    Huấn luyện mô hình từ file CSV và file config YAML upload trực tiếp.
+
+    Args:
+        file_data: File upload chứa dữ liệu CSV
+        file_config: File upload chứa cấu hình YAML
+
+    Returns:
+        Tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+    """
     contents = file_data.file.read()
     data_file = BytesIO(contents)
     data = pd.read_csv(data_file)
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
+    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = get_config(data_file_config)
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
     return best_model_id, best_model, best_score, best_params, model_scores
 
 
-# chuyển đổi ObjectId sang string để trả về cho client
 def serialize_mongo_doc(doc):
+    """Chuyển đổi ObjectId trong document MongoDB sang string để JSON-serializable."""
     doc["_id"] = str(doc["_id"])
     return doc
 
 
-# Không dùng kafka
 async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
+    """
+    Endpoint huấn luyện mô hình từ dữ liệu JSON.
+
+    Luồng xử lý: parse Item → tiền xử lý → train → lưu kết quả vào MongoDB.
+
+    Args:
+        item: Pydantic Item chứa data và config
+        userId: ID người dùng (ObjectId string)
+        id_data: ID dataset (ObjectId string)
+        db: AsyncDatabase instance (MongoDB)
+
+    Returns:
+        JSONResponse: Kết quả job bao gồm best_model, best_params, best_score
+
+    Raises:
+        HTTPException: 500 nếu lưu job thất bại
+    """
     job_collection = db.tbl_Job
 
-    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = (
         get_data_config_from_json(item)
     )
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
     data_name, user_name = await get_dataset_and_user_info(id_data, userId, db)
@@ -531,10 +658,21 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
 
 
-# Suy luận kết quả
 async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabase):
     """
-    Chạy dự đoán trên dữ liệu mới bằng mô hình và preprocessor đã lưu
+    Chạy dự đoán (inference) trên dữ liệu mới bằng mô hình đã lưu.
+
+    Tải model, preprocessor, và label encoder từ MinIO → transform dữ liệu mới → predict.
+
+    Args:
+        job_id: ID của job chứa mô hình đã train
+        user_id: ID người dùng sở hữu job
+        file_data: File upload chứa dữ liệu CSV cần dự đoán
+        db: AsyncDatabase instance (MongoDB)
+
+    Returns:
+        list[dict]: Dữ liệu gốc kèm cột 'predict' chứa kết quả dự đoán,
+        hoặc dict chứa 'error' nếu có lỗi
     """
     job_collection = db.tbl_Job
 
@@ -625,8 +763,17 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
     return data_json
 
 
-# Lấy danh sách job
 async def get_jobs(user_id, db: AsyncDatabase):
+    """
+    Lấy danh sách tất cả job của user từ MongoDB.
+
+    Args:
+        user_id: ID người dùng, None để lấy tất cả
+        db: AsyncDatabase instance
+
+    Returns:
+        JSONResponse: Danh sách job (không bao gồm model binary, item, user)
+    """
     job_collection = db.tbl_Job
 
     try:
@@ -648,8 +795,20 @@ async def get_jobs(user_id, db: AsyncDatabase):
 
 
 
-# Lấy job theo job_id
 async def get_one_job(id_job: str, db: AsyncDatabase):
+    """
+    Lấy thông tin một job cụ thể theo job_id.
+
+    Args:
+        id_job: Job ID cần truy vấn
+        db: AsyncDatabase instance
+
+    Returns:
+        JSONResponse: Thông tin job
+
+    Raises:
+        HTTPException: 404 nếu không tìm thấy, 400 nếu lỗi truy vấn
+    """
     job_collection = db.tbl_Job
     try:
         job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "user": 0})
@@ -665,6 +824,17 @@ async def get_one_job(id_job: str, db: AsyncDatabase):
 
 
 async def update_activate_model(job_id, db: AsyncDatabase, activate=0):
+    """
+    Cập nhật trạng thái kích hoạt (activate/deactivate) của mô hình.
+
+    Args:
+        job_id: Job ID chứa mô hình cần cập nhật
+        db: AsyncDatabase instance
+        activate: 0 = deactivate, 1 = activate (mặc định: 0)
+
+    Returns:
+        JSONResponse: Xác nhận cập nhật thành công
+    """
     job_collection = db.tbl_Job
 
     result = await job_collection.update_one(

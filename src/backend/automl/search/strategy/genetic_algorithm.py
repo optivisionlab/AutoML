@@ -252,9 +252,9 @@ class GeneticAlgorithm(SearchStrategy):
             # Lỗi thường gặp: tham số không hợp lệ, kiểu không khớp, thiếu key
             scoring = self.config.get('scoring', {})
             if isinstance(scoring, dict) and scoring:
-                return {metric: 0.0 for metric in scoring.keys()}
+                return {metric: -float('inf') for metric in scoring.keys()}
             else:
-                return {'accuracy': 0.0}
+                return {'accuracy': -float('inf')}
 
     def _get_adaptive_tournament_size(self, diversity: float, population_size: int) -> int:
         """
@@ -652,16 +652,21 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator, X: np.ndarray,
                                       y: np.ndarray) -> List[Dict[str, float]]:
-        """Evaluate all individuals in parallel with smart optimization."""
+        """Đánh giá tất cả các cá thể song song với tối ưu hóa thông minh.
+        
+        Giới hạn thời gian được kiểm tra ở cấp độ thế hệ trong search(), không phải ở đây.
+        """
         n_jobs = self.config.get('n_jobs', -1)
 
-        # If explicitly set to 1, use sequential
+        # Nếu n_jobs = 1, chạy tuần tự
         if n_jobs == 1:
-            return [self._evaluate_individual(individual, model, X, y) for individual in population]
+            results = []
+            for individual in population:
+                results.append(self._evaluate_individual(individual, model, X, y))
+            return results
 
         # Quyết định song song thông minh dựa trên kích thước quần thể và số fold CV
         cv = self.config.get('cv', 5)
-        # Lấy số fold từ đối tượng cv hoặc sử dụng trực tiếp nếu là số nguyên
         if hasattr(cv, 'n_splits'):
             cv_folds = cv.n_splits
         elif hasattr(cv, 'get_n_splits'):
@@ -677,22 +682,19 @@ class GeneticAlgorithm(SearchStrategy):
         total_work = len(population) * cv_folds
 
         # Chỉ sử dụng song song nếu có đủ công việc để biện minh cho overhead
-        # Quy tắc: ít nhất 2 đơn vị công việc mỗi core VÀ quần thể > 4
         if total_work >= (n_jobs * 2) and len(population) > 4:
-
-            # Sử dụng số job tối ưu (không sử dụng nhiều core hơn số đơn vị công việc)
             optimal_jobs = min(n_jobs, len(population))
-
-            # Chọn backend dựa trên độ phức tạp của mô hình
-            # Threading nhanh hơn cho các mô hình đơn giản, loky cho các mô hình phức tạp
             backend = 'threading' if cv_folds <= 3 else 'loky'
 
             results = Parallel(n_jobs=optimal_jobs, backend=backend)(
                 delayed(self._evaluate_individual)(individual, copy.deepcopy(model), X, y) for individual in population)
             return results
         else:
-            # Tuần tự nhanh hơn cho quần thể nhỏ
-            return [self._evaluate_individual(individual, model, X, y) for individual in population]
+            # Tuần tự cho quần thể nhỏ
+            results = []
+            for individual in population:
+                results.append(self._evaluate_individual(individual, model, X, y))
+            return results
 
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]], X: np.ndarray, y: np.ndarray, **kwargs):
         """Thực thi tìm kiếm thuật toán di truyền với các tính năng vòng lặp nâng cao.
@@ -827,10 +829,9 @@ class GeneticAlgorithm(SearchStrategy):
                             (f" (patience: {early_stopping_patience})" if early_stopping_enabled else ""))
 
         for generation in range(self.config['generation']):
-            # Kiểm tra time limit trước mỗi thế hệ
-            _, is_exceeded = self._check_time_status()
-            if is_exceeded:
-                logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search tại thế hệ {generation + 1}.")
+            # Kiểm tra time limit trước mỗi thế hệ (sử dụng base.py)
+            if not self._should_start_next_iteration():
+                logger.info(f"Dừng search tại thế hệ {generation + 1}.")
                 break
 
             generation_start_time = datetime.now()
@@ -928,6 +929,8 @@ class GeneticAlgorithm(SearchStrategy):
 
             # Cập nhật tiến trình với kết quả thế hệ
             generation_time = (datetime.now() - generation_start_time).total_seconds()
+            # Cập nhật EMA iteration time trong base.py
+            self._should_start_next_iteration(iteration_duration=generation_time)
             if verbose > 0 and (verbose > 1 or generation % 5 == 0 or generation == 0 or generation == self.config[
                 'generation'] - 1):
                 logger.info(
