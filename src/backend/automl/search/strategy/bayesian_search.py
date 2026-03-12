@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 from collections import Counter
 from typing import Any, Dict, List, Tuple
 
@@ -410,9 +411,15 @@ class BayesianSearchStrategy(SearchStrategy):
         convergence_threshold = self.config.get('convergence_threshold', 0.001)
 
         # Hàm callback để lưu lịch sử
+        self._last_callback_time = time.time()  # Theo dõi thời gian giữa các iteration
         def on_step(res):
             """Callback được gọi sau mỗi iteration để lưu kết quả"""
             nonlocal best_all_scores, best_score_history
+
+            # Tính thời gian iteration vừa hoàn thành
+            now = time.time()
+            iteration_duration = now - self._last_callback_time
+            self._last_callback_time = now
 
             iteration = len(res.x_iters)
             # Chuyển đổi kiểu numpy sang kiểu Python gốc sử dụng phương thức lớp cơ sở
@@ -466,10 +473,9 @@ class BayesianSearchStrategy(SearchStrategy):
             # Theo dõi lịch sử điểm số để dừng sớm
             best_score_history.append(best_score_so_far)
 
-            # Kiểm tra time limit
-            _, is_exceeded = self._check_time_status()
-            if is_exceeded:
-                logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search.")
+            # Kiểm tra time limit (sử dụng base.py)
+            if not self._should_start_next_iteration(iteration_duration=iteration_duration):
+                logger.info(f"Dừng search tại iteration {iteration}.")
                 return True  # Dừng gp_minimize
 
             # Kiểm tra điều kiện dừng sớm (chỉ khi không có time limit)

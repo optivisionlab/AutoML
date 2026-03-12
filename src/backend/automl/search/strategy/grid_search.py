@@ -282,25 +282,35 @@ class GridSearchStrategy(SearchStrategy):
         self._best_scores_history = []
         best_score_so_far = float('-inf')
 
-        # Đánh giá theo batch
-        batch_size = self.config.get('batch_size', 10)
+        # Đánh giá theo batch (batch_size=1 khi có time limit để kiểm tra thời gian chính xác hơn)
+        max_time = self.config.get('max_time')
+        batch_size = 1 if max_time is not None else self.config.get('batch_size', 10)
         all_results = []
         early_stopped = False
         time_limit_stopped = False
 
-        for batch_idx, i in enumerate(range(0, len(all_params), batch_size)):
-            # Kiểm tra time limit
-            _, is_exceeded = self._check_time_status()
-            if is_exceeded:
-                logger.info(f"Đã đạt giới hạn thời gian ({self.config.get('max_time')}s). Dừng search.")
+        i = 0  # Chỉ số hiện tại trong all_params
+        batch_idx = 0
+
+        while i < len(all_params):
+            # Kiểm tra time limit (sử dụng base.py _should_start_next_iteration)
+            if not self._should_start_next_iteration():
+                logger.info(f"Dừng search sau {len(all_results)}/{len(all_params)} tổ hợp.")
                 time_limit_stopped = True
                 break
 
             batch_params = all_params[i:i + batch_size]
+            batch_start = time.time()
+
             batch_results = self._evaluate_params_batch(
                 batch_params, model, data, targets, cv, scoring
             )
+
+            batch_duration = time.time() - batch_start
             all_results.extend(batch_results)
+
+            # Cập nhật EMA iteration time trong base.py
+            self._should_start_next_iteration(iteration_duration=batch_duration)
 
             # Log và cập nhật best score cho early stopping
             for j, result in enumerate(batch_results):
@@ -336,6 +346,9 @@ class GridSearchStrategy(SearchStrategy):
                 early_stopped = True
                 logger.info(f"Dừng sớm sau khi đánh giá {len(all_results)}/{len(all_params)} tổ hợp")
                 break
+
+            i += batch_size
+            batch_idx += 1
 
         # Log tổng thời gian
         total_time = time.time() - self._start_time

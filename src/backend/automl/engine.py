@@ -87,9 +87,10 @@ def get_config(file):
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
+    max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
     models, metric_list = get_model()
-    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+    return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
 def get_model():    
@@ -125,12 +126,13 @@ def get_data_config_from_json(file_content: Item):
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
 
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
+    max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
     models, metric_list = get_model()
-    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm
+    return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
-def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
     best_model_id = None
     best_model = None
     best_score = -1
@@ -203,6 +205,8 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         'error_score': "raise",
         'return_train_score': True
     }
+    if max_time is not None:
+        strategy_config['max_time'] = max_time
     
     try:
         search_strategy = SearchStrategyFactory.create_strategy(search_algorithm, strategy_config)
@@ -295,7 +299,7 @@ def safe_extract_score(metric_name, raw_score):
     return raw_score
 
 
-def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search'):
+def training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
     """
     Huấn luyện các mô hình regression với tối ưu hóa siêu tham số.
     
@@ -354,6 +358,8 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         'n_jobs': -1,
         'random_state': 42,  # Đảm bảo reproducibility cho Bayesian và GA
     }
+    if max_time is not None:
+        strategy_config['max_time'] = max_time
     
     # Tạo search strategy từ factory
     try:
@@ -446,14 +452,14 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     return best_model_id, best_model, global_best_score, best_params, model_results
 
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search'):
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
     best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
         best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
-                                                                                X_train, y_train, search_algorithm)
+                                                                                X_train, y_train, search_algorithm, max_time)
     if problem_type == 'regression':
-        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm)
+        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
     
     return best_model_id, best_model, best_score, best_params, model_scores
 
@@ -465,12 +471,12 @@ def app_train_local(file_data, file_config):
 
     contents = file_config.file.read()
     data_file_config = BytesIO(contents)
-    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = get_config(data_file_config)
+    choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = get_config(data_file_config)
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
     return best_model_id, best_model, best_score, best_params, model_scores
@@ -486,14 +492,14 @@ def serialize_mongo_doc(doc):
 async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
     job_collection = db.tbl_Job
 
-    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm = (
+    data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = (
         get_data_config_from_json(item)
     )
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
     best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm
+        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
     data_name, user_name = await get_dataset_and_user_info(id_data, userId, db)
