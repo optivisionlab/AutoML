@@ -22,7 +22,8 @@ class InputRequest(BaseModel):
                         ],
                         "problem_type": "",
                         "search_algorithm": "",
-                        "target": "Revenue"
+                        "target": "Revenue",
+                        "max_time": 900
                     }
                 }
             ]
