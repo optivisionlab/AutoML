@@ -161,6 +161,12 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
                     logging.warning(f"[{job_id}] Không gửi được tín hiệu đến worker {WORKERS[i]}: {res}")
 
     # Khởi tạo timeout watcher nếu có giới hạn thời gian
+    # NOTE: max_time ở đây là ngân sách thời gian TOÀN CỤC cho job.
+    # - Job-level: _job_timeout_watcher dùng max_time làm hard deadline để kill job.
+    # - Task-level: mỗi worker nhận max_time trong config, nhưng vì các worker
+    #   chạy SONG SONG (mỗi worker train 1 model), nên full budget là hợp lý.
+    # - Khác với local path (engine.py), nơi các model chạy TUẦN TỰ và
+    #   _check_global_time_budget() giảm dần thời gian cho mỗi model.
     max_time = config.get("max_time")
     if max_time is not None and db is not None:
         watcher_task = asyncio.create_task(

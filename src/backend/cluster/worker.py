@@ -137,7 +137,7 @@ def _training_worker(result_queue: mp.Queue, X, y, metrics, metric_sort,
         max_time: Thời gian tối đa (giây), None = không giới hạn
     """
     try:
-        best_model_id, best_model_obj, best_score, best_params, model_scores = train_process(
+        best_model_id, best_model_obj, best_score, best_params, model_scores, _ = train_process(
             X, y, metrics, metric_sort, models_to_train, problem_type, search_algorithm, max_time
         )
 

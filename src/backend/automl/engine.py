@@ -179,6 +179,10 @@ def _check_global_time_budget(max_time, global_start, search_strategy):
     """
     Kiểm tra ngân sách thời gian toàn cục và cập nhật thời gian còn lại cho search strategy.
 
+    Chỉ dùng trong LOCAL path (training/training_regression loop tuần tự).
+    Trong DISTRIBUTED path (master/worker), _job_timeout_watcher trong master.py
+    đảm nhiệm vai trò giám sát thời gian toàn cục.
+
     Args:
         max_time: Thời gian tối đa (giây) do người dùng đặt, None = không giới hạn
         global_start: Thời điểm bắt đầu toàn cục (từ time.time())
