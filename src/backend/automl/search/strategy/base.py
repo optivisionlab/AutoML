@@ -354,7 +354,7 @@ class SearchStrategy(ABC):
         best_all_scores = self.convert_numpy_types(best_all_scores)
         cv_results = self.convert_numpy_types(cv_results)
 
-        return best_params, best_score, best_all_scores, cv_results
+        return best_params, best_score, best_all_scores, cv_results, self._time_limit_reached
 
     def _init_search_log(self):
         """Khởi tạo danh sách log cho quá trình tìm kiếm."""

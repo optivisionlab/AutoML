@@ -208,7 +208,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         logger.info(f"Đánh giá {model.__class__.__name__} với default params: {primary_metric}={best_score:.4f}")
 
-        return {}, best_score, all_scores, cv_results_
+        return {}, best_score, all_scores, cv_results_, False
 
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]],
                X: np.ndarray, y: np.ndarray, **kwargs) -> tuple[dict[Any, Any], float, dict[Any, Any], dict[
@@ -258,14 +258,15 @@ class BayesianSearchStrategy(SearchStrategy):
             result = self._search_single_grid(model, single_grid, X, y, **kwargs)
             all_results.append(result)
             all_cv_results.append(result[3])  # cv_results_
+            # result[4] is time_limit_reached from _finalize_results
 
         # Nếu không có grid nào, trả về kết quả mặc định
         if not all_results:
-            return {}, 0.0, {}, {}
+            return {}, 0.0, {}, {}, False
 
         # Chọn kết quả tốt nhất dựa trên best_score
         best_idx = max(range(len(all_results)), key=lambda i: all_results[i][1])
-        best_params, best_score, best_all_scores, _ = all_results[best_idx]
+        best_params, best_score, best_all_scores, _, _ = all_results[best_idx]
 
         # Gộp tất cả cv_results
         combined_cv_results = self._combine_cv_results(all_cv_results)

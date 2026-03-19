@@ -127,7 +127,7 @@ async def _execute_single_training_task(task: dict):
             }
         }
 
-        best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
+        best_model_id, best_model_obj, best_score, best_params, model_scores_list, time_limit_reached = await asyncio.to_thread(
             train_process,
             X_processed,
             y_processed,
@@ -158,7 +158,8 @@ async def _execute_single_training_task(task: dict):
                 "bucket_name": "temp",
                 "object_name": f"{task_id}.pkl"
             },
-            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
+            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}",
+            "time_limit_reached": time_limit_reached
         }
     except Exception as e:
         print(str(e))
