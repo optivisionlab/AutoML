@@ -175,6 +175,36 @@ def get_data_config_from_json(file_content: Item):
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
+def _check_global_time_budget(max_time, global_start, search_strategy):
+    """
+    Kiểm tra ngân sách thời gian toàn cục và cập nhật thời gian còn lại cho search strategy.
+
+    Args:
+        max_time: Thời gian tối đa (giây) do người dùng đặt, None = không giới hạn
+        global_start: Thời điểm bắt đầu toàn cục (từ time.time())
+        search_strategy: Đối tượng SearchStrategy cần cập nhật thời gian còn lại
+
+    Returns:
+        tuple: (should_stop: bool, is_time_limited: bool)
+            - should_stop: True nếu đã hết thời gian, cần dừng ngay
+            - is_time_limited: True nếu đã hết thời gian (dùng để đánh dấu kết quả)
+    """
+    if max_time is None:
+        return False, False
+
+    import time as _time
+    elapsed = _time.time() - global_start
+    remaining = max_time - elapsed
+
+    if remaining <= 0:
+        logger.info(f"Hết thời gian toàn cục ({max_time}s). Bỏ qua các model còn lại.")
+        return True, True
+
+    # Cập nhật max_time còn lại cho search strategy
+    search_strategy.config['max_time'] = remaining
+    return False, False
+
+
 def training(models, metric_list, metric_sort, X_train, y_train, search_algorithm='grid_search', max_time=None):
     """
     Huấn luyện các mô hình classification với tối ưu hóa siêu tham số.
@@ -278,7 +308,16 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         print(f"Cảnh báo: {e}. Sử dụng tìm kiếm 'grid' mặc định.")
         search_strategy = SearchStrategyFactory.create_strategy('grid', strategy_config)
 
+    # Theo dõi thời gian toàn cục cho tất cả models
+    import time as _time
+    _global_start = _time.time()
+
     for model_id in range(len(models)):
+        should_stop, is_time_limited = _check_global_time_budget(max_time, _global_start, search_strategy)
+        if should_stop:
+            any_time_limit_reached = True
+            break
+
         model_info = models[model_id]
         model = model_info['model']
         param_grid = model_info['params']
@@ -452,7 +491,16 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         logger.warning(f"Cảnh báo: {e}. Sử dụng tìm kiếm 'grid_search' mặc định.")
         search_strategy = SearchStrategyFactory.create_strategy('grid_search', strategy_config)
 
+    # Theo dõi thời gian toàn cục cho tất cả models
+    import time as _time
+    _global_start = _time.time()
+
     for model_id in range(len(models)):
+        should_stop, is_time_limited = _check_global_time_budget(max_time, _global_start, search_strategy)
+        if should_stop:
+            any_time_limit_reached = True
+            break
+
         model_info = models[model_id]
         # Clone model để tránh thay đổi model gốc (shared state)
         # Đảm bảo mỗi lần gọi training_regression đều có model độc lập
