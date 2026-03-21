@@ -18,6 +18,7 @@ import DialogForm from "../../../../components/dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
 import { CirclePlus } from "lucide-react";
+import { useApi } from "@/hooks/useApi";
 
 type Dataset = {
   _id: string;
@@ -35,6 +36,8 @@ const formatDate = (timestamp?: number): string => {
 };
 
 const Page = () => {
+  const { post, remove } = useApi();
+
   const { data: session } = useSession();
   const router = useRouter();
 
@@ -45,7 +48,7 @@ const Page = () => {
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [datasetIdToDelete, setDatasetIdToDelete] = useState<string | null>(
-    null
+    null,
   );
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
@@ -56,17 +59,7 @@ const Page = () => {
     setLoading(true);
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-by-userid?id=0`,
-        {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        }
-      );
-
-      if (!res.ok) throw new Error("Lỗi khi gọi API");
-
-      const data = await res.json();
+      const data = await post(`/get-list-data-by-userid?id=0`);
       setDatasets(data || []);
     } catch (err) {
       console.error("Lỗi khi lấy dữ liệu:", err);
@@ -89,15 +82,7 @@ const Page = () => {
     if (!datasetIdToDelete) return;
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/delete-dataset/${datasetIdToDelete}`,
-        {
-          method: "DELETE",
-          headers: { Accept: "application/json" },
-        }
-      );
-
-      if (!res.ok) throw new Error("Xoá thất bại");
+      await remove(`/delete-dataset/${datasetIdToDelete}`);
 
       toast({
         title: "Xóa thành công",
@@ -159,7 +144,7 @@ const Page = () => {
                     <TableCell>{formatDate(dataset.createDate)}</TableCell>
                     <TableCell>
                       {formatDate(
-                        dataset.latestUpdate || dataset.lastestUpdate
+                        dataset.latestUpdate || dataset.lastestUpdate,
                       )}
                     </TableCell>
                     <TableCell className="text-center space-x-2">
@@ -167,7 +152,7 @@ const Page = () => {
                         className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
                         onClick={() =>
                           router.push(
-                            `/admin/datasets/public/${dataset._id}/train`
+                            `/admin/datasets/public/${dataset._id}/train`,
                           )
                         }
                       >

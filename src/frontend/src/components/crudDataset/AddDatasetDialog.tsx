@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   open: boolean;
@@ -22,6 +23,7 @@ type Props = {
 };
 
 const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
+  const { post } = useApi();
   const { toast } = useToast();
 
   const [dataName, setDataName] = useState("");
@@ -54,15 +56,7 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
     try {
       setLoading(true);
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/upload-dataset?user_id=${userId}`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (!res.ok) throw new Error("Upload failed");
+      await post(`/upload-dataset?user_id=${userId}`, formData);
 
       toast({
         title: "Tải lên thành công!",
