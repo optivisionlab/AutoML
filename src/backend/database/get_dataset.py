@@ -213,6 +213,10 @@ class MongoJob:
                 "best_score": final_result["best_score"],
                 "orther_model_scores": final_result["model_scores"],
                 "status": 1,
+                # Thông tin giới hạn thời gian
+                "time_limit_reached": final_result.get("time_limit_reached", False),
+                "completed_models": final_result.get("completed_models"),
+                "total_models": final_result.get("total_models")
             }
         }
         await self.__job_collection.update_one({"job_id": job_id}, update_data)
