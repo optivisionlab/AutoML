@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 import PaginationCustom from "@/components/common/Panigation";
+import { useApi } from "@/hooks/useApi";
 
 type TrainingJob = {
   _id: string;
@@ -43,6 +44,8 @@ const formatDate = (timestamp?: number): string => {
 };
 
 const TrainingHistory = () => {
+  const { post } = useApi();
+
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [sortAsc, setSortAsc] = useState<boolean>(false);
@@ -59,19 +62,10 @@ const TrainingHistory = () => {
 
       setLoading(true);
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-list-job-by-userId?user_id=${session.user.id}`,
-          {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-            },
-          }
+        const data = await post(
+          `/get-list-job-by-userId?user_id=${session.user.id}`,
         );
 
-        if (!response.ok) throw new Error("Lỗi khi gọi API");
-
-        const data = await response.json();
         setJobs(data || []);
       } catch (error) {
         console.error("Lỗi khi lấy lịch sử huấn luyện:", error);

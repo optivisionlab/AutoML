@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   open: boolean;
@@ -30,6 +31,8 @@ type Props = {
 };
 
 const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
+  const { put } = useApi();
+
   const [dataName, setDataName] = useState("");
   const [dataType, setDataType] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -56,16 +59,7 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
     }
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/update-dataset/${dataset._id}`,
-        {
-          method: "PUT",
-          headers: { Accept: "application/json" },
-          body: formData,
-        }
-      );
-
-      if (!res.ok) throw new Error("Cập nhật thất bại");
+      await put(`/update-dataset/${dataset._id}`, formData);
 
       toast({
         title: "Cập nhật thành công",

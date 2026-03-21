@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import Dict, List, Any
 
 class InputRequest(BaseModel):
     id_data: str

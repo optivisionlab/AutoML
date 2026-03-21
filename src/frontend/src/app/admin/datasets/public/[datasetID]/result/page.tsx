@@ -19,6 +19,7 @@ import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   params: Promise<{
@@ -27,6 +28,8 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
+  const { post } = useApi();
+
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
@@ -104,17 +107,7 @@ const ResultPage = ({ params }: Props) => {
 
       setIsLoading(true);
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/jobs/training`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestBody),
-          }
-        );
-        const resultData = await response.json();
+        const resultData = await post(`/v2/auto/jobs/training`, requestBody);
         setResult(resultData);
       } catch (err) {
         console.error("Lỗi khi gọi API train:", err);
@@ -267,7 +260,7 @@ const ResultPage = ({ params }: Props) => {
                         <TableCell>{model.scores.precision}</TableCell>
                         <TableCell>{model.scores.recall}</TableCell>
                       </TableRow>
-                    )
+                    ),
                   )}
                 </TableBody>
               </Table>

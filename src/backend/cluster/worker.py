@@ -2,7 +2,7 @@ import pickle
 import asyncio
 import os
 import logging
-import signal
+import psutil
 import numpy as np
 import httpx
 import time
@@ -23,16 +23,25 @@ from cluster import *
 load_dotenv()
 
 
+"""
+CONFIGS & CONSTANTS
+"""
+
 # WORKER URL
 WORKER_HOST = os.getenv('WORKER_HOST', '0.0.0.0')
 WORKER_PORT = int(os.getenv('WORKER_PORT', 8000))
+WORKER_URL = f"http://{WORKER_HOST}:{WORKER_PORT}"
 
 # MASTER URL
-MASTER_HOST = os.getenv('HOST_BACK_END', '0.0.0.0')
+MASTER_HOST = "[::]" if os.getenv('HOST_BACK_END', '0.0.0.0') == "::" else os.getenv('HOST_BACK_END', '0.0.0.0')
 MASTER_PORT = int(os.getenv('PORT_BACK_END', 8080))
+MASTER_URL = f"http://{MASTER_HOST}:{MASTER_PORT}"
+
+DEFAULT_CPU_CORES = 2
+BYTES_IN_GB = 1024 ** 3
 
 
-# ÁNH XẠ MÔ HÌNH
+# MAPPING
 MODEL_MAPPING = {
     "RandomForestClassifier": RandomForestClassifier,
     "DecisionTreeClassifier": DecisionTreeClassifier,
@@ -48,98 +57,90 @@ MODEL_MAPPING = {
 }
 
 
-# =========================================================================
-# QUẢN LÝ CACHE (LRU)
-# =========================================================================
-# Giới hạn cache chứa tối đa 3 bộ dữ liệu
-MAX_CACHE_SIZE = 3
-DATASET_CACHE = {}
-# Dùng list để theo dõi thứ tự truy cập
-CACHE_ACCESS_ORDER = []
+"""
+LRU CACHE
+"""
+class LRUDatasetCache:
+    def __init__(self, max_size=3):
+        self.max_size = max_size
+        self.cache: dict[str, tuple] = {}
+        self.access_order: list[str] = []
 
-POLLING_CLIENT = None
-WAKE_UP_EVENT = asyncio.Event()
+    def get_latest_key(self):
+        return self.access_order[-1] if self.access_order else None
 
-async def get_data_with_cache(id_data: str, cache_key: str):
-    """
-    Quản lý cache
-    """
+    async def fetch_and_cache(self, id_data: str, cache_key: str):
+        # Hit Cache > Bandwidth equals 1 (no network usage)
+        if cache_key in self.cache:
+            self.access_order.remove(cache_key)
+            self.access_order.append(cache_key)
+            return self.cache[cache_key], -1.0
 
-    # Cache HIT
-    if cache_key in DATASET_CACHE:
-        CACHE_ACCESS_ORDER.remove(cache_key)
-        CACHE_ACCESS_ORDER.append(cache_key)
-        return DATASET_CACHE[cache_key]
-    
-    cache_bucket = "cache"
-    data_cache = f"{id_data}/{cache_key}.npz"
+        # Miss Cache > Pull from MinIO and measure bandwidth
+        data_cache_path = f"{id_data}/{cache_key}.npz"
+        bw_observed = 0.0
+
+        try:
+            start_time = time.perf_counter()
+            data_buffer = await asyncio.to_thread(minIOStorage.get_object, "cache", data_cache_path)
+            download_time = time.perf_counter() - start_time
+
+            file_size_mb = data_buffer.getbuffer().nbytes / (1024 * 1024)
+            if download_time > 0:
+                bw_observed = file_size_mb / download_time
+
+            with np.load(data_buffer) as cached_data:
+                dataset = (cached_data['X'], cached_data['y'])
+            data_buffer.close()
+
+        except Exception as e:
+            raise Exception(f"Failed to fetch data from MinIO: {str(e)}")
+
+        # Exit old data if it's full
+        if len(self.cache) >= self.max_size:
+            lru_key = self.access_order.pop(0)
+            del self.cache[lru_key]
+
+        self.cache[cache_key] = dataset
+        self.access_order.append(cache_key)
+
+        return dataset, bw_observed
+
+dataset_cache = LRUDatasetCache(max_size=3)
+
+
+"""
+TRAINING EXECUTION
+"""
+async def execute_training_task(task: dict):
+    model_info = task["model_info"]
+    task_id = task["task_id"]
 
     try:
-        data_buffer = await asyncio.to_thread(
-            minIOStorage.get_object,
-            cache_bucket,
-            data_cache
-        )
-
-        with np.load(data_buffer) as cached_data:
-            X_processed = cached_data['X']
-            y_processed = cached_data['y']
-        data_buffer.close()
-
-    except Exception as e:
-        raise Exception(f"Cache not found for {str(e)}")
-
-    # Kiểm tra cache đầy
-    if len(DATASET_CACHE) >= MAX_CACHE_SIZE:
-        lru_id = CACHE_ACCESS_ORDER.pop(0)
-        del DATASET_CACHE[lru_id]
-
-    # Thêm data mới vào cache
-    DATASET_CACHE[cache_key] = (X_processed, y_processed)
-    CACHE_ACCESS_ORDER.append(cache_key)
-
-    return DATASET_CACHE[cache_key]
-
-
-# =========================================================================
-# LOGIC THỰC THI TASK
-# =========================================================================
-async def _execute_single_training_task(task: dict):
-    """
-    Xử lý huấn luyện với một model
-    """
-    try:
-        id_data = task["id_data"]
-        cache_key = task["cache_key"]
-        config = task["config"]
-        task_id = task["task_id"]
-        search_algorithm = config.get("search_algorithm", "grid_search")
-        model_info = task["model_info"]
-        model_params = model_info.get('params') or {}
-
-        # Lấy dữ liệu
-        X_processed, y_processed = await get_data_with_cache(id_data, cache_key)
+        # Data acquisition & network measurement
+        dataset, bw_observed = await dataset_cache.fetch_and_cache(task["id_data"], task["cache_key"])
+        X_processed, y_processed = dataset
         
         models_to_train = {
             0: {
                 "model": MODEL_MAPPING[model_info["model"]](),
-                "params": model_params
+                "params": model_info.get('params') or {}
             }
         }
 
-        best_model_id, best_model_obj, best_score, best_params, model_scores_list = await asyncio.to_thread(
+        _, best_model_obj, best_score, best_params, model_scores = await asyncio.to_thread(
             train_process,
             X_processed,
             y_processed,
             task["metrics"],
-            config.get("metric_sort") or "accuracy",
+            task["config"].get("metric_sort", "accuracy"),
             models_to_train,
-            config.get("problem_type") or 'classification',
-            search_algorithm
+            task["config"].get("problem_type", 'classification'),
+            task["config"].get("search_algorithm", "grid_search"),
+            task["config"].get("max_time") # minutes
         )
-        model_bytes = pickle.dumps(best_model_obj)
 
-        # Lưu vào bộ nhớ tạm thay vì chuyển bằng JSON
+        model_bytes = pickle.dumps(best_model_obj)
         await asyncio.to_thread(
             minIOStorage.uploaded_object,
             bucket_name="temp",
@@ -152,121 +153,94 @@ async def _execute_single_training_task(task: dict):
             "job_id": task["job_id"],
             "model_name": model_info["model"],
             "score": best_score,
-            "scores": model_scores_list[0]["scores"],
+            "scores": model_scores[0]["scores"],
             "best_params": best_params,
-            "model": {
-                "bucket_name": "temp",
-                "object_name": f"{task_id}.pkl"
-            },
-            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
+            "bandwidth_observed": bw_observed, 
+            "model": {"bucket_name": "temp", "object_name": f"{task_id}.pkl"},
+            "worker_url": WORKER_URL
         }
+
     except Exception as e:
-        print(str(e))
+        logging.error(f"[Execution Error] {str(e)}")
         return {
             "success": False,
             "job_id": task["job_id"],
             "model_name": model_info["model"],
             "error": str(e),
-            "worker_url": f"http://{WORKER_HOST}:{WORKER_PORT}"
+            "worker_url": WORKER_URL
         }
-    
 
-# =========================================================================
-# VÒNG LẶP POLLING
-# =========================================================================
+
+"""
+POLLING LOOP & APP LIFECYCLE
+"""
+
+wake_up_event = asyncio.Event()
+
 async def polling_loop(client: httpx.AsyncClient):
-    # Lấy ID duy nhất của worker
-    master_host_addr = MASTER_HOST
-    if MASTER_HOST == "::":
-        master_host_addr = "[::]"
+    wake_up_event.set()
 
-    master_url = f"http://{master_host_addr}:{MASTER_PORT}"
+    # Get Worker's hardware specifications
+    cpu_cores = psutil.cpu_count(logical=False) or DEFAULT_CPU_CORES
+    ram_gb = psutil.virtual_memory().total / BYTES_IN_GB
 
-    
-    if not master_url:
-        logging.critical("Master URL does not exist. Worker will be shut down")
-        os.kill(os.getpid(), signal.SIGTERM)
-        return
-    
-    WAKE_UP_EVENT.set()
-    
     while True:
         try:
-            await WAKE_UP_EVENT.wait()
+            await wake_up_event.wait()
 
         except asyncio.CancelledError:
-            print(f"[Worker] 'wait()' was cancelled. Worker will be shut down")
+            logging.error(f"[Worker] 'wait()' was cancelled. Worker will be shut down")
             raise
         except Exception as e:
             logging.error(f"[Worker] Error when wake up: {str(e)}")
             await asyncio.sleep(60)
             continue
 
-
         try:
-            # Lấy cache key dùng gần nhất
-            cached_hint = CACHE_ACCESS_ORDER[-1] if CACHE_ACCESS_ORDER else None
-
-            worker_url = f"http://{WORKER_HOST}:{WORKER_PORT}"
-
-            # Gọi API "GET TASK" của Master
             response = await client.get(
-                f"{master_url}/task/get",
+                f"{MASTER_URL}/task/get",
                 params={
-                    "cached_key_hint": cached_hint,
-                    "worker_url": worker_url
+                    "cached_key_hint": dataset_cache.get_latest_key(),
+                    "worker_url": WORKER_URL,
+                    "cpu_cores": cpu_cores,
+                    "ram_gb": ram_gb
                 },
                 timeout=5.0
             )
             task = response.json().get("task")
             if task:
                 print(f"[Worker] Received task. Training")
-                start = time.perf_counter()
-                result = await _execute_single_training_task(task)
-                print(f"[Worker] Time: {(time.perf_counter() - start):.2f} seconds")
+                start_time = time.perf_counter()
+                result = await execute_training_task(task)
+                logging.info(f"Task executed in {(time.perf_counter() - start_time):.2f}s")
 
-                await client.post(f"{master_url}/task/submit", json=result, timeout=10.0)
+                await client.post(f"{MASTER_URL}/task/submit", json=result, timeout=10.0)
             else:
                 print(f"[Worker] No tasks. Return to sleep")
-                WAKE_UP_EVENT.clear()
+                wake_up_event.clear()
 
         except httpx.RequestError as e:
-            print(f"[Worker] Cannot connect to Master")
+            logging.warning("Cannot connect to Master. Retrying in 30s...")
             await asyncio.sleep(30)
-            continue
         except Exception as e:
-            print(f"[Worker] Fatal error while retrieving task: {e}. Retrying...")
+            logging.error(f"Fatal polling error: {e}")
             await asyncio.sleep(60)
-            continue
 
 
-# =========================================================================
-# FASTAPI APP
-# =========================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global POLLING_CLIENT
-    POLLING_CLIENT = httpx.AsyncClient()
-    polling_task = asyncio.create_task(polling_loop(POLLING_CLIENT))
+    client = httpx.AsyncClient()
+    polling_task = asyncio.create_task(polling_loop(client))
     yield
     polling_task.cancel()
-    try:
-        await polling_task
-    except asyncio.CancelledError:
-        print("Polling Task confirmed cancelled")
-    except Exception as e:
-        logging.error(f"Polling Task reports error when shutting down: {str(e)}")
-    finally:
-        if POLLING_CLIENT:
-            await POLLING_CLIENT.aclose()
+    await client.aclose()
 
+app = FastAPI(title="AutoML Worker", lifespan=lifespan)
 
-
-app = FastAPI(title="Worker", lifespan=lifespan)
 
 @app.get("/check-for-work")
 async def check_for_work():
-    WAKE_UP_EVENT.set()
+    wake_up_event.set()
     return {"status": "starting"}
 
 

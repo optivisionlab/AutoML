@@ -1,4 +1,13 @@
-import { Home, User, Database, Users, DatabaseZap, History, RocketIcon } from "lucide-react";
+import {
+  Home,
+  User,
+  Database,
+  Users,
+  DatabaseZap,
+  History,
+  RocketIcon,
+  MapPinHouse,
+} from "lucide-react";
 
 export function NavItems(role: string) {
   const commonItems = [
@@ -53,6 +62,14 @@ export function NavItems(role: string) {
       position: "top",
       role: ["user"],
     },
+    {
+      name: "Marketplace",
+      icon: <MapPinHouse size={18} />,
+      href: "/market-place",
+      active: false,
+      position: "top",
+      role: ["user"],
+    },
   ];
 
   const adminItems = [
@@ -66,7 +83,7 @@ export function NavItems(role: string) {
     },
     {
       name: "Bộ dữ liệu có sẵn",
-      icon: <Database size={18}/>,
+      icon: <Database size={18} />,
       href: "/admin/datasets/public",
       active: false,
       position: "top",
@@ -80,7 +97,7 @@ export function NavItems(role: string) {
       position: "top",
       role: ["admin"],
     },
-        {
+    {
       name: "Xem lịch sử huấn luyện",
       icon: <History size={18} />,
       href: "/training-history",
@@ -96,6 +113,14 @@ export function NavItems(role: string) {
       position: "top",
       role: ["admin"],
     },
+    // {
+    //   name: "Marketplace",
+    //   icon: <MapPinHouse size={18} />,
+    //   href: "/market-place",
+    //   active: false,
+    //   position: "top",
+    //   role: ["admin"],
+    // },
   ];
 
   return [...commonItems, ...userItems, ...adminItems].filter((item) =>

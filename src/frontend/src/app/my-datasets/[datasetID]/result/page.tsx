@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle, LoaderCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import React from "react";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   params: Promise<{
@@ -13,6 +14,8 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
+  const { post } = useApi();
+
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
@@ -48,6 +51,7 @@ const ResultPage = ({ params }: Props) => {
       const target = sessionStorage.getItem("target");
       const method = sessionStorage.getItem("method");
       const listFeatureString = sessionStorage.getItem("list_feature");
+      const problemType = sessionStorage.getItem("problem_type");
 
       if (!choose || !metric_sort || !target || !method || !listFeatureString) {
         setError("Không tìm thấy đủ cấu hình trong session.");
@@ -63,6 +67,7 @@ const ResultPage = ({ params }: Props) => {
         target,
         list_feature,
         method,
+        problemType
       };
 
       setConfig(formattedConfig);
@@ -90,6 +95,7 @@ const ResultPage = ({ params }: Props) => {
           metric_sort: config.metric_sort,
           list_feature: config.list_feature,
           target: config.target,
+          problem_type: config.problemType
         },
       };
 
@@ -97,30 +103,14 @@ const ResultPage = ({ params }: Props) => {
       setError(null); // Reset lỗi trước khi gọi mới
 
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/jobs/training`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              accept: "application/json",
-            },
-            body: JSON.stringify(requestBody),
-          }
-        );
+        const resultData = await post(`/v2/auto/jobs/training`, requestBody);
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Lỗi API: ${response.status} - ${errorText}`);
-        }
-
-        const resultData = await response.json();
         setResult(resultData);
         setJobStatus(resultData.status || null);
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
         setError(
-          "Có lỗi xảy ra khi huấn luyện mô hình, vui lòng xem lại cấu hình thuộc tính."
+          "Có lỗi xảy ra khi huấn luyện mô hình, vui lòng xem lại cấu hình thuộc tính.",
         );
       } finally {
         setIsLoading(false);

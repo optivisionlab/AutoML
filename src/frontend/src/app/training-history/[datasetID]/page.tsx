@@ -20,6 +20,7 @@ import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
 import React from "react";
 import toTitleLabel from "@/utils/toTitleLable";
+import { useApi } from "@/hooks/useApi";
 
 type Props = {
   params: Promise<{
@@ -28,6 +29,8 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
+  const { post, get } = useApi();
+
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
 
@@ -37,7 +40,6 @@ const ResultPage = ({ params }: Props) => {
   const { data: session } = useSession();
 
   const [showChart, setShowChart] = useState(false);
-
 
   useEffect(() => {
     setIsClient(true);
@@ -56,23 +58,16 @@ const ResultPage = ({ params }: Props) => {
   type MetricOb = Record<string, string>;
   const [metrics, setMetrics] = useState<MetricOb>({});
 
-  const getMetrics = useCallback((type: string) => {
-    fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/metrics?problem_type=${type}`,
-      {
-        method: "GET",
-        headers: { accept: "application/json" },
-      }
-    )
-      .then((res) => res.json())
-      .then(({ metrics }) => {
-        console.log(metrics);
-        setMetrics(metrics);
-      })
-      .catch((err) => {
-        console.error("Lỗi khi gọi API:", err);
-        alert("Không thể tải dữ liệu huấn luyện.");
-      });
+  const getMetrics = useCallback(async (type: string) => {
+    try {
+      const data = await get(`/v2/auto/metrics?problem_type=${type}`);
+
+      console.log(data.metrics);
+      setMetrics(data.metrics);
+    } catch (err) {
+      console.error("Lỗi khi gọi API:", err);
+      alert("Không thể tải dữ liệu huấn luyện.");
+    }
   }, []);
 
   // Fetch data train từ API đầu tiên
@@ -80,37 +75,26 @@ const ResultPage = ({ params }: Props) => {
     if (datasetID) {
       setIsLoading(true);
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-job-info?id=${datasetID}`,
-          {
-            method: "POST",
-            headers: { accept: "application/json" },
-            body: "",
-          }
-        );
-
-        const data = await response.json();
-        console.log("Dữ liệu từ API:", data);
+        const data = await post(`get-job-info?id=${datasetID}`);
         setResult(data);
 
         const problemType = data.config?.problem_type || "classification";
-        const test_value = data?.orther_model_scores[0]?.scores?.f1
+        const test_value = data?.orther_model_scores[0]?.scores?.f1;
 
         if (!test_value && problemType) {
           getMetrics(problemType);
-        }else {
+        } else {
           setMetrics({
             0: "accuracy",
             1: "f1",
             2: "precision",
-            3: "recall"
-          })
+            3: "recall",
+          });
         }
-      
       } catch (err) {
         console.log("Lỗi khi gọi API:", err);
         setError(
-          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính."
+          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.",
         );
       } finally {
         setIsLoading(false);
@@ -140,7 +124,6 @@ const ResultPage = ({ params }: Props) => {
     );
   }
 
-
   // Setup biểu đồ
   // Chart config
   const randomColor = () => `hsl(${Math.floor(Math.random() * 360)}, 70%, 45%)`;
@@ -154,7 +137,7 @@ const ResultPage = ({ params }: Props) => {
       };
       return config;
     },
-    {}
+    {},
   ) satisfies ChartConfig;
 
   // Chart data
@@ -314,7 +297,7 @@ const ResultPage = ({ params }: Props) => {
                           </TableCell>
                         ))}
                       </TableRow>
-                    )
+                    ),
                   )}
                 </TableBody>
               </Table>

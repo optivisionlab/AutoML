@@ -1,17 +1,15 @@
 import time
 import datetime
-import os
 from pydantic import BaseModel
 from typing import Optional
 from pymongo.asynchronous.database import AsyncDatabase
-from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
-from fastapi import Depends
+from fastapi import HTTPException, status
 
-from database.database import get_db
 
 # Load file .env
 load_dotenv()
+
 
 class User(BaseModel):
     username: str
@@ -24,36 +22,34 @@ class User(BaseModel):
     role: Optional[str] = None
     avatar: Optional[str] = None
 
+
 class UpdateUser(BaseModel):  # Dùng cho cập nhật thông tin người dùng
     email: Optional[str]
     gender: Optional[str]
     date: Optional[str]
     fullName: Optional[str]
     number: Optional[str]
-    
-# Định nghĩa mô hình cho dữ liệu đầu vào
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-    
-class ChangePassword(BaseModel):
-    password: str
-    new1_password: str 
-    new2_password: str
 
-    #Hàm chuyển đổi objectID thành chuỗi
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str 
+    verified_password: str
+
+
+# Hàm chuyển đổi objectID thành chuỗi
 def user_helper(user) -> dict:
     return{
         "_id": str(user["_id"]),
         "username": str(user["username"]),
         "email": str(user["email"]),
         # "Password": str(user["password"]),
-        "gender": str(user["gender"]),
-        "date": str(user["date"]),
-        "number": str(user["number"]),
+        "gender": user["gender"],
+        "date": user["date"],
+        "number": user["number"],
         "fullName": str(user["fullName"]),
         "role": str(user["role"]),
-        "avatar": str(user["avatar"])
+        "avatar": user.get('avatar')
     }
 
 
@@ -78,114 +74,8 @@ async def check_exits_username(username, db: AsyncDatabase):
         return existing_user
     else:
         return False
-    
-
-async def check_exits_email(email, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
-    existing_email = await users_collection.find_one({"email": email})
-    if existing_email:
-        return existing_email
-    else:
-        return False
-
-#Hàm kiểm tra username , password 
-async def checkLogin(username, password, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
-    check_user = await users_collection.find_one({"username": username})
-    check_email = await users_collection.find_one({"email": username})
-    user = check_user if check_user else check_email
-    if user:
-        if user['password'] == password:
-            return user
-        else:
-            return False
-    else:
-        return False
-   
-
-import jwt
-
-SECRET_KEY = os.getenv('SECRET_KEY', '')
-ALGORITHM = os.getenv('ALGORITHM', 'HS256')
-EXPIRE_MINUTES = int(os.getenv('EXPIRE_MINUTES', 30))
-   
-async def check_token(token, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    try:
-        # Giải mã token và xác thực chữ ký
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
-        # Kiểm tra xem token có tồn tại trong cơ sở dữ liệu không
-        token_user = await users_collection.find_one({"username": payload['sub'], "token": token})
-        
-        if token_user:
-            return token_user  # Trả về thông tin người dùng
-        else:
-            return None  # Token không tồn tại trong cơ sở dữ liệu
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token đã hết hạn!")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Token không hợp lệ!")
-
-from fastapi import HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-async def get_current_user(db: AsyncDatabase = Depends(get_db), token: str = Depends(oauth2_scheme)):
-    user_data = await check_token(token, db)  # Hàm validate_token cần được định nghĩa
-    if user_data is None:
-        raise HTTPException(status_code=401, detail="Token không hợp lệ!")
-    return user_data
-
-    
-async def get_current_admin(current_user: dict = Depends(get_current_user)):
-    if current_user.get('role') != 'Admin':
-        raise HTTPException(status_code=403, detail="Quyền truy cập bị từ chối!")
-    return current_user
 
 
-async def handleLogin(username, password, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    user = await checkLogin(username, password, db)
-    if user:
-        if user['role'] == "Admin" :
-            message = "This is Admin"
-            role = user.get('role', 'Admin')
-            token = create_access_token(data={"sub": username, "role": role})
-            update_user = {"$set":{
-                "token": token
-            }}
-            await users_collection.update_one({"username": username}, update_user)
-        else:
-            message = "This is User"
-            role = user.get('role', 'User')
-            token = create_access_token(data={"sub": username, "role": role})
-            update_user = {"$set":{
-                "token": token
-            }}
-            
-            await users_collection.update_one({"username": username}, update_user)
-
-        user_login = {
-            "username": user['username'],
-            "email": user['email'],
-            "id": str(user['_id']),
-            "gender": user['gender'],
-            "date": user['date'],
-            "number": user['number'],
-            "role": role,
-        }
-        return user_login
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tài khoản hoặc mật khẩu không chính xác!"
-        )
-
-    
 from email.mime.text import MIMEText
 import smtplib
 
@@ -216,6 +106,7 @@ def generate_otp():
         otp += digits[random.randint(0, 9)]
     return otp
 
+
 async def remove_otp(username, db: AsyncDatabase):
     users_collection = db.tbl_User
     update = {"$set":{
@@ -227,15 +118,12 @@ async def remove_otp(username, db: AsyncDatabase):
 
 async def save_otp(username, value_otp, db: AsyncDatabase):
     users_collection = db.tbl_User
-    create_at_otp = datetime.datetime.now()  # Lưu trữ thời gian theo múi giờ UTC
+    create_at_otp = datetime.datetime.now(datetime.timezone.utc).timestamp()  # Lưu trữ thời gian theo múi giờ UTC
     value_set = {"$set":{
         "otp": value_otp,
         "createAtOTP": create_at_otp
     }}
 
-    # delay_time_seconds = 15
-    # auto_remove = threading.Timer(delay_time_seconds, remove_otp(username, db))
-    # auto_remove.start()
     await users_collection.update_one({"username": username},value_set)
     
 
@@ -271,36 +159,62 @@ async def check_time_otp(username, db: AsyncDatabase):
         False
 
 
-async def handle_change_password(username, pw, new_pw1, new_pw2, db: AsyncDatabase):
+async def handle_change_password(username, current_password, new_password, verified_password, db: AsyncDatabase):
     users_collection = db.tbl_User
     user = await users_collection.find_one({"username": username})
-    if user:
-        if pw == user['password']:
-            if new_pw1 == new_pw2:
-                value_set = {"$set":{
-                    "password": new_pw1
-                }}
-                await users_collection.update_one({"_id": user["_id"]}, value_set)
-                raise HTTPException(
-                    status_code=status.HTTP_200_OK,
-                    detail=f"Thay đổi mật khẩu thành công!"
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Mật khẩu mới chưa trùng khớp!"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Mật khẩu không chính xác!"
-            )
-    else:
+
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
+            detail="Not found user"
         )
-    
+
+    if new_password != verified_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Passwords do not match"
+        )
+
+    if user.get('password'):
+        if not current_password == user.get('password'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password"
+            )
+
+        await users_collection.update_one(
+            {"_id": user['_id']},
+            {"$set": {'password': new_password}}
+        )
+
+        return {
+            "message": "Change password successfully"
+        }
+
+    else:
+        linked_acc = await db.linked_accounts.find_one({'user_id': user['_id']})
+
+        if not linked_acc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not found user"
+            )
+        
+        if not current_password == linked_acc.get('password'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect password"
+            )
+
+        await db.linked_accounts.update_one(
+            {"_id": linked_acc['_id']},
+            {"$set": {'password': new_password}}
+        )
+
+        return {
+            "message": "Change password successfully"
+        }
+
     
 import base64, io
 from fastapi.responses import StreamingResponse
@@ -350,61 +264,16 @@ async def handle_get_avatar(username, db: AsyncDatabase):
         )
 
 
-async def handle_signup(new_user: User, db: AsyncDatabase):
+async def handle_delete_user(username, db: AsyncDatabase) -> dict:
     users_collection = db.tbl_User
 
-    check_email = await check_exits_email(new_user.email, db)
-    check_username = await check_exits_username(new_user.username, db)
-    if check_email or check_username:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Người dùng đã tồn tại!"
-        )
-    
-    user_data = {
-        "username": new_user.username,
-        "email": new_user.email,
-        "fullName": new_user.fullName,
-        "password": new_user.password,
-        "gender": new_user.gender,
-        "number": new_user.number,
-        "date": new_user.date,
-        "role": "user", 
-        "avatar": None
-    }
+    user_exist = await users_collection.find_one({'username': username})
 
-    result = await users_collection.insert_one(user_data)
-    if result.inserted_id:
-        return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "username": user_data["username"],
-            "email": user_data["email"],
-            "fullName": user_data["fullName"],
-            "gender": user_data["gender"],
-            "date": user_data["date"],
-            "number": user_data["number"],
-            "role": user_data["role"],
-            "avatar": user_data["avatar"]
-        }
-
-    )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail='Đã xảy ra lỗi khi thêm người dùng'
-        )
-    
-
-async def handle_delete_user(username, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
+    linked_acc = await db.linked_accounts.delete_many({'user_id': user_exist['_id']})
     result = await users_collection.delete_one({"username": username })
-    if result.deleted_count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"Người dùng {username} đã xóa"
-        )
+    
+    if result.deleted_count > 0 and linked_acc > 0:
+        return {"message": "Deleted successfully"}
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -441,17 +310,24 @@ async def handle_forgot_password(email, db: AsyncDatabase):
     users_collection = db.tbl_User
 
     user = await users_collection.find_one({"email": email})
-    if user:
-        send_reset_password_email(email, user['password'])
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"Password đã gửi về email: {email}"
-        )
-    else:
+
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {email} không tồn tại"
+            detail=f"No account with email address {email} found"
         )
+    password = None
+    if user.get('password'):
+        password = user.get('password')
+    else:
+        result = await db.linked_accounts.find_one({'user_id': user.get('_id')})
+        password = result.get('password')
+
+    if password:
+        send_reset_password_email(email, password)
+        return {
+            "message": f"Password đã gửi về email: {email}"
+        }
 
 
 async def handle_send_otp(username, db: AsyncDatabase):
@@ -462,10 +338,9 @@ async def handle_send_otp(username, db: AsyncDatabase):
         otp = generate_otp()
         await save_otp(username, otp, db)
         send_otp(user['email'], otp)
-        raise HTTPException(
-            status_code=status.HTTP_200_OK,
-            detail=f"OTP đã gửi về email: {user['email']}"
-        )
+        return {
+            "message": f"OTP đã gửi về email: {user['email']}"
+        }
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -481,10 +356,9 @@ async def handle_verification_email(username, otp, db: AsyncDatabase):
         check_time = await check_time_otp(username, db)
         if otp == user['otp']:
             if check_time:
-                raise HTTPException(
-                    status_code=status.HTTP_200_OK,
-                    detail=f"Xác thực email {user['email']} thành công"
-                )
+                return {
+                    "message": f"Xác thực email {user['email']} thành công"
+                }
             else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -500,16 +374,6 @@ async def handle_verification_email(username, otp, db: AsyncDatabase):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Người dùng {username} không tồn tại"
         )
-
-        
-def create_access_token(data: dict, expires_delta: datetime.timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 async def handle_contact(fullname: str, email: str, message: str, db: AsyncDatabase):
@@ -549,7 +413,6 @@ async def handle_contact(fullname: str, email: str, message: str, db: AsyncDatab
 
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lỗi khi gửi email hoặc lưu liên hệ: {str(e)}"
         )
-    

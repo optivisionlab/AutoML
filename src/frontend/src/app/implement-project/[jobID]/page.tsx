@@ -1,12 +1,7 @@
 "use client";
 
 import React from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Copy } from "lucide-react";
@@ -22,11 +17,16 @@ import {
   AlertDialogAction,
   AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
+import { useApi } from "@/hooks/useApi";
 
 const ProjectImplementation = () => {
+  const { post } = useApi();
+
   const { toast } = useToast();
   const params = useParams();
-  const [actionType, setActionType] = React.useState<"enable" | "disable" | null>(null);
+  const [actionType, setActionType] = React.useState<
+    "enable" | "disable" | null
+  >(null);
   const [modelActivated, setModelActivated] = React.useState<boolean>(true);
   const jobID = Array.isArray(params?.jobID) ? params.jobID[0] : params?.jobID;
 
@@ -77,21 +77,15 @@ print(response.text)`;
       return;
     }
 
-    const url = `${process.env.NEXT_PUBLIC_BASE_API}/activate-model?job_id=${jobID}&activate=${activate}`;
-
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-        },
-      });
-
-      if (!res.ok) throw new Error("API call failed");
+      await post(`/activate-model?job_id=${jobID}&activate=${activate}`);
       setModelActivated(activate === 1);
 
       toast({
-        title: activate === 1 ? "Mô hình đã được kích hoạt!" : "Mô hình đã bị vô hiệu hóa!",
+        title:
+          activate === 1
+            ? "Mô hình đã được kích hoạt!"
+            : "Mô hình đã bị vô hiệu hóa!",
         className:
           activate === 1
             ? "bg-green-100 text-green-800 border border-green-300"
@@ -142,23 +136,31 @@ print(response.text)`;
             {modelActivated ? (
               <span className="text-green-500 font-medium">Đã kích hoạt</span>
             ) : (
-              <span className="text-yellow-500 font-medium">Chưa kích hoạt</span>
+              <span className="text-yellow-500 font-medium">
+                Chưa kích hoạt
+              </span>
             )}
           </span>
 
           <div className="flex items-start gap-2">
             <span className="text-green-500">✔</span>
-            <span><strong>file_data:</strong> là file dữ liệu cần thử nghiệm</span>
+            <span>
+              <strong>file_data:</strong> là file dữ liệu cần thử nghiệm
+            </span>
           </div>
 
           <div className="flex items-start gap-2">
             <span className="text-green-500">✔</span>
-            <span><strong>JOB_ID:</strong> {jobID || "job ID sẽ được cung cấp"}</span>
+            <span>
+              <strong>JOB_ID:</strong> {jobID || "job ID sẽ được cung cấp"}
+            </span>
           </div>
 
           <div className="flex items-start gap-2">
             <span className="text-green-500">✔</span>
-            <span><strong>URL_API:</strong> Đường dẫn API sẽ được cung cấp</span>
+            <span>
+              <strong>URL_API:</strong> Đường dẫn API sẽ được cung cấp
+            </span>
           </div>
 
           <div className="relative bg-gray-100 dark:bg-[#2a2a2a] border border-muted rounded-lg p-4">
@@ -177,7 +179,9 @@ print(response.text)`;
           </div>
 
           <div className="flex items-start gap-2">
-            <span><strong>Code python minh họa:</strong></span>
+            <span>
+              <strong>Code python minh họa:</strong>
+            </span>
           </div>
 
           <div className="relative bg-gray-100 dark:bg-[#2a2a2a] border border-muted rounded-lg p-4">

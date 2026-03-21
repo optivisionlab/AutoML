@@ -13,13 +13,15 @@ from database.get_dataset import MongoDataLoader
 from database.database import get_db
 from automl.v2.schemas import InputRequest
 from automl.v2.service import save_job, query_jobs, send_message
+from users.routers import get_current_user
 
 
 exp = APIRouter(prefix="/v2/auto", tags=["Experiment API"])
 
+
 # API lấy ra danh sách đặc trưng của dataset 
 @exp.get("/features")
-async def get_features_of_dataset(id_data: str, problem_type: str, request: Request):
+async def get_features_of_dataset(id_data: str, problem_type: str, request: Request, current_user = Depends(get_current_user)):
     dataset = MongoDataLoader(request.app.state.db)
     try:
         features = await dataset.get_features_suggest_target(id_data, problem_type)
@@ -40,7 +42,7 @@ async def get_features_of_dataset(id_data: str, problem_type: str, request: Requ
 
 
 @exp.get("/data")
-async def get_data_of_dataset(id_data: str, request: Request):
+async def get_data_of_dataset(id_data: str, request: Request, current_user = Depends(get_current_user)):
     dataset = MongoDataLoader(request.app.state.db)
     try:
         data_preview, total_rows = await dataset.get_data_preview(id_data)
@@ -69,7 +71,7 @@ async def get_data_of_dataset(id_data: str, request: Request):
 
 # API huấn luyện model ==> Client -> Kafka -> Server
 @exp.post("/jobs/training")
-async def distributed_training(input: InputRequest, db: AsyncDatabase = Depends(get_db)):
+async def distributed_training(input: InputRequest, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     """Gửi message vào Kafka và huấn luyện model"""
 
     try:
@@ -97,7 +99,8 @@ async def get_jobs_offset(
     id_user: str,
     page: int = Query(1, ge=1),
     limit: int = Query(5, ge=1),
-    db: AsyncDatabase = Depends(get_db)
+    db: AsyncDatabase = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
     job_list_raw, total_pages, total_jobs = await query_jobs(id_user, page, limit, db)
 
@@ -126,7 +129,8 @@ async def read_yaml_async(file_path: str):
 
 @exp.get('/metrics')
 async def metrics(
-    problem_type: str
+    problem_type: str,
+    current_user = Depends(get_current_user)
 ) -> dict:
     if not problem_type:
         raise HTTPException(
