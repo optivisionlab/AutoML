@@ -336,6 +336,26 @@ async def run_reduction_and_cleanup(job_id: str, db: AsyncDatabase):
 SCHEDULER & FAULT TOLERANCE
 """
 
+def _is_task_from_timed_out_job(task: dict) -> bool:
+    """Kiểm tra task có nên bị bỏ qua không (job đã hết thời gian hoặc đã hoàn thành).
+    
+    Trả về True trong 2 trường hợp:
+    1. Job đã bị đánh dấu timed_out (hết thời gian toàn cục)
+    2. Job không còn trong job_tracker (đã hoàn thành và dọn dẹp)
+    
+    Args:
+        task: Thông tin task chứa job_id
+    
+    Returns:
+        True nếu task nên bị bỏ qua, False nếu vẫn hợp lệ
+    """
+    task_job_id = task.get("job_id")
+    # Job đã bị xóa khỏi tracker → đã hoàn thành hoặc thất bại → bỏ qua
+    if task_job_id not in state.job_tracker:
+        return True
+    return state.job_tracker[task_job_id].get("timed_out", False)
+
+
 async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = None, worker_cpu: int = 4, worker_ram: float = 8.0):
     """
     Algorithm: Prioritize scheduling based on Locality and Network Cost
@@ -346,7 +366,9 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
             local_queue = state.local_queues.get(cached_key_hint)
         if local_queue and not local_queue.empty():
             task = local_queue.get_nowait()
-            return _register_active_task(task, worker_url, -1)
+            # Bỏ qua task thuộc job đã hết thời gian
+            if not _is_task_from_timed_out_job(task):
+                return _register_active_task(task, worker_url, -1)
 
     # Capacity-Aware Routing
     is_strong = (worker_cpu >= T_CPU) and (worker_ram >= T_RAM_GB)
@@ -369,8 +391,7 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
             break
 
         # Bỏ qua task thuộc job đã hết thời gian
-        task_job_id = task.get("job_id")
-        if task_job_id in state.job_tracker and state.job_tracker[task_job_id].get("timed_out"):
+        if _is_task_from_timed_out_job(task):
             continue
 
         # Cost-Based Validation
@@ -400,6 +421,9 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
             target_queue = state.local_queues.get(key)
             if target_queue and not target_queue.empty():
                 task = target_queue.get_nowait()
+                # Bỏ qua task thuộc job đã hết thời gian
+                if _is_task_from_timed_out_job(task):
+                    continue
                 return _register_active_task(task, worker_url, -1)
 
     return None
