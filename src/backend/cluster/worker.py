@@ -128,7 +128,7 @@ async def execute_training_task(task: dict):
             }
         }
 
-        _, best_model_obj, best_score, best_params, model_scores = await asyncio.to_thread(
+        _, best_model_obj, best_score, best_params, model_scores, time_limit_reached = await asyncio.to_thread(
             train_process,
             X_processed,
             y_processed,
@@ -157,7 +157,8 @@ async def execute_training_task(task: dict):
             "best_params": best_params,
             "bandwidth_observed": bw_observed, 
             "model": {"bucket_name": "temp", "object_name": f"{task_id}.pkl"},
-            "worker_url": WORKER_URL
+            "worker_url": WORKER_URL,
+            "time_limit_reached": time_limit_reached
         }
 
     except Exception as e:
@@ -247,6 +248,13 @@ async def check_for_work():
 @app.get("/health")
 async def ping():
     return {"status": "OK"}
+
+
+@app.post("/cancel-task")
+async def cancel_task(task_id: str = ""):
+    """Master gửi tín hiệu khi job hết thời gian. Worker ghi log nhưng không ngắt training."""
+    logging.info(f"[Worker] Nhận tín hiệu hủy cho task: {task_id}")
+    return {"status": "acknowledged"}
 
 
 if __name__ == "__main__":
