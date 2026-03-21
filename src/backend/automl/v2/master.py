@@ -207,14 +207,31 @@ async def _job_timeout_watcher(job_id: str, max_time: float, db: AsyncDatabase):
         # Đánh dấu job đã hết thời gian
         tracker["timed_out"] = True
 
-        # Hủy tất cả active tasks thuộc job này
+        # Thu thập thông tin worker trước khi xóa active_tasks
         tasks_to_cancel = [
-            tid for tid, info in state.active_tasks.items()
+            (tid, info["worker_url"], info["task_data"]["job_id"])
+            for tid, info in state.active_tasks.items()
             if info["task_data"]["job_id"] == job_id
         ]
-        for task_id in tasks_to_cancel:
+
+        # Xóa khỏi active_tasks
+        for task_id, _, _ in tasks_to_cancel:
             state.active_tasks.pop(task_id, None)
             logging.info(f"[{job_id}] Đã hủy task đang chạy: {task_id}")
+
+        # Gửi tín hiệu cancel đến worker để kill subprocess
+        async with httpx.AsyncClient() as cancel_client:
+            for task_id, worker_url, _ in tasks_to_cancel:
+                if worker_url:
+                    try:
+                        await cancel_client.post(
+                            f"{worker_url}/cancel-task",
+                            params={"task_id": task_id},
+                            timeout=5.0
+                        )
+                        logging.info(f"[{job_id}] Đã gửi cancel đến {worker_url} cho task {task_id}")
+                    except Exception as e:
+                        logging.warning(f"[{job_id}] Không gửi được cancel đến {worker_url}: {e}")
 
         # Trigger early reduction nếu có ít nhất 1 kết quả
         if completed > 0:

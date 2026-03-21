@@ -331,10 +331,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
 
-    # Kiểm tra trạng thái giới hạn thời gian từ search strategy
-    time_limit_reached = getattr(search_strategy, '_time_limit_reached', False)
-
-    return best_model_id, best_model, best_score, best_params, model_results, time_limit_reached
+    return best_model_id, best_model, best_score, best_params, model_results
 
 
 # =============================
@@ -532,10 +529,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
             best_model = best_estimator
             best_params = best_params_model
 
-    # Kiểm tra trạng thái giới hạn thời gian từ search strategy
-    time_limit_reached = getattr(search_strategy, '_time_limit_reached', False)
-
-    return best_model_id, best_model, global_best_score, best_params, model_results, time_limit_reached
+    return best_model_id, best_model, global_best_score, best_params, model_results
 
 
 def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
@@ -557,15 +551,15 @@ def train_process(X_train, y_train, metric_list, metric_sort, models, problem_ty
     Returns:
         tuple: (best_model_id, best_model, best_score, best_params, model_scores)
     """
-    best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = None, None, None, None, None, False
+    best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
 
     if problem_type == 'classification':
-        best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = training(models, metric_list, metric_sort,
+        best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm, max_time)
     if problem_type == 'regression':
-        best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
+        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
     
-    return best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached
+    return best_model_id, best_model, best_score, best_params, model_scores
 
 
 def app_train_local(file_data, file_config):
@@ -592,7 +586,7 @@ def app_train_local(file_data, file_config):
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
 
-    best_model_id, best_model, best_score, best_params, model_scores, _ = train_process(
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
         X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
@@ -642,7 +636,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
-    best_model_id, best_model, best_score, best_params, model_scores, _ = train_process(
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
         X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 

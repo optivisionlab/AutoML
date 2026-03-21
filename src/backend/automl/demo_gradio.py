@@ -21,7 +21,7 @@ def gradio_train_local(file_data, file_config):
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
 
-    best_model_id, best_model, best_score, best_params, model_scores, _ = train_process(
+    best_model_id, best_model, best_score, best_params, model_scores = train_process(
         X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
     
