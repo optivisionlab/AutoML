@@ -485,7 +485,7 @@ class GridSearchStrategy(SearchStrategy):
         # Tạo đường dẫn file log sử dụng phương thức lớp cơ sở
         log_file = self.create_log_file_path(model, 'grid_search')
 
-        best_params, best_score, best_all_scores, cv_results = self._grid_search_core(
+        best_params, best_score, best_all_scores, cv_results, time_limit_reached = self._grid_search_core(
             param_grid=param_grid,
             model_func=model,
             data=X,
@@ -502,4 +502,4 @@ class GridSearchStrategy(SearchStrategy):
         if self.config.get('save_log', False) and log_file:
             self._save_search_log(log_file)
 
-        return best_params, best_score, best_all_scores, cv_results
+        return best_params, best_score, best_all_scores, cv_results, time_limit_reached

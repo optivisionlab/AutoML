@@ -214,9 +214,10 @@ async def _job_timeout_watcher(job_id: str, max_time: float, db: AsyncDatabase):
         tracker["timed_out"] = True
 
         # Thu thập thông tin worker trước khi xóa active_tasks
+        # Snapshot để tránh RuntimeError khi dict bị mutate bởi coroutine khác
         tasks_to_cancel = [
             (tid, info["worker_url"], info["task_data"]["job_id"])
-            for tid, info in state.active_tasks.items()
+            for tid, info in list(state.active_tasks.items())
             if info["task_data"]["job_id"] == job_id
         ]
 

@@ -203,33 +203,10 @@ async def execute_training_task(task: dict):
         _current_task_id = None
         process.join()
 
-        # Lấy kết quả từ queue
-        if not result_queue.empty():
+        # Lấy kết quả từ queue (dùng try/except thay vì empty() vì empty() không đáng tin cậy giữa các process)
+        try:
             proc_result = result_queue.get_nowait()
-
-            if proc_result["success"]:
-                # Upload model lên MinIO
-                await asyncio.to_thread(
-                    minIOStorage.uploaded_object,
-                    bucket_name="temp",
-                    object_name=f"{task_id}.pkl",
-                    object_bytes=proc_result["model_bytes"]
-                )
-
-                return {
-                    "success": True,
-                    "job_id": task["job_id"],
-                    "model_name": model_info["model"],
-                    "score": proc_result["best_score"],
-                    "scores": proc_result["model_scores"][0]["scores"],
-                    "best_params": proc_result["best_params"],
-                    "bandwidth_observed": bw_observed,
-                    "model": {"bucket_name": "temp", "object_name": f"{task_id}.pkl"},
-                    "worker_url": WORKER_URL
-                }
-            else:
-                raise Exception(proc_result["error"])
-        else:
+        except Exception:
             # Queue rỗng = subprocess bị kill trước khi hoàn thành
             logging.warning(f"[Worker] Subprocess bị hủy cho task: {task_id}")
             return {
@@ -239,6 +216,29 @@ async def execute_training_task(task: dict):
                 "error": "Task đã bị hủy do hết thời gian toàn cục",
                 "worker_url": WORKER_URL
             }
+
+        if proc_result["success"]:
+            # Upload model lên MinIO
+            await asyncio.to_thread(
+                minIOStorage.uploaded_object,
+                bucket_name="temp",
+                object_name=f"{task_id}.pkl",
+                object_bytes=proc_result["model_bytes"]
+            )
+
+            return {
+                "success": True,
+                "job_id": task["job_id"],
+                "model_name": model_info["model"],
+                "score": proc_result["best_score"],
+                "scores": proc_result["model_scores"][0]["scores"],
+                "best_params": proc_result["best_params"],
+                "bandwidth_observed": bw_observed,
+                "model": {"bucket_name": "temp", "object_name": f"{task_id}.pkl"},
+                "worker_url": WORKER_URL
+            }
+        else:
+            raise Exception(proc_result["error"])
 
     except Exception as e:
         _current_process = None
@@ -337,8 +337,10 @@ async def cancel_task(task_id: str = ""):
     global _current_process, _current_task_id
 
     if _current_process and _current_process.is_alive() and _current_task_id == task_id:
-        logging.info(f"[Worker] Kill subprocess (PID={_current_process.pid}) cho task: {task_id}")
-        _current_process.kill()
+        process = _current_process
+        logging.info(f"[Worker] Kill subprocess (PID={process.pid}) cho task: {task_id}")
+        process.kill()
+        process.join(timeout=5)  # Reap subprocess, tránh zombie process
         _current_process = None
         _current_task_id = None
         return {"status": "killed"}

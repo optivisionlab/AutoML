@@ -261,11 +261,11 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # Nếu không có grid nào, trả về kết quả mặc định
         if not all_results:
-            return {}, 0.0, {}, {}
+            return {}, 0.0, {}, {}, False
 
         # Chọn kết quả tốt nhất dựa trên best_score
         best_idx = max(range(len(all_results)), key=lambda i: all_results[i][1])
-        best_params, best_score, best_all_scores, _ = all_results[best_idx]
+        best_params, best_score, best_all_scores, _, _ = all_results[best_idx]
 
         # Gộp tất cả cv_results
         combined_cv_results = self._combine_cv_results(all_cv_results)

@@ -235,6 +235,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     best_score = -1
     best_params = {}
     model_results = []
+    any_time_limit_reached = False
 
     # Chuẩn hóa đầu vào
     metric_sort = metric_sort.strip().lower().replace(' ', '_')
@@ -325,12 +326,14 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
         model = model_info['model']
         param_grid = model_info['params']
 
-        best_params_model, best_score_model, best_all_scores_model, cv_results = search_strategy.search(
+        best_params_model, best_score_model, best_all_scores_model, cv_results, search_time_limit_reached = search_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,
             y=y_train
         )
+        if search_time_limit_reached:
+            any_time_limit_reached = True
         
         # Lấy estimator tốt nhất với các tham số tốt nhất
         best_estimator = model.set_params(**best_params_model)
@@ -374,7 +377,7 @@ def training(models, metric_list, metric_sort, X_train, y_train, search_algorith
     best_score = SearchStrategy.convert_numpy_types(best_score)
     model_results = SearchStrategy.convert_numpy_types(model_results)
 
-    return best_model_id, best_model, best_score, best_params, model_results
+    return best_model_id, best_model, best_score, best_params, model_results, any_time_limit_reached
 
 
 # =============================
@@ -458,6 +461,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     best_model = None
     best_params = {}
     model_results = []
+    any_time_limit_reached = False
 
     # Scoring dictionary cho regression
     # Greater_is_better=False sẽ làm cho kết quả trả về là số âm (dùng cho scikit-learn internal)
@@ -513,13 +517,14 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
         
         param_grid = model_info.get('params') or [{}]
 
-        # Sử dụng search strategy thống nhất
-        best_params_model, best_score_model, best_all_scores_model, cv_results = search_strategy.search(
+        best_params_model, best_score_model, best_all_scores_model, cv_results, search_time_limit_reached = search_strategy.search(
             model=model,
             param_grid=param_grid,
             X=X_train,
             y=y_train
         )
+        if search_time_limit_reached:
+            any_time_limit_reached = True
         
         # Chuyển đổi tất cả kiểu numpy sang kiểu Python gốc
         best_params_model = SearchStrategy.convert_numpy_types(best_params_model)
@@ -581,7 +586,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
             best_model = best_estimator
             best_params = best_params_model
 
-    return best_model_id, best_model, global_best_score, best_params, model_results
+    return best_model_id, best_model, global_best_score, best_params, model_results, any_time_limit_reached
 
 
 def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
