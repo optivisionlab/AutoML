@@ -163,8 +163,8 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
     # Khởi tạo timeout watcher nếu có giới hạn thời gian
     # NOTE: max_time ở đây là ngân sách thời gian TOÀN CỤC cho job.
     # - Job-level: _job_timeout_watcher dùng max_time làm hard deadline để kill job.
-    # - Task-level: mỗi worker nhận max_time trong config, nhưng vì các worker
-    #   chạy SONG SONG (mỗi worker train 1 model), nên full budget là hợp lý.
+    # - Task-level: _register_active_task() tính remaining_time = max_time - elapsed
+    #   và ghi đè vào task["config"]["max_time"], nên worker nhận đúng thời gian còn lại.
     # - Khác với local path (engine.py), nơi các model chạy TUẦN TỰ và
     #   _check_global_time_budget() giảm dần thời gian cho mỗi model.
     max_time = config.get("max_time")
@@ -458,6 +458,16 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
 
 def _register_active_task(task, worker_url, entry_count):
     task_id = task["task_id"]
+    job_id = task.get("job_id")
+
+    # Tính remaining time từ job tracker và ghi đè max_time
+    # Để worker nhận đúng thời gian còn lại thay vì full max_time gốc
+    tracker = state.job_tracker.get(job_id)
+    if tracker and tracker.get("max_time") is not None:
+        elapsed = time.time() - tracker["start_time"]
+        remaining = max(0, tracker["max_time"] - elapsed)
+        task["config"]["max_time"] = remaining
+
     state.active_tasks[task_id] = {
         "worker_url": worker_url,
         "start_time": time.time(),
