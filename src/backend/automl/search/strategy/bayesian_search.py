@@ -159,7 +159,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         return None, None
 
-    def _evaluate_default_params(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> Tuple[Dict, float, Dict, Dict]:
+    def _evaluate_default_params(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> Tuple[Dict, float, Dict, Dict, bool]:
         """Đánh giá model với default params khi không có hyperparameters để tối ưu.
 
         Args:
@@ -168,7 +168,7 @@ class BayesianSearchStrategy(SearchStrategy):
             y: Dữ liệu target
 
         Returns:
-            Tuple: (best_params, best_score, best_all_scores, cv_results_)
+            Tuple: (best_params, best_score, best_all_scores, cv_results_, time_limit_reached)
         """
         scoring_config = self.config.get('scoring', {})
         metric_names = list(scoring_config.keys()) if scoring_config else ['accuracy']
@@ -208,7 +208,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         logger.info(f"Đánh giá {model.__class__.__name__} với default params: {primary_metric}={best_score:.4f}")
 
-        return {}, best_score, all_scores, cv_results_
+        return {}, best_score, all_scores, cv_results_, False
 
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]],
                X: np.ndarray, y: np.ndarray, **kwargs) -> tuple[dict[Any, Any], float, dict[Any, Any], dict[

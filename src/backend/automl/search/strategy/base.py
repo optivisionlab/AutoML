@@ -244,7 +244,8 @@ class SearchStrategy(ABC):
             **kwargs: Các tham số bổ sung
 
         Returns:
-            tuple: (best_params, best_score, best_all_scores, cv_results)
+            tuple: (best_params, best_score, best_all_scores, cv_results, time_limit_reached)
+                time_limit_reached (bool): True nếu search bị dừng do hết thời gian
         """
         pass
 
@@ -338,7 +339,9 @@ class SearchStrategy(ABC):
             cv_results: Kết quả cross-validation chi tiết
             
         Returns:
-            tuple: (best_params, best_score, best_all_scores, cv_results) với tất cả kiểu numpy đã chuyển đổi
+            tuple: (best_params, best_score, best_all_scores, cv_results, time_limit_reached)
+                Tất cả kiểu numpy đã chuyển đổi sang Python gốc.
+                time_limit_reached (bool): True nếu search bị dừng do hết thời gian
         """
         # Xóa cache sau khi tìm kiếm hoàn thành
         if hasattr(self, '_decode_cache'):
