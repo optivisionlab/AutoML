@@ -387,11 +387,12 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
     if cached_key_hint:
         async with state.local_queue_lock:
             local_queue = state.local_queues.get(cached_key_hint)
-        if local_queue and not local_queue.empty():
+        while local_queue and not local_queue.empty():
             task = local_queue.get_nowait()
-            # Bỏ qua task thuộc job đã hết thời gian
-            if not _is_task_from_timed_out_job(task):
-                return _register_active_task(task, worker_url, -1)
+            # Bỏ qua task thuộc job đã hết thời gian, thử task tiếp theo
+            if _is_task_from_timed_out_job(task):
+                continue
+            return _register_active_task(task, worker_url, -1)
 
     # Capacity-Aware Routing
     is_strong = (worker_cpu >= T_CPU) and (worker_ram >= T_RAM_GB)
@@ -442,9 +443,9 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
                 continue
 
             target_queue = state.local_queues.get(key)
-            if target_queue and not target_queue.empty():
+            while target_queue and not target_queue.empty():
                 task = target_queue.get_nowait()
-                # Bỏ qua task thuộc job đã hết thời gian
+                # Bỏ qua task thuộc job đã hết thời gian, thử task tiếp theo
                 if _is_task_from_timed_out_job(task):
                     continue
                 return _register_active_task(task, worker_url, -1)

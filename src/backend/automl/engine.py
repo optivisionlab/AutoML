@@ -601,17 +601,18 @@ def train_process(X_train, y_train, metric_list, metric_sort, models, problem_ty
         max_time: Thời gian tối đa (giây), None = không giới hạn
 
     Returns:
-        tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+        tuple: (best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached)
+              time_limit_reached (bool): True nếu bất kỳ model nào bị dừng do hết thời gian
     """
-    best_model_id, best_model, best_score, best_params, model_scores = None, None, None, None, None
+    best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = None, None, None, None, None, False
 
     if problem_type == 'classification':
-        best_model_id, best_model, best_score, best_params, model_scores = training(models, metric_list, metric_sort,
+        best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = training(models, metric_list, metric_sort,
                                                                                 X_train, y_train, search_algorithm, max_time)
     if problem_type == 'regression':
-        best_model_id, best_model, best_score, best_params, model_scores = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
+        best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = training_regression(models, metric_list, metric_sort, X_train, y_train, search_algorithm, max_time)
     
-    return best_model_id, best_model, best_score, best_params, model_scores
+    return best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached
 
 
 def app_train_local(file_data, file_config):
@@ -626,7 +627,7 @@ def app_train_local(file_data, file_config):
         file_config: File upload chứa cấu hình YAML
 
     Returns:
-        tuple: (best_model_id, best_model, best_score, best_params, model_scores)
+        tuple: (best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached)
     """
     contents = file_data.file.read()
     data_file = BytesIO(contents)
@@ -636,13 +637,18 @@ def app_train_local(file_data, file_config):
     data_file_config = BytesIO(contents)
     choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = get_config(data_file_config)
 
-    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
+    # Đọc lại config để lấy problem_type (get_config chưa trả field này)
+    data_file_config.seek(0)
+    config_raw = yaml.safe_load(data_file_config)
+    problem_type = config_raw.get('problem_type', 'classification')
 
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
+    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+
+    best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = train_process(
+        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time
     )
 
-    return best_model_id, best_model, best_score, best_params, model_scores
+    return best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached
 
 
 # Chuyển đổi ObjectId sang string để trả về cho client
@@ -688,7 +694,7 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
+    best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = train_process(
         X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
     )
 
@@ -716,7 +722,8 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
             "name": user_name
         },
         "create_at": datetime.now(timezone.utc).timestamp(),
-        "status": 1
+        "status": 1,
+        "time_limit_reached": time_limit_reached
     }
 
     job_result = await job_collection.insert_one(job)
