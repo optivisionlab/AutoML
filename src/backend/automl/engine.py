@@ -694,8 +694,10 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 
     X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
+    problem_type = item.config.get('problem_type', 'classification')
+
     best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
+        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time
     )
 
     data_name, user_name = await get_dataset_and_user_info(id_data, userId, db)
