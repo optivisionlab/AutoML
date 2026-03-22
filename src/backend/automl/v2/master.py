@@ -240,19 +240,21 @@ async def _job_timeout_watcher(job_id: str, max_time: float, db: AsyncDatabase):
                     except Exception as e:
                         logging.warning(f"[{job_id}] Không gửi được cancel đến {worker_url}: {e}")
 
-        # Trigger early reduction nếu có ít nhất 1 kết quả
-        if completed > 0:
-            logging.info(f"[{job_id}] Tiến hành tổng hợp sớm với {completed}/{total} kết quả")
+        # Trigger early reduction chỉ khi có ít nhất 1 kết quả THÀNH CÔNG
+        # (completed_tasks đếm cả failures, không dùng được để quyết định reduction)
+        successful_count = len([r for r in tracker['results'] if r.get('success')])
+        if successful_count > 0:
+            logging.info(f"[{job_id}] Tiến hành tổng hợp sớm với {successful_count}/{total} kết quả thành công")
             asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         else:
-            # Không có kết quả nào → đánh dấu lỗi
+            # Không có kết quả thành công nào → đánh dấu lỗi
             job_update = MongoJob(db)
             await job_update.update_failure(
                 job_id,
-                f"Hết thời gian toàn cục ({max_time}s): không có model nào hoàn thành"
+                f"Hết thời gian toàn cục ({max_time}s): không có model nào hoàn thành thành công"
             )
             state.job_tracker.pop(job_id, None)
-            logging.error(f"[{job_id}] Không có kết quả nào trước khi hết thời gian")
+            logging.error(f"[{job_id}] Không có kết quả thành công nào trước khi hết thời gian")
 
     except asyncio.CancelledError:
         # Watcher bị hủy (job hoàn thành bình thường trước timeout)

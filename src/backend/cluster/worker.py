@@ -1,6 +1,9 @@
 import pickle
 import asyncio
 import os
+import tempfile
+import shutil
+import queue
 import logging
 import multiprocessing as mp
 import psutil
@@ -119,16 +122,20 @@ _current_process: mp.Process | None = None
 _current_task_id: str | None = None
 
 
-def _training_worker(result_queue: mp.Queue, X, y, metrics, metric_sort,
+def _training_worker(result_queue: mp.Queue, x_path, y_path, metrics, metric_sort,
                      models_to_train, problem_type, search_algorithm, max_time):
     """Hàm chạy trong subprocess để huấn luyện model.
     
     Gọi train_process() và đưa kết quả vào queue để trả về process chính.
     Nếu subprocess bị kill, queue sẽ rỗng → process chính biết task đã bị hủy.
     
+    Dữ liệu huấn luyện được truyền qua đường dẫn file numpy (memmap) thay vì
+    truyền trực tiếp numpy arrays, tránh pickle/copy toàn bộ dataset vào subprocess.
+    
     Args:
         result_queue: Queue để trả kết quả về process chính
-        X, y: Dữ liệu huấn luyện (numpy arrays)
+        x_path: Đường dẫn file .npy chứa X (đọc bằng memmap, không copy)
+        y_path: Đường dẫn file .npy chứa y (đọc bằng memmap, không copy)
         metrics: Danh sách metric đánh giá
         metric_sort: Metric chính để chọn model tốt nhất
         models_to_train: Dictionary chứa model và params
@@ -137,6 +144,10 @@ def _training_worker(result_queue: mp.Queue, X, y, metrics, metric_sort,
         max_time: Thời gian tối đa (giây), None = không giới hạn
     """
     try:
+        # Đọc dữ liệu từ file memmap (read-only, gần như zero-copy)
+        X = np.load(x_path, mmap_mode='r')
+        y = np.load(y_path, mmap_mode='r')
+
         best_model_id, best_model_obj, best_score, best_params, model_scores, _ = train_process(
             X, y, metrics, metric_sort, models_to_train, problem_type, search_algorithm, max_time
         )
@@ -162,6 +173,9 @@ async def execute_training_task(task: dict):
 
     model_info = task["model_info"]
     task_id = task["task_id"]
+    tmp_dir = None
+    result_queue = None
+    process = None
 
     try:
         # Tải dữ liệu từ cache hoặc MinIO
@@ -175,12 +189,20 @@ async def execute_training_task(task: dict):
             }
         }
 
+        # Lưu dữ liệu vào temp files (memmap) thay vì pickle trực tiếp vào subprocess
+        # Tránh duplicate bộ nhớ cho large datasets
+        tmp_dir = tempfile.mkdtemp(prefix='automl_worker_')
+        x_path = os.path.join(tmp_dir, 'X.npy')
+        y_path = os.path.join(tmp_dir, 'y.npy')
+        np.save(x_path, X_processed)
+        np.save(y_path, y_processed)
+
         # Tạo subprocess để huấn luyện (có thể kill khi cần)
         result_queue = mp.Queue()
         process = mp.Process(
             target=_training_worker,
             args=(
-                result_queue, X_processed, y_processed,
+                result_queue, x_path, y_path,
                 task["metrics"],
                 task["config"].get("metric_sort", "accuracy"),
                 models_to_train,
@@ -201,19 +223,28 @@ async def execute_training_task(task: dict):
 
         _current_process = None
         _current_task_id = None
-        process.join()
+        process.join(timeout=10)
 
-        # Lấy kết quả từ queue (dùng try/except thay vì empty() vì empty() không đáng tin cậy giữa các process)
+        # Lấy kết quả từ queue
+        # Bắt queue.Empty cụ thể thay vì Exception chung để không che giấu lỗi thực
         try:
             proc_result = result_queue.get_nowait()
-        except Exception:
-            # Queue rỗng = subprocess bị kill trước khi hoàn thành
-            logging.warning(f"[Worker] Subprocess bị hủy cho task: {task_id}")
+        except queue.Empty:
+            # Queue rỗng → phân biệt subprocess bị kill vs crash bằng exitcode
+            exit_code = process.exitcode
+            if exit_code is not None and exit_code < 0:
+                # Exit code âm = bị signal kill (vd: -9 = SIGKILL từ /cancel-task)
+                error_msg = f"Task bị hủy do hết thời gian toàn cục (signal {-exit_code})"
+                logging.warning(f"[Worker] Subprocess bị kill (exit={exit_code}) cho task: {task_id}")
+            else:
+                # Exit code 0 nhưng queue rỗng, hoặc exit code > 0 = crash/lỗi nội bộ
+                error_msg = f"Subprocess kết thúc bất thường (exit code={exit_code}) mà không trả kết quả"
+                logging.error(f"[Worker] Subprocess crash (exit={exit_code}) cho task: {task_id}")
             return {
                 "success": False,
                 "job_id": task["job_id"],
                 "model_name": model_info["model"],
-                "error": "Task đã bị hủy do hết thời gian toàn cục",
+                "error": error_msg,
                 "worker_url": WORKER_URL
             }
 
@@ -251,6 +282,23 @@ async def execute_training_task(task: dict):
             "error": str(e),
             "worker_url": WORKER_URL
         }
+    finally:
+        # Reap subprocess: join với timeout + kill fallback để tránh zombie
+        if process is not None and process.is_alive():
+            process.kill()
+            process.join(timeout=5)
+
+        # Đóng queue để giải phóng file descriptors và feeder threads
+        if result_queue is not None:
+            try:
+                result_queue.close()
+                result_queue.join_thread()
+            except Exception:
+                pass
+
+        # Dọn dẹp temp files (memmap) dù thành công hay thất bại
+        if tmp_dir and os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 """
