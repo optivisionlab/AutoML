@@ -1,5 +1,6 @@
 import pandas as pd
 import json
+import yaml
 from automl.engine import get_config, train_process
 from automl.process_classification import preprocess_data
 import gradio as gr
@@ -18,11 +19,15 @@ def gradio_train_local(file_data, file_config):
     with open(file_config.name, 'r') as f:
         choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time = get_config(f)
 
+    # Đọc lại config để lấy problem_type (get_config chưa trả field này)
+    with open(file_config.name, 'r') as f:
+        config_raw = yaml.safe_load(f)
+    problem_type = config_raw.get('problem_type', 'classification')
 
-    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data) # Thiếu problem_type
+    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
-    best_model_id, best_model, best_score, best_params, model_scores = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, search_algorithm, max_time
+    best_model_id, best_model, best_score, best_params, model_scores, _ = train_process(
+        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time
     )
     
     model_results = []

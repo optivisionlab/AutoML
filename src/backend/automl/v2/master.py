@@ -98,9 +98,18 @@ def get_config_hash(id_data: str, list_feature: list, target: str, problem_type:
 """
 JOB SETUP & REDUCTION
 """
-async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict, cache_key: str):
-    # Creates tasks and puts them into the global priority queue
-    was_queue_empty = state.global_task_queue.empty()
+async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict, cache_key: str, db: AsyncDatabase = None):
+    """Tạo các task huấn luyện và đưa vào hàng đợi ưu tiên.
+    
+    Args:
+        job_id: ID của job
+        id_data: ID của dataset
+        id_user: ID của người dùng
+        config: Cấu hình huấn luyện (chứa max_time, problem_type, ...)
+        cache_key: Khóa cache cho dataset
+        db: Kết nối database (cần cho timeout watcher)
+    """
+    was_queue_empty = (state.heavy_task_queue.empty() and state.light_task_queue.empty())
     models, metric_list = await asyncio.to_thread(get_models, config.get("problem_type", "classification"))
 
     state.job_tracker[job_id] = {
@@ -109,7 +118,12 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
         "results": [],
         "completion_event": asyncio.Event(),
         "config": config,
-        "id_user": id_user
+        "id_user": id_user,
+        # Thông tin quản lý thời gian toàn cục
+        "start_time": time.time(),
+        "max_time": config.get("max_time"),
+        "timed_out": False,
+        "timeout_watcher_task": None
     }
 
     tasks_added = 0
@@ -134,6 +148,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
 
         tasks_added += 1
 
+    # Gửi tín hiệu cho worker bắt đầu làm việc
     if was_queue_empty and tasks_added > 0:
         async with httpx.AsyncClient() as client:
             signal_tasks = [
@@ -143,7 +158,107 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
             results = await asyncio.gather(*signal_tasks, return_exceptions=True)
             for i, res in enumerate(results):
                 if isinstance(res, Exception):
-                    logging.warning(f"[{job_id}] Failed to send signal to worker {WORKERS[i]}: {res}")
+                    logging.warning(f"[{job_id}] Không gửi được tín hiệu đến worker {WORKERS[i]}: {res}")
+
+    # Khởi tạo timeout watcher nếu có giới hạn thời gian
+    # NOTE: max_time ở đây là ngân sách thời gian TOÀN CỤC cho job.
+    # - Job-level: _job_timeout_watcher dùng max_time làm hard deadline để kill job.
+    # - Task-level: _register_active_task() tính remaining_time = max_time - elapsed
+    #   và ghi đè vào task["config"]["max_time"], nên worker nhận đúng thời gian còn lại.
+    # - Khác với local path (engine.py), nơi các model chạy TUẦN TỰ và
+    #   _check_global_time_budget() giảm dần thời gian cho mỗi model.
+    max_time = config.get("max_time")
+    if max_time is not None and db is not None:
+        watcher_task = asyncio.create_task(
+            _job_timeout_watcher(job_id, max_time, db)
+        )
+        state.job_tracker[job_id]["timeout_watcher_task"] = watcher_task
+        logging.info(f"[{job_id}] Đã khởi tạo timeout watcher toàn cục: {max_time}s")
+
+
+async def _job_timeout_watcher(job_id: str, max_time: float, db: AsyncDatabase):
+    """Background task giám sát thời gian toàn cục của job.
+    
+    Chờ completion_event hoặc hết max_time (cái nào đến trước).
+    Nếu hết thời gian mà job chưa xong → hủy các task đang chờ,
+    trigger early reduction với kết quả hiện có.
+    
+    Args:
+        job_id: ID của job cần giám sát
+        max_time: Thời gian tối đa (giây)
+        db: Kết nối database để cập nhật trạng thái job
+    """
+    tracker = state.job_tracker.get(job_id)
+    if not tracker:
+        return
+
+    try:
+        # Chờ job hoàn thành HOẶC hết thời gian (chọn cái nào đến trước)
+        await asyncio.wait_for(
+            tracker["completion_event"].wait(),
+            timeout=max_time
+        )
+        # Job hoàn thành trước timeout → không cần xử lý gì thêm
+        logging.info(f"[{job_id}] Job hoàn thành trong giới hạn thời gian ({max_time}s)")
+
+    except asyncio.TimeoutError:
+        # TIMEOUT: Job chưa hoàn thành
+        completed = tracker['completed_tasks']
+        total = tracker['total_tasks']
+        logging.warning(
+            f"[{job_id}] Hết thời gian toàn cục ({max_time}s). "
+            f"Đã hoàn thành: {completed}/{total} model"
+        )
+
+        # Đánh dấu job đã hết thời gian
+        tracker["timed_out"] = True
+
+        # Thu thập thông tin worker trước khi xóa active_tasks
+        # Snapshot để tránh RuntimeError khi dict bị mutate bởi coroutine khác
+        tasks_to_cancel = [
+            (tid, info["worker_url"], info["task_data"]["job_id"])
+            for tid, info in list(state.active_tasks.items())
+            if info["task_data"]["job_id"] == job_id
+        ]
+
+        # Xóa khỏi active_tasks
+        for task_id, _, _ in tasks_to_cancel:
+            state.active_tasks.pop(task_id, None)
+            logging.info(f"[{job_id}] Đã hủy task đang chạy: {task_id}")
+
+        # Gửi tín hiệu cancel đến worker để kill subprocess
+        async with httpx.AsyncClient() as cancel_client:
+            for task_id, worker_url, _ in tasks_to_cancel:
+                if worker_url:
+                    try:
+                        await cancel_client.post(
+                            f"{worker_url}/cancel-task",
+                            params={"task_id": task_id},
+                            timeout=5.0
+                        )
+                        logging.info(f"[{job_id}] Đã gửi cancel đến {worker_url} cho task {task_id}")
+                    except Exception as e:
+                        logging.warning(f"[{job_id}] Không gửi được cancel đến {worker_url}: {e}")
+
+        # Trigger early reduction chỉ khi có ít nhất 1 kết quả THÀNH CÔNG
+        # (completed_tasks đếm cả failures, không dùng được để quyết định reduction)
+        successful_count = len([r for r in tracker['results'] if r.get('success')])
+        if successful_count > 0:
+            logging.info(f"[{job_id}] Tiến hành tổng hợp sớm với {successful_count}/{total} kết quả thành công")
+            asyncio.create_task(run_reduction_and_cleanup(job_id, db))
+        else:
+            # Không có kết quả thành công nào → đánh dấu lỗi
+            job_update = MongoJob(db)
+            await job_update.update_failure(
+                job_id,
+                f"Hết thời gian toàn cục ({max_time}s): không có model nào hoàn thành thành công"
+            )
+            state.job_tracker.pop(job_id, None)
+            logging.error(f"[{job_id}] Không có kết quả thành công nào trước khi hết thời gian")
+
+    except asyncio.CancelledError:
+        # Watcher bị hủy (job hoàn thành bình thường trước timeout)
+        pass
 
 
 ERROR_METRICS = {'mse', 'mae', 'mape', 'rmse', 'log_loss'}
@@ -210,7 +325,11 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
             },
             "best_params": best_model_info["best_params"],
             "best_score": original_best_result["score"],
-            "model_scores": final_model_scores
+            "model_scores": final_model_scores,
+            # Thông tin giới hạn thời gian
+            "time_limit_reached": tracker.get("timed_out", False),
+            "completed_models": tracker["completed_tasks"],
+            "total_models": tracker["total_tasks"]
         }
 
         await job_update.update_success(job_id, final_result_payload)
@@ -243,6 +362,26 @@ async def run_reduction_and_cleanup(job_id: str, db: AsyncDatabase):
 SCHEDULER & FAULT TOLERANCE
 """
 
+def _is_task_from_timed_out_job(task: dict) -> bool:
+    """Kiểm tra task có nên bị bỏ qua không (job đã hết thời gian hoặc đã hoàn thành).
+    
+    Trả về True trong 2 trường hợp:
+    1. Job đã bị đánh dấu timed_out (hết thời gian toàn cục)
+    2. Job không còn trong job_tracker (đã hoàn thành và dọn dẹp)
+    
+    Args:
+        task: Thông tin task chứa job_id
+    
+    Returns:
+        True nếu task nên bị bỏ qua, False nếu vẫn hợp lệ
+    """
+    task_job_id = task.get("job_id")
+    # Job đã bị xóa khỏi tracker → đã hoàn thành hoặc thất bại → bỏ qua
+    if task_job_id not in state.job_tracker:
+        return True
+    return state.job_tracker[task_job_id].get("timed_out", False)
+
+
 async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = None, worker_cpu: int = 4, worker_ram: float = 8.0):
     """
     Algorithm: Prioritize scheduling based on Locality and Network Cost
@@ -251,8 +390,11 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
     if cached_key_hint:
         async with state.local_queue_lock:
             local_queue = state.local_queues.get(cached_key_hint)
-        if local_queue and not local_queue.empty():
+        while local_queue and not local_queue.empty():
             task = local_queue.get_nowait()
+            # Bỏ qua task thuộc job đã hết thời gian, thử task tiếp theo
+            if _is_task_from_timed_out_job(task):
+                continue
             return _register_active_task(task, worker_url, -1)
 
     # Capacity-Aware Routing
@@ -274,6 +416,10 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
 
         if not task:
             break
+
+        # Bỏ qua task thuộc job đã hết thời gian
+        if _is_task_from_timed_out_job(task):
+            continue
 
         # Cost-Based Validation
         task_cache_key = task.get("cache_key")
@@ -300,8 +446,11 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
                 continue
 
             target_queue = state.local_queues.get(key)
-            if target_queue and not target_queue.empty():
+            while target_queue and not target_queue.empty():
                 task = target_queue.get_nowait()
+                # Bỏ qua task thuộc job đã hết thời gian, thử task tiếp theo
+                if _is_task_from_timed_out_job(task):
+                    continue
                 return _register_active_task(task, worker_url, -1)
 
     return None
@@ -309,6 +458,16 @@ async def get_prioritized_task(worker_url: str, cached_key_hint: str | None = No
 
 def _register_active_task(task, worker_url, entry_count):
     task_id = task["task_id"]
+    job_id = task.get("job_id")
+
+    # Tính remaining time từ job tracker và ghi đè max_time
+    # Để worker nhận đúng thời gian còn lại thay vì full max_time gốc
+    tracker = state.job_tracker.get(job_id)
+    if tracker and tracker.get("max_time") is not None:
+        elapsed = time.time() - tracker["start_time"]
+        remaining = max(0, tracker["max_time"] - elapsed)
+        task["config"]["max_time"] = remaining
+
     state.active_tasks[task_id] = {
         "worker_url": worker_url,
         "start_time": time.time(),
@@ -426,6 +585,12 @@ async def api_submit_result(result: dict, db: AsyncDatabase = Depends(get_db)):
 
     task_id = f"{job_id}_{model_name}"
 
+    # Kiểm tra job đã hết thời gian → loại bỏ kết quả đến muộn
+    tracker = state.job_tracker.get(job_id)
+    if tracker and tracker.get("timed_out"):
+        logging.info(f"[{job_id}] Loại bỏ kết quả đến muộn từ {worker_url} (job đã hết thời gian)")
+        return {"status": "timed_out_discarded"}
+
     if task_id not in state.active_tasks or state.active_tasks[task_id].get("worker_url") != worker_url:
         return {"status": "stale_discarded"}
 
@@ -439,6 +604,10 @@ async def api_submit_result(result: dict, db: AsyncDatabase = Depends(get_db)):
     tracker["completed_tasks"] += 1
 
     if (tracker["completed_tasks"] >= tracker["total_tasks"]):
+        # Hủy timeout watcher nếu job hoàn thành bình thường
+        watcher = tracker.get("timeout_watcher_task")
+        if watcher and not watcher.done():
+            watcher.cancel()
         asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         tracker["completion_event"].set()
 

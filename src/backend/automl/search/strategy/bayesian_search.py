@@ -159,7 +159,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         return None, None
 
-    def _evaluate_default_params(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> Tuple[Dict, float, Dict, Dict]:
+    def _evaluate_default_params(self, model: BaseEstimator, X: np.ndarray, y: np.ndarray) -> Tuple[Dict, float, Dict, Dict, bool]:
         """Đánh giá model với default params khi không có hyperparameters để tối ưu.
 
         Args:
@@ -168,7 +168,7 @@ class BayesianSearchStrategy(SearchStrategy):
             y: Dữ liệu target
 
         Returns:
-            Tuple: (best_params, best_score, best_all_scores, cv_results_)
+            Tuple: (best_params, best_score, best_all_scores, cv_results_, time_limit_reached)
         """
         scoring_config = self.config.get('scoring', {})
         metric_names = list(scoring_config.keys()) if scoring_config else ['accuracy']
@@ -208,11 +208,10 @@ class BayesianSearchStrategy(SearchStrategy):
 
         logger.info(f"Đánh giá {model.__class__.__name__} với default params: {primary_metric}={best_score:.4f}")
 
-        return {}, best_score, all_scores, cv_results_
+        return {}, best_score, all_scores, cv_results_, False
 
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]],
-               X: np.ndarray, y: np.ndarray, **kwargs) -> tuple[dict[Any, Any], float, dict[Any, Any], dict[
-        Any, Any]] | tuple:
+               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict, float, Dict, Dict, bool]:
         """
         Thực thi thuật toán tìm kiếm.
 
@@ -228,11 +227,12 @@ class BayesianSearchStrategy(SearchStrategy):
             **kwargs: Các tham số bổ sung cho gp_minimize.
 
         Returns:
-            Tuple[Dict, float, Dict, Dict]: (best_params, best_score, best_all_scores, cv_results_)
+            Tuple[Dict, float, Dict, Dict, bool]: (best_params, best_score, best_all_scores, cv_results_, time_limit_reached)
                 - best_params: Từ điển các tham số tốt nhất
                 - best_score: Điểm số tốt nhất đạt được
                 - best_all_scores: Từ điển với tất cả điểm số metric cho tham số tốt nhất  
                 - cv_results_: Từ điển với kết quả cross-validation chi tiết
+                - time_limit_reached: True nếu search bị dừng do hết thời gian
         """
         self.set_config(**kwargs)
         self._start_timer()  # Bắt đầu đếm thời gian
@@ -261,11 +261,11 @@ class BayesianSearchStrategy(SearchStrategy):
 
         # Nếu không có grid nào, trả về kết quả mặc định
         if not all_results:
-            return {}, 0.0, {}, {}
+            return {}, 0.0, {}, {}, False
 
         # Chọn kết quả tốt nhất dựa trên best_score
         best_idx = max(range(len(all_results)), key=lambda i: all_results[i][1])
-        best_params, best_score, best_all_scores, _ = all_results[best_idx]
+        best_params, best_score, best_all_scores, _, _ = all_results[best_idx]
 
         # Gộp tất cả cv_results
         combined_cv_results = self._combine_cv_results(all_cv_results)
@@ -303,9 +303,12 @@ class BayesianSearchStrategy(SearchStrategy):
         return combined
 
     def _search_single_grid(self, model: BaseEstimator, param_grid: Dict[str, Any],
-               X: np.ndarray, y: np.ndarray, **kwargs) -> tuple:
+               X: np.ndarray, y: np.ndarray, **kwargs) -> Tuple[Dict, float, Dict, Dict, bool]:
         """
         Thực thi thuật toán tìm kiếm trên một grid đơn lẻ.
+
+        Returns:
+            Tuple: (best_params, best_score, best_all_scores, cv_results_, time_limit_reached)
         """
 
         # Tạo đường dẫn file log sử dụng phương thức lớp cơ sở
