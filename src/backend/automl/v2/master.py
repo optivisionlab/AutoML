@@ -121,7 +121,7 @@ async def setup_job_tasks(job_id: str, id_data: str, id_user: str, config: dict,
         "id_user": id_user,
         # Thông tin quản lý thời gian toàn cục
         "start_time": time.time(),
-        "max_time": config.get("max_time"),
+        "max_time": config.get("max_time", 3600),
         "timed_out": False,
         "timeout_watcher_task": None
     }

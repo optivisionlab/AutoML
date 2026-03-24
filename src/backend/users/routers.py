@@ -17,7 +17,7 @@ from fastapi.responses import RedirectResponse
 # Local modules
 from users.utils.authentication import jwt_service
 from users.utils.security import HashHelper
-from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token
+from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest
 from database.database import get_db
 
 
@@ -126,11 +126,13 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
         secure=False
     )
 
-    return Token(access_token=access_token, token_type='bearer')
+    return Token(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
 
 
 @router.post('/refresh', response_model=Token)
-async def refresh_token(response: Response, refresh_token: str | None = Cookie(None), db: AsyncDatabase = Depends(get_db)) -> Token:
+async def refresh_token(response: Response, refresh_request: RefreshRequest, db: AsyncDatabase = Depends(get_db)) -> Token:
+    refresh_token = refresh_request.refresh_token
+
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -172,7 +174,7 @@ async def refresh_token(response: Response, refresh_token: str | None = Cookie(N
         secure=False
     )
 
-    return Token(access_token=new_access_token, token_type='bearer')
+    return Token(access_token=new_access_token, refresh_token=new_refresh_token, token_type='bearer')
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/login')
