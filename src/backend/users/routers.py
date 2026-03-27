@@ -116,15 +116,15 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
         'sub': str(user['_id'])
     })
 
-    refresh_expire_days = int(os.getenv('REFRESH_EXPIRE', 1))
-    response.set_cookie(
-        key='refresh_token',
-        value=refresh_token,
-        httponly=True,
-        max_age=refresh_expire_days * 24 * 60 * 60,
-        samesite='lax',
-        secure=False
-    )
+    # refresh_expire_days = int(os.getenv('REFRESH_EXPIRE', 1))
+    # response.set_cookie(
+    #     key='refresh_token',
+    #     value=refresh_token,
+    #     httponly=True,
+    #     max_age=refresh_expire_days * 24 * 60 * 60,
+    #     samesite='lax',
+    #     secure=False
+    # )
 
     return Token(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
 
@@ -147,7 +147,7 @@ async def refresh_token(response: Response, refresh_request: RefreshRequest, db:
             detail="Invalid token",
         )
     
-    user = await db.tbl_user.find_one({'_id': ObjectId(payload.get('sub'))})
+    user = await db.tbl_User.find_one({'_id': ObjectId(payload.get('sub'))})
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
