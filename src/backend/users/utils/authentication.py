@@ -51,7 +51,7 @@ class JWTService:
         Verify token
         """
         try:
-            payload = decode(token, self.__secret_key, self.__algorithm)
+            payload = decode(token, self.__secret_key, algorithms=[self.__algorithm])
 
             return payload
         except PyJWTError:
