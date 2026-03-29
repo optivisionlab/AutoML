@@ -217,19 +217,29 @@ async def execute_training_task(task: dict):
         _current_process = process
         logging.info(f"[Worker] Bắt đầu subprocess (PID={process.pid}) cho task: {task_id}")
 
-        # Chờ subprocess hoàn thành (non-blocking với asyncio)
-        while process.is_alive():
-            await asyncio.sleep(0.5)
+        # LIÊN TỤC ĐỌC QUEUE THAY VÌ CHỜ PROCESS CHẾT
+        # Nếu data lớn, process con sẽ block ở result_queue.put() chờ process cha đọc
+        proc_result = None
+        while True:
+            try:
+                proc_result = result_queue.get_nowait()
+                break  # Đã nhận được dữ liệu, thoát loop
+            except queue.Empty:
+                if not process.is_alive():
+                    # Thử xem có dữ liệu vào giây cuối trước khi chết không
+                    try:
+                        proc_result = result_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    break
+                await asyncio.sleep(0.5)
 
         _current_process = None
         _current_task_id = None
         process.join(timeout=10)
 
-        # Lấy kết quả từ queue
-        # Bắt queue.Empty cụ thể thay vì Exception chung để không che giấu lỗi thực
-        try:
-            proc_result = result_queue.get_nowait()
-        except queue.Empty:
+        # Kiểm tra xem có lấy được kết quả từ queue không
+        if proc_result is None:
             # Queue rỗng → phân biệt subprocess bị kill vs crash bằng exitcode
             exit_code = process.exitcode
             if exit_code is not None and exit_code < 0:

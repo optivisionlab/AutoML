@@ -524,7 +524,23 @@ async def _handle_failed_task(task_id, task_info, dead_worker_url, monitor_clien
     if current_retries > MAX_RETRIES_PER_TASK:
         job_id = task_data["job_id"]
         state.active_tasks.pop(task_id, None)
-        state.job_tracker.pop(job_id, None)
+
+        # Chỉ đánh dấu TASK này fail, không xóa toàn bộ job
+        tracker = state.job_tracker.get(job_id)
+        if tracker:
+            tracker["completed_tasks"] += 1
+            tracker["results"].append({
+                "model_name": task_data.get("model_info", {}).get("model", "unknown"),
+                "success": False,
+                "error": f"Exceeded max retries ({MAX_RETRIES_PER_TASK})"
+            })
+            logging.warning(
+                f"[{job_id}] Task {task_id} vượt quá {MAX_RETRIES_PER_TASK} lần retry, đánh dấu failed. "
+                f"Tiến độ: {tracker['completed_tasks']}/{tracker['total_tasks']}"
+            )
+            # Nếu đây là task cuối → trigger reduction bình thường
+            if tracker["completed_tasks"] >= tracker["total_tasks"]:
+                tracker["completion_event"].set()
         return
 
     # Classified Re-queueing
