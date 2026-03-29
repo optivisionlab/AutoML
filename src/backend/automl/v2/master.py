@@ -243,7 +243,8 @@ async def _job_timeout_watcher(job_id: str, max_time: float, db: AsyncDatabase):
         # Trigger early reduction chỉ khi có ít nhất 1 kết quả THÀNH CÔNG
         # (completed_tasks đếm cả failures, không dùng được để quyết định reduction)
         successful_count = len([r for r in tracker['results'] if r.get('success')])
-        if successful_count > 0:
+        if successful_count > 0 and not tracker.get("reduction_scheduled"):
+            tracker["reduction_scheduled"] = True
             logging.info(f"[{job_id}] Tiến hành tổng hợp sớm với {successful_count}/{total} kết quả thành công")
             asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         else:
@@ -479,7 +480,7 @@ def _register_active_task(task, worker_url, entry_count):
     return task
 
 
-async def monitor_tasks():
+async def monitor_tasks(db: AsyncDatabase = None):
     """
     Algorithm: Circuit Breaker & Fault Recovery
     """
@@ -513,10 +514,10 @@ async def monitor_tasks():
                     requeue_task = True
 
                 if requeue_task:
-                    await _handle_failed_task(task_id, task_info, dead_worker_url, monitor_client)
+                    await _handle_failed_task(task_id, task_info, dead_worker_url, monitor_client, db)
 
 
-async def _handle_failed_task(task_id, task_info, dead_worker_url, monitor_client):
+async def _handle_failed_task(task_id, task_info, dead_worker_url, monitor_client, db: AsyncDatabase = None):
     # Handle interruptions when a task fails multiple times
     task_data = task_info["task_data"]
     current_retries = task_info.get("retry_count", 0) + 1
@@ -538,9 +539,21 @@ async def _handle_failed_task(task_id, task_info, dead_worker_url, monitor_clien
                 f"[{job_id}] Task {task_id} vượt quá {MAX_RETRIES_PER_TASK} lần retry, đánh dấu failed. "
                 f"Tiến độ: {tracker['completed_tasks']}/{tracker['total_tasks']}"
             )
-            # Nếu đây là task cuối → trigger reduction bình thường
+            # Nếu đây là task cuối → trigger reduction & cleanup giống api_submit_result
             if tracker["completed_tasks"] >= tracker["total_tasks"]:
-                tracker["completion_event"].set()
+                completion_event = tracker.get("completion_event")
+                if completion_event is not None and not completion_event.is_set():
+                    completion_event.set()
+
+                # Hủy timeout watcher nếu còn đang chạy
+                timeout_task = tracker.get("timeout_watcher_task")
+                if timeout_task is not None and not timeout_task.done():
+                    timeout_task.cancel()
+
+                # Đảm bảo reduction/cleanup chỉ được schedule 1 lần
+                if db is not None and not tracker.get("reduction_scheduled"):
+                    tracker["reduction_scheduled"] = True
+                    asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         return
 
     # Classified Re-queueing
@@ -624,7 +637,10 @@ async def api_submit_result(result: dict, db: AsyncDatabase = Depends(get_db)):
         watcher = tracker.get("timeout_watcher_task")
         if watcher and not watcher.done():
             watcher.cancel()
-        asyncio.create_task(run_reduction_and_cleanup(job_id, db))
+        # Đảm bảo reduction/cleanup chỉ được schedule 1 lần
+        if not tracker.get("reduction_scheduled"):
+            tracker["reduction_scheduled"] = True
+            asyncio.create_task(run_reduction_and_cleanup(job_id, db))
         tracker["completion_event"].set()
 
     return {"status": "success"}

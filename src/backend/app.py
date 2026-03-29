@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI):
     await start_producer()
 
     app.state.kafka_task = asyncio.create_task(kafka_consumer_process(app.state.db))
-    app.state.monitor_task = asyncio.create_task(monitor_tasks())
+    app.state.monitor_task = asyncio.create_task(monitor_tasks(app.state.db))
 
     yield # Server Fastapi accepts requests
 

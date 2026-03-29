@@ -226,17 +226,23 @@ async def execute_training_task(task: dict):
                 break  # Đã nhận được dữ liệu, thoát loop
             except queue.Empty:
                 if not process.is_alive():
-                    # Thử xem có dữ liệu vào giây cuối trước khi chết không
-                    try:
-                        proc_result = result_queue.get_nowait()
-                    except queue.Empty:
-                        pass
+                    # Process đã chết: cho một khoảng "grace period" ngắn
+                    # để chờ message cuối cùng từ multiprocessing.Queue
+                    # (feeder thread có thể chưa flush xong khi process exit)
+                    grace_deadline = time.time() + 1.0  # tối đa 1 giây
+                    while time.time() < grace_deadline and proc_result is None:
+                        try:
+                            proc_result = result_queue.get(timeout=0.1)
+                            break
+                        except queue.Empty:
+                            continue
                     break
                 await asyncio.sleep(0.5)
 
-        _current_process = None
-        _current_task_id = None
         process.join(timeout=10)
+        if not process.is_alive():
+            _current_process = None
+            _current_task_id = None
 
         # Kiểm tra xem có lấy được kết quả từ queue không
         if proc_result is None:
