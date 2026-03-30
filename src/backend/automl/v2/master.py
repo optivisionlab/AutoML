@@ -560,6 +560,15 @@ async def _handle_failed_task(task_id, task_info, dead_worker_url, monitor_clien
                 if db is not None and not tracker.get("reduction_scheduled"):
                     tracker["reduction_scheduled"] = True
                     asyncio.create_task(run_reduction_and_cleanup(job_id, db))
+                elif db is None:
+                    # db == None ở đây nghĩa là không thể chạy reduction/cleanup như bình thường.
+                    # Để tránh job bị kẹt trong bộ nhớ, log lỗi và dọn entry trong job_tracker.
+                    logging.error(
+                        "[%s] Không thể schedule reduction/cleanup vì db=None sau khi task %s vượt quá số lần retry.",
+                        job_id,
+                        task_id,
+                    )
+                    state.job_tracker.pop(job_id, None)
         return
 
     # Classified Re-queueing
