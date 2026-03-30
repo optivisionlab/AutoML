@@ -232,7 +232,7 @@ async def execute_training_task(task: dict):
                     grace_deadline = time.time() + 1.0  # tối đa 1 giây
                     while time.time() < grace_deadline and proc_result is None:
                         try:
-                            proc_result = result_queue.get(timeout=0.1)
+                            proc_result = await asyncio.to_thread(result_queue.get, timeout=0.1)
                             break
                         except queue.Empty:
                             continue
