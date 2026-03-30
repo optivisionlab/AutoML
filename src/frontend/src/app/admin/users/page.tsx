@@ -15,11 +15,14 @@ import UserForm from "./UserForm";
 import { User } from "@/hooks/useUsers";
 import useUsers from "@/hooks/useUsers";
 import DialogForm from "../../../components/dialog";
+
 import { useApi } from "@/hooks/useApi";
+import { getSession } from "next-auth/react";
 
 // Main Page Component
 const UserManagementPage = () => {
   const { remove } = useApi();
+  const session = getSession();
 
   // const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -63,6 +66,7 @@ const UserManagementPage = () => {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.user?.access_token}`,
           },
           body: JSON.stringify(pendingFormData),
         },
