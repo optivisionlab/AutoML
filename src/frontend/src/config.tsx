@@ -62,14 +62,14 @@ export function NavItems(role: string) {
       position: "top",
       role: ["user"],
     },
-    // {
-    //   name: "Marketplace",
-    //   icon: <MapPinHouse size={18} />,
-    //   href: "/market-place",
-    //   active: false,
-    //   position: "top",
-    //   role: ["user"],
-    // },
+    {
+      name: "Marketplace",
+      icon: <MapPinHouse size={18} />,
+      href: "/market-place",
+      active: false,
+      position: "top",
+      role: ["user"],
+    },
   ];
 
   const adminItems = [
@@ -113,14 +113,14 @@ export function NavItems(role: string) {
       position: "top",
       role: ["admin"],
     },
-    // {
-    //   name: "Marketplace",
-    //   icon: <MapPinHouse size={18} />,
-    //   href: "/market-place",
-    //   active: false,
-    //   position: "top",
-    //   role: ["admin"],
-    // },
+    {
+      name: "Marketplace",
+      icon: <MapPinHouse size={18} />,
+      href: "/market-place",
+      active: false,
+      position: "top",
+      role: ["admin"],
+    },
   ];
 
   return [...commonItems, ...userItems, ...adminItems].filter((item) =>

@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -100,7 +100,7 @@ const ResultPage = ({ params }: Props) => {
         setIsLoading(false);
       }
     }
-  }, [datasetID, getMetrics]);
+  }, [datasetID]);
 
   useEffect(() => {
     fetchDataResult();
@@ -141,17 +141,29 @@ const ResultPage = ({ params }: Props) => {
   ) satisfies ChartConfig;
 
   // Chart data
-  const chartData = result?.orther_model_scores?.map((model: any) => {
-    const row: any = {
-      name: model.model_name,
-    };
+  const chartData = useMemo(() => {
+    if (!result?.orther_model_scores) return [];
 
-    Object.entries(chartConfig).forEach(([key, metric]: any) => {
-      row[key] = model.scores?.[metric.value]; // map đúng
-    });
-
-    return row;
-  });
+    return result.orther_model_scores
+      .filter((model: any) => {
+        const r2 = model.scores?.r2;
+        if (r2 !== undefined && r2 < -1) return false;
+        
+        const mse = model.scores?.mse;
+        if (mse !== undefined && mse > 1000000) return false; 
+        
+        return true;
+      })
+      .map((model: any) => {
+        const row: any = { name: model.model_name };
+        Object.entries(chartConfig).forEach(([key, metric]: any) => {
+          let val = model.scores?.[metric.value] || 0;
+          if (metric.value === "r2" && val < 0) val = 0;
+          row[key] = parseFloat(val.toFixed(4));
+        });
+        return row;
+      });
+  }, [result, chartConfig]);
 
   return (
     <div className="relative p-6">

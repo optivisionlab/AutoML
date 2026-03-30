@@ -323,7 +323,7 @@ async def upload_dataset(
     db: AsyncDatabase = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    if current_user['_id'] != user_id or current_user['role'] != 'admin':
+    if str(current_user['_id']) != str(user_id) and current_user.get('role') != 'admin':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permission denied",
@@ -343,10 +343,13 @@ async def update_dataset(
     db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)
 ):
     exist_data = await db.tbl_Data.find_one({'_id': ObjectId(dataset_id)})
-    if not exist_data or exist_data['userId'] != current_user['_id'] or current_user['role'] != 'admin':
+    if not exist_data:
+        raise HTTPException(status_code=404, detail="Not found dataset")
+
+    if str(exist_data['userId']) != str(current_user['_id']) and current_user.get('role') != 'admin':
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Don't update file",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission",
         )
 
     try:
@@ -362,10 +365,14 @@ async def update_dataset(
 @app.delete("/delete-dataset/{dataset_id}")
 async def delete_dataset(dataset_id: str, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     exist_data = await db.tbl_Data.find_one({'_id': ObjectId(dataset_id)})
-    if not exist_data or exist_data['userId'] != current_user['_id'] or current_user['role'] != 'admin':
+
+    if not exist_data:
+        raise HTTPException(status_code=404, detail="Not found dataset")
+
+    if str(exist_data['userId']) != str(current_user['_id']) and current_user.get('role') != 'admin':
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Don't update file",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission",
         )
     
     try:
