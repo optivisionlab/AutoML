@@ -53,6 +53,8 @@ MODEL_MAPPING = {
     "KNeighborsClassifier": KNeighborsClassifier,
     "LogisticRegression": LogisticRegression,
     "GaussianNB": GaussianNB,
+    "ExtraTreesClassifier": ExtraTreesClassifier,
+    "HistGradientBoostingClassifier": HistGradientBoostingClassifier,
     "LinearRegression": LinearRegression,
     "DecisionTreeRegressor": DecisionTreeRegressor,
     "RandomForestRegressor": RandomForestRegressor,
@@ -207,7 +209,7 @@ async def execute_training_task(task: dict):
                 task["config"].get("metric_sort", "accuracy"),
                 models_to_train,
                 task["config"].get("problem_type", "classification"),
-                task["config"].get("search_algorithm", "grid_search"),
+                task["config"].get("search_algorithm", "bayesian_search"),
                 task["config"].get("max_time")
             )
         )
