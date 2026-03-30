@@ -1,17 +1,25 @@
 # Standard Libraries
+import io
 import os
 import yaml
 
 # Third-party Libraries
-from fastapi import status, HTTPException, Query, Request, Depends
+from fastapi import status, HTTPException, Query, Request, Depends, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pymongo.asynchronous.database import AsyncDatabase
 from fastapi.routing import APIRouter
 import aiofiles
+import pandas as pd
+import numpy as np
+import asyncio
+import pickle
+import joblib
 
 # Local Modules
 from database.get_dataset import MongoDataLoader
 from database.database import get_db
 from automl.v2.schemas import InputRequest
+from automl.v2.minio import minIOStorage
 from automl.v2.service import save_job, query_jobs, send_message
 from users.routers import get_current_user
 
@@ -150,3 +158,134 @@ async def metrics(
     return {
         "metrics": metrics
     }
+
+
+# Temporary model inference
+async def inference_model_batch(job_id: str, user_id: str, df: pd.DataFrame, db: AsyncDatabase):
+    job_collection = db.tbl_Job
+
+    try:
+        stored_model_data = await job_collection.find_one({"job_id": job_id, "status": 1})
+        if not stored_model_data:
+            return {"error": "Job not found or not completed"}
+    except Exception as e:
+        return {"error": f"Failed to retrieve model: {str(e)}"}
+
+    list_feature = stored_model_data.get("config", {}).get("list_feature", [])
+
+    try:
+        model_url = stored_model_data.get("model")
+        model_path = f"{model_url.get('object_name')}"
+        preprocessor_path = f"{user_id}/{job_id}/preprocessor.joblib"
+        target_path = f"{user_id}/{job_id}/target.joblib" 
+    except Exception as e:
+        return {"error": f"Failed to construct model paths: {str(e)}"}
+
+    async def load_artifact(bucket, path, file_type):
+        try:
+            buffer = await asyncio.to_thread(minIOStorage.get_object, bucket, path)
+            return await asyncio.to_thread(file_type.load, buffer)
+        except Exception as e:
+            raise ValueError(f"Failed to load artifact from {path}: {str(e)}")
+
+    try:
+        model, preprocessor, le_target = await asyncio.gather(
+            load_artifact(model_url.get('bucket_name'), model_path, pickle),
+            load_artifact(model_url.get('bucket_name'), preprocessor_path, joblib),
+            load_artifact(model_url.get('bucket_name'), target_path, joblib)
+        )
+    except Exception as e:
+        return {"error": f"Failed to load required model artifacts: {str(e)}"}
+
+    missing_cols = set(list_feature) - set(df.columns)
+    if missing_cols:
+        return {"error": f"Uploaded file is missing required columns: {missing_cols}"}
+
+    data_to_predict = df[list_feature]
+
+    try:
+        X_new_transformed = await asyncio.to_thread(preprocessor.transform, data_to_predict)
+
+        if isinstance(X_new_transformed, np.ndarray):
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
+        elif hasattr(X_new_transformed, "toarray"):
+            X_new_transformed = X_new_transformed.toarray()
+            X_new_transformed = np.nan_to_num(X_new_transformed, nan=0.0, posinf=0.0, neginf=0.0)
+
+        y_pred_raw = await asyncio.to_thread(model.predict, X_new_transformed)
+        if hasattr(y_pred_raw, 'ravel'):
+            y_pred_raw = y_pred_raw.ravel()
+
+        if le_target:
+            y_pred_final = await asyncio.to_thread(le_target.inverse_transform, y_pred_raw)
+        else:
+            y_pred_final = y_pred_raw
+
+    except Exception as e:
+        return {"error": f"Failed during prediction process: {str(e)}"}
+
+    return {"predictions": y_pred_final.tolist()}
+
+
+@exp.post("/{job_id}/predictions")
+async def create_batch_prediction(
+    job_id: str,
+    file_data: UploadFile = File(...),
+    db: AsyncDatabase = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    user_id = str(current_user['_id'])
+    filename = file_data.filename.lower()
+
+    try:
+        contents = await file_data.read()
+        file_stream = io.BytesIO(contents)
+
+        if filename.endswith('.csv'):
+            df = pd.read_csv(file_stream)
+        elif filename.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file_stream)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Only .csv or .xlsx file formats are supported"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File could not be read: {str(e)}")
+
+    try:
+        prediction_result = await inference_model_batch(job_id, user_id, df, db)
+
+        if "error" in prediction_result:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
+                detail=prediction_result['error']
+            )
+
+        predictions = prediction_result['predictions']
+        df['prediction_result'] = predictions
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction errors: {str(e)}")
+
+    output_stream = io.BytesIO()
+    media_type = ""
+
+    if filename.endswith('.csv'):
+        df.to_csv(output_stream, index=False)
+        media_type = "text/csv"
+    elif filename.endswith(('.xls', '.xlsx')):
+        df.to_excel(output_stream, index=False)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    output_stream.seek(0)
+
+    return StreamingResponse(
+        output_stream,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="predicted_{file_data.filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
