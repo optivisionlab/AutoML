@@ -480,10 +480,16 @@ def _register_active_task(task, worker_url, entry_count):
     return task
 
 
-async def monitor_tasks(db: AsyncDatabase = None):
+async def monitor_tasks(db: AsyncDatabase | None = None):
     """
     Algorithm: Circuit Breaker & Fault Recovery
     """
+    if db is None:
+        logging.error(
+            "monitor_tasks started without a database handle; job_tracker cleanup and "
+            "reduction scheduling cannot be performed. This is a misconfiguration."
+        )
+        raise ValueError("monitor_tasks requires a valid AsyncDatabase instance")
     async with httpx.AsyncClient() as monitor_client:
         while True:
             await asyncio.sleep(TASK_TIMEOUT_SECONDS)
