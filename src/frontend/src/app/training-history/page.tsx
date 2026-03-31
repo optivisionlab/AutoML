@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 
 import PaginationCustom from "@/components/common/Panigation";
 import { useApi } from "@/hooks/useApi";
+import UploadPredictButton from "@/components/common/UploadPredictButton";
 
 type TrainingJob = {
   _id: string;
@@ -166,7 +167,7 @@ const TrainingHistory = () => {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center flex">
                       <Button
                         variant="default"
                         className={`px-4 py-2 rounded-md text-white ${
@@ -183,6 +184,12 @@ const TrainingHistory = () => {
                       >
                         Xem chi tiết
                       </Button>
+
+                      {/* Upload + Predict */}
+                      <UploadPredictButton
+                        jobId={job.job_id}
+                        disabled={job.status !== 1}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
