@@ -88,6 +88,68 @@ const TrainingHistory = () => {
     setSortAsc(!sortAsc);
   };
 
+  // Xử lý
+  const handleUploadAndDownload = async (jobId: string, file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file_data", file);
+
+      const response = await post(`/v2/auto/${jobId}/predictions`, formData, {
+        isBlob: true,
+      });
+
+      const blob = response.data;
+
+      if (!(blob instanceof Blob)) {
+        console.error("Không phải file:", blob);
+        alert("API không trả file");
+        return;
+      }
+
+      // lấy tên file
+      const contentDisposition = response.headers["content-disposition"];
+      let fileName = "result.csv";
+
+      if (contentDisposition) {
+        const match =
+          contentDisposition.match(/filename\*=UTF-8''(.+)/) ||
+          contentDisposition.match(/filename="?([^"]+)"?/);
+
+        if (match?.[1]) {
+          fileName = decodeURIComponent(match[1]);
+        }
+      }
+
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+
+      document.body.appendChild(a);
+      a.click();
+
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      const blob = err.response?.data;
+
+      if (blob instanceof Blob) {
+        const text = await blob.text(); // convert blob → text
+        alert("ERROR TEXT:" + text);
+
+        try {
+          const json = JSON.parse(text);
+          console.log("ERROR JSON:", json);
+        } catch {
+          console.log("Không parse được JSON");
+        }
+      } else {
+        console.log("ERROR:", err.response?.data);
+      }
+    }
+  };
+
   const totalPages = Math.ceil(jobs.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentJobs = jobs.slice(startIndex, startIndex + itemsPerPage);
@@ -183,6 +245,32 @@ const TrainingHistory = () => {
                       >
                         Xem chi tiết
                       </Button>
+
+                      {/* Upload + Predict */}
+                      <label>
+                        <input
+                          type="file"
+                          accept=".csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && job.status === 1) {
+                              handleUploadAndDownload(job.job_id, file);
+                            }
+                          }}
+                        />
+                        <Button
+                          className={`px-4 ml-2 py-2 ${
+                            job.status === 1
+                              ? "bg-green-600 hover:bg-green-700 text-white"
+                              : "bg-gray-400 cursor-not-allowed"
+                          }`}
+                          disabled={job.status !== 1}
+                          asChild
+                        >
+                          <span>Tải về</span>
+                        </Button>
+                      </label>
                     </TableCell>
                   </TableRow>
                 ))}

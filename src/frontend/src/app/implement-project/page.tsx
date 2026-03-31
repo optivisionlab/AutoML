@@ -113,6 +113,8 @@ const ImplementProject = () => {
     currentPage * itemsPerPage,
   );
 
+  console.log(jobs);
+
   return (
     <Card className="max-w-6xl mx-auto mt-8 shadow-md">
       <CardHeader>
@@ -183,7 +185,7 @@ const ImplementProject = () => {
                             !open && setSelectedJobId(null)
                           }
                         >
-                          <AlertDialogTrigger asChild>
+                          <AlertDialogTrigger>
                             <Button
                               variant="default"
                               className={`px-4 py-2 rounded-md text-white ${

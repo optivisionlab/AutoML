@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import TrainCard from "@/components/publicDatasetUser/TrainCard";
+import { useApi } from "@/hooks/useApi";
 
 export default function Page() {
+  const { get } = useApi();
   const params = useParams();
   const datasetID = Array.isArray(params?.datasetID)
     ? params.datasetID[0]
@@ -17,21 +19,7 @@ export default function Page() {
 
     const fetchData = async () => {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-data-info?id=${datasetID}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-            body: "",
-            cache: "no-store",
-          }
-        );
-
-        if (!res.ok) throw new Error("Lỗi khi gọi API");
-
-        const data = await res.json();
+        const data = await get(`/get-data-info?id=${datasetID}`);
         setDataName(data.dataName || "Không rõ");
       } catch (error) {
         console.log("Lỗi lấy dữ liệu:", error);
