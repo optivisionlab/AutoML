@@ -160,8 +160,24 @@ async def metrics(
     }
 
 
+CANCEL_PREDICTION_TASKS = {}
+
+@exp.delete("/{job_id}/predictions")
+async def cancel_prediction_task(job_id: str, current_user = Depends(get_current_user)):
+    """
+    Cancel predict process
+    """
+    if job_id in CANCEL_PREDICTION_TASKS:
+        task = CANCEL_PREDICTION_TASKS[job_id]
+        task.cancel()
+        return {"detail": f"Successfully force-stopped the job's prediction process {job_id}."}
+    
+    return {"detail": "No running process found for this job"}
+
+
 # Temporary model inference
 async def inference_model_batch(job_id: str, user_id: str, df: pd.DataFrame, db: AsyncDatabase):
+    await asyncio.sleep(15)
     job_collection = db.tbl_Job
 
     try:
@@ -171,7 +187,9 @@ async def inference_model_batch(job_id: str, user_id: str, df: pd.DataFrame, db:
     except Exception as e:
         return {"error": f"Failed to retrieve model: {str(e)}"}
 
-    list_feature = stored_model_data.get("config", {}).get("list_feature", [])
+    config = stored_model_data.get("config", {})
+    list_feature = config.get("list_feature", [])
+    target_name = config.get("target", "Target")
 
     try:
         model_url = stored_model_data.get("model")
@@ -224,7 +242,10 @@ async def inference_model_batch(job_id: str, user_id: str, df: pd.DataFrame, db:
     except Exception as e:
         return {"error": f"Failed during prediction process: {str(e)}"}
 
-    return {"predictions": y_pred_final.tolist()}
+    return {
+        "predictions": y_pred_final.tolist(),
+        "target_name": target_name
+    }
 
 
 @exp.post("/{job_id}/predictions")
@@ -253,21 +274,31 @@ async def create_batch_prediction(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"File could not be read: {str(e)}")
 
+    prediction_task = asyncio.create_task(
+        inference_model_batch(job_id, user_id, df, db)
+    )
+
+    CANCEL_PREDICTION_TASKS[job_id] = prediction_task
+
     try:
-        prediction_result = await inference_model_batch(job_id, user_id, df, db)
+        prediction_result = await prediction_task
 
         if "error" in prediction_result:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
-                detail=prediction_result['error']
-            )
+            raise HTTPException(status_code=422, detail=prediction_result['error'])
 
         predictions = prediction_result['predictions']
-        df['prediction_result'] = predictions
+        target_name = prediction_result.get('target_name', 'Target')
+
+        df[f"{target_name}_prediction"] = predictions
+    except asyncio.CancelledError:
+        del df
+        raise HTTPException(status_code=499, detail="The process has been canceled")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction errors: {str(e)}")
+    finally:
+        CANCEL_PREDICTION_TASKS.pop(job_id, None)
 
     output_stream = io.BytesIO()
     media_type = ""
