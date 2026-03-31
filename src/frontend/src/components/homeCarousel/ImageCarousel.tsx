@@ -2,7 +2,11 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Carousel, CarouselContent, CarouselItem } from "@/components/ui/carousel";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+} from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import Link from "next/link";
@@ -14,12 +18,16 @@ const images = [
   "/lab-carousel/t77503.jpg",
   "/lab-carousel/lab1.jpg",
   "/lab-carousel/background.png",
+  "/lab-carousel/haui_startup_mindset_2025.JPG",
 ];
 
 export default function ImageCarousel() {
   const { data: session } = useSession();
   const plugin = React.useRef(
-    Autoplay({ delay: parseInt(process.env.NEXT_PUBLIC_TIMEOUT_CAROUSEL || "10000", 10), stopOnInteraction: false })
+    Autoplay({
+      delay: parseInt(process.env.NEXT_PUBLIC_TIMEOUT_CAROUSEL || "10000", 10),
+      stopOnInteraction: false,
+    }),
   );
 
   const [api, setApi] = React.useState<any>(null);
