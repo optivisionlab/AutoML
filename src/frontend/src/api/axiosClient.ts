@@ -13,9 +13,9 @@ axiosClient.interceptors.request.use(async (config) => {
     config.headers.Authorization = `Bearer ${session.user.access_token}`;
   }
 
-  if (!(config.data instanceof FormData)) {
-    config.headers["Content-Type"] = "application/json";
-  }
+  // if (!(config.data instanceof FormData)) {
+  //   config.headers["Content-Type"] = "application/json";
+  // }
 
   return config;
 });

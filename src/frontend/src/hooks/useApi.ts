@@ -1,19 +1,24 @@
 import axiosClient from "@/api/axiosClient";
 
 export function useApi() {
-  // async function get(url: string) {
-  //   const res = await axiosClient.get(url);
-  //   return res.data;
-  // }
   const get = async (url: string, config = {}) => {
     const res = await axiosClient.get(url, config);
     return res.data;
   };
 
-  async function post(url: string, data?: any) {
-    const res = data
-      ? await axiosClient.post(url, data)
-      : await axiosClient.post(url);
+  // async function post(url: string, data?: any) {
+  //   const res = data
+  //     ? await axiosClient.post(url, data)
+  //     : await axiosClient.post(url);
+  //   return res.data;
+  // }
+
+  async function post(url: string, data?: any, config?: { isBlob?: boolean }) {
+    const res = await axiosClient.post(url, data, {
+      responseType: config?.isBlob ? "blob" : "json",
+    });
+
+    if (config?.isBlob) return res;
     return res.data;
   }
 
