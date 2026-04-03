@@ -125,7 +125,6 @@ async def save_otp(username, value_otp, db: AsyncDatabase):
     }}
 
     await users_collection.update_one({"username": username},value_set)
-    
 
     
 def send_otp(email, otp):
@@ -143,20 +142,6 @@ def send_otp(email, otp):
         server.starttls()
         server.login(sender_email, password)
         server.sendmail(sender_email, email, message.as_string())
-
-
-async def check_time_otp(username, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    user = await users_collection.find_one({"username": username})
-    if user:
-        create_at_otp  = user['createAtOTP']
-        current_time = datetime.datetime.now()
-        if (current_time-create_at_otp).total_seconds() <= 60:
-            return True
-        else:
-            return False
-    else:
-        False
 
 
 async def handle_change_password(username, current_password, new_password, verified_password, db: AsyncDatabase):
@@ -341,34 +326,6 @@ async def handle_send_otp(username, db: AsyncDatabase):
         return {
             "message": f"OTP đã gửi về email: {user['email']}"
         }
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
-        )
-    
-    
-async def handle_verification_email(username, otp, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
-    user = await users_collection.find_one({"username":username})
-    if user:
-        check_time = await check_time_otp(username, db)
-        if otp == user['otp']:
-            if check_time:
-                return {
-                    "message": f"Xác thực email {user['email']} thành công"
-                }
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="OTP hết hiệu lực"
-                )
-        else:
-            raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="OTP không chính xác"
-                )
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -4,7 +4,6 @@ from fastapi import (
     File,
     Form,
     Query,
-    Response,
     HTTPException,
     status,
     Depends
@@ -23,12 +22,10 @@ from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import check_exits_username
 from users.engine import send_reset_password_email
-from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 from users.engine import ChangePassword
 from users.engine import save_otp, send_otp, generate_otp
 import os, uvicorn
-from users.engine import check_time_otp
 from users.engine import handle_change_password
 from users.engine import handle_update_avatar
 from users.engine import handle_get_avatar
@@ -110,7 +107,6 @@ app.include_router(auth)
 app.include_router(exp)
 app.include_router(master)
 
-
 @app.get("/")
 async def read_root():
     return {
@@ -190,22 +186,6 @@ from users.engine import handle_forgot_password
 @app.post("/forgot_password/{email}")
 async def forgot_password(email: str, db: AsyncDatabase = Depends(get_db)):
     message = await handle_forgot_password(email, db)
-    return message
-
-
-from users.engine import handle_send_otp
-from users.engine import handle_verification_email
-
-
-@app.post("/send_email/{username}")
-async def send_email(username: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_send_otp(username, db)
-    return message
-
-
-@app.post("/verification_email/{username}")
-async def verification_email(username: str, otp: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_verification_email(username, otp, db)
     return message
 
 
