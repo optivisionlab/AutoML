@@ -45,6 +45,7 @@ class UserResponse(BaseModel):
     fullName: str
     avatar: str | None = None
     role: str
+    qrCode: str | None = None
 
     model_config = {
         "populate_by_name": True,
@@ -75,3 +76,11 @@ class Token(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class ResendEmailRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str

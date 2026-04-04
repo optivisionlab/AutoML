@@ -5,7 +5,7 @@ from bson import ObjectId
 
 
 # Third party libraries
-from fastapi import APIRouter, HTTPException, Depends, status, Response, Cookie
+from fastapi import APIRouter, HTTPException, Depends, status, Response, BackgroundTasks
 from pymongo.asynchronous.database import AsyncDatabase
 from dotenv import load_dotenv
 from fastapi.security import OAuth2PasswordBearer
@@ -17,7 +17,8 @@ from fastapi.responses import RedirectResponse
 # Local modules
 from users.utils.authentication import jwt_service
 from users.utils.security import HashHelper
-from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest
+from users.utils.email_service import email_service
+from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest, ResendEmailRequest, VerifyEmailRequest
 from database.database import get_db
 
 
@@ -29,7 +30,7 @@ router = APIRouter(tags=["Authentication"])
 
 
 @router.post("/signup", response_model=UserResponse)
-async def register(user_data: UserRegisterRequest, db: AsyncDatabase = Depends(get_db)) -> UserResponse:
+async def register(user_data: UserRegisterRequest, background_tasks: BackgroundTasks, db: AsyncDatabase = Depends(get_db)) -> UserResponse:
     # Check email và username
     if await db.tbl_User.find_one({
         "$or": [
@@ -65,8 +66,27 @@ async def register(user_data: UserRegisterRequest, db: AsyncDatabase = Depends(g
 
     await db.linked_accounts.insert_one(linked_account_doc)
 
+    verification_token = jwt_service.create_verification_token({
+        'sub': str(user_id),
+        'email': user_data.email
+    })
+
+    # QR code
+    verify_link = email_service.get_verify_link(verification_token)
+    qr_base64 = email_service.generate_qr_base64(verify_link)
+
+    # Offload email sending to a background worker
+    background_tasks.add_task(
+        email_service.send_verification_email,
+        user_data.email,
+        verification_token,
+        qr_base64
+    )
+
     created_user = await db.tbl_User.find_one({'_id': user_id})
     created_user['_id'] = str(created_user['_id'])
+
+    created_user['qrCode'] = f"data:image/png;base64,{qr_base64}"
 
     return created_user
 
@@ -80,13 +100,21 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
         ]
     })
 
+    invalid_credentials_exception = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid username or password",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
+
     if not user:
+        raise invalid_credentials_exception
+
+    if not user.get('is_verified', True):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Wrong login information",
-            headers={"WWW-Authenticate": "Bearer"}
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not verified. Please check your email to verify your account."
         )
-    
+
     if user.get('password') and user_login.password != user['password']:
         raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,16 +143,6 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
     refresh_token = jwt_service.create_refresh_token({
         'sub': str(user['_id'])
     })
-
-    # refresh_expire_days = int(os.getenv('REFRESH_EXPIRE', 1))
-    # response.set_cookie(
-    #     key='refresh_token',
-    #     value=refresh_token,
-    #     httponly=True,
-    #     max_age=refresh_expire_days * 24 * 60 * 60,
-    #     samesite='lax',
-    #     secure=False
-    # )
 
     return Token(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
 
@@ -317,16 +335,74 @@ async def google_callback(request: Request, response: Response, db: AsyncDatabas
     })
 
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8000/login')
-    redirect_response = RedirectResponse(url=f"{frontend_url}?access_token={access_token}&login_success=true")
-
-    refresh_expire_days = int(os.getenv('REFRESH_EXPIRE', 1))
-    response.set_cookie(
-        key='refresh_token',
-        value=refresh_token,
-        httponly=True,
-        max_age=refresh_expire_days * 24 * 60 * 60,
-        samesite='lax',
-        secure=False
-    )
+    redirect_response = RedirectResponse(url=f"{frontend_url}?access_token={access_token}&refresh_token={refresh_token}&login_success=true")
 
     return redirect_response
+
+
+@router.patch('/auth/verifications', response_model=Token)
+async def verify_user_email(request: VerifyEmailRequest, db: AsyncDatabase = Depends(get_db)) -> Token:
+    payload = jwt_service.verify_token(request.token)
+    if not payload or payload.get('type') != 'verification':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid or expired verification code"
+        )
+
+    user_id = payload.get('sub')
+
+    user = await db.tbl_User.find_one({'_id': ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    if user.get('is_verified'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="This account has already been verified. Please log in with your password"
+        )
+
+    await db.tbl_User.update_one(
+        {'_id': ObjectId(user_id)},
+        {'$set': {'is_verified': True}}
+    )
+
+    access_token = jwt_service.create_access_token({
+        'sub': str(user['_id']),
+        'role': user.get('role', 'user'),
+        'email': user['email']
+    })
+
+    refresh_token = jwt_service.create_refresh_token({
+        'sub': str(user['_id'])
+    })
+
+    return Token(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
+
+
+@router.post("/auth/verifications")
+async def request_new_verification(
+    request: ResendEmailRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncDatabase = Depends(get_db)
+):
+    user = await db.tbl_User.find_one({"email": request.email})
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email"
+        )
+
+    if user.get('is_verified', True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account has already been verified"
+        )
+
+    verification_token = jwt_service.create_verification_token({
+        'sub': str(user['_id']),
+        'email': user['email']
+    })
+    background_tasks.add_task(email_service.send_verification_email, user['email'], verification_token)
+
+    return {"detail": "A new verification link has been sent. Please check your email"}
