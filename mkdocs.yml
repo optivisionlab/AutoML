@@ -35,11 +35,16 @@ plugins:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
+
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.arithmatex:
+      generic: true
   - admonition
   - pymdownx.details
   - pymdownx.superfences
@@ -50,6 +55,8 @@ nav:
   - 'Trang chủ': 'index.md'
   - 'Bắt đầu': 'getting_started.md'
   - 'Kiến trúc': 'architecture.md'
+  - 'Phương pháp khoa học': 'scientific_approach.md'
   - 'Tài liệu API':
     - 'Backend API': 'backend_api.md'
+  - 'Lịch sử phát hành': 'releases.md'
   - 'Ghi nhận & Giấy phép': 'citation_license.md'
