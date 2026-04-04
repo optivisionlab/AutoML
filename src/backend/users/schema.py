@@ -45,7 +45,6 @@ class UserResponse(BaseModel):
     fullName: str
     avatar: str | None = None
     role: str
-    qrCode: str | None = None
 
     model_config = {
         "populate_by_name": True,
@@ -84,3 +83,10 @@ class ResendEmailRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8)
+    confirm_password: str = Field(..., min_length=8)

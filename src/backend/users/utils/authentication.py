@@ -19,7 +19,7 @@ class JWTService:
         self.__access_exp: timedelta = timedelta(minutes=int(os.getenv('ACCESS_EXPIRE', 1)))
         self.__refresh_exp: timedelta = timedelta(days=int(os.getenv('REFRESH_EXPIRE', 1)))
 
-        self.__verify_exp: timedelta = timedelta(minutes=int(15)) # verification email expire
+        self.__verify_exp: timedelta = timedelta(minutes=int(5)) # verification email expire
 
     def create_access_token(self, data: dict) -> str:
         """

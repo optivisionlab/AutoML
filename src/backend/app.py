@@ -21,10 +21,8 @@ from automl.model import Item
 from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import check_exits_username
-from users.engine import send_reset_password_email
 from starlette.middleware.sessions import SessionMiddleware
 from users.engine import ChangePassword
-from users.engine import save_otp, send_otp, generate_otp
 import os, uvicorn
 from users.engine import handle_change_password
 from users.engine import handle_update_avatar
@@ -177,15 +175,6 @@ async def update_user(username: str, new_user: UpdateUser, db: AsyncDatabase = D
         )
 
     message = await handle_update_user(username, new_user, db)
-    return message
-
-
-from users.engine import handle_forgot_password
-
-
-@app.post("/forgot_password/{email}")
-async def forgot_password(email: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_forgot_password(email, db)
     return message
 
 

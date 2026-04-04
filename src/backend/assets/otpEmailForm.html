@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Xác thực tài khoản</title>
+    <title>Yêu cầu đặt lại mật khẩu</title>
   </head>
 
   <body
@@ -78,8 +78,8 @@
                 <p style="margin: 20px 0 10px">Chào bạn,</p>
 
                 <p style="margin: 0 0 10px">
-                  Cảm ơn bạn đã đăng ký tài khoản <b>HAutoML</b>. Vui lòng nhấn
-                  vào nút bên dưới để xác thực và kích hoạt tài khoản của bạn:
+                  Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn tại HAutoML.
+                  Vui lòng sử dụng mã xác minh (OTP) dưới đây để tiếp tục quá trình.
                 </p>
               </td>
             </tr>
@@ -89,44 +89,53 @@
               <td align="center" style="padding: 25px 0">
                 <table cellpadding="0" cellspacing="0">
                   <tr>
-                    <td
-                      align="center"
-                      bgcolor="#4CAF50"
-                      style="border-radius: 6px"
-                    >
-                      <a
-                        href="{{verify_link}}"
-                        style="
-                          display: inline-block;
-                          padding: 12px 25px;
-                          font-size: 16px;
-                          color: #ffffff;
-                          text-decoration: none;
-                          font-weight: bold;
-                        "
-                      >
-                        Xác thực tài khoản
-                      </a>
+                    <td style="vertical-align: middle; padding-right: 10px;">
+                        <span
+                            style="
+                            font-size: 20px;
+                            font-weight: 200;
+                            letter-spacing: -0.7px;
+                            line-height: 1;
+                            color: #000000;
+                            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                            "
+                        >
+                            Mã OTP của bạn là: 
+                        </span>
+                    </td>
+                    <td style="vertical-align: middle;">
+                        <span
+                            style="
+                            font-size: 24px;
+                            font-weight: 900;
+                            letter-spacing: -0.7px;
+                            line-height: 1;
+                            color: #000000;
+                            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                            "
+                        >
+                            {{otpCode}}
+                        </span>
                     </td>
                   </tr>
                 </table>
               </td>
             </tr>
 
-            <tr>
-              <td align="center" style="padding-bottom: 25px;">
-                <p style="color: #666; font-size: 14px; margin: 0 0 10px;">Hoặc quét mã QR phía dưới</p>
-                <img src="cid:qr_code" alt="QR Code" width="130" height="130" style="display: block; border: 1px solid #eaeaea; border-radius: 8px;" />
-              </td>
-            </tr>
-
             <!-- Note -->
             <tr>
               <td style="color: #777; font-size: 14px; line-height: 1.6">
-                <p style="margin: 0">
-                  Vui lòng lưu ý, liên kết xác thực chỉ có hiệu lực trong vòng 5 phút. 
-                  Nếu đây là sự nhầm lẫn, bạn không cần làm gì thêm và có thể an tâm xóa email này.
-                </p>
+                <span style="font-weight: bold;">Lưu ý:</span>
+                <ul>
+                    <li >Mã này có hiệu lực trong vòng 5 phút.</li>
+                    <li >
+                        Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này
+                        hoặc liên hệ với bộ phận.
+                    </li>
+                    <li>
+                        Tuyệt đối không chia sẻ mã này với bất kỳ ai.
+                    </li>
+                </ul>
               </td>
             </tr>
 
