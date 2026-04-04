@@ -39,11 +39,12 @@ class GmailService:
 
         backend_dir = Path(__file__).resolve().parent.parent.parent
 
-        self._template_email = backend_dir / "assets" / "verificationEmailForm.html"
+        self._template_email_for_verifications = backend_dir / "assets" / "verificationEmailForm.html"
+        self._template_email_for_otp = backend_dir / "assets" / "otpEmailForm.html"
 
     def _get_verification_html(self, verify_link: str) -> str:
         try:
-            with open(self._template_email, "r", encoding="utf-8") as file:
+            with open(self._template_email_for_verifications, "r", encoding="utf-8") as file:
                 html_content = file.read()
 
             html_content = html_content.replace("{{verify_link}}", verify_link)
@@ -51,7 +52,7 @@ class GmailService:
 
             return html_content
         except FileNotFoundError:
-            logger.error(f"Not found file HTML template at: {self._template_path}")
+            logger.error(f"Not found file HTML template at: {self._template_email_for_verifications}")
 
             return f"""
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px;">
@@ -73,6 +74,44 @@ class GmailService:
                 <p style="color: #999; font-size: 12px; text-align: center;">
                     Liên kết này sẽ hết hạn trong 15 phút.
                 </p>
+            </div>
+            """
+    
+    def _get_otp_html(self, otp: str) -> str:
+        try:
+            with open(self._template_email_for_otp, "r", encoding="utf-8") as file:
+                html_content = file.read()
+
+            html_content = html_content.replace("{{otpCode}}", otp)
+
+            return html_content
+        except FileNotFoundError:
+            logger.error(f"Not found file HTML template at: {self._template_email_for_otp}")
+
+            return f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px;">
+                <h2 style="color: #333;">Xin chào!</h2>
+                <p style="color: #555; line-height: 1.5;">
+                    Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn tại HAutoML.
+                    Vui lòng sử dụng mã xác minh (OTP) dưới đây để tiếp tục quá trình.
+                </p>
+                <div style="text-align: center; margin: 30px 0;">
+                    {otp}
+                </div>
+                
+                <div style="color: #777; font-size: 14px; line-height: 1.6">
+                    <span style="font-weight: bold;">Lưu ý:</span>
+                    <ul>
+                        <li >Mã này có hiệu lực trong vòng 5 phút.</li>
+                        <li >
+                            Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này
+                            hoặc liên hệ với bộ phận.
+                        </li>
+                        <li>
+                            Tuyệt đối không chia sẻ mã này với bất kỳ ai.
+                        </li>
+                    </ul>
+                </div>
             </div>
             """
     
@@ -106,6 +145,34 @@ class GmailService:
             msg.attach(image_part)
         except Exception as e:
             logger.error(f"Error attaching QR Code image: {str(e)}")
+        
+        try:
+            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                server.starttls()
+                server.login(self._sender_email, self._app_password)
+                server.send_message(msg)
+
+            logger.info(f"Verification email sent successfully to {email_to} via Gmail")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending verification email to {email_to}: {str(e)}", exc_info=True)
+            return False
+
+    def send_otp(self, email_to: str, otp: str) -> bool:
+        if not self._sender_email or not self._app_password:
+            logger.error("Cannot send email: Credentials missing.")
+            return False
+
+        # Email structure
+        msg = MIMEMultipart('related')
+        msg['From'] = f"HAutoML Teams <{self._sender_email}>"
+        msg['To'] = email_to
+        msg['Subject'] = "Yêu cầu đặt lại mật khẩu"
+
+        html_content = self._get_otp_html(otp)
+        msg_alternative = MIMEMultipart('alternative')
+        msg.attach(msg_alternative)
+        msg_alternative.attach(MIMEText(html_content, 'html'))
         
         try:
             with smtplib.SMTP('smtp.gmail.com', 587) as server:

@@ -12,14 +12,16 @@ from fastapi.security import OAuth2PasswordBearer
 from authlib.integrations.starlette_client import OAuth
 from starlette.requests import Request
 from fastapi.responses import RedirectResponse
+from pydantic import EmailStr
 
 
 # Local modules
 from users.utils.authentication import jwt_service
 from users.utils.security import HashHelper
 from users.utils.email_service import email_service
-from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest, ResendEmailRequest, VerifyEmailRequest
+from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest, ResendEmailRequest, VerifyEmailRequest, ResetPasswordRequest
 from database.database import get_db
+from users.engine import handle_send_otp, remove_otp
 
 
 # Load .env file
@@ -340,7 +342,7 @@ async def google_callback(request: Request, response: Response, db: AsyncDatabas
     return redirect_response
 
 
-@router.patch('/auth/verifications', response_model=Token)
+@router.post('/auth/verifications', response_model=Token)
 async def verify_user_email(request: VerifyEmailRequest, db: AsyncDatabase = Depends(get_db)) -> Token:
     payload = jwt_service.verify_token(request.token)
     if not payload or payload.get('type') != 'verification':
@@ -379,7 +381,7 @@ async def verify_user_email(request: VerifyEmailRequest, db: AsyncDatabase = Dep
     return Token(access_token=access_token, refresh_token=refresh_token, token_type='bearer')
 
 
-@router.post("/auth/verifications")
+@router.post("/auth/token/verifications")
 async def request_new_verification(
     request: ResendEmailRequest,
     background_tasks: BackgroundTasks,
@@ -406,3 +408,114 @@ async def request_new_verification(
     background_tasks.add_task(email_service.send_verification_email, user['email'], verification_token)
 
     return {"detail": "A new verification link has been sent. Please check your email"}
+
+
+@router.post("/auth/otp/verifications")
+async def request_new_verification(
+    request: ResendEmailRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncDatabase = Depends(get_db)
+):
+    user = await db.tbl_User.find_one({"email": request.email})
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email"
+        )
+
+    if user.get('is_verified', True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account has already been verified"
+        )
+
+    verification_token = jwt_service.create_verification_token({
+        'sub': str(user['_id']),
+        'email': user['email']
+    })
+    background_tasks.add_task(email_service.send_verification_email, user['email'], verification_token)
+
+    return {"detail": "A new verification link has been sent. Please check your email"}
+
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+async def forgot_password(
+    email: EmailStr,
+    background_tasks: BackgroundTasks, 
+    db: AsyncDatabase = Depends(get_db)
+):
+    user = await db.tbl_User.find_one({"email": email})
+
+    if not user:
+        return {
+            "status": "success",
+            "message": "If this email is registered, you will receive an OTP shortly."
+        }
+
+    if not user.get('is_verified', True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Account is not verified. Please verify your email first."
+        )
+
+    background_tasks.add_task(handle_send_otp, email, db)
+
+    return {
+        "status": "success",
+        "message": "A password reset OTP has been sent to your email address."
+    }
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    payload: ResetPasswordRequest, 
+    db: AsyncDatabase = Depends(get_db)
+):
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=""
+        )
+
+    user = await db.tbl_User.find_one({"email": payload.email})
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match. Please try again."
+        )
+
+    stored_otp = user.get("otp")
+    otp_expiry = user.get("createAtOTP")
+
+    if not stored_otp or stored_otp != payload.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP code.")
+
+    now = datetime.now(timezone.utc).timestamp()
+    if now - otp_expiry > 300:
+        raise HTTPException(status_code=400, detail="OTP code has expired.")
+
+    update_pwd_result = await db.linked_accounts.update_one(
+        {
+            "user_id": user["_id"], 
+            "provider": "local"
+        },
+        {"$set": {"password": payload.new_password}}
+    )
+
+    if update_pwd_result.matched_count == 0:
+        raise HTTPException(
+            status_code=400, 
+            detail="Local account not found for this user."
+        )
+
+    await db.tbl_User.update_one(
+        {"_id": user["_id"]},
+        {"$unset": {"otp": "", "createAtOTP": ""}}
+    )
+
+    return {
+        "status": "success",
+        "message": "Password updated successfully. You can now login with your new password."
+    }

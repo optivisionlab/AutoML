@@ -1,11 +1,14 @@
 import time
 import datetime
+import secrets
+from email.mime.text import MIMEText
+import smtplib
 from pydantic import BaseModel
 from typing import Optional
 from pymongo.asynchronous.database import AsyncDatabase
 from dotenv import load_dotenv
 from fastapi import HTTPException, status
-
+from users.utils.email_service import email_service
 
 # Load file .env
 load_dotenv()
@@ -76,72 +79,41 @@ async def check_exits_username(username, db: AsyncDatabase):
         return False
 
 
-from email.mime.text import MIMEText
-import smtplib
-
-def send_reset_password_email(email, token):
-    # Thay thế thông tin SMTP của bạn
-    smtp_server = "smtp.gmail.com"
-    port = 587
-    sender_email = "devweb3010@gmail.com"
-    password = "mrpk pqih agjd atou"
-
-    message = MIMEText(f"Your reset password: {token}")
-    message['From'] = sender_email
-    message['To'] = email
-    message['Subject'] = "Reset Password"
-
-    with smtplib.SMTP(smtp_server, port) as server:
-        server.starttls()
-        server.login(sender_email, password)
-        server.sendmail(sender_email, email, message.as_string())
+def generate_otp(length: int = 6) -> str:
+    """Generates a cryptographically secure OTP"""
+    return "".join(secrets.choice("0123456789") for _ in range(length))
 
 
-import random
-def generate_otp():
-    length_otp = 6
-    digits = "0123456789"
-    otp = ""
-    for i in range(length_otp):
-        otp += digits[random.randint(0, 9)]
-    return otp
+async def remove_otp(email: str, db: AsyncDatabase):
+    await db.tbl_User.update_one(
+        {"email": email},
+        {"$unset": {"otp_code": "", "otp_expires_at": ""}}
+    )
 
 
-async def remove_otp(username, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    update = {"$set":{
-        "otp": "",
-        "createAtOTP": ""
-    }}
-    await users_collection.update_one({"username": username},update)
-
-
-async def save_otp(username, value_otp, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    create_at_otp = datetime.datetime.now(datetime.timezone.utc).timestamp()  # Lưu trữ thời gian theo múi giờ UTC
-    value_set = {"$set":{
-        "otp": value_otp,
-        "createAtOTP": create_at_otp
-    }}
-
-    await users_collection.update_one({"username": username},value_set)
-
+async def save_otp(email: str, otp: str, db: AsyncDatabase):
+    expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)
     
-def send_otp(email, otp):
-    smtp_server = "smtp.gmail.com"
-    port = 587
-    sender_email = "devweb3010@gmail.com"
-    password = "xkda ehrw nedr djqo"
+    await db.tbl_User.update_one(
+        {"email": email},
+        {
+            "$set": {
+                "otp": otp,
+                "createAtOTP": expires_at.timestamp()
+            }
+        }
+    )
 
-    message = MIMEText(f"OTP của bạn là : {otp}")
-    message['From'] = sender_email
-    message['To'] = email
-    message['Subject'] = "Xác thực Email"
 
-    with smtplib.SMTP(smtp_server, port) as server:
-        server.starttls()
-        server.login(sender_email, password)
-        server.sendmail(sender_email, email, message.as_string())
+async def handle_send_otp(email, db: AsyncDatabase):
+    otp = generate_otp()
+
+    await save_otp(email, otp, db)
+    email_service.send_otp(email, otp)
+
+    return {
+        "message": f"OTP đã gửi về email: {email}"
+    }
 
 
 async def handle_change_password(username, current_password, new_password, verified_password, db: AsyncDatabase):
@@ -284,48 +256,6 @@ async def handle_update_user(username: str, new_user: UpdateUser, db: AsyncDatab
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Không tìm thấy người dùng {username} để cập nhật"
             )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Người dùng {username} không tồn tại"
-        )
-    
-
-async def handle_forgot_password(email, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
-    user = await users_collection.find_one({"email": email})
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No account with email address {email} found"
-        )
-    password = None
-    if user.get('password'):
-        password = user.get('password')
-    else:
-        result = await db.linked_accounts.find_one({'user_id': user.get('_id')})
-        password = result.get('password')
-
-    if password:
-        send_reset_password_email(email, password)
-        return {
-            "message": f"Password đã gửi về email: {email}"
-        }
-
-
-async def handle_send_otp(username, db: AsyncDatabase):
-    users_collection = db.tbl_User
-
-    user = await users_collection.find_one({"username":username})
-    if user:
-        otp = generate_otp()
-        await save_otp(username, otp, db)
-        send_otp(user['email'], otp)
-        return {
-            "message": f"OTP đã gửi về email: {user['email']}"
-        }
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
