@@ -17,10 +17,11 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
-import { useSession } from "next-auth/react";
 import React from "react";
 import toTitleLabel from "@/utils/toTitleLable";
 import { useApi } from "@/hooks/useApi";
+import { Button } from "@/components/ui/button";
+import UploadPredictBox from "@/components/common/UploadPredictBox";
 
 type Props = {
   params: Promise<{
@@ -35,15 +36,10 @@ const ResultPage = ({ params }: Props) => {
   const [result, setResult] = useState<any>(null);
 
   const [error, setError] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const { data: session } = useSession();
 
   const [showChart, setShowChart] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   useEffect(() => {
     const unwrapParams = async () => {
@@ -148,10 +144,10 @@ const ResultPage = ({ params }: Props) => {
       .filter((model: any) => {
         const r2 = model.scores?.r2;
         if (r2 !== undefined && r2 < -1) return false;
-        
+
         const mse = model.scores?.mse;
-        if (mse !== undefined && mse > 1000000) return false; 
-        
+        if (mse !== undefined && mse > 1000000) return false;
+
         return true;
       })
       .map((model: any) => {
@@ -315,6 +311,25 @@ const ResultPage = ({ params }: Props) => {
               </Table>
             )}
           </div>
+
+          <div className="text-right mt-10 py-5">
+            <Button
+              className={`px-4 py-2 text-white transition ${
+                openRow === datasetID
+                  ? "bg-red-500 hover:bg-red-600"
+                  : "bg-green-600 hover:bg-green-700"
+              }`}
+              onClick={() =>
+                setOpenRow(openRow === datasetID ? null : datasetID)
+              }
+            >
+              {openRow === datasetID ? "X" : "Upload Test"}
+            </Button>
+          </div>
+
+          {openRow === datasetID && (
+            <UploadPredictBox jobId={datasetID || ""} />
+          )}
         </Card>
       )}
     </div>

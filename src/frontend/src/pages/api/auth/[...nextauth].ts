@@ -50,8 +50,41 @@ export const authOptions: NextAuthOptions = {
           placeholder: "Nguyen Van A",
         },
         password: { label: "Password", type: "password" },
+
+        //
+        access_token: { label: "Access Token", type: "text" },
+        refresh_token: { label: "Refresh Token", type: "text" },
       },
       async authorize(credentials) {
+        // CASE 1: LOGIN GOOGLE, email
+        if (credentials?.access_token) {
+          const access_token = credentials.access_token;
+          const refresh_token = credentials.refresh_token;
+
+          const decoded: any = jwtDecode(access_token);
+
+          // gọi API lấy user
+          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${access_token}`,
+            },
+          });
+
+          const userInf = await res.json();
+
+          return {
+            id: userInf._id,
+            username: userInf.username,
+            email: userInf.email,
+            role: userInf.role,
+            access_token,
+            refresh_token,
+            accessTokenExpires: decoded.exp * 1000,
+          };
+        }
+
+        // CASE 2: LOGIN THƯỜNG
         try {
           const { username, password } = credentials as any;
 

@@ -8,7 +8,7 @@ export async function forgotPassword(email: string) {
 
   try {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/forgot_password/${email}`,
+      `${process.env.NEXT_PUBLIC_BASE_API}/forgot-password/${email}`,
       {
         method: "POST",
         headers: {
@@ -39,7 +39,7 @@ export async function changePassword(
   const session = await getSession();
 
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_API}/change_password?username=${username}`,
+    `${process.env.NEXT_PUBLIC_BASE_API}/change-password?username=${username}`,
     {
       method: "POST",
       headers: {
