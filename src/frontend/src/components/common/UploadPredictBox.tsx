@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { useApi } from "@/hooks/useApi";
+import { useSession } from "next-auth/react";
 
 type Props = {
   jobId: string;
@@ -10,7 +11,9 @@ type Props = {
 };
 
 const UploadPredictBox = ({ jobId, disabled }: Props) => {
-  const { post } = useApi();
+  const { post, remove } = useApi();
+  const { data: session } = useSession();
+
   const [loading, setLoading] = useState(false);
   const [isError, setIsError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +61,7 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
 
       a.remove();
       window.URL.revokeObjectURL(url);
+      setLoading(false);
     } catch (err: any) {
       setIsError(true);
       const blob = err.response?.data;
@@ -98,9 +102,20 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (loading) {
+      if (loading && jobId) {
+        fetch(
+          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/${jobId}/predictions`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${session?.user?.access_token}`,
+            },
+            keepalive: true,
+          },
+        );
+
         e.preventDefault();
-        e.returnValue = ""; // bắt buộc để hiện alert
+        e.returnValue = "";
       }
     };
 
@@ -109,7 +124,7 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [loading]);
+  }, [loading, jobId, session]);
 
   return (
     <div
@@ -142,8 +157,28 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
       />
 
       {loading && !isError ? (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center">
-          <div className="bg-white px-6 py-4 rounded-lg shadow-lg flex flex-col items-center gap-2">
+        <div
+          className="fixed inset-0 z-[9999] bg-black/30 flex items-center justify-center"
+          onClick={async (e) => {
+            e.stopPropagation();
+
+            const confirmLeave = confirm(
+              "Tiến trình đang chạy. Nếu thoát sẽ bị hủy. Bạn có chắc không?",
+            );
+
+            if (!confirmLeave) return;
+
+            // gọi API cancel
+            await remove(`/v2/auto/${jobId}/predictions`);
+
+            // cho reload hoặc quay lại
+            window.location.reload();
+          }}
+        >
+          <div
+            className="bg-white px-6 py-4 rounded-lg shadow-lg flex flex-col items-center gap-2"
+            onClick={(e) => e.stopPropagation()} // chặn click vào box
+          >
             <Spinner />
             <p className="text-sm text-gray-600">
               Đang xử lý, vui lòng không rời trang...

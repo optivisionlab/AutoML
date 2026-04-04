@@ -18,7 +18,6 @@ import { Badge } from "@/components/ui/badge";
 
 import PaginationCustom from "@/components/common/Panigation";
 import { useApi } from "@/hooks/useApi";
-import UploadPredictButton from "@/components/common/UploadPredictButton";
 import UploadPredictBox from "@/components/common/UploadPredictBox";
 
 type TrainingJob = {
@@ -202,7 +201,7 @@ const TrainingHistory = () => {
                             )
                           }
                         >
-                          {openRow === job.job_id ? "X" : "Upload & Dự đoán"}
+                          {openRow === job.job_id ? "X" : "Upload Test"}
                         </Button>
                       </TableCell>
                     </TableRow>
