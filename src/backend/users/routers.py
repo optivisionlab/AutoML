@@ -2,6 +2,7 @@
 import os
 from datetime import datetime, timezone
 from bson import ObjectId
+import asyncio
 
 
 # Third party libraries
@@ -19,9 +20,9 @@ from pydantic import EmailStr
 from users.utils.authentication import jwt_service
 from users.utils.security import HashHelper
 from users.utils.email_service import email_service
-from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest, ResendEmailRequest, VerifyEmailRequest, ResetPasswordRequest
+from users.schema import UserLoginRequest, UserRegisterRequest, UserResponse, Token, RefreshRequest, ResendEmailRequest, VerifyEmailRequest, ResetPasswordRequest, VerifyOtp
 from database.database import get_db
-from users.engine import handle_send_otp, remove_otp
+from users.engine import handle_send_otp
 
 
 # Load .env file
@@ -62,7 +63,7 @@ async def register(user_data: UserRegisterRequest, background_tasks: BackgroundT
         "user_id": user_id,
         "provider": "local",
         "provider_id": user_data.email,
-        "password": user_data.password.get_secret_value(), # HashHelper.get_password_hash(user_data.password)
+        "password": user_data.password, # HashHelper.get_password_hash(user_data.password)
         "created_at": datetime.now(timezone.utc).timestamp()
     }
 
@@ -87,8 +88,6 @@ async def register(user_data: UserRegisterRequest, background_tasks: BackgroundT
 
     created_user = await db.tbl_User.find_one({'_id': user_id})
     created_user['_id'] = str(created_user['_id'])
-
-    created_user['qrCode'] = f"data:image/png;base64,{qr_base64}"
 
     return created_user
 
@@ -337,7 +336,7 @@ async def google_callback(request: Request, response: Response, db: AsyncDatabas
     })
 
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8000/login')
-    redirect_response = RedirectResponse(url=f"{frontend_url}?access_token={access_token}&refresh_token={refresh_token}&login_success=true")
+    redirect_response = RedirectResponse(url=f"{frontend_url}/google?access_token={access_token}&refresh_token={refresh_token}&login_success=true")
 
     return redirect_response
 
@@ -429,14 +428,15 @@ async def request_new_verification(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This account has already been verified"
         )
+    
+    await db.tbl_User.update_one(
+        {"_id": user["_id"]},
+        {"$unset": {"otp": "", "createAtOTP": ""}}
+    )
 
-    verification_token = jwt_service.create_verification_token({
-        'sub': str(user['_id']),
-        'email': user['email']
-    })
-    background_tasks.add_task(email_service.send_verification_email, user['email'], verification_token)
+    background_tasks.add_task(handle_send_otp, user['email'])
 
-    return {"detail": "A new verification link has been sent. Please check your email"}
+    return {"detail": "A new otp has been sent. Please check your email"}
 
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)
@@ -467,17 +467,11 @@ async def forgot_password(
     }
 
 
-@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@router.post("/auth/verify-otp", status_code=status.HTTP_200_OK)
 async def reset_password(
-    payload: ResetPasswordRequest, 
+    payload: VerifyOtp, 
     db: AsyncDatabase = Depends(get_db)
 ):
-    if payload.new_password != payload.confirm_password:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=""
-        )
-
     user = await db.tbl_User.find_one({"email": payload.email})
     
     if not user:
@@ -491,29 +485,86 @@ async def reset_password(
 
     if not stored_otp or stored_otp != payload.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP code.")
-
+    
     now = datetime.now(timezone.utc).timestamp()
-    if now - otp_expiry > 300:
+    if now - otp_expiry > 60:
         raise HTTPException(status_code=400, detail="OTP code has expired.")
-
-    update_pwd_result = await db.linked_accounts.update_one(
-        {
-            "user_id": user["_id"], 
-            "provider": "local"
-        },
-        {"$set": {"password": payload.new_password}}
-    )
-
-    if update_pwd_result.matched_count == 0:
-        raise HTTPException(
-            status_code=400, 
-            detail="Local account not found for this user."
-        )
 
     await db.tbl_User.update_one(
         {"_id": user["_id"]},
         {"$unset": {"otp": "", "createAtOTP": ""}}
     )
+
+    password = None
+
+    if user.get('password'):
+        password = user['password']
+    else:
+        account = await db.linked_accounts.find_one({
+            'user_id': user['_id'],
+            'provider': 'local'
+        })
+        password = account['password']
+
+    return {
+        "password": password
+    }
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    payload: ResetPasswordRequest, 
+    db: AsyncDatabase = Depends(get_db)
+):
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Passwords do not match. Please try again"
+        )
+
+    user = await db.tbl_User.find_one({"email": payload.email})
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not found account"
+        )
+    
+    is_authenticated = False
+    
+    if user.get('password'):
+        if payload.password == user['password']:
+            is_authenticated = True
+
+    if not is_authenticated:
+        account = await db.linked_accounts.find_one({
+            'user_id': user['_id'],
+            'provider': 'local'
+        })
+        if account and payload.password == account.get('password'):
+            is_authenticated = True
+
+    if not is_authenticated:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password not correct"
+        )
+    
+    update_user_task = db.tbl_User.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"password": payload.new_password}}
+    )
+
+    update_account_task = db.linked_accounts.update_one(
+        {
+            "user_id": user["_id"], 
+            "provider": "local"
+        },
+        {"$set": {"password": payload.new_password}},
+        upsert=True 
+    )
+
+    await asyncio.gather(update_user_task, update_account_task)
 
     return {
         "status": "success",
