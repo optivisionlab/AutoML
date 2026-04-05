@@ -27,6 +27,7 @@ from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 from users.engine import ChangePassword
 from users.engine import save_otp, send_otp, generate_otp
+import logging
 import os, uvicorn
 from users.engine import check_time_otp
 from users.engine import handle_change_password
@@ -61,6 +62,7 @@ from automl.v2.master import master
 from hagent.chat_router import router as chat_router
 from hagent import chat_store
 
+logger = logging.getLogger(__name__)
 
 # Load file .env
 load_dotenv()
@@ -84,7 +86,7 @@ async def lifespan(app: FastAPI):
         app.state.monitor_task = asyncio.create_task(monitor_tasks(app.state.db))
         app.state.kafka_available = True
     except Exception as e:
-        print(f"[Server Lifespan] WARNING: Kafka unavailable, skipping: {e}")
+        logger.warning("Kafka không khả dụng, bỏ qua: %s", e)
         app.state.kafka_task = None
         app.state.monitor_task = None
         app.state.kafka_available = False
@@ -92,13 +94,13 @@ async def lifespan(app: FastAPI):
     # Tạo index cho OpenClaw chat
     try:
         await chat_store.ensure_indexes(app.state.db)
-        print("[Server Lifespan] OpenClaw chat indexes created ✓")
+        logger.info("Đã tạo chat indexes thành công")
     except Exception as e:
-        print(f"[Server Lifespan] WARNING: Failed to create chat indexes: {e}")
+        logger.warning("Không tạo được chat indexes: %s", e)
 
     yield # Server Fastapi accepts requests
 
-    print("[Server Lifespan] Shutdown resources...")
+    logger.info("Đang giải phóng tài nguyên...")
 
     if app.state.kafka_task:
         app.state.kafka_task.cancel()
@@ -111,7 +113,7 @@ async def lifespan(app: FastAPI):
 
     # ĐÓNG KẾT NỐI CSDL
     await app.state.client.close()
-    print("[Master] Shutdown complete.")
+    logger.info("Đã tắt server hoàn tất.")
 
 
 app = FastAPI(lifespan=lifespan)

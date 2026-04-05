@@ -14,9 +14,6 @@ PyJWT>=2.8.0
 motor>=3.5.0
 pymongo>=4.8.0
 
-# Google Gemini SDK (provider mặc định)
-google-genai>=1.0.0
-
 # YAML config loader — tất cả cấu hình từ hagent.yaml
 PyYAML>=6.0
 
