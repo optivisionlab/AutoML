@@ -1,0 +1,129 @@
+# ══════════════════════════════════════════════════════════
+# HAgent HAutoML Tools — Cấu hình công cụ (YAML)
+#
+# Định nghĩa tất cả các công cụ HAutoML mà HAgent có thể sử dụng.
+# Mỗi tool tương ứng với một API endpoint của HAutoML.
+# ══════════════════════════════════════════════════════════
+
+tools:
+  - name: hautoml_health
+    description: "Check if HAutoML system is running and accessible"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py health"
+    outputFormat: json
+
+  - name: hautoml_list_datasets
+    description: "List all datasets available to the user"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py list_datasets --user-id \"$USER_ID\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+
+  - name: hautoml_get_dataset_info
+    description: "Get detailed information about a specific dataset"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_dataset_info --dataset-id \"{{dataset_id}}\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+    parameters:
+      dataset_id:
+        type: string
+        description: "The ID of the dataset"
+        required: true
+
+  - name: hautoml_get_features
+    description: "Get features/columns of a dataset for a specific problem type"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_features --dataset-id \"{{dataset_id}}\" --problem-type \"{{problem_type}}\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+    parameters:
+      dataset_id:
+        type: string
+        description: "The ID of the dataset"
+        required: true
+      problem_type:
+        type: string
+        description: "Type of ML problem: classification or regression"
+        required: true
+        enum: ["classification", "regression"]
+
+  - name: hautoml_preview_data
+    description: "Preview sample rows from a dataset"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py preview_data --dataset-id \"{{dataset_id}}\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+    parameters:
+      dataset_id:
+        type: string
+        description: "The ID of the dataset"
+        required: true
+
+  - name: hautoml_get_available_models
+    description: "Get list of available ML algorithms for a problem type"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_available_models --problem-type \"{{problem_type}}\""
+    outputFormat: json
+    parameters:
+      problem_type:
+        type: string
+        description: "Type of ML problem: classification or regression"
+        required: true
+        enum: ["classification", "regression"]
+
+  - name: hautoml_get_metrics
+    description: "Get available evaluation metrics for a problem type"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_metrics --problem-type \"{{problem_type}}\""
+    outputFormat: json
+    parameters:
+      problem_type:
+        type: string
+        description: "Type of ML problem: classification or regression"
+        required: true
+        enum: ["classification", "regression"]
+
+  - name: hautoml_start_training
+    description: "Start a training job with specified configuration. This is the MAIN tool for training models."
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py start_training --dataset-id \"{{dataset_id}}\" --problem-type \"{{problem_type}}\" --target-column \"{{target_column}}\" --algorithms \"{{algorithms}}\" --metric \"{{metric}}\" --search-strategy \"{{search_strategy}}\" --user-id \"$USER_ID\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+    parameters:
+      dataset_id:
+        type: string
+        description: "The ID of the dataset to train on"
+        required: true
+      problem_type:
+        type: string
+        description: "Type of ML problem"
+        required: true
+        enum: ["classification", "regression"]
+      target_column:
+        type: string
+        description: "Name of the target column to predict"
+        required: true
+      algorithms:
+        type: string
+        description: "Comma-separated list of algorithm IDs (e.g., '0,1,2' for Decision Tree, Random Forest, KNN)"
+        required: true
+      metric:
+        type: string
+        description: "Evaluation metric to optimize (e.g., accuracy, f1_weighted, rmse)"
+        required: true
+      search_strategy:
+        type: string
+        description: "Hyperparameter search strategy"
+        required: false
+        default: grid_search
+        enum: ["grid_search", "bayesian_search", "genetic_algorithm"]
+
+  - name: hautoml_list_jobs
+    description: "List all training jobs for the user"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py list_jobs --user-id \"$USER_ID\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+
+  - name: hautoml_get_job_info
+    description: "Get detailed information about a specific training job"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_job_info --job-id \"{{job_id}}\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
+    parameters:
+      job_id:
+        type: string
+        description: "The ID of the training job"
+        required: true

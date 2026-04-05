@@ -58,6 +58,8 @@ from dotenv import load_dotenv
 from users.routers import get_current_user, router as auth
 from experiment import exp
 from automl.v2.master import master
+from hagent.chat_router import router as chat_router
+from hagent import chat_store
 
 
 # Load file .env
@@ -76,18 +78,35 @@ async def lifespan(app: FastAPI):
     app.state.db, app.state.client = await connection()
 
     # KHỞI TẠO VÀ START PRODUCER 
-    await start_producer()
+    try:
+        await start_producer()
+        app.state.kafka_task = asyncio.create_task(kafka_consumer_process(app.state.db))
+        app.state.monitor_task = asyncio.create_task(monitor_tasks(app.state.db))
+        app.state.kafka_available = True
+    except Exception as e:
+        print(f"[Server Lifespan] WARNING: Kafka unavailable, skipping: {e}")
+        app.state.kafka_task = None
+        app.state.monitor_task = None
+        app.state.kafka_available = False
 
-    app.state.kafka_task = asyncio.create_task(kafka_consumer_process(app.state.db))
-    app.state.monitor_task = asyncio.create_task(monitor_tasks(app.state.db))
+    # Tạo index cho OpenClaw chat
+    try:
+        await chat_store.ensure_indexes(app.state.db)
+        print("[Server Lifespan] OpenClaw chat indexes created ✓")
+    except Exception as e:
+        print(f"[Server Lifespan] WARNING: Failed to create chat indexes: {e}")
 
     yield # Server Fastapi accepts requests
 
     print("[Server Lifespan] Shutdown resources...")
 
-    app.state.kafka_task.cancel()
-    app.state.monitor_task.cancel()
-    await asyncio.gather(app.state.kafka_task, app.state.monitor_task, return_exceptions=True)
+    if app.state.kafka_task:
+        app.state.kafka_task.cancel()
+    if app.state.monitor_task:
+        app.state.monitor_task.cancel()
+    tasks = [t for t in [app.state.kafka_task, app.state.monitor_task] if t]
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
     await stop_producer()
 
     # ĐÓNG KẾT NỐI CSDL
@@ -109,6 +128,7 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv('SUPER_SECRET_KEY', '
 app.include_router(auth)
 app.include_router(exp)
 app.include_router(master)
+app.include_router(chat_router)
 
 
 @app.get("/")
@@ -448,6 +468,54 @@ async def inference(
 @app.post("/activate-model")
 async def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     return await update_activate_model(job_id, db, activate)
+
+
+# ─── OpenClaw: Endpoint danh sách thuật toán ML ─────────
+
+@app.get("/api/v1/available-models/{problem_type}")
+async def get_available_models(problem_type: str):
+    """
+    Trả về danh sách thuật toán ML khả dụng theo loại bài toán.
+    Dùng bởi OpenClaw để hiển thị cho người dùng.
+
+    Args:
+        problem_type: "classification" hoặc "regression"
+    """
+    import yaml
+
+    if problem_type not in ("classification", "regression"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Loại bài toán không hợp lệ: {problem_type}. Chọn 'classification' hoặc 'regression'."
+        )
+
+    # Đọc file YAML cấu hình model
+    config_path = os.path.join("assets", "system_models", f"{problem_type}.yml")
+    if not os.path.exists(config_path):
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy cấu hình cho {problem_type}")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    # Trích xuất danh sách model và tham số
+    key = f"{problem_type.capitalize()}_models"
+    models_data = config.get(key, {})
+    metrics = config.get("metric_list", [])
+
+    models = []
+    for idx, model_info in models_data.items():
+        models.append({
+            "index": idx,
+            "name": model_info["model"],
+            "params": model_info.get("params", []),
+        })
+
+    return {
+        "problem_type": problem_type,
+        "metrics": metrics,
+        "models": models,
+        "total": len(models),
+    }
 
 
 if __name__ == "__main__":

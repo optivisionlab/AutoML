@@ -8,6 +8,7 @@ import SideNav from "@/components/sideNav/SideNav";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import TopLoader from "@/components/top-loader";
+import { ChatWidget } from "@/components/chatWidget";
 
 export const metadata: Metadata = {
   title: "HAutoML",
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: IProps) {
                     <div className="w-full flex justify-center mx-auto overflow-auto h-[calc(100vh-120px)] overflow-y-auto relative">
                       <div className="w-full">{children}</div>
                       <Toaster />
+                      <ChatWidget />
                     </div>
                   </div>
                 </div>

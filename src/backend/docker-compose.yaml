@@ -1,9 +1,20 @@
 version: '3.3'
 
+# ── Biến môi trường chung ────────────────────────────────
+x-common-env: &common-env
+  SECRET_KEY: ${SECRET_KEY}
+  ALGORITHM: ${ALGORITHM}
+  ACCESS_EXPIRE: ${ACCESS_EXPIRE:-60}
+  REFRESH_EXPIRE: ${REFRESH_EXPIRE:-7}
+  HAGENT_HOOKS_TOKEN: ${HAGENT_HOOKS_TOKEN}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+
 services:
   hautoml_woker_1:
     image: workers:latest
     container_name: hautoml-woker-1
+    profiles: ["worker"]
     restart: unless-stopped
     network_mode: host
     ports:
@@ -22,6 +33,7 @@ services:
   hautoml_nano:
     image: hautoml-nano
     container_name: hautoml_nano_v1
+    profiles: ["nano"]
     restart: unless-stopped
     network_mode: host
     ports:
@@ -35,16 +47,38 @@ services:
         max-size: "10m"
         max-file: "3"
   
-  hautoml_toolkit:
+  toolkit:
+    build:
+      context: .
+      dockerfile: hautoml.toolkit.dockerfile
     image: hautoml-toolkit
-    container_name: hautoml_toolkit_v1
+    container_name: toolkit
     restart: unless-stopped
-    network_mode: host
     ports:
-      - "9999:9999"
-    expose:
-      - '9999'
-    command: python app.py
+      - "8585:8585"
+      - "18790:18790"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "sleep 10 && python hagent/proxy.py & python app.py"
+    environment:
+      <<: *common-env
+      HOST_BACK_END: 0.0.0.0
+      PORT_BACK_END: 8585
+      MONGODB_CONNECT: host.docker.internal:27017
+      MONGO_URI: mongodb://host.docker.internal:27017
+      KAFKA_SERVER: kafka:9092
+      KAFKA_TOPIC: example-topic
+      MINIO_ENDPOINT: minio:9000
+      HAUTOML_BASE_URL: http://localhost:8585
+      OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: "1"
+    volumes:
+      - .:/app
+      - hagent_config:/root/.hagent
+    depends_on:
+      - mongo
+      - kafka
+      - minio
     logging:
       driver: "json-file"
       options:
@@ -55,11 +89,19 @@ services:
     image: apache/kafka:latest
     container_name: kafka
     restart: unless-stopped
-    network_mode: host
     ports:
       - "9092:9092"
     expose:
       - '9092'
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     logging:
       driver: "json-file"
       options:
@@ -85,3 +127,84 @@ services:
     # environment:
     #   MONGO_INITDB_ROOT_USERNAME: root
     #   MONGO_INITDB_ROOT_PASSWORD: example
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio_hautoml
+    restart: unless-stopped
+    expose:
+      - "9000"
+      - "9001"
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  hagent_bridge:
+    image: hagent-bridge:latest
+    container_name: hagent_bridge
+    restart: unless-stopped
+    ports:
+      - "8900:9900"
+    build:
+      context: ./hagent/bridge
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./hagent/hagent.yaml:/app/hagent.yaml:ro
+    environment:
+      <<: *common-env
+      HAGENT_CONFIG: /app/hagent.yaml
+      MONGODB_CONNECT: mongo:27017
+      HAUTOML_BASE_URL: http://host.docker.internal:8585
+      HAGENT_GATEWAY_URL: http://openclaw_gateway:18790
+    depends_on:
+      - mongo
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  openclaw_gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw_gateway
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+    command: >
+      /bin/sh -c "python3 /app/proxy.py & exec node dist/index.js gateway"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./hagent/proxy.py:/app/proxy.py:ro
+      - ./hagent/skills/hautoml/scripts/hautoml_tools.py:/home/node/.openclaw/skills/hautoml/scripts/hautoml_tools.py:ro
+      - openclaw_config:/home/node/.openclaw
+      - openclaw_workspace:/home/node/.openclaw/workspace
+      - .:/home/node/.openclaw/workspace/backend
+    environment:
+      HAUTOML_BASE_URL: http://host.docker.internal:8585
+      OPENCLAW_BUNDLED_PLUGINS_DIR: /app/extensions
+    depends_on:
+      - toolkit
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  hagent_config:
+  hagent_workspace:
+  minio_data:
+  openclaw_config:
+  openclaw_workspace:
+

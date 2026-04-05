@@ -1,0 +1,24 @@
+# HAgent Bridge — Thư viện phụ thuộc
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0
+
+# HTTP client bất đồng bộ
+httpx>=0.27.0
+
+# JWT xác thực
+PyJWT>=2.8.0
+
+# MongoDB async driver
+motor>=3.5.0
+pymongo>=4.8.0
+
+# Google Gemini SDK (provider mặc định)
+google-genai>=1.0.0
+
+# YAML config loader — tất cả cấu hình từ hagent.yaml
+PyYAML>=6.0
+
+# File upload
+python-multipart>=0.0.7

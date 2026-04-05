@@ -1,0 +1,59 @@
+# ══════════════════════════════════════════════════════════
+# HAgent — Cấu hình trung tâm (YAML)
+#
+# Tất cả cấu hình được tải từ file này.
+# KHÔNG có giá trị nào bị hard-code trong mã nguồn.
+# ══════════════════════════════════════════════════════════
+
+# ── Gateway ──────────────────────────────────────────────
+gateway:
+  host: "0.0.0.0"
+  port: 18789
+
+# ── Bridge Service ───────────────────────────────────────
+bridge:
+  host: "0.0.0.0"
+  port: 9900
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+    - "http://127.0.0.1:3000"
+    - "http://localhost:8080"
+    - "http://127.0.0.1:8080"
+
+# ── HAutoML Backend ─────────────────────────────────────
+hautoml:
+  base_url: "http://localhost:8585"
+
+# ── MongoDB ──────────────────────────────────────────────
+mongodb:
+  connect: "localhost:27017"
+  db_name: "hagent"
+  conversation_ttl_hours: 24
+
+# ── JWT Auth (dùng chung secret với HAutoML backend) ────
+auth:
+  secret_key: "${SECRET_KEY}"
+  algorithm: "HS256"
+
+# ── Hooks / Webhooks ────────────────────────────────────
+hooks:
+  enabled: true
+  token: "${HAGENT_HOOKS_TOKEN}"
+  path: "/hooks"
+
+# ── Skills ──────────────────────────────────────────────
+skills:
+  directories:
+    - "./skills"
+
+# ── Memory ──────────────────────────────────────────────
+memory:
+  enabled: true
+  backend: "local"
+
+# ── Logging ─────────────────────────────────────────────
+logging:
+  level: "info"
+  file: "./logs/hagent.log"
+
