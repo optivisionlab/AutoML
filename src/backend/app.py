@@ -390,14 +390,37 @@ def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Dep
 
 @app.post("/inference-model")
 async def inference(
-    job_id: str = Form(...), 
-    user_id: str = Form(...),
+    job_id: str, 
     file_data: UploadFile = File(...),
     db: AsyncDatabase = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     try:
-        prediction_result = await inference_model(job_id, user_id, file_data, db)
+        job = await db.tbl_Job.find_one({"job_id": job_id})
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found"
+            )
+
+        if str(job.get("user_id")) != str(current_user["_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You dont have permission"
+            )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="System error during data query")
+
+    try:
+        prediction_result = await inference_model(
+            job_id, 
+            str(current_user["_id"]), 
+            file_data, 
+            db
+        )
 
         if isinstance(prediction_result, dict) and "error" in prediction_result:
             raise HTTPException(
@@ -411,7 +434,6 @@ async def inference(
             status_code=500, 
             detail=f"An internal server error occurred: {str(e)}"
         )
-
 
 
 @app.post("/activate-model")

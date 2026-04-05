@@ -1,6 +1,5 @@
 # Third party libraries
-from pydantic import BaseModel, EmailStr, Field, SecretStr
-from users.utils.types import StrongPassword
+from pydantic import BaseModel, EmailStr, Field
 
 class UserRegisterRequest(BaseModel):
     username: str = Field(..., min_length=3)
@@ -9,7 +8,7 @@ class UserRegisterRequest(BaseModel):
     date: str
     number: str = Field(..., min_length=10)
     fullName: str
-    password: StrongPassword
+    password: str
 
     model_config = {
         "populate_by_name": True,
@@ -37,12 +36,12 @@ class UserLoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: str = Field(..., alias="_id")
-    username: str
+    username: str | None = None
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-    gender: str
-    date: str
-    number: str = Field(..., min_length=10)
-    fullName: str
+    gender: str | None = None
+    date: str | None = None
+    number: str | None = Field(default=None, min_length=10)
+    fullName: str | None = None
     avatar: str | None = None
     role: str
 
@@ -87,6 +86,11 @@ class VerifyEmailRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
-    otp: str = Field(..., min_length=6, max_length=6)
+    current_password: str
     new_password: str = Field(..., min_length=8)
     confirm_password: str = Field(..., min_length=8)
+
+
+class VerifyOtp(BaseModel):
+    email: EmailStr
+    otp: str = Field(..., min_length=6, max_length=6)
