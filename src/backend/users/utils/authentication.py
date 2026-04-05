@@ -62,6 +62,17 @@ class JWTService:
 
         return encode(to_encode, self.__secret_key, self.__algorithm)
 
+    def create_api_key(self, data: dict) -> str:
+        """
+        Create API key for inference model
+        """
+        to_enconde = data.copy()
+        to_enconde.update({
+            'type': 'key'
+        })
+
+        return encode(to_enconde, self.__secret_key, self.__algorithm)
+
     def verify_token(self, token: str) -> dict | None:
         """
         Verify token

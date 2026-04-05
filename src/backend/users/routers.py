@@ -337,7 +337,7 @@ async def google_callback(request: Request, response: Response, db: AsyncDatabas
     })
 
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8000/login')
-    redirect_response = RedirectResponse(url=f"{frontend_url}?access_token={access_token}&refresh_token={refresh_token}&login_success=true")
+    redirect_response = RedirectResponse(url=f"{frontend_url}/google?access_token={access_token}&refresh_token={refresh_token}&login_success=true")
 
     return redirect_response
 

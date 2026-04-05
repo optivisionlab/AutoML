@@ -37,12 +37,12 @@ class UserLoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: str = Field(..., alias="_id")
-    username: str
+    username: str | None
     email: str = Field(pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
-    gender: str
-    date: str
-    number: str = Field(..., min_length=10)
-    fullName: str
+    gender: str | None
+    date: str | None
+    number: str | None = Field(default=None, min_length=10)
+    fullName: str | None
     avatar: str | None = None
     role: str
 

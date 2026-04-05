@@ -51,6 +51,7 @@ from automl.v2.master import monitor_tasks
 import asyncio
 from dotenv import load_dotenv
 from users.routers import get_current_user, router as auth
+from users.schema import APIKey
 from experiment import exp
 from automl.v2.master import master
 
@@ -390,14 +391,26 @@ def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Dep
 
 @app.post("/inference-model")
 async def inference(
-    job_id: str = Form(...), 
-    user_id: str = Form(...),
+    job_id: str, 
     file_data: UploadFile = File(...),
     db: AsyncDatabase = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     try:
-        prediction_result = await inference_model(job_id, user_id, file_data, db)
+        data = await db.tbl_Job.find_one({
+            "job_id": job_id
+        })
+
+        if not data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not found",
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{str(e)}")
+
+    try:
+        prediction_result = await inference_model(job_id, str(data['user']['id']), file_data, db)
 
         if isinstance(prediction_result, dict) and "error" in prediction_result:
             raise HTTPException(
@@ -411,7 +424,6 @@ async def inference(
             status_code=500, 
             detail=f"An internal server error occurred: {str(e)}"
         )
-
 
 
 @app.post("/activate-model")
