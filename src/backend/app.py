@@ -22,7 +22,6 @@ from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import check_exits_username
 from starlette.middleware.sessions import SessionMiddleware
-from users.engine import ChangePassword
 import os, uvicorn
 from users.engine import handle_change_password
 from users.engine import handle_update_avatar
@@ -53,6 +52,7 @@ from dotenv import load_dotenv
 from users.routers import get_current_user, router as auth
 from experiment import exp
 from automl.v2.master import master
+from users.schema import ResetPasswordRequest
 
 
 # Load file .env
@@ -178,19 +178,35 @@ async def update_user(username: str, new_user: UpdateUser, db: AsyncDatabase = D
     return message
 
 
-@app.post("/change_password")
-async def change_password(username: str, password: ChangePassword, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
-    if current_user['role'] == 'user' and current_user['username'] != username:
+@app.post("/change-password")
+async def change_password(payload: ResetPasswordRequest, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Passwords do not match. Please try again"
+        )
+    
+    user = await db.tbl_User.find_one({"email": payload.email})
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not found account"
+        )
+    
+    if str(user['_id']) != str(current_user['_id']):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail="Permission denied"
         )
 
-    current_password = password.current_password
-    new_password = password.new_password
-    verified_password = password.verified_password
-    masage = await handle_change_password(username, current_password, new_password, verified_password, db)
-    return masage
+    result = await handle_change_password(
+        user=user, 
+        current_password=payload.current_password, 
+        new_password=payload.new_password, 
+        db=db
+    )
+    return result
 
 
 @app.post("/update_avatar")
