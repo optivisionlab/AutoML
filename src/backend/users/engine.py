@@ -34,12 +34,6 @@ class UpdateUser(BaseModel):  # Dùng cho cập nhật thông tin người dùng
     number: Optional[str]
 
 
-class ChangePassword(BaseModel):
-    current_password: str
-    new_password: str 
-    verified_password: str
-
-
 # Hàm chuyển đổi objectID thành chuỗi
 def user_helper(user) -> dict:
     return{
@@ -116,61 +110,39 @@ async def handle_send_otp(email, db: AsyncDatabase):
     }
 
 
-async def handle_change_password(username, current_password, new_password, verified_password, db: AsyncDatabase):
-    users_collection = db.tbl_User
-    user = await users_collection.find_one({"username": username})
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Not found user"
-        )
-
-    if new_password != verified_password:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Passwords do not match"
-        )
-
+async def handle_change_password(user, current_password: str, new_password: str, db: AsyncDatabase):
     if user.get('password'):
-        if not current_password == user.get('password'):
+        if current_password != user.get('password'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect password"
+                detail="Incorrect current password"
             )
 
-        await users_collection.update_one(
+        await db.tbl_User.update_one(
             {"_id": user['_id']},
             {"$set": {'password': new_password}}
         )
-
-        return {
-            "message": "Change password successfully"
-        }
-
+        return {"message": "Change password successfully"}
     else:
         linked_acc = await db.linked_accounts.find_one({'user_id': user['_id']})
 
         if not linked_acc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Not found user"
+                detail="Account not found in linked accounts"
             )
         
-        if not current_password == linked_acc.get('password'):
+        if current_password != linked_acc.get('password'):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect password"
+                detail="Incorrect current password"
             )
 
         await db.linked_accounts.update_one(
             {"_id": linked_acc['_id']},
             {"$set": {'password': new_password}}
         )
-
-        return {
-            "message": "Change password successfully"
-        }
+        return {"message": "Change password successfully"}
 
     
 import base64, io
