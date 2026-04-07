@@ -19,7 +19,6 @@ export default function VerifyEmailPage() {
       // gọi API verify token
       const verify = async () => {
         try {
-          console.log(token);
           await post(`/auth/verifications`, { token });
           setVerified(true);
 
@@ -34,7 +33,7 @@ export default function VerifyEmailPage() {
 
       verify();
     }
-  }, [token]);
+  }, [token, post, router]);
 
   // CASE 1: Đã verify thành công
   if (verified) {
