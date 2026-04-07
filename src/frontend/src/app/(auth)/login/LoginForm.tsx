@@ -22,7 +22,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { useApi } from "@/hooks/useApi";
 
 // schema để validate form
 const loginSchema = z.object({
@@ -35,8 +34,6 @@ const loginSchema = z.object({
 });
 
 const LoginForm = () => {
-  const { get } = useApi();
-
   const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
