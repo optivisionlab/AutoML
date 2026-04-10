@@ -23,3 +23,12 @@ minio==7.2.18
 pyarrow==21.0.0
 fastparquet==2024.11.0
 scikit-optimize==0.10.2
+xgboost==3.1.2
+openpyxl==3.1.5
+xlrd==2.0.2
+aiofiles>=24.1.0
+argon2-cffi==25.1.0
+passlib[argon2]==1.7.4
+psutil>=7.2.1
+fastapi-mail
+qrcode[pil]

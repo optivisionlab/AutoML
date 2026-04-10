@@ -47,13 +47,11 @@ const DatasetRow = ({ dataset, onEdit, onDelete }: Props) => {
         {dataset.username}
       </TableCell>
       <TableCell className="py-3 px-4 text-center space-x-2">
-        <TableCell className="py-3 px-4 text-center">
-          <DatasetActions
-            datasetId={dataset._id}
-            onEdit={() => onEdit(dataset)}
-            onDelete={() => onDelete(dataset._id)}
-          />
-        </TableCell>
+        <DatasetActions
+          datasetId={dataset._id}
+          onEdit={() => onEdit(dataset)}
+          onDelete={() => onDelete(dataset._id)}
+        />
       </TableCell>
     </TableRow>
   );

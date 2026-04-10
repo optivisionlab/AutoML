@@ -1,9 +1,11 @@
-import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
-import axios from "axios";
+import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
+import axiosClient from "@/api/axiosClient";
+
+type FeatureMap = Record<string, boolean>;
 
 interface DataTrainState {
   // trainData: any;
-  listFeature: string[];
+  listFeature: FeatureMap;
   selectedTarget: string | null;
   status: "idle" | "loading" | "succeeded" | "failed";
   error: string | null;
@@ -11,7 +13,7 @@ interface DataTrainState {
 
 const initialState: DataTrainState = {
   // trainData: null,
-  listFeature: [],
+  listFeature: {},
   selectedTarget: null,
   status: "idle",
   error: null,
@@ -20,15 +22,16 @@ const initialState: DataTrainState = {
 // Async Thunk cho việc lấy dữ liệu từ API
 export const fetchTrainData = createAsyncThunk(
   "dataTrain/fetchTrainData",
-  async (datasetID: string, thunkAPI) => {
+  async ({ datasetID, problemType }: { datasetID: string; problemType: string }, thunkAPI) => {
     try {
       // Thực hiện gọi API để lấy dữ liệu
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`
+      const response = await axiosClient.get(
+        `/v2/auto/features?id_data=${datasetID}&problem_type=${problemType}`
       );
       return response.data;
     } catch (error: any) {
       const message =
+        error.response?.data?.detail ||
         error.response?.data?.message || "Lỗi khi lấy dữ liệu huấn luyện";
       return thunkAPI.rejectWithValue(message);
     }
@@ -39,9 +42,15 @@ const dataTrainSlice = createSlice({
   name: "dataTrain",
   initialState,
   reducers: {
-    setSelectedTarget: (state, action) => {
+    setSelectedTarget: (state, action: PayloadAction<string | null>) => {
       state.selectedTarget = action.payload;
     },
+    resetTrainState: (state) => {
+      state.listFeature = {};
+      state.selectedTarget = null;
+      state.status = "idle";
+      state.error = null;
+    }
   },
   extraReducers: (builder) => {
     builder
@@ -51,8 +60,7 @@ const dataTrainSlice = createSlice({
       })
       .addCase(fetchTrainData.fulfilled, (state, action) => {
         state.status = "succeeded";
-        // state.trainData = action.payload.data;
-        state.listFeature = action.payload.list_feature;
+        state.listFeature = action.payload.features || {}; 
       })
       .addCase(fetchTrainData.rejected, (state, action) => {
         state.status = "failed";
@@ -61,6 +69,7 @@ const dataTrainSlice = createSlice({
   },
 });
 
-export const { setSelectedTarget } = dataTrainSlice.actions;
+export const { setSelectedTarget, resetTrainState } = dataTrainSlice.actions;
 
 export default dataTrainSlice.reducer;
+

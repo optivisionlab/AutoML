@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSession } from "next-auth/react";
+import { useApi } from "@/hooks/useApi";
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -20,6 +21,10 @@ import {
   AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
+import toTitleLabel from "@/utils/toTitleLable";
+import { cn } from "@/lib/utils";
+
 interface TrainMyDataCardProps {
   datasetID?: string;
   datasetName: string;
@@ -27,35 +32,52 @@ interface TrainMyDataCardProps {
 
 const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
   const router = useRouter();
+  const { get } = useApi();
+  const { data: session } = useSession();
 
   const [step, setStep] = useState(1);
-  const [selectedOption, setSelectedOption] = useState("new-model");
+  const [selectedOption, setSelectedOption] = useState("new_model");
   const [method, setMethod] = useState("");
-  const [listFeature, setListFeature] = useState<string[]>([]);
+  const [problemType, setProblemType] = useState("");
+
+  type FeatureMap = Record<string, boolean>;
+  const [listFeature, setListFeature] = useState<FeatureMap>({});
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
-  const { data: session } = useSession();
-  const [isLoading, setIsLoading] = useState(false);
+  const [metrics, setMetrics] = useState<Record<string, string>>({});
+
+  const getMetrics = useCallback(async (type: string) => {
+    if (!type) return;
+    try {
+      const data = await get(`/v2/auto/metrics?problem_type=${type}`);
+      setMetrics(data.metrics);
+    } catch (err) {
+      console.error("Lỗi khi gọi API metrics:", err);
+    }
+  }, [get]);
 
   useEffect(() => {
-    if (step === 3 && datasetID) {
-      fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/features?id_data=${datasetID}`,
-        {
-          method: "GET",
-          headers: { accept: "application/json" },
-        }
-      )
-        .then((res) => res.json())
-        .then(({ features }) => {
-          setListFeature(features);
+    if (step === 4 && datasetID && problemType) {
+      get(`/v2/auto/features?id_data=${datasetID}&problem_type=${problemType}`)
+        .then((data) => {
+          if (data && data.features) {
+            setListFeature(data.features);
+          } else {
+            setListFeature({});
+            setApiError("Không tìm thấy bộ dữ liệu.");
+          }
         })
         .catch((err) => {
-          console.error("Lỗi khi gọi API:", err);
-          alert("Không thể tải dữ liệu huấn luyện.");
+          console.error("Lỗi khi gọi API features:", err);
+          setListFeature({});
+          setApiError("Không tìm thấy bộ dữ liệu.");
         });
+
+      getMetrics(problemType);
     }
-  }, [step, datasetID]);
+  }, [step, datasetID, problemType]);
 
   const handleNext = () => {
     if (step === 1) {
@@ -64,6 +86,9 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
     } else if (step === 2 && method) {
       sessionStorage.setItem("method", method);
       setStep(3);
+    } else if (step === 3 && problemType) {
+      sessionStorage.setItem("problem_type", problemType);
+      setStep(4);
     }
   };
 
@@ -79,6 +104,17 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
     }
   };
 
+  // Chọn tất cả thuộc tính
+  const selectableFeatures = Object.keys(listFeature || {}).filter((f) => f !== selectedTarget);
+  const isAllSelected = selectableFeatures.length > 0 && selectableFeatures.every((f) => selectedFeatures.includes(f));
+
+  const handleSelectAllFeatures = () => {
+    const updated = isAllSelected ? [] : selectableFeatures;
+    setSelectedFeatures(updated);
+    sessionStorage.setItem("list_feature", JSON.stringify(updated));
+  };
+
+  // Xử lý chọn/bỏ chọn tất cả thuộc tính
   const handleTargetChange = (value: string) => {
     setSelectedTarget(value);
     sessionStorage.setItem("target", value);
@@ -99,16 +135,14 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
 
   const handleStartTraining = () => {
     if (!selectedTarget) return alert("Vui lòng chọn một thuộc tính mục tiêu!");
+    if (selectedFeatures.length === 0) return alert("Vui lòng chọn ít nhất một thuộc tính huấn luyện!");
+    if (!sessionStorage.getItem("metric_sort")) return alert("Vui lòng chọn một chỉ số đánh giá!");
 
-    setIsLoading(true);
-
-    setTimeout(() => {
-      router.push(`/public-datasets/${datasetID}/result`);
-    }, 100);
+    router.push(`/my-datasets/${datasetID}/result`);
   };
 
   return (
-    <Card className="max-w-3xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
+    <Card className="max-w-5xl mx-auto mt-10 p-6 shadow-lg rounded-xl">
       <CardHeader className="text-center text-xl font-semibold text-[#3b6cf5]">
         Huấn luyện cho bộ dữ liệu: {datasetName}
       </CardHeader>
@@ -204,111 +238,188 @@ const TrainMyDataCard = ({ datasetID, datasetName }: TrainMyDataCardProps) => {
 
         {step === 3 && (
           <div className="space-y-6 mt-6">
-            <div>
-              <Label className="block font-medium text-gray-700 mb-2">
-                Thuộc tính mục tiêu:
-              </Label>
-              <RadioGroup
-                value={selectedTarget}
-                onValueChange={handleTargetChange}
-                className="grid grid-cols-2 gap-4"
+            <Label className="text-base font-medium">
+              Chọn loại bài toán huấn luyện:
+            </Label>
+            <RadioGroup
+              value={problemType}
+              onValueChange={(val) => {
+                setProblemType(val);
+                sessionStorage.setItem("problem_type", val);
+              }}
+              className="grid grid-cols-2 gap-4"
+            >
+              {[
+                { value: "classification", label: "Classification" },
+                { value: "regression", label: "Regression" },
+              ].map(({ value, label }) => (
+                <div
+                  key={value}
+                  className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
+                >
+                  <RadioGroupItem
+                    id={value}
+                    value={value}
+                    // disabled={disabled}
+                    className="mr-3"
+                  />
+                  <Label htmlFor={value}>{label}</Label>
+                </div>
+              ))}
+            </RadioGroup>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={handleBack}>
+                Quay lại
+              </Button>
+              <Button
+                onClick={handleNext}
+                disabled={!problemType}
+                className="bg-[#3a6df4] text-white disabled:opacity-50"
               >
-                {listFeature.map((feature) => (
-                  <div
-                    key={feature}
-                    className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                  >
-                    <RadioGroupItem
-                      id={feature}
-                      value={feature}
-                      className="mr-3"
-                    />
-                    <Label htmlFor={feature}>{feature}</Label>
-                  </div>
-                ))}
-              </RadioGroup>
+                Tiếp theo
+              </Button>
             </div>
+          </div>
+        )}
 
-            <div>
-              <Label className="block font-medium text-gray-700 mb-2">
-                Thuộc tính đưa vào huấn luyện:
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                {listFeature.map((feature) => (
-                  <div key={feature} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`feature-${feature}`}
-                      checked={selectedFeatures.includes(feature)}
-                      disabled={feature === selectedTarget}
-                      onCheckedChange={(checked) =>
-                        handleFeatureToggle(feature, !!checked)
-                      }
-                    />
-                    <Label htmlFor={`feature-${feature}`}>{feature}</Label>
-                  </div>
-                ))}
+        {step === 4 && (
+          <div className="space-y-6 mt-6">
+            {apiError ? (
+              <div className="flex flex-col items-center justify-center py-10 text-red-500 font-medium bg-red-50 rounded-lg border border-red-200">
+                <p className="text-lg">{apiError}</p>
+                <p className="text-sm mt-2 text-red-400">Vui lòng chọn bộ dữ liệu khác.</p>
               </div>
-            </div>
-
-            {/* Chỉ số đánh giá */}
-            <div>
-              <Label className="block font-medium text-gray-700 mb-2">
-                Chỉ số đánh giá:
-              </Label>
-              <RadioGroup
-                defaultValue={sessionStorage.getItem("metric_sort") || ""}
-                onValueChange={(val) => {
-                  sessionStorage.setItem("metric_sort", val);
-                }}
-                className="grid grid-cols-2 gap-4"
-              >
-                {["accuracy", "precision", "recall", "f1"].map((metric) => (
-                  <div
-                    key={metric}
-                    className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow data-[state=checked]:border-primary data-[state=checked]:bg-primary/10"
-                  >
-                    <RadioGroupItem
-                      id={metric}
-                      value={metric}
-                      className="mr-3"
-                    />
-                    <Label htmlFor={metric}>
-                      {metric.charAt(0).toUpperCase() + metric.slice(1)}
-                    </Label>
+            ) : (
+              <>
+                <div>
+                  <Label className="block font-medium text-gray-700 mb-2">
+                    Thuộc tính mục tiêu:
+                  </Label>
+                  <div className="text-sm text-center my-10">
+                    Các ô được tô màu biểu thị các đặc trưng phù hợp với loại bài
+                    toán đã chọn
                   </div>
-                ))}
-              </RadioGroup>
-            </div>
+                  <ScrollArea className="w-full h-80 border rounded-md p-3 scroll-bar">
+                    <RadioGroup
+                      value={selectedTarget}
+                      onValueChange={handleTargetChange}
+                      className="grid grid-cols-4 gap-4"
+                    >
+                      {Object.entries(listFeature).map(([feature, value]) => (
+                        <div
+                          key={feature}
+                          className={cn(
+                            "flex items-center p-4 border rounded-lg cursor-pointer transition-all duration-200",
+                            value
+                              ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                              : "border-border hover:border-emerald-300",
+                          )}
+                        >
+                          <RadioGroupItem
+                            id={feature}
+                            value={feature}
+                            className="mr-3"
+                          />
+                          <Label htmlFor={feature}>{feature}</Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </ScrollArea>
+                </div>
+
+                <div>
+                  <Label className="block font-medium text-gray-700 mb-2">
+                    Thuộc tính đưa vào huấn luyện:
+                  </Label>
+
+                  <Button
+                    variant={isAllSelected ? "secondary" : "default"}
+                    className="mb-5"
+                    onClick={handleSelectAllFeatures}
+                  >
+                    {isAllSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                  </Button>
+
+                  <ScrollArea className="w-full h-80 border rounded-md p-3 scroll-bar">
+                    <div className="grid grid-cols-4 gap-3">
+                      {Object.keys(listFeature).map((feature) => (
+                        <div key={feature} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`feature-${feature}`}
+                            checked={selectedFeatures.includes(feature)}
+                            disabled={feature === selectedTarget}
+                            onCheckedChange={(checked) =>
+                              handleFeatureToggle(feature, !!checked)
+                            }
+                          />
+                          <Label htmlFor={`feature-${feature}`}>{feature}</Label>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                {/* Chỉ số đánh giá */}
+                <div>
+                  <Label className="block font-medium text-gray-700 mb-2">
+                    Chỉ số đánh giá:
+                  </Label>
+                  <RadioGroup
+                    defaultValue={sessionStorage.getItem("metric_sort") || ""}
+                    onValueChange={(val) => {
+                      sessionStorage.setItem("metric_sort", val);
+                    }}
+                    className="grid grid-cols-2 gap-4"
+                  >
+                    {Object.entries(metrics).map(([metric, value]) => (
+                      <div
+                        key={metric}
+                        className="flex items-center p-4 border rounded-lg cursor-pointer hover:shadow"
+                      >
+                        <RadioGroupItem id={value} value={value} className="mr-3" />
+                        <Label htmlFor={metric}>
+                          <span className="ml-2 text-sm">
+                            {toTitleLabel(value)}
+                          </span>
+                        </Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-between mt-6">
               <Button variant="secondary" onClick={handleBack}>
                 Quay lại
               </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button className="bg-[#3a6df4] text-white">
-                    Bắt đầu huấn luyện
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu
-                      hình đã chọn không?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Hủy</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleStartTraining}
-                      className="bg-[#3a6df4] text-white"
-                    >
-                      Đồng ý
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              {!apiError && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button className="bg-[#3a6df4] text-white">
+                      Bắt đầu huấn luyện
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Xác nhận huấn luyện</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Bạn có chắc chắn muốn bắt đầu huấn luyện mô hình với cấu
+                        hình đã chọn không?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Hủy</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleStartTraining}
+                        className="bg-[#3a6df4] text-white"
+                      >
+                        Đồng ý
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           </div>
         )}

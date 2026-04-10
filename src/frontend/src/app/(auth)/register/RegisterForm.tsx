@@ -28,6 +28,8 @@ import { AppDispatch } from "@/redux/store";
 import { registerAsync } from "@/redux/slices/registerSlice";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 const registerSchema = z
   .object({
@@ -49,7 +51,7 @@ const registerSchema = z
     date: z.string(),
     number: z.string().regex(/^0(3|5|7|8|9)[0-9]{8}$/, {
       message: "Số điện thoại không hợp lệ",
-    }),    
+    }),
     password: z
       .string()
       .min(8, {
@@ -67,13 +69,14 @@ const registerSchema = z
     {
       message: "Xác nhận mật khẩu sai, vui lòng nhập lại",
       path: ["passwordConfirm"],
-    }
+    },
   );
 
 const RegisterForm = () => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { toast } = useToast();
+  const router = useRouter();
 
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
@@ -104,15 +107,24 @@ const RegisterForm = () => {
 
     try {
       await dispatch(registerAsync(newUser)).unwrap();
-      console.log("Đăng ký thành công");
+      console.log("Đăng ký thành công, cần kích hoạt");
 
       form.reset();
 
-      toast({
-        title: "Đăng ký thành công",
-        className: "bg-green-100 text-green-800 border border-green-300",
-        description: "Bạn đã đăng ký thành công!",
-      });
+      router.push(`/verify-email?email=${values.email}`);
+
+      // toast({
+      //   title: "Đăng ký thành công",
+      //   className: "bg-green-100 text-green-800 border border-green-300",
+      //   description: "Bạn đã đăng ký thành công!",
+      // });
+
+      // signIn("credentials", {
+      //   username: values.username,
+      //   password: values.password,
+      //   redirect: false,
+      //   callbackUrl: "/",
+      // });
     } catch (error) {
       toast({
         title: "Đăng ký thất bại",
@@ -143,7 +155,12 @@ const RegisterForm = () => {
                   <FormItem>
                     <FormLabel>Họ và tên</FormLabel>
                     <FormControl>
-                      <Input {...field} type="text" placeholder="Nguyễn Văn A" value={field.value ?? ""}/>
+                      <Input
+                        {...field}
+                        type="text"
+                        placeholder="Nguyễn Văn A"
+                        value={field.value ?? ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -316,8 +333,32 @@ const RegisterForm = () => {
               )}
             />
           </div>
-          <Button type="submit" className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]">
+          <Button
+            type="submit"
+            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7] lg:w-[50%] mx-auto mt-5"
+          >
             Đăng ký
+          </Button>
+
+          <div className="my-4 flex items-center">
+            <div className="flex-1 h-px bg-gray-300" />
+            <span className="px-2 text-sm text-gray-500">hoặc</span>
+            <div className="flex-1 h-px bg-gray-300" />
+          </div>
+
+          <Button
+            type="button"
+            // onClick={handleGoogleSignup}
+            className="w-full lg:w-[50%] mx-auto border border-gray-300 bg-white text-black hover:bg-gray-100 flex items-center justify-center gap-2"
+          >
+            <Image
+              src="https://developers.google.com/identity/images/g-logo.png"
+              alt="Google"
+              className="w-5 h-5"
+              width={100}
+              height={100}
+            />
+            Đăng ký bằng Google
           </Button>
         </form>
       </Form>

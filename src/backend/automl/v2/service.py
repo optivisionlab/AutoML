@@ -169,14 +169,16 @@ async def query_jobs(id_user: str, page: int, limit: int, db: AsyncDatabase) -> 
         "model": 0, "config": 0, "activate": 0, "item": 0 
     }
 
-    jobs_cursor = (
+    jobs_list_raw = (
         await job_collection.find(filter_query, projection=projection_fields)
         .sort("create_at", -1)
         .skip(offset)
         .limit(limit).to_list(length=None)
     )
 
-    # Chuyển _id thành str
-    jobs_list_raw = [convert_mongodb_document(job) for job in jobs_cursor]
-
+    for job in jobs_list_raw:
+        for key, value in job.items():
+            if isinstance(value, datetime):
+                job[key] = value.timestamp()
+    
     return jobs_list_raw, total_pages, total_jobs

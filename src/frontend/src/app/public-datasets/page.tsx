@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useRouter } from "next/navigation";
+import { useApi } from "@/hooks/useApi";
 
 type Dataset = {
   _id: string;
@@ -29,6 +30,8 @@ const formatDate = (timestamp?: number): string => {
 };
 
 const Page = () => {
+  const { post } = useApi();
+
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -37,17 +40,19 @@ const Page = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-by-userid?id=0`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-          },
-        });
+        // const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/get-list-data-by-userid?id=0`, {
+        //   method: "POST",
+        //   headers: {
+        //     Accept: "application/json",
+        //   },
+        // });
 
-        if (!res.ok) throw new Error("Lỗi khi gọi API");
+        // if (!res.ok) throw new Error("Lỗi khi gọi API");
 
-        const json = await res.json();
-        setDatasets(json || []);
+        // const json = await res.json();
+        const data = await post(`/get-list-data-by-userid?id=0`);
+
+        setDatasets(data || []);
       } catch (err) {
         console.error("Lỗi khi lấy dữ liệu:", err);
       } finally {

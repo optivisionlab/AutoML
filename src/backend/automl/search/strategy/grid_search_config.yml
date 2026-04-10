@@ -10,6 +10,17 @@ return_train_score: false  # Có trả về điểm train không
 # Cài đặt song song
 parallel_evaluation: true  # Bật đánh giá song song
 batch_size: 10  # Kích thước batch cho xử lý song song
+auto_select_backend: true  # Tự động chọn backend tối ưu (threading/loky)
 
 # Cài đặt cache
 cache_evaluations: true  # Cache kết quả đánh giá để tránh tính lại
+
+# Cài đặt early stopping
+early_stopping_enabled: false  # Bật/tắt early stopping
+early_stopping_score: null  # Ngưỡng score để dừng (null = không dừng theo score)
+early_stopping_n_best: null  # Dừng sau khi tìm được n kết quả với score >= early_stopping_score
+early_stopping_no_improve: null  # Dừng nếu không cải thiện sau n batches
+
+# Cài đặt progress tracking
+show_progress: true  # Hiển thị tiến trình
+show_time_estimate: true  # Hiển thị ước tính thời gian còn lại

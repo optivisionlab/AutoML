@@ -20,7 +20,7 @@ export default function Page() {
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_BASE_API}/get-data-info?id=${datasetID}`,
           {
-            method: "POST",
+            method: "GET",
             headers: {
               Accept: "application/json",
             },

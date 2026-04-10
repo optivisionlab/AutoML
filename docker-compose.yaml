@@ -1,78 +1,91 @@
-version: '3.3'
-
 services:
-  hautoml_nano:
-    image: optivisionlab/hautoml:1.0.0-nano
-    container_name: hautoml_nano_v1
-    network_mode: host
-    ports:
-      - "7860:7860"
-    expose:
-      - '7860'
-    command: python automl/demo_gradio.py
-    logging:
+  hautomml_worker:
+    image: optivisionlab/hautoml:v2.2
+    container_name: hautoml_worker
+    restart: unless-stopped
+    env_file:
+      - ./src/backend/.env
+    environment:
+      HOST_BACK_END: "0.0.0.0"
+    networks:
+      - hautoml-network
+      - kafka-network
+    command: python -m cluster.worker
+    logging: &default-logging
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-  
+
   hautoml_toolkit:
-    image: optivisionlab/hautoml:1.1.0-toolkit
-    container_name: hautoml_toolkit_v1
-    network_mode: host
-    ports:
-      - "9999:9999"
-    expose:
-      - '9999'
+    image: optivisionlab/hautoml:v2.v
+    container_name: hautoml_toolkit
+    env_file:
+      - ./src/backend/.env
     command: python app.py
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks:
+      - hautoml-network
+      - kafka-network
+    logging: *default-logging
 
   kafka:
-    image: apache/kafka:latest
-    container_name: kafka
-    network_mode: host
+    image: bitnami/kafka:latest
+    container_name: kafka-kraft
+    restart: always
     ports:
       - "9092:9092"
-    expose:
-      - '9092'
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-  
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:29092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=localhost:9092,INTERNAL://kafka:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - kafka-network
+
   mongo:
     image: mongo:latest
     container_name: mongodb
-    network_mode: host
+    networks:
+      - hautoml-network
     ports:
       - "27017:27017"
-    expose:
-      - '27017'
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    # environment:
-    #   MONGO_INITDB_ROOT_USERNAME: root
-    #   MONGO_INITDB_ROOT_PASSWORD: example
+    logging: *default-logging
+  
+  mminio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: abc123 # your username
+      MINIO_ROOT_PASSWORD: password123 # your password
+    command: server /data --console-address ":9001"
+    networks:
+      - hautoml-network
 
   hautoml_frontend:
-    image: optivisionlab/hautoml:1.1.1-frontend
+    image: optivisionlab/hautoml-frontend:v2.2
     container_name: hautoml-frontend
-    network_mode: host
+    env_file:
+      - ./src/frontend/.env
     ports:
       - "3000:3000"
-    expose:
-      - '3000'
-    command: npm run dev
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    command: sh -c "npm run build && npm start"
+    logging: *default-logging
+
+networks:
+  hautoml-network:
+    driver: bridge
+  kafka-network:
+    driver: bridge
+
+volumes:
+  kafka_data:

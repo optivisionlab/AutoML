@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import Dict, List, Any
 
 class InputRequest(BaseModel):
     id_data: str
@@ -20,8 +19,10 @@ class InputRequest(BaseModel):
                             "B",
                             "..."
                         ],
+                        "problem_type": "",
                         "search_algorithm": "",
-                        "target": "Revenue"
+                        "target": "Revenue",
+                        "max_time": 900
                     }
                 }
             ]

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -15,9 +15,12 @@ import UserForm from "./UserForm";
 import { User } from "@/hooks/useUsers";
 import useUsers from "@/hooks/useUsers";
 import DialogForm from "../../../components/dialog";
+import { useApi } from "@/hooks/useApi";
 
 // Main Page Component
 const UserManagementPage = () => {
+  const { remove } = useApi();
+
   // const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -62,7 +65,7 @@ const UserManagementPage = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(pendingFormData),
-        }
+        },
       );
 
       if (!res.ok) {
@@ -95,22 +98,9 @@ const UserManagementPage = () => {
     if (!userToDelete) return;
 
     try {
-      const res = await fetch(
+      await remove(
         `${process.env.NEXT_PUBLIC_BASE_API}/delete/${userToDelete.username}`,
-        {
-          method: "DELETE",
-        }
       );
-
-      if (!res.ok) {
-        toast({
-          title: "Xóa thất bại",
-          description: "Đã xảy ra lỗi khi xóa người dùng.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        throw new Error("Failed to delete user");
-      }
 
       toast({
         title: "Xóa thành công!",
@@ -122,6 +112,13 @@ const UserManagementPage = () => {
 
       await fetchUsers(); // refresh list
     } catch (error) {
+      toast({
+        title: "Xóa thất bại",
+        description: "Đã xảy ra lỗi khi xóa người dùng.",
+        variant: "destructive",
+        duration: 3000,
+      });
+
       console.error("Delete error:", error);
     } finally {
       setIsDeleteDialogOpen(false);

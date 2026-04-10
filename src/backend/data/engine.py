@@ -3,11 +3,14 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from pymongo.asynchronous.database import AsyncDatabase
+import csv
 
 import base64
 import pandas as pd
 import io
 import time
+from datetime import datetime, timezone
+import uuid
 
 from automl.v2.minio import minIOStorage
 
@@ -30,7 +33,13 @@ async def get_list_data(id_user, db: AsyncDatabase):
     data_collection = db.tbl_Data
     filter_query = {"userId": id_user, "activate": 1} # activate = 1 <=> kích hoạt dataset
 
-    data = await data_collection.find(filter_query, {"username": 0, "role": 0}).to_list(length=None)
+    data = await data_collection.find(filter_query, {"username": 0, "role": 0, "userId": 0, "data_link": 0}).to_list(length=None)
+
+    for info in data:
+        for key, value in info.items():
+            if isinstance(value, datetime):
+                info[key] = value.timestamp()
+
     list_data = []
     for item in data:
         item["_id"] = str(item["_id"])
@@ -41,7 +50,12 @@ async def get_list_data(id_user, db: AsyncDatabase):
 async def get_one_data(id_data: str, db: AsyncDatabase):
     data_collection = db.tbl_Data
     try:
-        data = await data_collection.find_one({"_id": ObjectId(id_data)})
+        data = await data_collection.find_one({"_id": ObjectId(id_data)}, {"username": 0, "role": 0, "userId": 0, "data_link": 0})
+
+        for key, value in data.items():
+            if isinstance(value, datetime):
+                data[key] = value.timestamp()
+
         if not data:
             raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu với ID đã cho.")
         return JSONResponse(content=serialize_mongo_doc(data))
@@ -59,8 +73,10 @@ def serialize_mongo_doc(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
+
 async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: AsyncDatabase):
-    now = time.time()
+    now = datetime.now(timezone.utc).timestamp()
+
     user_collection = db.tbl_User
     data_collection = db.tbl_Data
 
@@ -70,19 +86,37 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         if not user:
             raise Exception(f"Not found user")
 
-        file_content_bytes = file_data.file.read()
+
+        file_content_bytes = await file_data.read()
         csv_stream = io.BytesIO(file_content_bytes)
 
         # Đọc dữ liệu
         try:
-            df = pd.read_csv(csv_stream)
+            if file_data.filename.endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(csv_stream)
+            else:
+                # Đọc 2048 bytes đầu tiên ra string
+                sample_str = file_content_bytes[:2048].decode('utf-8', errors='ignore')
+                try:
+                    # Dùng csv.Sniffer để đoán dấu phân cách
+                    sniffer = csv.Sniffer()
+                    dialect = sniffer.sniff(sample_str, delimiters=[',', ';', '\t', '|'])
+                    detected_delimiter = dialect.delimiter
+                except csv.Error:
+                    # Nếu file chỉ có 1 cột hoặc định dạng lạ
+                    # Thì fallback về mặc định là dấu phẩy
+                    detected_delimiter = ','
 
-            # Nếu chỉ ra 1 cột, có thể là ngăn cách cột không còn là dấu ","
-            if df.shape[1] <= 1:
+                # Đọc file với separator vừa tìm được
                 csv_stream.seek(0)
-                df = pd.read_csv(csv_stream, sep=';', engine='python')
+                df = pd.read_csv(
+                    csv_stream,
+                    sep=detected_delimiter,
+                    engine='python',
+                    on_bad_lines='skip' # Bỏ qua dòng lỗi
+                )
         except Exception as e:
-            raise Exception("Error when read file")
+            raise Exception(f"Error when read file {str(e)}")
         
         # Xóa các cột có tên là Unnamed (do thừa dấu ; hoặc , gây ra)
         df = df.loc[:, ~df.columns.str.contains('Unnamed')]
@@ -97,8 +131,6 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
 
-        data_name_copy = dataName.strip().replace(' ', '_').lower()
-
         username = user.get("username")
         role = user.get("role")
         
@@ -106,9 +138,11 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
         if role == "admin":
             userId = "0"
 
+        storage_place = uuid.uuid4()
+
         minIOStorage.uploaded_dataset(
             bucket_name="dataset",
-            object_name=f"{userId}/{data_name_copy}.parquet",
+            object_name=f"{userId}/{storage_place}.parquet",
             parquet_buffer=parquet_buffer
         )
 
@@ -117,7 +151,7 @@ async def upload_data_to_minio(file_data, dataName: str, dataType, userId, db: A
             "dataType": dataType,
             "data_link": {
                 "bucket_name": "dataset",
-                "object_name": f"{userId}/{data_name_copy}.parquet"
+                "object_name": f"{userId}/{storage_place}.parquet"
             },
             "latestUpdate": now,
             "createDate": now,
@@ -188,7 +222,7 @@ async def update_dataset_to_minio_by_id(dataset_id: str, db: AsyncDatabase, data
                 data_changed = True
 
         if data_changed:
-            update_fields["latestUpdate"] = time.time()
+            update_fields["latestUpdate"] = datetime.now(timezone.utc).timestamp()
             await data_collection.update_one(
                 {"_id": ObjectId(dataset_id)},
                 {"$set": update_fields}
