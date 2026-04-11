@@ -18,7 +18,7 @@ services:
         max-file: "3"
 
   hautoml_toolkit:
-    image: optivisionlab/hautoml:v2.v
+    image: optivisionlab/hautoml:v2.2
     container_name: hautoml_toolkit
     env_file:
       - ./src/backend/.env
@@ -78,7 +78,7 @@ services:
       - ./src/frontend/.env
     ports:
       - "3000:3000"
-    command: sh -c "npm run build && npm start"
+    command: npm run dev
     logging: *default-logging
 
 networks:

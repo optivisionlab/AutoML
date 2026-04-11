@@ -4,6 +4,44 @@ Trang này liệt kê tất cả các phiên bản của HAutoML đã được p
 
 ---
 
+## v2.2.0 (11 Tháng 4, 2026) - Distributed Computing 🚀
+
+**Phiên bản chính - Xử lý phân tán nâng cao và tối ưu hóa hiệu suất**
+
+### Tính năng chính
+
+#### Distributed Computing
+- ✅ **MapReduce Optimization**: Kiến trúc MapReduce nâng cao để xử lý song song trên nhiều máy
+- ✅ **Data Parallelization**: Chia dữ liệu theo mô hình ("Song song hóa dữ liệu: Chia theo model")
+- ✅ **Smart Scheduling**: Thuật toán lập lịch dựa trên **Locality + Capacity + Cost**
+- ✅ **Enhanced Scheduling**: Tích hợp thông tin băng thông mạng để tối ưu hóa lập lịch
+- ✅ **Fault Tolerance**: Khả năng chịu lỗi và tự động thử lại công việc (automatic job retry)
+- ✅ **Timeout Management**: Thực thi giới hạn thời gian với giám sát nền tảng
+
+#### Backend Improvements
+- ✅ **Account Classification**: Hệ thống phân loại tài khoản cho đăng ký trực tiếp và của bên thứ ba
+- ✅ **Enhanced Authentication**: Cải tiến quá trình xác thực và phân quyền (authorization)
+
+#### Frontend Improvements
+- ✅ **Training Configuration UI**: Giao diện cấu hình huấn luyện với gợi ý tính năng dựa trên loại bài toán
+- ✅ **Performance Optimization**: Cải tiến tối giảm thời gian chờ đợi trên giao diện
+- ✅ **Marketplace Interface**: Thêm giao diện marketplace mới
+
+#### Documentation
+- ✅ Cải tiến các mô tả tài liệu
+
+### Nhóm phát triển
+
+- 🧑‍💼 Backend: @VanAnh-13, @xuanndong
+- 🎨 Frontend: @vanhdz74
+- 👮 PM: @DoManhQuang
+
+### Downloads
+
+- **GitHub**: [v2.2.0 Release](https://github.com/optivisionlab/AutoML/releases/tag/v2.2.0)
+
+---
+
 ## v2.1.0 (05 Tháng 12, 2025) - Optima Search 🔍
 
 **Cập nhập thuật toán tìm kiếm siêu tham số nâng cao**
@@ -253,4 +291,4 @@ Nếu bạn tìm thấy lỗi hoặc muốn yêu cầu tính năng mới:
 
 ---
 
-*Trang này được cập nhật lần cuối: 13 Tháng 10, 2025*
+*Trang này được cập nhật lần cuối: 11 Tháng 4, 2026*
