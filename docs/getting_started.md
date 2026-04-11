@@ -43,8 +43,9 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 ```
 
 **4. Địa chỉ truy cập**
-- Giao diện người dùng: http://localhost:3000
-- Backend API: http://localhost:8000
+- Giao diện người dùng: [http://localhost:3000](http://localhost:3000)
+
+- Backend API: [http://localhost:8000](http://localhost:8000)
 
 ---
 

@@ -122,8 +122,10 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 ```
 
 **4. Địa chỉ truy cập**
-- Giao diện người dùng: http://localhost:3000
-- Backend API: http://localhost:8000
+
+- Giao diện người dùng: [http://localhost:3000](http://localhost:3000)
+
+- Backend API: [http://localhost:8000](http://localhost:8000)
 
 
 ---
@@ -147,7 +149,8 @@ Chi tiết đầy đủ xem tại [Bắt đầu](getting_started.md).
 
 | Phiên bản | Ngày | Đặc điểm chính | Trạng thái |
 |----------|------|----------------|-----------|
-| **v2.1.0** | 05/12/2025 | 🔍 Optima Search (GA, Bayesian Optimization) | ✅ Latest |
+| **v2.2.0** | 11/04/2026 | 🚀 Distributed Computing, Smart Scheduling, Account Classification | ✅ Latest |
+| **v2.1.0** | 05/12/2025 | 🔍 Optima Search (GA, Bayesian Optimization) | ✅ Supported |
 | **v2.0.0** | 19/10/2025 | 🏗️ MapReduce 1.0, MinIO, Async API | ✅ Stable |
 | **v1.1.2** | 21/06/2025 | 🎨 UI Updates + Security Fixes | ⚠️ Supported |
 | **v1.1.0** | 03/06/2025 | 🚀 Model Deployment & Inference API | ⚠️ Supported |
