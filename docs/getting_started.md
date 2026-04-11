@@ -1,44 +1,62 @@
-# Bắt đầu
+## Bắt đầu
+---
 
-Cách đơn giản và được khuyến nghị nhất để chạy toàn bộ hệ thống HAutoML là sử dụng Docker.
+### Cách đơn giản nhất: Sử dụng Docker
 
-## Yêu cầu
-- [Docker](https://www.docker.com/get-started)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.
 
-## Chạy bằng Docker Compose
+**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/)
 
-1.  **Sao chép (Clone) dự án:**
-    ```bash
-    git clone https://github.com/optivisionlab/AutoML.git
-    cd AutoML
-    ```
+---
 
-2.  **Cấu hình môi trường:**
-    Hệ thống yêu cầu một số tệp cấu hình. Hãy sao chép từ các tệp mẫu:
-    ```bash
-    # Cấu hình cho Backend
-    cp src/backend/temp.config.yml src/backend/.config.yml
-    cp src/backend/temp.env src/backend/.env
+### Triển khai từ mã nguồn
 
-    # Cấu hình cho Frontend
-    cp src/frontend/temp.env src/frontend/.env
-    ```
-    Mở các tệp `.config.yml` và `.env` vừa tạo để tùy chỉnh các thông số nếu cần (ví dụ: port, thông tin đăng nhập Google OAuth, endpoint của Minio).
+**1. Tải mã nguồn dự án**
+```bash
+git clone https://github.com/optivisionlab/AutoML.git
+cd AutoML
+```
 
-3.  **Khởi chạy hệ thống:**
-    Sử dụng Docker Compose để build và chạy tất cả các dịch vụ (frontend, backend, database, kafka, minio, workers):
-    ```bash
-    docker-compose up -d --build
-    ```
-    Cờ `-d` sẽ chạy các container ở chế độ nền (detached mode). Cờ `--build` sẽ buộc Docker build lại các image nếu có thay đổi.
+**2. Cấu hình môi trường**
+```bash
+cp src/backend/temp.env src/backend/.env
+cp src/frontend/temp.env src/frontend/.env
+```
 
-4.  **Truy cập ứng dụng:**
-    - **Frontend**: `http://localhost:3000` (hoặc port bạn đã cấu hình trong `src/frontend/.env`)
-    - **Backend API**: `http://localhost:8000` (hoặc port bạn đã cấu hình trong `src/backend/.env`)
+**3. Khởi chạy các thành phần hệ thống**
+> **Backend & Worker cluster**
+> 
+> Tại thư mục: AutoML/src/backend
+```bash
+pip install -r requirements.txt # Cài đặt các thư viện cần thiết
 
-## Dừng hệ thống
-Để dừng tất cả các container, chạy lệnh sau trong thư mục gốc của dự án:
+python app.py # Khởi chạỵ API server
+python -m cluster.worker # Kích hoạt worker xử lý tác vụ
+```
+
+> **Frontend**
+> 
+> Tại thư mục: AutoML/src/frontend
+```bash
+npm install # Cài đặt các gói phụ thuộc
+npm run dev # Chạy ứng dụng ở chế độ phát triển
+```
+
+**4. Địa chỉ truy cập**
+- Giao diện người dùng: http://localhost:3000
+- Backend API: http://localhost:8000
+
+---
+
+### Triển khai qua docker
+> **Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường**
+> 
+> Tại thư mục: AutoML/
+```bash
+docker-compose up -d --build
+```
+
+> **Để dừng hệ thống**
 ```bash
 docker-compose down
 ```

@@ -80,21 +80,65 @@ Xem chi tiết tại [Kiến trúc hệ thống](architecture.md).
 
 ## 🚀 Bắt đầu nhanh
 
+### Cách đơn giản nhất: Sử dụng Docker
+
+Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.
+
+**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/)
+
+---
+
+### Triển khai từ mã nguồn
+
+**1. Tải mã nguồn dự án**
 ```bash
-# Sao chép dự án
 git clone https://github.com/optivisionlab/AutoML.git
 cd AutoML
+```
 
-# Cấu hình môi trường
+**2. Cấu hình môi trường**
+```bash
 cp src/backend/temp.env src/backend/.env
 cp src/frontend/temp.env src/frontend/.env
+```
 
-# Chạy với Docker
+**3. Khởi chạy các thành phần hệ thống**
+> **Backend & Worker cluster**
+> 
+> Tại thư mục: AutoML/src/backend
+```bash
+pip install -r requirements.txt # Cài đặt các thư viện cần thiết
+
+python app.py # Khởi chạỵ API server
+python -m cluster.worker # Kích hoạt worker xử lý tác vụ
+```
+
+> **Frontend**
+> 
+> Tại thư mục: AutoML/src/frontend
+```bash
+npm install # Cài đặt các gói phụ thuộc
+npm run dev # Chạy ứng dụng ở chế độ phát triển
+```
+
+**4. Địa chỉ truy cập**
+- Giao diện người dùng: http://localhost:3000
+- Backend API: http://localhost:8000
+
+
+---
+
+### Triển khai qua docker
+> **Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường**
+> 
+> Tại thư mục: AutoML/
+```bash
 docker-compose up -d --build
+```
 
-# Truy cập tại:
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000
+> **Để dừng hệ thống**
+```bash
+docker-compose down
 ```
 
 Chi tiết đầy đủ xem tại [Bắt đầu](getting_started.md).
