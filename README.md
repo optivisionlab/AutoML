@@ -21,15 +21,18 @@ Hệ thống hỗ trợ cả **bài toán phân loại (Classification)** lẫn 
 
 | Tính năng | Mô tả |
 |-----------|--------|
-| ✅ **Quản lý người dùng & Xác thực** | Hệ thống đăng ký/đăng nhập an toàn với hỗ trợ OAuth 2.0 (Google) |
+| ✅ **Quản lý người dùng & Xác thực** | Hệ thống đăng ký/đăng nhập an toàn với hỗ trợ OAuth 2.0 (Google) và phân loại tài khoản |
 | ✅ **Quản lý tập dữ liệu** | Giao diện trực quan để tải lên, xem, cập nhật và xóa dữ liệu |
 | ✅ **Tiền xử lý dữ liệu thông minh** | Tự động phát hiện kiểu dữ liệu, điền giá trị thiếu, chuẩn hóa |
 | ✅ **Tìm kiếm siêu tham số tự động** | Grid Search, Random Search, BO, GA, Cross-Validation |
 | ✅ **Lựa chọn mô hình tối ưu** | So sánh và chọn mô hình tốt nhất dựa trên hiệu suất |
 | ✅ **Xử lý công việc không đồng bộ** | Apache Kafka cho xử lý các tác vụ huấn luyện song song |
+| ✅ **Distributed Computing** | Kiến trúc MapReduce nâng cao, song song hóa dữ liệu theo mô hình trên nhiều máy |
+| ✅ **Smart Scheduling** | Lập lịch thông minh dựa trên Locality + Capacity + Cost + băng thông mạng |
+| ✅ **Fault Tolerance** | Tự động thử lại công việc, quản lý timeout, giám sát nền tảng |
 | ✅ **Theo dõi công việc thời gian thực** | Giám sát trạng thái các công việc huấn luyện |
 | ✅ **Triển khai & Suy luận (Inference)** | API đơn giản để đưa ra dự đoán trên dữ liệu mới |
-| ✅ **Giao diện hiện đại** | Xây dựng bằng Next.js + TypeScript + Tailwind CSS |
+| ✅ **Giao diện hiện đại** | Xây dựng bằng Next.js + TypeScript + Tailwind CSS, bao gồm Marketplace Interface |
 
 ## 📚 Tài liệu
 
@@ -122,7 +125,8 @@ Chi tiết về kiến trúc xem tại [Kiến trúc hệ thống](https://optiv
 
 | Phiên bản | Ngày | Đặc điểm chính | Trạng thái |
 |----------|------|----------------|-----------|
-| **v2.1.0** | 05/12/2025 | 🔍 Optima Search (GA, Bayesian Optimization) | ✅ Latest |
+| **v2.2.0** | 11/04/2026 | 🚀 Distributed Computing, Smart Scheduling, Account Classification | ✅ Latest |
+| **v2.1.0** | 05/12/2025 | 🔍 Optima Search (GA, Bayesian Optimization) | ✅ Supported |
 | **v2.0.0** | 19/10/2025 | 🏗️ MapReduce 1.0, MinIO, Async API | ✅ Stable |
 | **v1.1.2** | 21/06/2025 | 🎨 UI Updates + Security Fixes | ⚠️ Supported |
 | **v1.1.0** | 03/06/2025 | 🚀 Model Deployment & Inference API | ⚠️ Supported |
