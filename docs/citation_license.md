@@ -51,4 +51,4 @@ Ngoài ra, bạn cũng có thể trích dẫn phần mềm trực tiếp:
 ## Giấy phép
 Dự án này được cấp phép theo [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
 
-Vui lòng xem tệp [LICENSE](/LICENSE) để biết chi tiết. Phần mềm này được phát hành chỉ dành cho **mục đích học thuật và nghiên cứu**. Việc sử dụng cho mục đích thương mại bị **nghiêm cấm** nếu không có sự đồng ý trước bằng văn bản từ OptivisionLab.
+Vui lòng xem tệp [LICENSE](https://github.com/optivisionlab/AutoML/blob/main/LICENSE) để biết chi tiết. Phần mềm này được phát hành chỉ dành cho **mục đích học thuật và nghiên cứu**. Việc sử dụng cho mục đích thương mại bị **nghiêm cấm** nếu không có sự đồng ý trước bằng văn bản từ OptivisionLab.
