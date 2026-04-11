@@ -8,7 +8,7 @@ export async function forgotPassword(email: string) {
 
   try {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/forgot_password/${email}`,
+      `${process.env.NEXT_PUBLIC_BASE_API}/forgot-password?email=${email}`,
       {
         method: "POST",
         headers: {
@@ -31,27 +31,27 @@ export async function forgotPassword(email: string) {
 
 // Thay đổi mk
 export async function changePassword(
-  username: string,
+  email: string,
   password: string,
   new1_password: string,
   new2_password: string,
 ) {
-  const session = await getSession();
+  // const session = await getSession();
 
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_API}/change_password?username=${username}`,
+    `${process.env.NEXT_PUBLIC_BASE_API}/reset-password`,
     {
       method: "POST",
       headers: {
         accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: `Bearer ${session?.user?.access_token}`,
+        // Authorization: `Bearer ${session?.user?.access_token}`,
       },
       body: JSON.stringify({
-        username,
+        email,
         password,
-        new1_password,
-        new2_password,
+        new_password: new1_password,
+        confirm_password: new2_password,
       }),
     },
   );

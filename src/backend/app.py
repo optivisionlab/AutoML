@@ -4,7 +4,6 @@ from fastapi import (
     File,
     Form,
     Query,
-    Response,
     HTTPException,
     status,
     Depends
@@ -22,14 +21,9 @@ from automl.model import Item
 from users.engine import UpdateUser
 from users.engine import user_helper
 from users.engine import check_exits_username
-from users.engine import send_reset_password_email
-from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
-from users.engine import ChangePassword
-from users.engine import save_otp, send_otp, generate_otp
 import logging
 import os, uvicorn
-from users.engine import check_time_otp
 from users.engine import handle_change_password
 from users.engine import handle_update_avatar
 from users.engine import handle_get_avatar
@@ -61,6 +55,7 @@ from experiment import exp
 from automl.v2.master import master
 from hagent.chat_router import router as chat_router
 from hagent import chat_store
+from users.schema import ResetPasswordRequest
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +126,6 @@ app.include_router(auth)
 app.include_router(exp)
 app.include_router(master)
 app.include_router(chat_router)
-
 
 @app.get("/")
 async def read_root():
@@ -206,44 +200,35 @@ async def update_user(username: str, new_user: UpdateUser, db: AsyncDatabase = D
     return message
 
 
-from users.engine import handle_forgot_password
+@app.post("/change-password")
+async def change_password(payload: ResetPasswordRequest, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Passwords do not match. Please try again"
+        )
+    
+    user = await db.tbl_User.find_one({"email": payload.email})
 
-
-@app.post("/forgot_password/{email}")
-async def forgot_password(email: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_forgot_password(email, db)
-    return message
-
-
-from users.engine import handle_send_otp
-from users.engine import handle_verification_email
-
-
-@app.post("/send_email/{username}")
-async def send_email(username: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_send_otp(username, db)
-    return message
-
-
-@app.post("/verification_email/{username}")
-async def verification_email(username: str, otp: str, db: AsyncDatabase = Depends(get_db)):
-    message = await handle_verification_email(username, otp, db)
-    return message
-
-
-@app.post("/change_password")
-async def change_password(username: str, password: ChangePassword, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
-    if current_user['role'] == 'user' and current_user['username'] != username:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not found account"
+        )
+    
+    if str(user['_id']) != str(current_user['_id']):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied",
+            detail="Permission denied"
         )
 
-    current_password = password.current_password
-    new_password = password.new_password
-    verified_password = password.verified_password
-    masage = await handle_change_password(username, current_password, new_password, verified_password, db)
-    return masage
+    result = await handle_change_password(
+        user=user, 
+        current_password=payload.current_password, 
+        new_password=payload.new_password, 
+        db=db
+    )
+    return result
 
 
 @app.post("/update_avatar")
@@ -443,14 +428,37 @@ def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Dep
 
 @app.post("/inference-model")
 async def inference(
-    job_id: str = Form(...), 
-    user_id: str = Form(...),
+    job_id: str, 
     file_data: UploadFile = File(...),
     db: AsyncDatabase = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     try:
-        prediction_result = await inference_model(job_id, user_id, file_data, db)
+        job = await db.tbl_Job.find_one({"job_id": job_id})
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found"
+            )
+
+        if str(job.get("user_id")) != str(current_user["_id"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You dont have permission"
+            )
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="System error during data query")
+
+    try:
+        prediction_result = await inference_model(
+            job_id, 
+            str(current_user["_id"]), 
+            file_data, 
+            db
+        )
 
         if isinstance(prediction_result, dict) and "error" in prediction_result:
             raise HTTPException(
@@ -464,7 +472,6 @@ async def inference(
             status_code=500, 
             detail=f"An internal server error occurred: {str(e)}"
         )
-
 
 
 @app.post("/activate-model")

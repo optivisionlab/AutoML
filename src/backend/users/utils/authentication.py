@@ -19,6 +19,8 @@ class JWTService:
         self.__access_exp: timedelta = timedelta(minutes=int(os.getenv('ACCESS_EXPIRE', 1)))
         self.__refresh_exp: timedelta = timedelta(days=int(os.getenv('REFRESH_EXPIRE', 1)))
 
+        self.__verify_exp: timedelta = timedelta(minutes=int(5)) # verification email expire
+
     def create_access_token(self, data: dict) -> str:
         """
         Create access token
@@ -45,7 +47,21 @@ class JWTService:
         })
 
         return encode(to_encode, self.__secret_key, self.__algorithm)
-    
+
+    def create_verification_token(self, data: dict) -> str:
+        """
+        Create email verification token
+        """
+        to_encode = data.copy()
+        exp = datetime.now(timezone.utc) + self.__verify_exp
+        
+        to_encode.update({
+            'exp': exp.timestamp(), 
+            'type': 'verification'
+        })
+
+        return encode(to_encode, self.__secret_key, self.__algorithm)
+
     def verify_token(self, token: str) -> dict | None:
         """
         Verify token

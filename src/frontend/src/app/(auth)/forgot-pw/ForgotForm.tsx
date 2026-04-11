@@ -10,16 +10,14 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
-import styles from "./ForgotForm.module.scss";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { forgotPassword } from "@/app/serverActions/auth";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 // Schema validate
 const forgotSchema = z.object({
@@ -33,6 +31,7 @@ type FormValues = z.infer<typeof forgotSchema>;
 const ForgotForm = () => {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(forgotSchema),
@@ -49,13 +48,15 @@ const ForgotForm = () => {
       if (res.ok) {
         toast({
           title: "Thành công!",
-          description: "Đã gửi mật khẩu về gmail của bạn",
+          description: "Đã gửi OTP về gmail của bạn",
           variant: "default",
           style: {
             backgroundColor: "#22c55e", // xanh lá Tailwind green-500
             color: "white",
           },
         });
+
+        router.push(`/verify-otp?email=${data.email}`);
       } else {
         toast({
           title: "Lỗi",
@@ -94,7 +95,11 @@ const ForgotForm = () => {
           />
 
           {/* Nút submit */}
-          <Button type="submit" disabled={isPending} className="w-full">
+          <Button
+            type="submit"
+            disabled={isPending}
+            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+          >
             {isPending ? "Đang gửi..." : "Gửi yêu cầu"}
           </Button>
 
