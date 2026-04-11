@@ -558,6 +558,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="🚀 Bắt đầu nhanh">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cach-on-gian-nhat-su-dung-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cách đơn giản nhất: Sử dụng Docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trien-khai-tu-ma-nguon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triển khai từ mã nguồn
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trien-khai-qua-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Triển khai qua docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -953,21 +992,54 @@
 </code></pre></div>
 <p>Xem chi tiết tại <a href="architecture/">Kiến trúc hệ thống</a>.</p>
 <h2 id="bat-au-nhanh">🚀 Bắt đầu nhanh</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Sao chép dự án</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/optivisionlab/AutoML.git
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">cd</span><span class="w"> </span>AutoML
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Cấu hình môi trường</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>cp<span class="w"> </span>src/backend/temp.env<span class="w"> </span>src/backend/.env
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>cp<span class="w"> </span>src/frontend/temp.env<span class="w"> </span>src/frontend/.env
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="c1"># Chạy với Docker</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="c1"># Truy cập tại:</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Frontend: http://localhost:3000</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="c1"># Backend API: http://localhost:8000</span>
-</code></pre></div>
+<h3 id="cach-on-gian-nhat-su-dung-docker">Cách đơn giản nhất: Sử dụng Docker</h3>
+<p>Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.</p>
+<p><strong>Yêu cầu</strong>: <a href="https://www.docker.com/get-started">Docker</a> và <a href="https://docs.docker.com/compose/install/">Docker Compose</a></p>
+<hr />
+<h3 id="trien-khai-tu-ma-nguon">Triển khai từ mã nguồn</h3>
+<p><strong>1. Tải mã nguồn dự án</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/optivisionlab/AutoML.git
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">cd</span><span class="w"> </span>AutoML
+</code></pre></div></p>
+<p><strong>2. Cấu hình môi trường</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>cp<span class="w"> </span>src/backend/temp.env<span class="w"> </span>src/backend/.env
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>cp<span class="w"> </span>src/frontend/temp.env<span class="w"> </span>src/frontend/.env
+</code></pre></div></p>
+<p><strong>3. Khởi chạy các thành phần hệ thống</strong></p>
+<blockquote>
+<p><strong>Backend &amp; Worker cluster</strong></p>
+<p>Tại thư mục: AutoML/src/backend
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt<span class="w"> </span><span class="c1"># Cài đặt các thư viện cần thiết</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>python<span class="w"> </span>app.py<span class="w"> </span><span class="c1"># Khởi chạỵ API server</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>python<span class="w"> </span>-m<span class="w"> </span>cluster.worker<span class="w"> </span><span class="c1"># Kích hoạt worker xử lý tác vụ</span>
+</code></pre></div></p>
+<p><strong>Frontend</strong></p>
+<p>Tại thư mục: AutoML/src/frontend
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>npm<span class="w"> </span>install<span class="w"> </span><span class="c1"># Cài đặt các gói phụ thuộc</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>npm<span class="w"> </span>run<span class="w"> </span>dev<span class="w"> </span><span class="c1"># Chạy ứng dụng ở chế độ phát triển</span>
+</code></pre></div></p>
+</blockquote>
+<p><strong>4. Địa chỉ truy cập</strong></p>
+<ul>
+<li>
+<p>Giao diện người dùng: <a href="http://localhost:3000">http://localhost:3000</a></p>
+</li>
+<li>
+<p>Backend API: <a href="http://localhost:8000">http://localhost:8000</a></p>
+</li>
+</ul>
+<hr />
+<h3 id="trien-khai-qua-docker">Triển khai qua docker</h3>
+<blockquote>
+<p><strong>Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường</strong></p>
+<p>Tại thư mục: AutoML/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build
+</code></pre></div></p>
+<p><strong>Để dừng hệ thống</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docker-compose<span class="w"> </span>down
+</code></pre></div></p>
+</blockquote>
 <p>Chi tiết đầy đủ xem tại <a href="getting_started/">Bắt đầu</a>.</p>
 <h2 id="cac-phien-ban-a-phat-hanh">� Các phiên bản đã phát hành</h2>
 <table>
@@ -981,10 +1053,16 @@
 </thead>
 <tbody>
 <tr>
+<td><strong>v2.2.0</strong></td>
+<td>11/04/2026</td>
+<td>🚀 Distributed Computing, Smart Scheduling, Account Classification</td>
+<td>✅ Latest</td>
+</tr>
+<tr>
 <td><strong>v2.1.0</strong></td>
 <td>05/12/2025</td>
 <td>🔍 Optima Search (GA, Bayesian Optimization)</td>
-<td>✅ Latest</td>
+<td>✅ Supported</td>
 </tr>
 <tr>
 <td><strong>v2.0.0</strong></td>
@@ -1056,26 +1134,26 @@
 <h2 id="trich-dan">📖 Trích dẫn</h2>
 <h3 id="bai-bao-khoa-hoc-recommended">Bài báo khoa học (Recommended) 📄</h3>
 <p>Nếu bạn sử dụng HAutoML trong <strong>nghiên cứu hoặc công bố công khai</strong>, xin vui lòng trích dẫn bài báo sau:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nc">@InProceedings</span><span class="p">{</span><span class="nl">Do2026HAutoML</span><span class="p">,</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="na">author</span><span class="p">=</span><span class="s">&quot;Do, Manh Quang</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s">  and Chu, Thi Anh</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="s">  and Ngo, Cong Binh</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="s">  and Bui, Huy Nam</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s">  and Nguyen, Thi My Khanh</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="s">  and Nguyen, Thi Minh</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="s">  and Vu, Viet Thang&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="na">editor</span><span class="p">=</span><span class="s">&quot;Thi Dieu Linh, Nguyen</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="s">  and Yu, Shiqi</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="s">  and Selamat, Ali</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="s">  and Tran, Duc-Tan&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="na">title</span><span class="p">=</span><span class="s">&quot;HAutoML: Open-Source for Automated Machine Learning&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="na">booktitle</span><span class="p">=</span><span class="s">&quot;Proceedings of the Fifth International Conference on Intelligent Systems and Networks&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="na">year</span><span class="p">=</span><span class="s">&quot;2026&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="na">publisher</span><span class="p">=</span><span class="s">&quot;Springer Nature Singapore&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span><span class="na">address</span><span class="p">=</span><span class="s">&quot;Singapore&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="na">pages</span><span class="p">=</span><span class="s">&quot;415--423&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="na">isbn</span><span class="p">=</span><span class="s">&quot;978-981-95-1746-6&quot;</span>
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nc">@InProceedings</span><span class="p">{</span><span class="nl">Do2026HAutoML</span><span class="p">,</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="na">author</span><span class="p">=</span><span class="s">&quot;Do, Manh Quang</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="s">  and Chu, Thi Anh</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="s">  and Ngo, Cong Binh</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="s">  and Bui, Huy Nam</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="s">  and Nguyen, Thi My Khanh</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="s">  and Nguyen, Thi Minh</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="s">  and Vu, Viet Thang&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="na">editor</span><span class="p">=</span><span class="s">&quot;Thi Dieu Linh, Nguyen</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="s">  and Yu, Shiqi</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="s">  and Selamat, Ali</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="s">  and Tran, Duc-Tan&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="na">title</span><span class="p">=</span><span class="s">&quot;HAutoML: Open-Source for Automated Machine Learning&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="na">booktitle</span><span class="p">=</span><span class="s">&quot;Proceedings of the Fifth International Conference on Intelligent Systems and Networks&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">  </span><span class="na">year</span><span class="p">=</span><span class="s">&quot;2026&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">  </span><span class="na">publisher</span><span class="p">=</span><span class="s">&quot;Springer Nature Singapore&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="na">address</span><span class="p">=</span><span class="s">&quot;Singapore&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">  </span><span class="na">pages</span><span class="p">=</span><span class="s">&quot;415--423&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="na">isbn</span><span class="p">=</span><span class="s">&quot;978-981-95-1746-6&quot;</span>
+<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="p">}</span>
 </code></pre></div>
 <p><strong>Full Citation:</strong></p>
 <blockquote>
@@ -1083,13 +1161,13 @@
 </blockquote>
 <h3 id="phan-mem-software-citation">Phần mềm (Software Citation) 💻</h3>
 <p>Ngoài ra, bạn cũng có thể trích dẫn phần mềm trực tiếp:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nc">@software</span><span class="p">{</span><span class="nl">hautoml2024</span><span class="p">,</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="na">title</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{HAutoML: Open-source Automated Machine Learning Platform}</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="na">author</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{OptiVisionLab}</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="na">url</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{https://github.com/optivisionlab/AutoML}</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="na">year</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{2024}</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="na">license</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{CC BY-NC 4.0}</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nc">@software</span><span class="p">{</span><span class="nl">hautoml2024</span><span class="p">,</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="na">title</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{HAutoML: Open-source Automated Machine Learning Platform}</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="na">author</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{OptiVisionLab}</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="na">url</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{https://github.com/optivisionlab/AutoML}</span><span class="p">,</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="na">year</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{2024}</span><span class="p">,</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="na">license</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{CC BY-NC 4.0}</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>Xem chi tiết tại <a href="citation_license/">Ghi nhận &amp; Giấy phép</a>.</p>
 

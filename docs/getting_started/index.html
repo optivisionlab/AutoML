@@ -442,8 +442,6 @@
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
       
       
-        
-      
       
         <label class="md-nav__link md-nav__link--active" for="__toc">
           
@@ -486,8 +484,6 @@
   
   
   
-    
-  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -496,35 +492,52 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#yeu-cau" class="md-nav__link">
+  <a href="#bat-au" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Yêu cầu
+        Bắt đầu
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bắt đầu">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cach-on-gian-nhat-su-dung-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cách đơn giản nhất: Sử dụng Docker
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#chay-bang-docker-compose" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#trien-khai-tu-ma-nguon" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Chạy bằng Docker Compose
+        Triển khai từ mã nguồn
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#dung-he-thong" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#trien-khai-qua-docker" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Dừng hệ thống
+        Triển khai qua docker
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -762,52 +775,54 @@
   
 
 
-<h1 id="bat-au">Bắt đầu</h1>
-<p>Cách đơn giản và được khuyến nghị nhất để chạy toàn bộ hệ thống HAutoML là sử dụng Docker.</p>
-<h2 id="yeu-cau">Yêu cầu</h2>
-<ul>
-<li><a href="https://www.docker.com/get-started">Docker</a></li>
-<li><a href="https://docs.docker.com/compose/install/">Docker Compose</a></li>
-</ul>
-<h2 id="chay-bang-docker-compose">Chạy bằng Docker Compose</h2>
-<ol>
-<li>
-<p><strong>Sao chép (Clone) dự án:</strong>
-    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/optivisionlab/AutoML.git
+  <h1>Bắt đầu</h1>
+
+<h2 id="bat-au">Bắt đầu</h2>
+<hr />
+<h3 id="cach-on-gian-nhat-su-dung-docker">Cách đơn giản nhất: Sử dụng Docker</h3>
+<p>Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.</p>
+<p><strong>Yêu cầu</strong>: <a href="https://www.docker.com/get-started">Docker</a> và <a href="https://docs.docker.com/compose/install/">Docker Compose</a></p>
+<hr />
+<h3 id="trien-khai-tu-ma-nguon">Triển khai từ mã nguồn</h3>
+<p><strong>1. Tải mã nguồn dự án</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/optivisionlab/AutoML.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>AutoML
 </code></pre></div></p>
-</li>
-<li>
-<p><strong>Cấu hình môi trường:</strong>
-    Hệ thống yêu cầu một số tệp cấu hình. Hãy sao chép từ các tệp mẫu:
-    <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Cấu hình cho Backend</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cp<span class="w"> </span>src/backend/temp.config.yml<span class="w"> </span>src/backend/.config.yml
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>cp<span class="w"> </span>src/backend/temp.env<span class="w"> </span>src/backend/.env
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># Cấu hình cho Frontend</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>cp<span class="w"> </span>src/frontend/temp.env<span class="w"> </span>src/frontend/.env
-</code></pre></div>
-    Mở các tệp <code>.config.yml</code> và <code>.env</code> vừa tạo để tùy chỉnh các thông số nếu cần (ví dụ: port, thông tin đăng nhập Google OAuth, endpoint của Minio).</p>
-</li>
-<li>
-<p><strong>Khởi chạy hệ thống:</strong>
-    Sử dụng Docker Compose để build và chạy tất cả các dịch vụ (frontend, backend, database, kafka, minio, workers):
-    <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build
-</code></pre></div>
-    Cờ <code>-d</code> sẽ chạy các container ở chế độ nền (detached mode). Cờ <code>--build</code> sẽ buộc Docker build lại các image nếu có thay đổi.</p>
-</li>
-<li>
-<p><strong>Truy cập ứng dụng:</strong></p>
-<ul>
-<li><strong>Frontend</strong>: <code>http://localhost:3000</code> (hoặc port bạn đã cấu hình trong <code>src/frontend/.env</code>)</li>
-<li><strong>Backend API</strong>: <code>http://localhost:8000</code> (hoặc port bạn đã cấu hình trong <code>src/backend/.env</code>)</li>
-</ul>
-</li>
-</ol>
-<h2 id="dung-he-thong">Dừng hệ thống</h2>
-<p>Để dừng tất cả các container, chạy lệnh sau trong thư mục gốc của dự án:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker-compose<span class="w"> </span>down
+<p><strong>2. Cấu hình môi trường</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>cp<span class="w"> </span>src/backend/temp.env<span class="w"> </span>src/backend/.env
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cp<span class="w"> </span>src/frontend/temp.env<span class="w"> </span>src/frontend/.env
 </code></pre></div></p>
+<p><strong>3. Khởi chạy các thành phần hệ thống</strong></p>
+<blockquote>
+<p><strong>Backend &amp; Worker cluster</strong></p>
+<p>Tại thư mục: AutoML/src/backend
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt<span class="w"> </span><span class="c1"># Cài đặt các thư viện cần thiết</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>python<span class="w"> </span>app.py<span class="w"> </span><span class="c1"># Khởi chạỵ API server</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>python<span class="w"> </span>-m<span class="w"> </span>cluster.worker<span class="w"> </span><span class="c1"># Kích hoạt worker xử lý tác vụ</span>
+</code></pre></div></p>
+<p><strong>Frontend</strong></p>
+<p>Tại thư mục: AutoML/src/frontend
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>npm<span class="w"> </span>install<span class="w"> </span><span class="c1"># Cài đặt các gói phụ thuộc</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>npm<span class="w"> </span>run<span class="w"> </span>dev<span class="w"> </span><span class="c1"># Chạy ứng dụng ở chế độ phát triển</span>
+</code></pre></div></p>
+</blockquote>
+<p><strong>4. Địa chỉ truy cập</strong>
+- Giao diện người dùng: <a href="http://localhost:3000">http://localhost:3000</a></p>
+<ul>
+<li>Backend API: <a href="http://localhost:8000">http://localhost:8000</a></li>
+</ul>
+<hr />
+<h3 id="trien-khai-qua-docker">Triển khai qua docker</h3>
+<blockquote>
+<p><strong>Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường</strong></p>
+<p>Tại thư mục: AutoML/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--build
+</code></pre></div></p>
+<p><strong>Để dừng hệ thống</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker-compose<span class="w"> </span>down
+</code></pre></div></p>
+</blockquote>
 <hr />
 <h2 id="xem-tai-lieu-tren-may-local">Xem tài liệu trên máy Local</h2>
 <p>Trước khi triển khai, bạn có thể xem trước trang web tài liệu trên máy tính của mình.</p>
@@ -815,13 +830,13 @@
 <li>
 <p><strong>Cài đặt các gói cần thiết (chỉ cần làm một lần):</strong>
     Mở terminal và chạy lệnh sau để cài đặt MkDocs và theme Material:
-    <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Chạy máy chủ phát triển:</strong>
     Từ thư mục gốc của dự án, chạy lệnh:
-    <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>mkdocs<span class="w"> </span>serve
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>mkdocs<span class="w"> </span>serve
 </code></pre></div></p>
 </li>
 <li>
