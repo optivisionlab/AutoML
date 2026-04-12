@@ -1,12 +1,12 @@
 services:
-  hautomml_worker:
+  hautoml_worker:
     image: optivisionlab/hautoml:v2.2
-    container_name: hautoml_worker
+    container_name: hautoml-worker
     restart: unless-stopped
     env_file:
       - ./src/backend/.env
     environment:
-      HOST_BACK_END: "0.0.0.0"
+      HOST_BACK_END: "hautoml-toolkit"
     networks:
       - hautoml-network
       - kafka-network
@@ -19,9 +19,15 @@ services:
 
   hautoml_toolkit:
     image: optivisionlab/hautoml:v2.2
-    container_name: hautoml_toolkit
+    container_name: hautoml-toolkit
     env_file:
       - ./src/backend/.env
+    environment:
+      WORKER_LIST: "http://hautoml-worker:4000,"
+      KAFKA_SERVER: "kafka:9092"
+      MONGODB_CONNECT: "mongodb:27017"
+    ports:
+      - "9996:9996"
     command: python app.py
     networks:
       - hautoml-network
@@ -29,35 +35,42 @@ services:
     logging: *default-logging
 
   kafka:
-    image: bitnami/kafka:latest
-    container_name: kafka-kraft
-    restart: always
+    image: apache/kafka:latest
+    container_name: kafka
     ports:
       - "9092:9092"
+      - "9093:9093"
     environment:
-      - KAFKA_CFG_NODE_ID=1
-      - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:29092
-      - KAFKA_CFG_ADVERTISED_LISTENERS=localhost:9092,INTERNAL://kafka:29092
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
-      - kafka_data:/bitnami/kafka
+      - kafka_data:/var/lib/kafka/data
     networks:
       - kafka-network
 
   mongo:
-    image: mongo:latest
+    image: bitnami/mongodb:latest
     container_name: mongodb
+    environment:
+      MONGODB_ADVERTISED_HOSTNAME: "mongodb"
     networks:
       - hautoml-network
     ports:
-      - "27017:27017"
+      - "27018:27017"
     logging: *default-logging
-  
-  mminio:
+
+  minio:
     image: quay.io/minio/minio:latest
     container_name: minio
     restart: unless-stopped
