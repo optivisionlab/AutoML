@@ -823,6 +823,72 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docker-compose<span class="w"> </span>down
 </code></pre></div></p>
 </blockquote>
+<p><strong>5. Giải thích biến môi trường</strong></p>
+<blockquote>
+<p>Hệ thống sử dụng các biến môi trường để linh hoạt giữa các chế độ chạy (local hoặc docker).</p>
+</blockquote>
+<p><strong>A. Cấu hình hạ tầng (Infrastructure)</strong></p>
+<blockquote>
+<p>Dành cho việc kết nối đến các dịch vụ lưu trữ và hàng đợi
+- <code>MINIO_ENDPOINT</code>: Địa chỉ server MinIO (mặc định: <code>localhost:9000</code>). Nếu chạy docker, hãy đổi thành <code>minio:9000</code>.</p>
+</blockquote>
+<ul>
+<li>
+<p><code>KAFKA_SERVER</code>: Địa chỉ broker Kafka. Dùng <code>kafka:9092</code> trong môi trường docker.</p>
+</li>
+<li>
+<p><code>MONGODB_CONNECT</code>: Chuỗi kết nối database. Nếu dùng docker thì dùng <code>mongodb:27017</code>.</p>
+</li>
+</ul>
+<p><strong>B. Cấu hình phân tán (Master - Worker)</strong></p>
+<blockquote>
+<p>Đây là phần cốt lõi để hệ thống AutoML có thể chạy đa máy (Distributed).
+- <code>HOST_BACK_END</code>: Địa chỉ API Server sẽ lắng nghe. Nên để <code>0.0.0.0</code> để chấp nhận kết nối từ các Worker bên ngoài.</p>
+</blockquote>
+<ul>
+<li>
+<p><code>WORKER_LIST</code>: Danh sách các địa chỉ Worker và Master quản lý.</p>
+</li>
+<li>
+<p><code>TASK_TIMEOUT_SECONDS</code>: Thời gian tối đa (giây) chờ một tác vụ training. Sau thời gian này, Master sẽ coi Worker đã chết hoặc tác vụ bị treo.</p>
+</li>
+<li>
+<p><code>MAX_TASK_SNOOZES</code>: Số lần cho phép thử lại (retry) một tác vụ trước khi đánh dấu là thất bại.</p>
+</li>
+</ul>
+<p><strong>C. Bảo mật và xác thực (Security &amp; Auth)</strong>
+- <code>SECRET_KEY</code>: Chuỗi ký tự dùng để mã hóa JWT Token. Nên tạo 1 chuỗi ngẫu nhiên dài để bảo mật.</p>
+<ul>
+<li>
+<p><code>GOOGLE_CLIENT_ID</code>/<code>GOOGLE_CLIENT_SECRET</code>: Thông tin định danh ứng dụng lấy từ Google Cloud Console để kích hoạt tính năng đăng nhập bằng Google.</p>
+</li>
+<li>
+<p><code>ACCESS_EXPIRE</code>: Thời gian của Token đăng nhập (tính bằng phút).</p>
+</li>
+</ul>
+<p><strong>D. Dịch vụ Email (Notification)</strong>
+- <code>MAIL_USERNAME</code>: Email dùng để gửi thông báo (ví dụ: gmail).</p>
+<ul>
+<li><code>MAIL_PASSWORD</code>: Mật khẩu ứng dụng (app password) của Gmail, không phải mật khẩu tài khoản chính.</li>
+</ul>
+<blockquote>
+<p>[!IMPORTANT]</p>
+<p><strong>Quy tắc về localhost trong Docker</strong></p>
+<p>Nếu chạy hệ thống bằng docker, tuyệt đối không sử dụng <code>localhost</code> cho các biến kết nối giữa các dịch vụ (như <code>MONGODB_CONNECT</code> hay <code>KAFKA_SERVER</code>)</p>
+<p>Thay vào đó, hãy sử dụng tên dịch vụ được định nghĩa trong file <code>docker-compose.yaml</code> (ví dụ: <code>mongodb</code>, <code>kafka</code>)</p>
+</blockquote>
+<p><strong>6. Kiểm tra trạng thái hệ thống</strong></p>
+<blockquote>
+<p>Sau khi khởi chạy, bạn có thể kiểm tra xem các thành phần đã thông với nhau chưa bằng cách:</p>
+<ol>
+<li>
+<p>Truy cập vào Dashboard tại: <code>http://localhost:3000</code></p>
+</li>
+<li>
+<p>Kiểm tra log của Master để xem các worker đã đăng ký thành công chưa: <code>docker logs -f hautoml-toolkit</code></p>
+</li>
+</ol>
+</blockquote>
 <hr />
 <h2 id="xem-tai-lieu-tren-may-local">Xem tài liệu trên máy Local</h2>
 <p>Trước khi triển khai, bạn có thể xem trước trang web tài liệu trên máy tính của mình.</p>
