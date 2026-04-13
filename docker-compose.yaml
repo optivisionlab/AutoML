@@ -7,6 +7,7 @@ services:
       - ./src/backend/.env
     environment:
       HOST_BACK_END: "hautoml-toolkit"
+      MINIO_ENDPOINT: "minio:9000"
     networks:
       - hautoml-network
       - kafka-network
@@ -26,6 +27,9 @@ services:
       WORKER_LIST: "http://hautoml-worker:4000,"
       KAFKA_SERVER: "kafka:9092"
       MONGODB_CONNECT: "mongodb:27017"
+      MINIO_ENDPOINT: "minio:9000"
+      REDIRECT_URI: "http://hautoml-toolkit:9996"
+      FRONTEND_URL: "http://hautoml-frontend:3000"
     ports:
       - "9996:9996"
     command: python app.py
@@ -67,7 +71,7 @@ services:
     networks:
       - hautoml-network
     ports:
-      - "27018:27017"
+      - "27017:27017"
     logging: *default-logging
 
   minio:
