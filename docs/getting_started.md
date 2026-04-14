@@ -50,9 +50,13 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 ---
 
 ### Triển khai qua docker
+> [!TIP]
+>
+> Để tránh việc phải chỉnh sửa trực tiếp file ```docker-compose.yaml```, bạn chỉ cần clone mã nguồn, sau đó chỉnh sửa và đổi tên các file cầu hình mẫu từ ```temp.env``` thành ```.env``` ở cả thư mục backend và frontend.
+
 > **Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường**
 > 
-> Tại thư mục: AutoML/
+> **Tại thư mục: AutoML/**
 ```bash
 docker-compose up -d --build
 ```
