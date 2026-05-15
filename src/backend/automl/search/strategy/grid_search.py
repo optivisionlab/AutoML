@@ -218,14 +218,15 @@ class GridSearchStrategy(SearchStrategy):
     def _evaluate_params_batch(self, param_combinations: List[Dict[str, Any]], model: BaseEstimator,
                                X: np.ndarray, y: np.ndarray, cv, scoring_config) -> List[Dict[str, Any]]:
         """Đánh giá một batch các tổ hợp tham số song song với cài đặt tối ưu."""
-        # Luôn sử dụng song song cho nhiều hơn 1 tổ hợp
-        if len(param_combinations) > 1:
+        parallel_enabled = self.config.get('parallel_evaluation', True)
+
+        # Chỉ sử dụng song song khi được bật, có nhiều hơn 1 tổ hợp, và n_jobs cho phép.
+        if parallel_enabled and len(param_combinations) > 1:
             import multiprocessing
             n_jobs = self.config.get('n_jobs', -1)
             if n_jobs == -1:
                 n_jobs = multiprocessing.cpu_count()
 
-            # Luôn sử dụng đánh giá song song
             if n_jobs > 1:
                 # Tạo trước các bản sao mô hình để quản lý bộ nhớ tốt hơn
                 if not self._model_copies or len(self._model_copies) < n_jobs:
@@ -245,7 +246,7 @@ class GridSearchStrategy(SearchStrategy):
                 )
                 return results
 
-        # Đánh giá tuần tự chỉ cho một tham số duy nhất
+        # Đánh giá tuần tự khi tắt parallel_evaluation, n_jobs <= 1, hoặc batch chỉ có 1 tổ hợp.
         return [self._evaluate_single_params(params, model, X, y, cv, scoring_config)
                 for params in param_combinations]
 

@@ -117,6 +117,7 @@ async def _call_hagent_gateway(
     history: list[dict] | None = None,
     user_token: str | None = None,
     user_id: str | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """
     Gửi tin nhắn tới HAgent Gateway qua webhook API.
@@ -131,6 +132,7 @@ async def _call_hagent_gateway(
 
     payload = {
         "message": message,
+        "session_id": session_id or user_id or "hagent_session",
         "context": {
             "user_token": user_token or "",
             "user_id": user_id or "",
@@ -141,7 +143,7 @@ async def _call_hagent_gateway(
         payload["history"] = history
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(
                 f"{gateway_url}{hooks_cfg.get('path', '/hooks')}/agent",
                 json=payload,
@@ -395,6 +397,7 @@ async def chat(
         history=history_dicts if history_dicts else None,
         user_token=user.raw_token,
         user_id=user.user_id,
+        session_id=conversation_id,
     )
 
     # Lưu phản hồi trợ lý
@@ -476,6 +479,7 @@ async def chat_with_file(
         history=history_dicts if history_dicts else None,
         user_token=user.raw_token,
         user_id=user.user_id,
+        session_id=conv_id,
     )
 
     await conv_store.add_message(

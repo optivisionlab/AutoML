@@ -1,6 +1,6 @@
 /* =============================================
    HAutoML Chat Widget — CSS Module
-   Premium glassmorphism popup design
+   Light theme matching the main application layout
    ============================================= */
 
 /* ── Floating Action Button ── */
@@ -61,14 +61,14 @@
   right: -2px;
   width: 18px;
   height: 18px;
-  background: #f87171;
+  background: #ef4444;
   border-radius: 50%;
   font-size: 10px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #0f172a;
+  border: 2px solid white;
   animation: badgePop 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -90,10 +90,11 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(148, 163, 184, 0.08);
-  box-shadow: 0 35px 80px -20px rgba(0, 0, 0, 0.6);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow:
+    0 25px 60px -12px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.03);
   opacity: 0;
   transform: translateY(20px) scale(0.95);
   pointer-events: none;
@@ -215,6 +216,7 @@
   flex-direction: column;
   gap: 12px;
   scroll-behavior: smooth;
+  background: #f8fafc;
 }
 
 .messages::-webkit-scrollbar {
@@ -226,7 +228,7 @@
 }
 
 .messages::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
@@ -271,8 +273,8 @@
 }
 
 .messageUser .msgAvatar {
-  background: #334155;
-  color: #94a3b8;
+  background: #e2e8f0;
+  color: #64748b;
 }
 
 .msgBubble {
@@ -284,10 +286,11 @@
 }
 
 .messageBot .msgBubble {
-  background: #1e293b;
-  color: #f8fafc;
+  background: #ffffff;
+  color: #1e293b;
   border-bottom-left-radius: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .messageUser .msgBubble {
@@ -300,8 +303,17 @@
   font-weight: 600;
 }
 
-.msgBubble :global(code) {
-  background: rgba(0, 0, 0, 0.3);
+.messageBot .msgBubble :global(code) {
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-family: "Fira Code", "JetBrains Mono", monospace;
+  color: #6366f1;
+}
+
+.messageUser .msgBubble :global(code) {
+  background: rgba(255, 255, 255, 0.2);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 0.8em;
@@ -310,7 +322,7 @@
 
 .msgTime {
   font-size: 0.65rem;
-  color: #64748b;
+  color: #94a3b8;
   margin-top: 3px;
 }
 
@@ -337,19 +349,20 @@
 
 .typingDots {
   padding: 12px 16px;
-  background: #1e293b;
+  background: #ffffff;
   border-radius: 14px;
   border-bottom-left-radius: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid #e2e8f0;
   display: flex;
   gap: 4px;
   align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .typingDots span {
   width: 6px;
   height: 6px;
-  background: #64748b;
+  background: #94a3b8;
   border-radius: 50%;
   animation: typingBounce 1.4s infinite ease-in-out;
 }
@@ -369,16 +382,16 @@
   flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(15, 23, 42, 0.4);
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .chip {
   padding: 5px 12px;
   border-radius: 20px;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
   font-size: 0.75rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -387,8 +400,8 @@
 }
 
 .chip:hover {
-  background: #334155;
-  color: #f8fafc;
+  background: #f1f5f9;
+  color: #4f46e5;
   border-color: #6366f1;
   transform: translateY(-1px);
 }
@@ -400,17 +413,17 @@
   gap: 8px;
   align-items: flex-end;
   flex-shrink: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(15, 23, 42, 0.5);
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
 }
 
 .input {
   flex: 1;
   padding: 10px 14px;
   border-radius: 10px;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1e293b;
   font-size: 0.875rem;
   font-family: inherit;
   outline: none;
@@ -422,12 +435,13 @@
 }
 
 .input::placeholder {
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .input:focus {
   border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .sendBtn {
@@ -485,12 +499,12 @@
 .welcomeTitle {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #f8fafc;
+  color: #1e293b;
 }
 
 .welcomeDesc {
   font-size: 0.82rem;
-  color: #94a3b8;
+  color: #64748b;
   line-height: 1.5;
   max-width: 300px;
 }
@@ -506,9 +520,9 @@
 .welcomeBtn {
   padding: 8px 16px;
   border-radius: 10px;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -516,14 +530,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .welcomeBtn:hover {
-  background: #334155;
-  color: #f8fafc;
+  background: #f1f5f9;
+  color: #4f46e5;
   border-color: #6366f1;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
 }
 
 /* ── Footer ── */
@@ -531,14 +546,14 @@
   padding: 6px;
   text-align: center;
   font-size: 0.65rem;
-  color: #64748b;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(15, 23, 42, 0.6);
+  color: #94a3b8;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
   flex-shrink: 0;
 }
 
 .footer a {
-  color: #818cf8;
+  color: #6366f1;
   text-decoration: none;
 }
 
@@ -551,9 +566,9 @@
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -563,8 +578,8 @@
 }
 
 .attachBtn:hover:not(:disabled) {
-  background: #334155;
-  color: #f8fafc;
+  background: #f1f5f9;
+  color: #4f46e5;
   border-color: #6366f1;
 }
 
@@ -579,11 +594,11 @@
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  background: rgba(99, 102, 241, 0.1);
-  border-top: 1px solid rgba(99, 102, 241, 0.2);
+  background: #eef2ff;
+  border-top: 1px solid #c7d2fe;
   flex-shrink: 0;
   animation: messageIn 0.25s ease;
-  color: #c7d2fe;
+  color: #4338ca;
 }
 
 .filePreviewName {
@@ -593,12 +608,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #e0e7ff;
+  color: #3730a3;
 }
 
 .filePreviewSize {
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: #6366f1;
   flex-shrink: 0;
 }
 
@@ -607,8 +622,8 @@
   height: 22px;
   border-radius: 6px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -618,8 +633,8 @@
 }
 
 .filePreviewClose:hover {
-  background: rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
 }
 
 /* ── File Chip (in messages) ── */
@@ -630,10 +645,10 @@
   padding: 4px 10px;
   margin-bottom: 6px;
   border-radius: 8px;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
   font-size: 0.75rem;
-  color: #c7d2fe;
+  color: #4338ca;
 }
 
 .fileChip span {
@@ -663,7 +678,7 @@
   border-collapse: collapse;
   margin: 8px 0;
   font-size: 0.85em;
-  background: rgba(0, 0, 0, 0.15);
+  background: #f8fafc;
   border-radius: 6px;
   overflow: hidden;
   display: block;
@@ -673,13 +688,14 @@
 .markdownBody th,
 .markdownBody td {
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #e2e8f0;
   text-align: left;
 }
 
 .markdownBody th {
-  background: rgba(0, 0, 0, 0.25);
+  background: #f1f5f9;
   font-weight: 600;
+  color: #334155;
 }
 
 .messageUser .markdownBody table {
@@ -690,6 +706,11 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+.messageUser .markdownBody th,
+.messageUser .markdownBody td {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 .markdownBody ul,
 .markdownBody ol {
   margin-block-start: 0.5em;
@@ -697,21 +718,34 @@
 }
 
 .markdownBody pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: #f1f5f9;
   padding: 8px;
   border-radius: 6px;
   overflow-x: auto;
+  border: 1px solid #e2e8f0;
+}
+
+.messageUser .markdownBody pre {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .markdownBody code {
   font-family: "Fira Code", "JetBrains Mono", monospace;
-  background: rgba(0, 0, 0, 0.3);
+  background: #f1f5f9;
   padding: 2px 4px;
   border-radius: 4px;
   font-size: 0.85em;
+  color: #6366f1;
+}
+
+.messageUser .markdownBody code {
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
 }
 
 .markdownBody pre code {
   background: transparent;
   padding: 0;
+  color: inherit;
 }

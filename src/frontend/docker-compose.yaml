@@ -3,13 +3,27 @@ version: '3.3'
 services:
   hautoml_frontend:
     image: hautoml-frontend:latest
-    container_name: hautoml-frontend
-    network_mode: host
+    container_name: hautoml-frontend-testing
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "5350:3000"
     expose:
       - '3000'
-    command: npm run dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      HAGENT_INTERNAL_URL: http://host.docker.internal:5360
+      NEXT_PUBLIC_HAGENT_URL: /api/hagent
+      # Override .env.local — match the actually running backend / frontend ports
+      NEXT_PUBLIC_BASE_API: http://localhost:5370
+      AUTH_API_BASE_URL: http://host.docker.internal:5370
+      NEXTAUTH_URL: http://localhost:5350
+      # Polling for file watch — required for hot-reload over Windows ↔ Docker bind mounts
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./src:/app/src
+    command: npm run dev -- --hostname 0.0.0.0 -p 3000
     logging:
       driver: "json-file"
       options:

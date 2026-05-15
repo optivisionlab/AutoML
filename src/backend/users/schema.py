@@ -44,6 +44,7 @@ class UserResponse(BaseModel):
     fullName: str | None = None
     avatar: str | None = None
     role: str
+    is_verified: bool | None = None
 
     model_config = {
         "populate_by_name": True,

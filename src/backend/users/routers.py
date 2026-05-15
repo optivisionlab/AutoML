@@ -32,6 +32,15 @@ load_dotenv()
 router = APIRouter(tags=["Authentication"])
 
 
+def _is_skip_email_verification_enabled() -> bool:
+    return os.getenv("SKIP_EMAIL_VERIFICATION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @router.post("/signup", response_model=UserResponse)
 async def register(user_data: UserRegisterRequest, background_tasks: BackgroundTasks, db: AsyncDatabase = Depends(get_db)) -> UserResponse:
     # Check email và username
@@ -43,6 +52,7 @@ async def register(user_data: UserRegisterRequest, background_tasks: BackgroundT
     }):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username or Email already registed")
     
+    skip_email_verification = _is_skip_email_verification_enabled()
     new_user_doc = {
         "username": user_data.username,
         "email": user_data.email,
@@ -52,7 +62,7 @@ async def register(user_data: UserRegisterRequest, background_tasks: BackgroundT
         "fullName": user_data.fullName,
         "role": "user",
         "avatar": None,
-        "is_verified": False,
+        "is_verified": skip_email_verification,
         "created_at": datetime.now(timezone.utc).timestamp()
     }
 
@@ -69,22 +79,23 @@ async def register(user_data: UserRegisterRequest, background_tasks: BackgroundT
 
     await db.linked_accounts.insert_one(linked_account_doc)
 
-    verification_token = jwt_service.create_verification_token({
-        'sub': str(user_id),
-        'email': user_data.email
-    })
+    if not skip_email_verification:
+        verification_token = jwt_service.create_verification_token({
+            'sub': str(user_id),
+            'email': user_data.email
+        })
 
-    # QR code
-    verify_link = email_service.get_verify_link(verification_token)
-    qr_base64 = email_service.generate_qr_base64(verify_link)
+        # QR code
+        verify_link = email_service.get_verify_link(verification_token)
+        qr_base64 = email_service.generate_qr_base64(verify_link)
 
-    # Offload email sending to a background worker
-    background_tasks.add_task(
-        email_service.send_verification_email,
-        user_data.email,
-        verification_token,
-        qr_base64
-    )
+        # Offload email sending to a background worker
+        background_tasks.add_task(
+            email_service.send_verification_email,
+            user_data.email,
+            verification_token,
+            qr_base64
+        )
 
     created_user = await db.tbl_User.find_one({'_id': user_id})
     created_user['_id'] = str(created_user['_id'])
@@ -111,10 +122,17 @@ async def login(user_login: UserLoginRequest, response: Response, db: AsyncDatab
         raise invalid_credentials_exception
 
     if not user.get('is_verified', True):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is not verified. Please check your email to verify your account."
-        )
+        if _is_skip_email_verification_enabled():
+            await db.tbl_User.update_one(
+                {'_id': user['_id']},
+                {'$set': {'is_verified': True}}
+            )
+            user['is_verified'] = True
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is not verified. Please check your email to verify your account."
+            )
 
     if user.get('password') and user_login.password != user['password']:
         raise HTTPException(

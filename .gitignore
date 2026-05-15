@@ -210,3 +210,19 @@ next-env.d.ts
 .gradio
 *.swp
 src/frontend/components.json
+
+# Local agent/runtime state
+.codex_tmp/
+.playwright-mcp/
+.vscode/
+.idea/
+openclaw/
+.openclaw/
+
+# Local backend runtime artifacts
+backend/.openclaw/
+backend/.tmp/
+backend/artifacts/
+src/backend/.openclaw/
+src/backend/.tmp/
+src/backend/artifacts/

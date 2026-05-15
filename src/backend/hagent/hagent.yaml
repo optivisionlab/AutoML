@@ -5,12 +5,12 @@
 # KHÔNG có giá trị nào bị hard-code trong mã nguồn.
 # ══════════════════════════════════════════════════════════
 
-# ── Gateway ──────────────────────────────────────────────
+# ── Cổng Gateway ─────────────────────────────────────────
 gateway:
   host: "0.0.0.0"
   port: 18789
 
-# ── Bridge Service ───────────────────────────────────────
+# ── Dịch vụ Bridge ───────────────────────────────────────
 bridge:
   host: "0.0.0.0"
   port: 9900
@@ -31,29 +31,44 @@ mongodb:
   db_name: "hagent"
   conversation_ttl_hours: 24
 
-# ── JWT Auth (dùng chung secret với HAutoML backend) ────
+# ── Xác thực JWT (dùng chung secret với HAutoML backend) ─
 auth:
   secret_key: "${SECRET_KEY}"
   algorithm: "HS256"
 
-# ── Hooks / Webhooks ────────────────────────────────────
+# ── Hook / Webhook ───────────────────────────────────────
 hooks:
   enabled: true
   token: "${HAGENT_HOOKS_TOKEN}"
   path: "/hooks"
 
-# ── Skills ──────────────────────────────────────────────
+# ── Kỹ năng ──────────────────────────────────────────────
 skills:
   directories:
     - "./skills"
 
-# ── Memory ──────────────────────────────────────────────
+# ── Bộ nhớ ───────────────────────────────────────────────
 memory:
   enabled: true
   backend: "local"
 
-# ── Logging ─────────────────────────────────────────────
+# ── Ghi log ──────────────────────────────────────────────
 logging:
   level: "info"
   file: "./logs/hagent.log"
+
+# ── Bộ chuyển tiếp HAgent ────────────────────────────────
+proxy:
+  soul_path: "./SOUL.md"
+  workspace_dir: "/home/node/.openclaw/workspace"
+  user_context_files:
+    token: "/tmp/hagent_user_token"
+    user_id: "/tmp/hagent_user_id"
+  error_messages:
+    ollama_memory: "HAgent đã kết nối tới Ollama, nhưng model hiện tại không load được vì thiếu RAM. Model cần {required}, máy Ollama hiện còn {available}. Hãy giải phóng RAM trên máy chạy Ollama hoặc đổi sang model nhẹ hơn rồi thử lại."
+    ollama_endpoint: "HAgent đã gọi tới Ollama nhưng endpoint trả về trang lỗi thay vì API response. Hãy kiểm tra lại URL ngrok và tên model đang cấu hình."
+    gateway_connection: "HAgent Gateway đang đóng kết nối bất thường. Vui lòng thử lại sau ít phút; nếu vẫn lỗi, kiểm tra log của toolkit/openclaw_gateway."
+    timeout: "HAgent xử lý quá lâu và bị timeout. Vui lòng thử lại hoặc dùng yêu cầu ngắn hơn."
+    invalid_response: "HAgent chưa trả về phản hồi hợp lệ. Vui lòng thử lại sau."
+    generic: "HAgent đang gặp lỗi khi xử lý yêu cầu. Chi tiết đã được ghi trong log backend."
 

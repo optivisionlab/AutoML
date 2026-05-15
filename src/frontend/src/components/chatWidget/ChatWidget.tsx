@@ -82,6 +82,41 @@ function mapHistoryMessages(rawMessages: any[]): Message[] {
   });
 }
 
+function extractErrorMessage(error: any): string {
+  const status = error?.response?.status;
+  const detail = error?.response?.data?.detail;
+
+  if (typeof detail === "string" && detail.length > 0) {
+    if (
+      detail.includes("Thiếu header Authorization") ||
+      detail.includes("Not authenticated")
+    ) {
+      return "Bạn cần đăng nhập để nhắn tin với trợ lý AI.";
+    }
+    if (detail.includes("Token đã hết hạn")) {
+      return "Phiên đăng nhập đã hết hạn. Vui lòng tải lại trang và đăng nhập lại.";
+    }
+    if (
+      detail.includes("Loại token không hợp lệ") ||
+      detail.includes("Token không hợp lệ") ||
+      detail.includes("Invalid token") ||
+      detail.includes("User not found")
+    ) {
+      return "Lỗi xác thực người dùng. Vui lòng đăng nhập lại.";
+    }
+    return detail;
+  }
+
+  if (status === 401 || status === 403) {
+    return "Bạn cần đăng nhập để sử dụng HAgent.";
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return "Không kết nối được tới HAgent Bridge. Vui lòng kiểm tra dịch vụ backend.";
+  }
+
+  return "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và thử lại.";
+}
+
 // ─── Component ──────────────────────────────────────
 export default function ChatWidget() {
   const [mounted, setMounted] = useState(false);
@@ -94,9 +129,11 @@ export default function ChatWidget() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showBadge, setShowBadge] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [hagentConnected, setHagentConnected] = useState<boolean | null>(
-    null
-  );
+  const [hagentStatus, setHagentStatus] = useState<{
+    bridgeReachable: boolean;
+    gatewayConnected: boolean;
+    hautomlConnected: boolean;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -113,16 +150,28 @@ export default function ChatWidget() {
 
   // Kiểm tra trạng thái HAgent khi mở chat và thử tải lại hội thoại cũ
   useEffect(() => {
-    if (isOpen && hagentConnected === null) {
+    if (isOpen && hagentStatus === null) {
       checkHAgentHealth()
-        .then((health) => setHagentConnected(health.connected))
-        .catch(() => setHagentConnected(false));
+        .then((health) =>
+          setHagentStatus({
+            bridgeReachable: true,
+            gatewayConnected: health.connected,
+            hautomlConnected: health.hautoml_connected,
+          })
+        )
+        .catch(() =>
+          setHagentStatus({
+            bridgeReachable: false,
+            gatewayConnected: false,
+            hautomlConnected: false,
+          })
+        );
     }
-  }, [isOpen, hagentConnected]);
+  }, [isOpen, hagentStatus]);
 
   // Tải lịch sử cuộc hội thoại gần nhất khi mở chat
   useEffect(() => {
-    if (isOpen && !conversationId && hagentConnected !== null) {
+    if (isOpen && !conversationId && hagentStatus !== null) {
       const loadHistory = async () => {
         try {
           const token = (session?.user as any)?.access_token;
@@ -144,7 +193,7 @@ export default function ChatWidget() {
          loadHistory();
       }
     }
-  }, [isOpen, conversationId, hagentConnected, messages.length, session]);
+  }, [isOpen, conversationId, hagentStatus, messages.length, session]);
 
   // Đồng bộ tin nhắn mới từ server theo chu kỳ để hiển thị thông báo hậu huấn luyện.
   useEffect(() => {
@@ -243,153 +292,94 @@ export default function ChatWidget() {
     }
   }, []);
 
+  const dispatchMessage = useCallback(
+    async (text: string, fileToSend: File | null) => {
+      const trimmed = text.trim();
+      if ((!trimmed && !fileToSend) || isLoading) return;
+
+      const userMsg: Message = {
+        id: generateId(),
+        role: "user",
+        content: trimmed || `📎 ${fileToSend?.name}`,
+        time: getCurrentTime(),
+        fileName: fileToSend?.name,
+      };
+
+      setMessages((prev) => [...prev, userMsg]);
+      setIsLoading(true);
+      setSuggestions([]);
+
+      try {
+        const token = (session?.user as any)?.access_token;
+        const response: ChatResponse = fileToSend
+          ? await sendChatWithFile(trimmed, fileToSend, conversationId, token)
+          : await sendChatMessage(
+              { message: trimmed, conversation_id: conversationId },
+              token,
+            );
+
+        setConversationId(response.conversation_id);
+
+        const botMsg: Message = {
+          id: generateId(),
+          role: "assistant",
+          content: response.message,
+          time: getCurrentTime(),
+        };
+        setMessages((prev) => [...prev, botMsg]);
+
+        if (response.suggestions?.length) {
+          setSuggestions(response.suggestions);
+        }
+      } catch (error: any) {
+        const errorMsg: Message = {
+          id: generateId(),
+          role: "assistant",
+          content: `❌ ${extractErrorMessage(error)}`,
+          time: getCurrentTime(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isLoading, conversationId, session],
+  );
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if ((!text && !selectedFile) || isLoading) return;
 
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: text || `📎 ${selectedFile?.name}`,
-      time: getCurrentTime(),
-      fileName: selectedFile?.name,
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setIsLoading(true);
-    setSuggestions([]);
-
     const fileToSend = selectedFile;
+    setInput("");
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
 
-    try {
-      let response: ChatResponse;
-      const token = (session?.user as any)?.access_token;
-
-      if (fileToSend) {
-        // Send with file attachment
-        response = await sendChatWithFile(
-          text,
-          fileToSend,
-          conversationId,
-          token
-        );
-      } else {
-        // Text-only message
-        response = await sendChatMessage({
-          message: text,
-          conversation_id: conversationId,
-        }, token);
-      }
-
-      setConversationId(response.conversation_id);
-
-      const botMsg: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: response.message,
-        time: getCurrentTime(),
-      };
-
-      setMessages((prev) => [...prev, botMsg]);
-
-      if (response.suggestions?.length) {
-        setSuggestions(response.suggestions);
-      }
-    } catch (error: any) {
-      let errorMessage = "Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và thử lại.";
-      
-      if (error?.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (detail.includes("Thiếu header Authorization")) {
-          errorMessage = "Bạn cần đăng nhập để nhắn tin với trợ lý AI.";
-        } else if (detail.includes("Token đã hết hạn")) {
-          errorMessage = "Phiên đăng nhập đã hết hạn. Vui lòng tải lại trang và đăng nhập lại.";
-        } else if (detail.includes("Loại token không hợp lệ") || detail.includes("Token không hợp lệ")) {
-          errorMessage = "Lỗi xác thực người dùng. Vui lòng đăng nhập lại.";
-        } else {
-          errorMessage = detail; // Fallback to other specifics from backend
-        }
-      }
-        
-      const errorMsg: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: `❌ ${errorMessage}`,
-        time: getCurrentTime(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [input, isLoading, conversationId, selectedFile]);
+    await dispatchMessage(text, fileToSend);
+  }, [input, selectedFile, isLoading, dispatchMessage]);
 
   const handleQuickSend = useCallback(
     (text: string) => {
-      setInput(text);
-      setTimeout(() => {
-        const fakeInput = text;
-        setInput("");
-        setIsLoading(true);
-        setSuggestions([]);
-
-        const userMsg: Message = {
-          id: generateId(),
-          role: "user",
-          content: fakeInput,
-          time: getCurrentTime(),
-        };
-        setMessages((prev) => [...prev, userMsg]);
-
-        sendChatMessage({
-          message: fakeInput,
-          conversation_id: conversationId,
-        }, (session?.user as any)?.access_token)
-          .then((response) => {
-            setConversationId(response.conversation_id);
-            const botMsg: Message = {
-              id: generateId(),
-              role: "assistant",
-              content: response.message,
-              time: getCurrentTime(),
-            };
-            setMessages((prev) => [...prev, botMsg]);
-            if (response.suggestions?.length) {
-              setSuggestions(response.suggestions);
-            }
-          })
-          .catch(() => {
-            const errorMsg: Message = {
-              id: generateId(),
-              role: "assistant",
-              content:
-                "❌ Không thể kết nối đến server. Vui lòng kiểm tra backend và thử lại.",
-              time: getCurrentTime(),
-            };
-            setMessages((prev) => [...prev, errorMsg]);
-          })
-          .finally(() => setIsLoading(false));
-      }, 0);
+      void dispatchMessage(text, null);
     },
-    [conversationId, session]
+    [dispatchMessage],
   );
 
   const handleClear = useCallback(async () => {
     if (conversationId) {
       try {
-        await clearConversation(conversationId);
-      } catch {
-        /* ignore */
+        const token = (session as any)?.user?.access_token;
+        await clearConversation(conversationId, token);
+      } catch (err) {
+        console.warn("[ChatWidget] clearConversation failed:", err);
       }
     }
     setMessages([]);
     setSuggestions([]);
     setConversationId(null);
     setSelectedFile(null);
-    setHagentConnected(null);
-  }, [conversationId]);
+    setHagentStatus(null);
+  }, [conversationId, session]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -431,19 +421,23 @@ export default function ChatWidget() {
                 className={styles.statusDot}
                 style={{
                   background:
-                    hagentConnected === true
-                      ? "#00d26a"
-                      : hagentConnected === false
-                        ? "#ff6b35"
-                        : "#888",
+                    hagentStatus === null
+                      ? "#888"
+                      : hagentStatus.bridgeReachable && hagentStatus.gatewayConnected
+                        ? "#00d26a"
+                        : hagentStatus.bridgeReachable
+                          ? "#f59e0b"
+                          : "#ef4444",
                 }}
               />
               <span>
-                {hagentConnected === true
-                  ? "HAgent Connected"
-                  : hagentConnected === false
-                    ? "Demo Mode"
-                    : "Checking..."}
+                {hagentStatus === null
+                  ? "Checking..."
+                  : hagentStatus.bridgeReachable && hagentStatus.gatewayConnected
+                    ? "HAgent Connected"
+                    : hagentStatus.bridgeReachable
+                      ? "Bridge Ready · Gateway Connecting..."
+                      : "Disconnected"}
               </span>
             </div>
           </div>

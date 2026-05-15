@@ -2,10 +2,12 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { jwtDecode } from "jwt-decode";
 
+const AUTH_API_BASE_URL = process.env.AUTH_API_BASE_URL || process.env.NEXT_PUBLIC_BASE_API;
+
 async function refreshAccessToken(token: any) {
   try {
     console.log("Bắt đầu chưa gọi");
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/refresh`, {
+    const res = await fetch(`${AUTH_API_BASE_URL}/refresh`, {
       method: "POST",
 
       headers: {
@@ -31,7 +33,7 @@ async function refreshAccessToken(token: any) {
       refresh_token: data.refresh_token,
       accessTokenExpires: decoded.exp * 1000, // ms
     };
-  } catch (error) {
+  } catch {
     return {
       ...token,
       error: "RefreshAccessTokenError",
@@ -64,7 +66,7 @@ export const authOptions: NextAuthOptions = {
           const decoded: any = jwtDecode(access_token);
 
           // gọi API lấy user
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+          const res = await fetch(`${AUTH_API_BASE_URL}/me`, {
             method: "GET",
             headers: {
               Authorization: `Bearer ${access_token}`,
@@ -88,7 +90,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const { username, password } = credentials as any;
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/login`, {
+          const res = await fetch(`${AUTH_API_BASE_URL}/login`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -113,7 +115,7 @@ export const authOptions: NextAuthOptions = {
           let userInf: any;
           // Lấy thông tin user có access token
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+            const res = await fetch(`${AUTH_API_BASE_URL}/me`, {
               method: "GET",
               headers: {
                 Accept: "application/json",

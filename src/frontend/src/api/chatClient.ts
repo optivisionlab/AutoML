@@ -6,7 +6,7 @@ import { getSession } from "next-auth/react";
 // Tách biệt hoàn toàn với axiosClient chính (HAutoML backend).
 
 const hagentClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_HAGENT_URL || "http://localhost:8900",
+  baseURL: process.env.NEXT_PUBLIC_HAGENT_URL || "/api/hagent",
 });
 
 // Bỏ interceptor để gửi token trực tiếp qua hàm sendChatMessage
@@ -127,8 +127,17 @@ export async function checkHAgentHealth(): Promise<HealthResponse> {
   return data;
 }
 
-export async function clearConversation(conversationId: string): Promise<void> {
-  await hagentClient.delete(`${CHAT_ENDPOINT}/conversation/${conversationId}`);
+export async function clearConversation(conversationId: string, token?: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  } else {
+    const session: any = await getSession();
+    if (session?.user?.access_token) {
+      headers["Authorization"] = `Bearer ${session.user.access_token}`;
+    }
+  }
+  await hagentClient.delete(`${CHAT_ENDPOINT}/conversation/${conversationId}`, { headers });
 }
 
 

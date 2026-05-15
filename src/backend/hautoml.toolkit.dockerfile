@@ -1,7 +1,7 @@
 FROM python:3.10.12
 
 # setup system
-RUN apt-get update && apt-get install vim curl -y
+RUN apt-get update && apt-get install vim curl socat -y
 
 # setup nodejs and openclaw
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
