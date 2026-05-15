@@ -121,10 +121,10 @@ def user_safe_error(raw_error: str) -> str:
     )
     if memory_match:
         required, available = memory_match.groups()
-        return proxy_message("ollama_memory", required=required, available=available)
+        return proxy_message("model_memory", required=required, available=available)
 
     if "html error page" in lower or "model_not_found" in lower or "404 <!doctype html" in lower:
-        return proxy_message("ollama_endpoint")
+        return proxy_message("model_endpoint")
 
     if "gatewaytransporterror" in lower or "1006 abnormal closure" in lower:
         return proxy_message("gateway_connection")

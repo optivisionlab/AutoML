@@ -65,8 +65,8 @@ proxy:
     token: "/tmp/hagent_user_token"
     user_id: "/tmp/hagent_user_id"
   error_messages:
-    ollama_memory: "HAgent đã kết nối tới Ollama, nhưng model hiện tại không load được vì thiếu RAM. Model cần {required}, máy Ollama hiện còn {available}. Hãy giải phóng RAM trên máy chạy Ollama hoặc đổi sang model nhẹ hơn rồi thử lại."
-    ollama_endpoint: "HAgent đã gọi tới Ollama nhưng endpoint trả về trang lỗi thay vì API response. Hãy kiểm tra lại URL ngrok và tên model đang cấu hình."
+    model_memory: "HAgent đã kết nối tới provider AI, nhưng model hiện tại không load được vì thiếu RAM. Model cần {required}, hệ thống hiện còn {available}. Hãy kiểm tra lại provider/model đang cấu hình rồi thử lại."
+    model_endpoint: "HAgent đã gọi provider AI nhưng endpoint trả về trang lỗi thay vì API response. Hãy kiểm tra lại cấu hình provider/model đang sử dụng."
     gateway_connection: "HAgent Gateway đang đóng kết nối bất thường. Vui lòng thử lại sau ít phút; nếu vẫn lỗi, kiểm tra log của toolkit/openclaw_gateway."
     timeout: "HAgent xử lý quá lâu và bị timeout. Vui lòng thử lại hoặc dùng yêu cầu ngắn hơn."
     invalid_response: "HAgent chưa trả về phản hồi hợp lệ. Vui lòng thử lại sau."

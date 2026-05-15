@@ -23,7 +23,7 @@ export interface ChatRequest {
   message: string;
   conversation_id?: string | null;
   context?: Record<string, unknown>;
-  /** LLM provider: google, openai, anthropic, ollama */
+  /** LLM provider override */
   provider?: string | null;
   /** Tên model cụ thể muốn sử dụng */
   model?: string | null;

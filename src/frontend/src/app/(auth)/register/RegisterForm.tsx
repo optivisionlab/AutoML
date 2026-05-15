@@ -106,20 +106,12 @@ const RegisterForm = () => {
     };
 
     try {
-      const registeredUser = await dispatch(registerAsync(newUser)).unwrap();
+      await dispatch(registerAsync(newUser)).unwrap();
+      console.log("Đăng ký thành công, cần kích hoạt");
 
       form.reset();
 
-      if (registeredUser?.is_verified) {
-        toast({
-          title: "Đăng ký thành công",
-          className: "bg-green-100 text-green-800 border border-green-300",
-          description: "Bạn có thể đăng nhập ngay.",
-        });
-        router.push("/login");
-      } else {
-        router.push(`/verify-email?email=${values.email}`);
-      }
+      router.push(`/verify-email?email=${values.email}`);
 
       // toast({
       //   title: "Đăng ký thành công",
