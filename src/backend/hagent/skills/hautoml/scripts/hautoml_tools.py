@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -184,6 +185,65 @@ def _handle_response(resp):
         logger.info(resp.text)
 
 
+UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _is_uuid(value: str | None) -> bool:
+    return bool(value and UUID_RE.match(value.strip()))
+
+
+def _json_or_none(resp):
+    try:
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _normalize_jobs_payload(payload):
+    """Chuẩn hóa payload danh sách job về list[dict] dù API trả list hay wrapper."""
+    if isinstance(payload, list):
+        return payload
+
+    if isinstance(payload, dict):
+        for key in ("jobs", "data", "items", "results"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+
+    return []
+
+
+def _job_matches_identifier(job: dict, identifier: str) -> bool:
+    data = job.get("data") if isinstance(job.get("data"), dict) else {}
+    candidates = [
+        job.get("job_id"),
+        str(job.get("_id")) if job.get("_id") is not None else None,
+        data.get("id"),
+        data.get("name"),
+    ]
+    return any(str(candidate) == identifier for candidate in candidates if candidate is not None)
+
+
+def _find_job_by_identifier(identifier: str, token: str | None, user_id: str | None):
+    """Fallback phía HAgent: tìm job theo dataset id/name trong danh sách job."""
+    resolved_user_id = _resolve_user_id(user_id)
+    resp = _post(
+        f"{HAUTOML_BASE_URL}/get-list-job-by-userId",
+        headers=_headers(token),
+        params={"user_id": resolved_user_id},
+        timeout=30,
+    )
+    if resp.status_code >= 400:
+        return None
+
+    jobs = _normalize_jobs_payload(_json_or_none(resp))
+    matched_jobs = [job for job in jobs if isinstance(job, dict) and _job_matches_identifier(job, identifier)]
+    matched_jobs.sort(key=lambda item: item.get("create_at") or 0, reverse=True)
+    return matched_jobs[0] if matched_jobs else None
+
+
 # ─── Các lệnh hiện có ───────────────────────────────────
 
 
@@ -248,7 +308,42 @@ def cmd_get_job_info(args):
         params={"id": args.job_id},
         timeout=30,
     )
-    _handle_response(resp)
+    data = _json_or_none(resp)
+
+    if resp.status_code >= 400:
+        fallback_job = None
+        if not _is_uuid(args.job_id):
+            fallback_job = _find_job_by_identifier(args.job_id, args.token, args.user_id)
+
+        if fallback_job:
+            resolved_job_id = fallback_job.get("job_id")
+            if resolved_job_id and resolved_job_id != args.job_id:
+                fallback_job["resolved_from"] = args.job_id
+                fallback_job["resolved_by"] = "dataset_or_mongo_id"
+                fallback_job["message"] = (
+                    "Đã tìm thấy job liên quan đến dataset/ID đã nhập. "
+                    f"Job ID thật là {resolved_job_id}."
+                )
+            _print_json(fallback_job)
+            return
+
+        logger.error(f"LỖI [{resp.status_code}]: {resp.text}")
+        sys.exit(1)
+
+    if isinstance(data, dict) and data.get("job_id") and data.get("job_id") != args.job_id:
+        data["resolved_from"] = args.job_id
+        data["resolved_by"] = "dataset_or_mongo_id"
+        data["message"] = (
+            "Đã tìm thấy job liên quan đến dataset/ID đã nhập. "
+            f"Job ID thật là {data.get('job_id')}."
+        )
+        _print_json(data)
+        return
+
+    if data is not None:
+        _print_json(data)
+    else:
+        logger.info(resp.text)
 
 
 def cmd_train_model(args):
@@ -486,6 +581,7 @@ def main():
     # get_job_info
     p = subparsers.add_parser("get_job_info", help="Lấy chi tiết job")
     p.add_argument("--job-id", required=True, help="ID job")
+    p.add_argument("--user-id", default=None, help="User ID (dùng khi cần tìm theo dataset)")
     p.add_argument("--token", required=True, help="JWT access token")
 
     # get_available_models

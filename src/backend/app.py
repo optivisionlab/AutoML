@@ -287,7 +287,7 @@ async def get_job_info(id: str, db: AsyncDatabase = Depends(get_db), current_use
             detail="Permission denied",
         )
 
-    return await get_one_job(id_job=id, db=db)
+    return await get_one_job(id_job=id, db=db, user_id=current_user['_id'])
 
 
 @app.post("/get-data-from-uci")

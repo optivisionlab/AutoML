@@ -883,14 +883,19 @@ async def get_jobs(user_id, db: AsyncDatabase):
 
 
 
-# Lấy job theo job_id
-async def get_one_job(id_job: str, db: AsyncDatabase):
+# Lấy job theo job_id / dataset id / dataset name
+async def get_one_job(id_job: str, db: AsyncDatabase, user_id: str | None = None):
     """
-    Lấy thông tin chi tiết một job theo ID.
+    Lấy thông tin chi tiết một job theo job_id.
+
+    Để hỗ trợ HAgent/người dùng nhập nhầm tên dataset thay vì UUID job,
+    hàm cũng cho phép tra cứu theo data.id hoặc data.name và trả job mới nhất
+    liên quan đến dataset đó.
 
     Args:
-        id_job: ID của job cần truy vấn
+        id_job: job_id, data.id hoặc data.name cần truy vấn
         db: Kết nối AsyncDatabase MongoDB
+        user_id: ID người dùng để giới hạn phạm vi truy vấn
 
     Returns:
         JSONResponse: Thông tin chi tiết job
@@ -899,16 +904,47 @@ async def get_one_job(id_job: str, db: AsyncDatabase):
         HTTPException: Nếu không tìm thấy job hoặc truy vấn lỗi
     """
     job_collection = db.tbl_Job
+    projection = {"model": 0, "item": 0, "user": 0}
     try:
-        job = await job_collection.find_one({"job_id": id_job}, {"model": 0, "item": 0, "user": 0})
+        identifier = str(id_job).strip()
+        if not identifier:
+            raise HTTPException(status_code=400, detail="Thiếu ID job hoặc thông tin dataset.")
+
+        lookup_conditions = [
+            {"job_id": identifier},
+            {"data.id": identifier},
+            {"data.name": identifier},
+        ]
+
+        # Cho phép tra cứu bằng _id MongoDB của bản ghi job nếu người dùng/API truyền vào.
+        if ObjectId.is_valid(identifier):
+            lookup_conditions.append({"_id": ObjectId(identifier)})
+
+        query = {"$or": lookup_conditions}
+        if user_id:
+            query = {"$and": [query, {"user.id": str(user_id)}]}
+
+        job = await job_collection.find_one(
+            query,
+            projection,
+            sort=[("create_at", -1)],
+        )
         if not job:
-            raise HTTPException(status_code=404, detail="Không tìm thấy job với ID đã cho.")
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Không tìm thấy job với ID/dataset đã cho. "
+                    "Nếu bạn đang dùng tên dataset, hãy kiểm tra danh sách job để lấy Job ID UUID tương ứng."
+                ),
+            )
 
         for key, value in job.items():
             if isinstance(value, datetime):
                 job[key] = value.timestamp()
 
         return JSONResponse(content=serialize_mongo_doc(job))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi khi truy vấn job: {str(e)}")
 
