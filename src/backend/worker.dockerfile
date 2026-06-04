@@ -9,6 +9,7 @@ WORKDIR /app
 
 # Sao chép file requirements.txt vào container và cài đặt thư viện
 COPY requirements.txt .
+COPY libs/optivisionlab_search ./libs/optivisionlab_search
 RUN pip install --no-cache-dir  -r requirements.txt
 
 COPY . .

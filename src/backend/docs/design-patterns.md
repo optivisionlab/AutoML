@@ -328,7 +328,7 @@ flowchart TD
 ### Cách sử dụng Factory
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 
 # Tên đầy đủ
 strategy = SearchStrategyFactory.create_strategy('grid_search')
@@ -728,7 +728,7 @@ Worker duy trì LRU cache tối đa 3 bộ dữ liệu trong memory để tránh
 ### Ví dụ sử dụng tổng hợp
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 
 # Factory Pattern: Tạo strategy từ tên
 strategy = SearchStrategyFactory.create_strategy('genetic', {

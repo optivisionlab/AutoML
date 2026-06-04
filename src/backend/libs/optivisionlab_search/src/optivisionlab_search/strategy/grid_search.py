@@ -11,7 +11,7 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 
-from automl.search.strategy.base import SearchStrategy, normalize_param_grid
+from optivisionlab_search.strategy.base import SearchStrategy, normalize_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -58,11 +58,11 @@ class GridSearchStrategy(SearchStrategy):
     def _select_optimal_backend(self, n_combinations: int, data_size: int) -> str:
         """
         Chọn backend tối ưu dựa trên workload.
-        
+
         Args:
             n_combinations: Số tổ hợp tham số cần đánh giá
             data_size: Kích thước dữ liệu (số samples * số features)
-            
+
         Returns:
             str: 'threading' hoặc 'loky'
         """
@@ -87,12 +87,12 @@ class GridSearchStrategy(SearchStrategy):
     def _estimate_remaining_time(self, completed: int, total: int, elapsed: float) -> str:
         """
         Ước tính thời gian còn lại.
-        
+
         Args:
             completed: Số tổ hợp đã hoàn thành
             total: Tổng số tổ hợp
             elapsed: Thời gian đã trôi qua (giây)
-            
+
         Returns:
             str: Chuỗi định dạng thời gian còn lại
         """
@@ -112,18 +112,18 @@ class GridSearchStrategy(SearchStrategy):
     def _check_early_stopping(self, best_score: float, batch_idx: int) -> bool:
         """
         Kiểm tra điều kiện early stopping.
-        
+
         Args:
             best_score: Điểm số tốt nhất hiện tại
             batch_idx: Chỉ số batch hiện tại
-            
+
         Returns:
             bool: True nếu nên dừng sớm
         """
         # Không áp dụng early stopping nếu có time limit (ưu tiên time)
         if not self._should_apply_early_stopping():
             return False
-            
+
         if not self.config.get('early_stopping_enabled', False):
             return False
 
@@ -149,11 +149,11 @@ class GridSearchStrategy(SearchStrategy):
     def _get_params_hash(self, params: Dict[str, Any], model: BaseEstimator) -> str:
         """
         Tạo cache_key từ Hash(M.class, θ).
-        
+
         Args:
             params: Tổ hợp tham số θ cần đánh giá
             model: Mô hình M (bao gồm cả class và cấu hình ban đầu)
-            
+
         Returns:
             str: Hash key duy nhất cho tổ hợp (model, params)
         """
@@ -166,7 +166,7 @@ class GridSearchStrategy(SearchStrategy):
         # Hash từ: model class + model base params + params cần đánh giá
         params_str = str(sorted(params.items()))
         hash_input = f"{model_class_info}_{model_base_params}_{params_str}"
-        return hashlib.md5(hash_input.encode()).hexdigest()
+        return hashlib.sha256(hash_input.encode()).hexdigest()
 
     def _evaluate_single_params(self, params: Dict[str, Any], model: BaseEstimator,
                                 X: np.ndarray, y: np.ndarray, cv, scoring_config) -> Dict[str, Any]:

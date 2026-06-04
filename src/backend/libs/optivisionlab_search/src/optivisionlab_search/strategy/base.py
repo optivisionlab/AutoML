@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 def normalize_param_grid(param_grid: Union[Dict, List[Dict], None]) -> List[Dict]:
     """
     Chuẩn hóa param_grid về định dạng list-of-dicts.
-    
+
     Args:
         param_grid: dict đơn lẻ, list of dicts, hoặc None
-        
+
     Returns:
         List of parameter dictionaries
-        
+
     Raises:
         ValueError: Nếu định dạng không hợp lệ
     """
@@ -41,6 +41,12 @@ def normalize_param_grid(param_grid: Union[Dict, List[Dict], None]) -> List[Dict
         raise ValueError(f"param_grid list chứa phần tử không phải dict")
 
     raise ValueError(f"param_grid phải là dict hoặc list of dicts, nhận được {type(param_grid)}")
+
+
+def _get_config_dir() -> str:
+    """Trả về đường dẫn tuyệt đối tới thư mục config/ của package."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config')
+
 
 class SearchStrategy(ABC):
     """Base class for all search strategies."""
@@ -71,55 +77,55 @@ class SearchStrategy(ABC):
     def _check_time_status(self) -> Tuple[Optional[float], bool]:
         """
         Kiểm tra trạng thái thời gian của quá trình search.
-        
+
         Returns:
-            Tuple[Optional[float], bool]: 
+            Tuple[Optional[float], bool]:
                 - remaining_time: Thời gian còn lại (giây), None nếu không có time limit
                 - is_exceeded: True nếu đã vượt quá time limit, False nếu chưa
         """
         max_time = self.config.get('max_time')
-        
+
         # Nếu không có time limit
         if max_time is None:
             return None, False
-            
+
         # Tính thời gian đã trôi qua
         elapsed = 0.0 if self._search_start_time is None else time.time() - self._search_start_time
         remaining = max(0.0, max_time - elapsed)
-        
+
         # Kiểm tra đã vượt quá chưa
         is_exceeded = elapsed >= max_time
         if is_exceeded:
             self._time_limit_reached = True
-            
+
         return remaining, is_exceeded
 
     def _should_start_next_iteration(self, iteration_duration: float = None) -> bool:
         """
-        Kiểm tra xem có nên bắt đầu iteration tiếp theo không, dựa trên 
+        Kiểm tra xem có nên bắt đầu iteration tiếp theo không, dựa trên
         thời gian còn lại và ước tính thời gian mỗi iteration.
-        
+
         Phương thức này sử dụng EMA (exponential moving average) để ước tính
-        thời gian cho iteration tiếp theo. Nếu thời gian ước tính vượt quá 
+        thời gian cho iteration tiếp theo. Nếu thời gian ước tính vượt quá
         thời gian còn lại, trả về False để dừng sớm (proactive stop).
-        
+
         Args:
             iteration_duration: Thời gian iteration vừa hoàn thành (giây).
                               Nếu None, chỉ kiểm tra time exceeded.
-        
+
         Returns:
             bool: True nếu nên tiếp tục, False nếu nên dừng.
         """
         remaining_time, is_exceeded = self._check_time_status()
-        
+
         # Đã vượt quá time limit
         if is_exceeded:
             return False
-        
+
         # Không có time limit
         if remaining_time is None:
             return True
-        
+
         # Cập nhật EMA nếu có iteration_duration
         if iteration_duration is not None:
             if not hasattr(self, '_iteration_time_ema') or self._iteration_time_ema is None:
@@ -127,7 +133,7 @@ class SearchStrategy(ABC):
             else:
                 # EMA: 70% giá trị mới, 30% giá trị cũ
                 self._iteration_time_ema = 0.7 * iteration_duration + 0.3 * self._iteration_time_ema
-        
+
         # Kiểm tra proactive: ước tính iteration tiếp theo có vượt quá không
         if hasattr(self, '_iteration_time_ema') and self._iteration_time_ema is not None:
             # Nhân 1.2x safety factor (iteration tiếp có thể chậm hơn)
@@ -139,27 +145,27 @@ class SearchStrategy(ABC):
                 )
                 self._time_limit_reached = True
                 return False
-        
+
         return True
 
     def _should_apply_early_stopping(self) -> bool:
         """
         Xác định có nên áp dụng early stopping hay không.
-        
+
         Logic:
-        - Nếu max_time được set: KHÔNG áp dụng early stopping (ưu tiên time)  
+        - Nếu max_time được set: KHÔNG áp dụng early stopping (ưu tiên time)
         - Nếu không có max_time: Áp dụng early stopping theo cấu hình
-        
+
         Returns:
             bool: True nếu nên áp dụng early stopping, False nếu không
         """
         max_time = self.config.get('max_time')
-        
+
         # Nếu có time limit, không áp dụng early stopping
         if max_time is not None:
             return False
-        
-        # Không có time limit, áp dụng early stopping theo config    
+
+        # Không có time limit, áp dụng early stopping theo config
         return True
 
     @staticmethod
@@ -167,16 +173,16 @@ class SearchStrategy(ABC):
         """
         Tải cấu hình từ file YAML. Nếu không tìm thấy file config chính,
         sẽ load file default config.
-        
+
         Args:
             config_name: Tên config (vd: 'base', 'grid_search', 'bayesian_search')
-            
+
         Returns:
             Dict chứa cấu hình từ file YAML
         """
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(current_dir, f'{config_name}_config.yml')
-        default_config_file = os.path.join(current_dir, f'{config_name}_default_config.yml')
+        config_dir = _get_config_dir()
+        config_file = os.path.join(config_dir, f'{config_name}_config.yml')
+        default_config_file = os.path.join(config_dir, f'{config_name}_default_config.yml')
 
         loaded_config = {}
 
@@ -234,7 +240,7 @@ class SearchStrategy(ABC):
     @abstractmethod
     def search(self, model: BaseEstimator, param_grid: List[Dict[str, Any]], X: np.ndarray, y: np.ndarray, **kwargs):
         """Thực thi thuật toán tìm kiếm.
-        
+
         Args:
             model: Mô hình scikit-learn cần tối ưu hóa
             param_grid: List of dicts, mỗi dict chứa các tham số cần tìm kiếm.
@@ -256,14 +262,14 @@ class SearchStrategy(ABC):
 
     def create_log_file_path(self, model: BaseEstimator, strategy_name: str = None) -> Optional[str]:
         """Tạo đường dẫn file log để lưu kết quả tìm kiếm.
-        
+
         Phương thức này tạo đường dẫn file log chuẩn hóa dựa trên cấu hình.
         Nó đảm bảo thư mục log tồn tại và tạo tên file có timestamp.
-        
+
         Args:
             model: Mô hình đang được sử dụng cho tìm kiếm
             strategy_name: Tên tùy chọn cho strategy (mặc định là tên class)
-            
+
         Returns:
             str: Đường dẫn đến file log nếu save_log là True, None nếu ngược lại
         """
@@ -295,13 +301,13 @@ class SearchStrategy(ABC):
     @staticmethod
     def convert_numpy_types(obj: Any) -> Any:
         """Chuyển đổi kiểu numpy sang kiểu Python gốc một cách đệ quy.
-        
-        Điều này quan trọng cho JSON serialization và tránh 
+
+        Điều này quan trọng cho JSON serialization và tránh
         lỗi kiểu không thể hash.
-        
+
         Args:
             obj: Đối tượng cần chuyển đổi (có thể là dict, list, scalar, v.v.)
-            
+
         Returns:
             Đối tượng với tất cả kiểu numpy đã được chuyển đổi sang kiểu Python gốc
         """
@@ -327,17 +333,17 @@ class SearchStrategy(ABC):
     def _finalize_results(self, best_params: Dict[str, Any], best_score: float,
                           best_all_scores: Dict[str, float], cv_results: Dict[str, Any]) -> Tuple:
         """Xóa cache và chuyển đổi kiểu numpy trước khi trả về kết quả.
-        
+
         Phương thức này nên được gọi ở cuối phương thức search để:
         1. Xóa tất cả cache để giải phóng bộ nhớ
         2. Chuyển đổi kiểu numpy sang kiểu Python gốc để serialization
-        
+
         Args:
             best_params: Tham số tốt nhất tìm được
             best_score: Điểm số tốt nhất đạt được
             best_all_scores: Tất cả điểm số metric cho tham số tốt nhất
             cv_results: Kết quả cross-validation chi tiết
-            
+
         Returns:
             tuple: (best_params, best_score, best_all_scores, cv_results, time_limit_reached)
                 Tất cả kiểu numpy đã chuyển đổi sang Python gốc.

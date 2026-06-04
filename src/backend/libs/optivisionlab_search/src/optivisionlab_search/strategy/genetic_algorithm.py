@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate
 
-from automl.search.strategy.base import SearchStrategy, normalize_param_grid
+from optivisionlab_search.strategy.base import SearchStrategy, normalize_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _encode_parameters(self, param_grid: Dict[str, Any]) -> Dict[str, Any]:
         """Mã hóa lưới tham số cho thuật toán di truyền.
-        
+
         Hỗ trợ list-of-dicts format. Mỗi grid có encoding riêng để đảm bảo
         decode đúng giá trị.
         """
@@ -142,13 +142,13 @@ class GeneticAlgorithm(SearchStrategy):
 
     def _create_individual(self, grid_idx: int = None) -> Dict[str, float]:
         """Tạo một cá thể cho thuật toán di truyền.
-        
+
         Args:
             grid_idx: Chỉ số của grid trong list-of-dicts. Nếu None, chọn ngẫu nhiên.
-            
+
         Returns:
             Dict[str, float]: Cá thể với các tham số được mã hóa.
-            
+
         Raises:
             ValueError: Nếu không có grid nào được định nghĩa.
         """
@@ -259,14 +259,14 @@ class GeneticAlgorithm(SearchStrategy):
     def _get_adaptive_tournament_size(self, diversity: float, population_size: int) -> int:
         """
         Tính tournament size thích ứng dựa trên diversity.
-        
+
         - Diversity thấp: giảm tournament size để tăng exploration
         - Diversity cao: tăng tournament size để tăng exploitation
-        
+
         Args:
             diversity: Độ đa dạng của quần thể (0-1)
             population_size: Kích thước quần thể
-            
+
         Returns:
             int: Tournament size tối ưu
         """
@@ -289,7 +289,7 @@ class GeneticAlgorithm(SearchStrategy):
     def _tournament_selection(self, population: List[Dict[str, float]], fitness_scores, diversity: float = None) -> Dict[str, float]:
         """
         Chọn cá thể sử dụng chọn lọc đấu trường với tối ưu hóa numpy.
-        
+
         Args:
             population: Danh sách các cá thể
             fitness_scores: Điểm fitness của từng cá thể
@@ -319,7 +319,7 @@ class GeneticAlgorithm(SearchStrategy):
     def _crossover(self, parent1: Dict[str, float], parent2: Dict[str, float]) -> Tuple[
         Dict[str, float], Dict[str, float]]:
         """Thực hiện lai ghép giữa hai cá thể sử dụng chiến lược khác nhau dựa trên kiểu tham số.
-        
+
         Chỉ thực hiện lai ghép nếu hai cá thể thuộc cùng một grid group.
         """
         if random.random() > self.config['crossover_rate']:
@@ -435,11 +435,11 @@ class GeneticAlgorithm(SearchStrategy):
     def _inject_diversity(self, population: List[Dict[str, float]], injection_rate: float = 0.3) -> List[
         Dict[str, float]]:
         """Tiêm các cá thể ngẫu nhiên mới để tăng đa dạng khi quần thể trì trệ.
-        
+
         Args:
             population: Quần thể hiện tại
             injection_rate: Tỷ lệ quần thể được thay thế bằng các cá thể ngẫu nhiên mới
-        
+
         Returns:
             Quần thể đã tiêm đa dạng
         """
@@ -462,14 +462,14 @@ class GeneticAlgorithm(SearchStrategy):
     def _create_next_generation(self, population: List[Dict[str, float]], fitness_scores: np.ndarray, diversity: float,
                                 generation: int, population_size: int) -> List[Dict[str, float]]:
         """Tạo thế hệ tiếp theo từ quần thể hiện tại.
-        
+
         Args:
             population: Quần thể hiện tại
             fitness_scores: Điểm fitness của từng cá thể
             diversity: Độ đa dạng của quần thể
             generation: Số thế hệ hiện tại
             population_size: Kích thước quần thể mục tiêu
-            
+
         Returns:
             Quần thể mới cho thế hệ tiếp theo
         """
@@ -512,13 +512,13 @@ class GeneticAlgorithm(SearchStrategy):
     def _calculate_population_diversity_fast(self, population: List[Dict[str, float]]) -> float:
         """
         Tính độ đa dạng của quần thể với độ phức tạp O(n).
-        
+
         Sử dụng variance của mỗi parameter thay vì so sánh pairwise.
         Nhanh hơn nhiều cho quần thể lớn.
-        
+
         Args:
             population: Danh sách các cá thể
-            
+
         Returns:
             float: Độ đa dạng normalized (0-1)
         """
@@ -590,7 +590,7 @@ class GeneticAlgorithm(SearchStrategy):
     def _calculate_population_diversity(self, population: List[Dict[str, float]]) -> float:
         """
         Tính độ đa dạng của quần thể.
-        
+
         Tự động chọn phương pháp tối ưu dựa trên kích thước quần thể:
         - Quần thể nhỏ (< 20): sử dụng pairwise comparison (chính xác hơn)
         - Quần thể lớn (>= 20): sử dụng variance-based (nhanh hơn)
@@ -653,7 +653,7 @@ class GeneticAlgorithm(SearchStrategy):
     def _evaluate_population_parallel(self, population: List[Dict[str, float]], model: BaseEstimator, X: np.ndarray,
                                       y: np.ndarray) -> List[Dict[str, float]]:
         """Đánh giá tất cả các cá thể song song với tối ưu hóa thông minh.
-        
+
         Giới hạn thời gian được kiểm tra ở cấp độ thế hệ trong search(), không phải ở đây.
         """
         n_jobs = self.config.get('n_jobs', -1)

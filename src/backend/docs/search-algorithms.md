@@ -109,7 +109,7 @@ show_time_estimate: true
 ### Code sử dụng
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 from sklearn.ensemble import RandomForestClassifier
 
 strategy = SearchStrategyFactory.create_strategy('grid', {
@@ -219,7 +219,7 @@ save_optimizer_state: true
 
 ```python
 from skopt.space import Real, Integer, Categorical
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 
 param_space = {
     'n_estimators': Integer(50, 300, name='n_estimators'),
@@ -358,7 +358,7 @@ n_initial_random: 3
 ### Code sử dụng
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 from sklearn.ensemble import RandomForestClassifier
 
 strategy = SearchStrategyFactory.create_strategy('genetic', {
@@ -493,7 +493,7 @@ flowchart TD
 ## Ví dụ hoàn chỉnh
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split

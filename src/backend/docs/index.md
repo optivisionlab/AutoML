@@ -41,7 +41,7 @@ uvicorn app:app --host 0.0.0.0 --port 9999 --reload
 ### Sử dụng Search Strategy
 
 ```python
-from automl.search.factory import SearchStrategyFactory
+from optivisionlab_search import SearchStrategyFactory
 from sklearn.ensemble import RandomForestClassifier
 
 # Tạo strategy

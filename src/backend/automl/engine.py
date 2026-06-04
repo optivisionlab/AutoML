@@ -20,8 +20,7 @@ from sklearn.base import clone
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.model import Item
-from automl.search.factory import SearchStrategyFactory
-from automl.search.strategy.base import SearchStrategy
+from optivisionlab_search import SearchStrategyFactory, SearchStrategy
 from automl.v2.minio import minIOStorage
 from automl.process_classification import preprocess_data
 

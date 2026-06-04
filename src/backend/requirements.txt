@@ -32,3 +32,6 @@ passlib[argon2]==1.7.4
 psutil>=7.2.1
 fastapi-mail
 qrcode[pil]
+
+# Local libraries
+-e ./libs/optivisionlab_search

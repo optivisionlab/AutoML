@@ -12,7 +12,7 @@ from skopt import gp_minimize
 from skopt.space import Categorical
 from skopt.utils import use_named_args
 
-from automl.search.strategy.base import SearchStrategy, normalize_param_grid
+from optivisionlab_search.strategy.base import SearchStrategy, normalize_param_grid
 
 # Cấu hình logger cho module này
 logger = logging.getLogger(__name__)
@@ -31,10 +31,10 @@ class BayesianSearchStrategy(SearchStrategy):
     def _detect_class_imbalance(self, y: np.ndarray) -> bool:
         """
         Phát hiện xem tập dữ liệu có mất cân bằng lớp hay không.
-        
+
         Args:
             y: Mảng nhãn
-            
+
         Returns:
             bool: True nếu mất cân bằng, False nếu cân bằng
         """
@@ -58,10 +58,10 @@ class BayesianSearchStrategy(SearchStrategy):
     def _get_averaging_method(self, y: np.ndarray) -> str:
         """
         Xác định phương pháp tính trung bình nào sẽ sử dụng dựa trên cấu hình và dữ liệu.
-        
+
         Args:
             y: Mảng nhãn
-            
+
         Returns:
             str: 'macro' hoặc 'weighted'
         """
@@ -98,20 +98,20 @@ class BayesianSearchStrategy(SearchStrategy):
     def _get_search_space_hash(self, search_space: List) -> str:
         """
         Tạo hash của search space để nhận dạng cấu hình.
-        
+
         Args:
             search_space: Danh sách các dimensions
-            
+
         Returns:
             str: Hash của search space
         """
         space_str = str([(d.name, str(d)) for d in search_space])
-        return hashlib.md5(space_str.encode()).hexdigest()[:8]
+        return hashlib.sha256(space_str.encode()).hexdigest()[:8]
 
     def _save_optimizer_state(self, result, search_space_hash: str, model_name: str):
         """
         Lưu trạng thái optimizer để sử dụng cho warm start.
-        
+
         Args:
             result: Kết quả gp_minimize
             search_space_hash: Hash của search space
@@ -135,11 +135,11 @@ class BayesianSearchStrategy(SearchStrategy):
     def _load_optimizer_state(self, search_space_hash: str, model_name: str) -> Tuple[List, List]:
         """
         Tải trạng thái optimizer để warm start.
-        
+
         Args:
             search_space_hash: Hash của search space
             model_name: Tên model
-            
+
         Returns:
             Tuple[List, List]: (x0, y0) cho warm start, hoặc (None, None) nếu không có
         """
@@ -217,7 +217,7 @@ class BayesianSearchStrategy(SearchStrategy):
 
         Args:
             model (BaseEstimator): Mô hình scikit-learn.
-            param_grid (List[Dict[str, Any]]): Một list-of-dicts hoặc một dict đơn lẻ, trong đó mỗi dict 
+            param_grid (List[Dict[str, Any]]): Một list-of-dicts hoặc một dict đơn lẻ, trong đó mỗi dict
                                          chứa key là tên tham số và value có thể là:
                                          - Một dimension của skopt (Real, Integer, Categorical)
                                          - Một list các giá trị (sẽ được chuyển thành Categorical)
@@ -230,7 +230,7 @@ class BayesianSearchStrategy(SearchStrategy):
             Tuple[Dict, float, Dict, Dict, bool]: (best_params, best_score, best_all_scores, cv_results_, time_limit_reached)
                 - best_params: Từ điển các tham số tốt nhất
                 - best_score: Điểm số tốt nhất đạt được
-                - best_all_scores: Từ điển với tất cả điểm số metric cho tham số tốt nhất  
+                - best_all_scores: Từ điển với tất cả điểm số metric cho tham số tốt nhất
                 - cv_results_: Từ điển với kết quả cross-validation chi tiết
                 - time_limit_reached: True nếu search bị dừng do hết thời gian
         """
@@ -394,7 +394,7 @@ class BayesianSearchStrategy(SearchStrategy):
             objective.last_metrics = {}
 
             # Lưu trữ tất cả metrics từ scoring_config (dict từ engine.py)
-            # scoring_metrics có dạng: {'accuracy': scorer, 'precision_macro': scorer, 'precision_weighted': scorer, 
+            # scoring_metrics có dạng: {'accuracy': scorer, 'precision_macro': scorer, 'precision_weighted': scorer,
             #                          'recall_macro': scorer, 'recall_weighted': scorer, 'f1_macro': scorer, 'f1_weighted': scorer}
             for key in scoring_metrics:
                 test_key = f'test_{key}'
