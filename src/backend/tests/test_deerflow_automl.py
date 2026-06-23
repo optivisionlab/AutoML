@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import httpx
 
 # Đảm bảo import path
 BACKEND_DIR = Path(__file__).parent.parent
