@@ -144,3 +144,19 @@ def get_hooks_config() -> dict:
     h = cfg.get("hooks", {})
     h["token"] = os.getenv("HAGENT_HOOKS_TOKEN", h.get("token", ""))
     return h
+
+
+def get_world_state_config() -> dict:
+    """Lấy cấu hình World State."""
+    cfg = load_config()
+    ws = cfg.get("world_state", {}) or {}
+    ws["collection_name"] = os.getenv(
+        "WORLD_STATE_COLLECTION", ws.get("collection_name", "world_states")
+    )
+    ws["ttl_seconds"] = int(
+        os.getenv("WORLD_STATE_TTL_SECONDS", ws.get("ttl_seconds", 86400))
+    )
+    ws["snapshot_size_limit"] = int(
+        os.getenv("WORLD_STATE_SNAPSHOT_SIZE_LIMIT", ws.get("snapshot_size_limit", 16384))
+    )
+    return ws

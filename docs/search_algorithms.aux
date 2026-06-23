@@ -1,0 +1,181 @@
+\relax 
+\providecommand \babel@aux [2]{\global \let \babel@toc \@gobbletwo }
+\@nameuse{bbl@beforestart}
+\catcode `"\active 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\babel@aux{vietnamese}{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Giới thiệu}{3}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{1}{3}{Giới thiệu}{section.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Bài toán tối ưu hóa siêu tham số}{3}{subsection.1.1}\protected@file@percent }
+\newlabel{eq:hpo_problem}{{1}{3}{Bài toán tối ưu hóa siêu tham số}{equation.1}{}}
+\newlabel{eq:cv_score}{{2}{3}{Bài toán tối ưu hóa siêu tham số}{equation.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Các chỉ số đánh giá}{3}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {1.2.1}Bài toán phân loại (Classification)}{3}{subsubsection.1.2.1}\protected@file@percent }
+\newlabel{eq:accuracy}{{3}{3}{Bài toán phân loại (Classification)}{equation.3}{}}
+\newlabel{eq:precision}{{4}{3}{Bài toán phân loại (Classification)}{equation.4}{}}
+\newlabel{eq:recall}{{5}{3}{Bài toán phân loại (Classification)}{equation.5}{}}
+\newlabel{eq:f1}{{6}{3}{Bài toán phân loại (Classification)}{equation.6}{}}
+\newlabel{eq:balanced_accuracy}{{7}{3}{Bài toán phân loại (Classification)}{equation.7}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {1.2.2}Bài toán hồi quy (Regression)}{4}{subsubsection.1.2.2}\protected@file@percent }
+\newlabel{eq:mae}{{8}{4}{Bài toán hồi quy (Regression)}{equation.8}{}}
+\newlabel{eq:mse}{{9}{4}{Bài toán hồi quy (Regression)}{equation.9}{}}
+\newlabel{eq:rmse}{{10}{4}{Bài toán hồi quy (Regression)}{equation.10}{}}
+\newlabel{eq:mape}{{11}{4}{Bài toán hồi quy (Regression)}{equation.11}{}}
+\newlabel{eq:r2}{{12}{4}{Bài toán hồi quy (Regression)}{equation.12}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Grid Search --- Tìm kiếm vét cạn}{5}{section.2}\protected@file@percent }
+\newlabel{sec:grid_search}{{2}{5}{Grid Search --- Tìm kiếm vét cạn}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Định nghĩa}{5}{subsection.2.1}\protected@file@percent }
+\newlabel{eq:grid_search}{{13}{5}{Grid Search}{equation.13}{}}
+\newlabel{eq:grid_combinations}{{14}{5}{Grid Search}{equation.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Giả mã}{5}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.1}Các thủ tục phụ trợ}{5}{subsubsection.2.2.1}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {1}{\ignorespaces Lựa chọn backend thực thi tối ưu (\textsc  {SelectOptimalBackend})}}{5}{algorithm.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{alg:gs_backend}{{1}{5}{Lựa chọn backend thực thi tối ưu (\textsc {SelectOptimalBackend})}{algorithm.1}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {2}{\ignorespaces Tạo khóa hash cho bộ nhớ đệm (\textsc  {GetParamsHash})}}{6}{algorithm.2}\protected@file@percent }
+\newlabel{alg:gs_hash}{{2}{6}{Tạo khóa hash cho bộ nhớ đệm (\textsc {GetParamsHash})}{algorithm.2}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {3}{\ignorespaces Đánh giá tổ hợp tham số đơn lẻ có bộ nhớ đệm (\textsc  {EvaluateSingle})}}{6}{algorithm.3}\protected@file@percent }
+\newlabel{alg:gs_eval_single}{{3}{6}{Đánh giá tổ hợp tham số đơn lẻ có bộ nhớ đệm (\textsc {EvaluateSingle})}{algorithm.3}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {4}{\ignorespaces Đánh giá batch tổ hợp tham số --- song song hoặc tuần tự (\textsc  {EvaluateParamsBatch})}}{7}{algorithm.4}\protected@file@percent }
+\newlabel{alg:gs_eval_batch}{{4}{7}{Đánh giá batch tổ hợp tham số --- song song hoặc tuần tự (\textsc {EvaluateParamsBatch})}{algorithm.4}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {5}{\ignorespaces Kiểm tra điều kiện dừng sớm (\textsc  {CheckEarlyStopping})}}{8}{algorithm.5}\protected@file@percent }
+\newlabel{alg:gs_early_stop}{{5}{8}{Kiểm tra điều kiện dừng sớm (\textsc {CheckEarlyStopping})}{algorithm.5}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {6}{\ignorespaces Kiểm tra thời gian proactive --- EMA (\textsc  {ShouldStartNextIteration})}}{9}{algorithm.6}\protected@file@percent }
+\newlabel{alg:should_start}{{6}{9}{Kiểm tra thời gian proactive --- EMA (\textsc {ShouldStartNextIteration})}{algorithm.6}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.2}Thuật toán chính}{10}{subsubsection.2.2.2}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {7}{\ignorespaces Grid Search với tối ưu hóa tài nguyên trong HAutoML}}{10}{algorithm.7}\protected@file@percent }
+\newlabel{alg:grid_search}{{7}{10}{Grid Search với tối ưu hóa tài nguyên trong HAutoML}{algorithm.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Phân tích độ phức tạp}{10}{subsection.2.3}\protected@file@percent }
+\citation{snoek2012practical}
+\citation{shahriari2016taking}
+\citation{rasmussen2006gaussian}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Tối ưu hóa triển khai trong HAutoML}{11}{subsection.2.4}\protected@file@percent }
+\newlabel{eq:ema_time}{{15}{11}{Tối ưu hóa triển khai trong HAutoML}{equation.15}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Bayesian Optimization --- Tối ưu hóa Bayesian}{11}{section.3}\protected@file@percent }
+\newlabel{sec:bayesian}{{3}{11}{Bayesian Optimization --- Tối ưu hóa Bayesian}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Nguyên lý hoạt động}{11}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Gaussian Process}{11}{subsection.3.2}\protected@file@percent }
+\newlabel{eq:gp_prior}{{16}{11}{Gaussian Process}{equation.16}{}}
+\newlabel{eq:gp_mean}{{17}{11}{Gaussian Process}{equation.17}{}}
+\newlabel{eq:gp_var}{{18}{11}{Gaussian Process}{equation.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Hàm thu nhận (Acquisition Functions)}{12}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Expected Improvement (EI)}{12}{subsubsection.3.3.1}\protected@file@percent }
+\newlabel{eq:ei_definition}{{19}{12}{Expected Improvement (EI)}{equation.19}{}}
+\newlabel{eq:ei_closed}{{20}{12}{Expected Improvement (EI)}{equation.20}{}}
+\newlabel{eq:ei_z}{{21}{12}{Expected Improvement (EI)}{equation.21}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Probability of Improvement (PI)}{12}{subsubsection.3.3.2}\protected@file@percent }
+\newlabel{eq:pi}{{22}{12}{Probability of Improvement (PI)}{equation.22}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.3}Lower Confidence Bound (LCB)}{12}{subsubsection.3.3.3}\protected@file@percent }
+\newlabel{eq:lcb}{{23}{12}{Lower Confidence Bound (LCB)}{equation.23}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Xử lý mất cân bằng lớp}{12}{subsection.3.4}\protected@file@percent }
+\newlabel{eq:imbalance_detection}{{24}{12}{Xử lý mất cân bằng lớp}{equation.24}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Phép nghịch đảo dấu trong hàm mục tiêu}{13}{subsection.3.5}\protected@file@percent }
+\newlabel{eq:negation}{{25}{13}{Phép nghịch đảo dấu trong hàm mục tiêu}{equation.25}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Giả mã}{13}{subsection.3.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.6.1}Các thủ tục phụ trợ}{13}{subsubsection.3.6.1}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {8}{\ignorespaces Phát hiện mất cân bằng lớp (\textsc  {DetectClassImbalance})}}{13}{algorithm.8}\protected@file@percent }
+\newlabel{alg:bo_imbalance}{{8}{13}{Phát hiện mất cân bằng lớp (\textsc {DetectClassImbalance})}{algorithm.8}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {9}{\ignorespaces Chuyển đổi không gian tìm kiếm sang định dạng skopt (\textsc  {ConvertSearchSpace})}}{13}{algorithm.9}\protected@file@percent }
+\newlabel{alg:bo_convert}{{9}{13}{Chuyển đổi không gian tìm kiếm sang định dạng skopt (\textsc {ConvertSearchSpace})}{algorithm.9}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {10}{\ignorespaces Tải trạng thái optimizer cho warm start (\textsc  {LoadOptimizerState})}}{14}{algorithm.10}\protected@file@percent }
+\newlabel{alg:bo_warmstart}{{10}{14}{Tải trạng thái optimizer cho warm start (\textsc {LoadOptimizerState})}{algorithm.10}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {11}{\ignorespaces Tối ưu hóa Bayesian trên một grid đơn lẻ (\textsc  {SearchSingleGrid})}}{15}{algorithm.11}\protected@file@percent }
+\newlabel{alg:bo_single_grid}{{11}{15}{Tối ưu hóa Bayesian trên một grid đơn lẻ (\textsc {SearchSingleGrid})}{algorithm.11}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.6.2}Thuật toán chính}{16}{subsubsection.3.6.2}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {12}{\ignorespaces Bayesian Optimization trong HAutoML --- hỗ trợ multi-grid (sử dụng \texttt  {gp\_minimize})}}{16}{algorithm.12}\protected@file@percent }
+\newlabel{alg:bayesian}{{12}{16}{Bayesian Optimization trong HAutoML --- hỗ trợ multi-grid (sử dụng \texttt {gp\_minimize})}{algorithm.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Phân tích độ phức tạp}{16}{subsection.3.7}\protected@file@percent }
+\citation{holland1975adaptation}
+\citation{eshelman1993real}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Genetic Algorithm --- Thuật toán di truyền}{17}{section.4}\protected@file@percent }
+\newlabel{sec:genetic}{{4}{17}{Genetic Algorithm --- Thuật toán di truyền}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Tổng quan}{17}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Mã hóa cá thể}{17}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Tournament Selection --- Chọn lọc đấu trường}{17}{subsection.4.3}\protected@file@percent }
+\newlabel{eq:tournament_prob}{{26}{17}{Tournament Selection --- Chọn lọc đấu trường}{equation.26}{}}
+\newlabel{eq:adaptive_tournament}{{27}{17}{Adaptive Tournament Size}{equation.27}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}BLX-$\alpha $ Crossover --- Lai ghép}{17}{subsection.4.4}\protected@file@percent }
+\newlabel{eq:blx_alpha}{{28}{17}{BLX-$\alpha $ Crossover --- Lai ghép}{equation.28}{}}
+\newlabel{eq:adaptive_crossover}{{29}{17}{Adaptive Crossover Rate}{equation.29}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Adaptive Gaussian Mutation --- Đột biến thích nghi}{18}{subsection.4.5}\protected@file@percent }
+\newlabel{eq:adaptive_mutation_rate}{{30}{18}{Adaptive Gaussian Mutation --- Đột biến thích nghi}{equation.30}{}}
+\newlabel{eq:mutation_strength}{{31}{18}{Adaptive Gaussian Mutation --- Đột biến thích nghi}{equation.31}{}}
+\newlabel{eq:gaussian_mutation}{{32}{18}{Adaptive Gaussian Mutation --- Đột biến thích nghi}{equation.32}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Elitism}{18}{subsection.4.6}\protected@file@percent }
+\newlabel{eq:elitism}{{33}{18}{Elitism}{equation.33}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Độ đa dạng quần thể}{18}{subsection.4.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.7.1}Phương pháp O(n) --- Variance-based (quần thể lớn, $P \geq 20$)}{18}{subsubsection.4.7.1}\protected@file@percent }
+\newlabel{eq:diversity_fast}{{34}{18}{Phương pháp O(n) --- Variance-based (quần thể lớn, $P \geq 20$)}{equation.34}{}}
+\newlabel{eq:diversity_mean}{{35}{18}{Phương pháp O(n) --- Variance-based (quần thể lớn, $P \geq 20$)}{equation.35}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.7.2}Phương pháp O($n^2$) --- Pairwise (quần thể nhỏ, $P < 20$)}{18}{subsubsection.4.7.2}\protected@file@percent }
+\newlabel{eq:diversity_pairwise}{{36}{18}{Phương pháp O($n^2$) --- Pairwise (quần thể nhỏ, $P < 20$)}{equation.36}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.8}Diversity Injection --- Tiêm đa dạng}{19}{subsection.4.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.9}Giả mã}{19}{subsection.4.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.9.1}Các thủ tục phụ trợ}{19}{subsubsection.4.9.1}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {13}{\ignorespaces Mã hóa lưới tham số (\textsc  {EncodeParameters})}}{19}{algorithm.13}\protected@file@percent }
+\newlabel{alg:ga_encode}{{13}{19}{Mã hóa lưới tham số (\textsc {EncodeParameters})}{algorithm.13}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {14}{\ignorespaces Giải mã cá thể về tham số gốc (\textsc  {DecodeIndividual})}}{20}{algorithm.14}\protected@file@percent }
+\newlabel{alg:ga_decode}{{14}{20}{Giải mã cá thể về tham số gốc (\textsc {DecodeIndividual})}{algorithm.14}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {15}{\ignorespaces Khởi tạo thông minh quần thể (\textsc  {SmartInitialization})}}{20}{algorithm.15}\protected@file@percent }
+\newlabel{alg:ga_init}{{15}{20}{Khởi tạo thông minh quần thể (\textsc {SmartInitialization})}{algorithm.15}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {16}{\ignorespaces Đánh giá fitness cá thể có cache (\textsc  {EvaluateIndividual})}}{21}{algorithm.16}\protected@file@percent }
+\newlabel{alg:ga_eval}{{16}{21}{Đánh giá fitness cá thể có cache (\textsc {EvaluateIndividual})}{algorithm.16}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {17}{\ignorespaces Chọn lọc tournament thích nghi (\textsc  {AdaptiveTournamentSelection})}}{21}{algorithm.17}\protected@file@percent }
+\newlabel{alg:ga_tournament}{{17}{21}{Chọn lọc tournament thích nghi (\textsc {AdaptiveTournamentSelection})}{algorithm.17}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {18}{\ignorespaces Lai ghép BLX-$\alpha $ chi tiết (\textsc  {BLXAlphaCrossover})}}{22}{algorithm.18}\protected@file@percent }
+\newlabel{alg:ga_crossover}{{18}{22}{Lai ghép BLX-$\alpha $ chi tiết (\textsc {BLXAlphaCrossover})}{algorithm.18}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {19}{\ignorespaces Đột biến Gaussian thích nghi (\textsc  {AdaptiveMutate})}}{23}{algorithm.19}\protected@file@percent }
+\newlabel{alg:ga_mutate}{{19}{23}{Đột biến Gaussian thích nghi (\textsc {AdaptiveMutate})}{algorithm.19}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {20}{\ignorespaces Tính đa dạng quần thể --- auto-switch (\textsc  {CalculateDiversity})}}{24}{algorithm.20}\protected@file@percent }
+\newlabel{alg:ga_diversity}{{20}{24}{Tính đa dạng quần thể --- auto-switch (\textsc {CalculateDiversity})}{algorithm.20}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {21}{\ignorespaces Tiêm đa dạng vào quần thể (\textsc  {InjectDiversity})}}{24}{algorithm.21}\protected@file@percent }
+\newlabel{alg:ga_inject}{{21}{24}{Tiêm đa dạng vào quần thể (\textsc {InjectDiversity})}{algorithm.21}{}}
+\@writefile{loa}{\contentsline {algorithm}{\numberline {22}{\ignorespaces Tạo thế hệ mới (\textsc  {CreateNextGeneration})}}{25}{algorithm.22}\protected@file@percent }
+\newlabel{alg:ga_next_gen}{{22}{25}{Tạo thế hệ mới (\textsc {CreateNextGeneration})}{algorithm.22}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.9.2}Thuật toán chính}{26}{subsubsection.4.9.2}\protected@file@percent }
+\@writefile{loa}{\contentsline {algorithm}{\numberline {23}{\ignorespaces Genetic Algorithm cho tối ưu hóa siêu tham số}}{26}{algorithm.23}\protected@file@percent }
+\newlabel{alg:ga}{{23}{26}{Genetic Algorithm cho tối ưu hóa siêu tham số}{algorithm.23}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.10}Phân tích độ phức tạp}{26}{subsection.4.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}So sánh các thuật toán}{27}{section.5}\protected@file@percent }
+\newlabel{sec:comparison}{{5}{27}{So sánh các thuật toán}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Bảng so sánh chi tiết}{27}{subsection.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Đối chiếu các chiến lược tối ưu hóa siêu tham số}}{27}{table.caption.2}\protected@file@percent }
+\newlabel{tab:comparison}{{1}{27}{Đối chiếu các chiến lược tối ưu hóa siêu tham số}{table.caption.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Hướng dẫn chọn thuật toán}{27}{subsection.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Khuyến nghị chọn thuật toán theo tình huống}}{27}{table.caption.3}\protected@file@percent }
+\newlabel{tab:recommendation}{{2}{27}{Khuyến nghị chọn thuật toán theo tình huống}{table.caption.3}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Chi tiết các kịch bản ứng dụng}{27}{subsubsection.5.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Cơ chế quản lý thời gian chung}{28}{section.6}\protected@file@percent }
+\newlabel{sec:time_management}{{6}{28}{Cơ chế quản lý thời gian chung}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Proactive Time Limit}{28}{subsection.6.1}\protected@file@percent }
+\newlabel{eq:ema_general}{{38}{28}{Proactive Time Limit}{equation.38}{}}
+\newlabel{eq:proactive_stop}{{39}{28}{Proactive Time Limit}{equation.39}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Early Stopping vs.\ Time Limit}{28}{subsection.6.2}\protected@file@percent }
+\newlabel{eq:early_vs_time}{{40}{28}{Early Stopping vs.\ Time Limit}{equation.40}{}}
+\gdef \LT@i {\LT@entry 
+    {1}{157.68144pt}\LT@entry 
+    {1}{298.806pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Bảng giải nghĩa thuật ngữ và siêu tham số}{29}{appendix.A}\protected@file@percent }
+\newlabel{sec:appendix_glossary}{{A}{29}{Bảng giải nghĩa thuật ngữ và siêu tham số}{appendix.A}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Bảng giải nghĩa các thuật ngữ chung}{29}{subsection.A.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Giải nghĩa các thuật ngữ khoa học}}{29}{table.3}\protected@file@percent }
+\newlabel{tab:glossary_terms}{{3}{29}{Bảng giải nghĩa các thuật ngữ chung}{table.3}{}}
+\gdef \LT@ii {\LT@entry 
+    {1}{157.68144pt}\LT@entry 
+    {1}{298.806pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Bảng giải nghĩa các tham số cấu hình hệ thống và mô hình}{32}{subsection.A.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Giải nghĩa các tham số cấu hình}}{32}{table.4}\protected@file@percent }
+\newlabel{tab:glossary_params}{{4}{32}{Bảng giải nghĩa các tham số cấu hình hệ thống và mô hình}{table.4}{}}
+\bibcite{snoek2012practical}{1}
+\bibcite{rasmussen2006gaussian}{2}
+\bibcite{bergstra2012random}{3}
+\bibcite{holland1975adaptation}{4}
+\bibcite{eshelman1993real}{5}
+\bibcite{hastie2009elements}{6}
+\bibcite{pedregosa2011scikit}{7}
+\bibcite{mockus1978application}{8}
+\bibcite{jones1998efficient}{9}
+\bibcite{shahriari2016taking}{10}
+\gdef \@abspage@last{35}

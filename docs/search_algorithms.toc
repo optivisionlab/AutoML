@@ -1,0 +1,51 @@
+\babel@toc {vietnamese}{}\relax 
+\contentsline {section}{\numberline {1}Giới thiệu}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Bài toán tối ưu hóa siêu tham số}{3}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Các chỉ số đánh giá}{3}{subsection.1.2}%
+\contentsline {subsubsection}{\numberline {1.2.1}Bài toán phân loại (Classification)}{3}{subsubsection.1.2.1}%
+\contentsline {subsubsection}{\numberline {1.2.2}Bài toán hồi quy (Regression)}{4}{subsubsection.1.2.2}%
+\contentsline {section}{\numberline {2}Grid Search --- Tìm kiếm vét cạn}{5}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Định nghĩa}{5}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Giả mã}{5}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Các thủ tục phụ trợ}{5}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Thuật toán chính}{10}{subsubsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.3}Phân tích độ phức tạp}{10}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Tối ưu hóa triển khai trong HAutoML}{11}{subsection.2.4}%
+\contentsline {section}{\numberline {3}Bayesian Optimization --- Tối ưu hóa Bayesian}{11}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Nguyên lý hoạt động}{11}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Gaussian Process}{11}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Hàm thu nhận (Acquisition Functions)}{12}{subsection.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.1}Expected Improvement (EI)}{12}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.2}Probability of Improvement (PI)}{12}{subsubsection.3.3.2}%
+\contentsline {subsubsection}{\numberline {3.3.3}Lower Confidence Bound (LCB)}{12}{subsubsection.3.3.3}%
+\contentsline {subsection}{\numberline {3.4}Xử lý mất cân bằng lớp}{12}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Phép nghịch đảo dấu trong hàm mục tiêu}{13}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Giả mã}{13}{subsection.3.6}%
+\contentsline {subsubsection}{\numberline {3.6.1}Các thủ tục phụ trợ}{13}{subsubsection.3.6.1}%
+\contentsline {subsubsection}{\numberline {3.6.2}Thuật toán chính}{16}{subsubsection.3.6.2}%
+\contentsline {subsection}{\numberline {3.7}Phân tích độ phức tạp}{16}{subsection.3.7}%
+\contentsline {section}{\numberline {4}Genetic Algorithm --- Thuật toán di truyền}{17}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Tổng quan}{17}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Mã hóa cá thể}{17}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Tournament Selection --- Chọn lọc đấu trường}{17}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}BLX-$\alpha $ Crossover --- Lai ghép}{17}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Adaptive Gaussian Mutation --- Đột biến thích nghi}{18}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Elitism}{18}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Độ đa dạng quần thể}{18}{subsection.4.7}%
+\contentsline {subsubsection}{\numberline {4.7.1}Phương pháp O(n) --- Variance-based (quần thể lớn, $P \geq 20$)}{18}{subsubsection.4.7.1}%
+\contentsline {subsubsection}{\numberline {4.7.2}Phương pháp O($n^2$) --- Pairwise (quần thể nhỏ, $P < 20$)}{18}{subsubsection.4.7.2}%
+\contentsline {subsection}{\numberline {4.8}Diversity Injection --- Tiêm đa dạng}{19}{subsection.4.8}%
+\contentsline {subsection}{\numberline {4.9}Giả mã}{19}{subsection.4.9}%
+\contentsline {subsubsection}{\numberline {4.9.1}Các thủ tục phụ trợ}{19}{subsubsection.4.9.1}%
+\contentsline {subsubsection}{\numberline {4.9.2}Thuật toán chính}{26}{subsubsection.4.9.2}%
+\contentsline {subsection}{\numberline {4.10}Phân tích độ phức tạp}{26}{subsection.4.10}%
+\contentsline {section}{\numberline {5}So sánh các thuật toán}{27}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Bảng so sánh chi tiết}{27}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Hướng dẫn chọn thuật toán}{27}{subsection.5.2}%
+\contentsline {subsubsection}{\numberline {5.2.1}Chi tiết các kịch bản ứng dụng}{27}{subsubsection.5.2.1}%
+\contentsline {section}{\numberline {6}Cơ chế quản lý thời gian chung}{28}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Proactive Time Limit}{28}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Early Stopping vs.\ Time Limit}{28}{subsection.6.2}%
+\contentsline {section}{\numberline {A}Bảng giải nghĩa thuật ngữ và siêu tham số}{29}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Bảng giải nghĩa các thuật ngữ chung}{29}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Bảng giải nghĩa các tham số cấu hình hệ thống và mô hình}{32}{subsection.A.2}%

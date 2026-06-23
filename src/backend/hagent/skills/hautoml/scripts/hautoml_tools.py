@@ -27,6 +27,7 @@ except ImportError:
 
 
 HAUTOML_BASE_URL = os.getenv("HAUTOML_BASE_URL", "http://localhost:8080")
+HAGENT_BRIDGE_URL = os.getenv("HAGENT_BRIDGE_URL", "http://localhost:9900")
 TOKEN_FALLBACK_FILE = os.getenv("HAGENT_USER_TOKEN_FILE", "/tmp/hagent_user_token")
 USER_ID_FALLBACK_FILE = os.getenv("HAGENT_USER_ID_FILE", "/tmp/hagent_user_id")
 
@@ -531,6 +532,17 @@ def cmd_delete_dataset(args):
     _handle_response(resp)
 
 
+def cmd_get_world_state(args):
+    """Lấy snapshot world state của người dùng từ Bridge."""
+    user_id = _resolve_user_id(args.user_id)
+    resp = _get(
+        f"{HAGENT_BRIDGE_URL}/api/v1/world-state/{user_id}",
+        headers=_headers(args.token),
+        timeout=15,
+    )
+    _handle_response(resp)
+
+
 # ─── CLI Parser ─────────────────────────────────────────
 
 
@@ -645,6 +657,11 @@ def main():
     p.add_argument("--dataset-id", required=True, help="ID dataset")
     p.add_argument("--token", required=True, help="JWT access token")
 
+    # get_world_state
+    p = subparsers.add_parser("get_world_state", help="Lấy snapshot world state của người dùng")
+    p.add_argument("--user-id", required=True, help="User ID")
+    p.add_argument("--token", required=True, help="JWT access token")
+
     args = parser.parse_args()
 
     commands = {
@@ -663,6 +680,7 @@ def main():
         "activate_model": cmd_activate_model,
         "batch_predict": cmd_batch_predict,
         "delete_dataset": cmd_delete_dataset,
+        "get_world_state": cmd_get_world_state,
     }
 
     commands[args.command](args)

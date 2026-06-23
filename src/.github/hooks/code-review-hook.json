@@ -1,0 +1,21 @@
+{
+  "description": "Enforces automated code review AFTER code generation/editing (PostToolUse). Code MUST NOT contain dusty code (excessive comments, TODOs, dead code, legacy blocks - all types) and MUST NOT have hardcoded values/secrets ('no it hard code' policy). Blocks on violations. Also gates PreToolUse for code-gen tools. Uses companion Python review scripts. Applies to all source files.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "python .github/hooks/scripts/auto_code_review.py",
+        "timeout": 45,
+        "cwd": "${workspaceFolder}"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "python .github/hooks/scripts/gate_code_gen.py",
+        "timeout": 20,
+        "cwd": "${workspaceFolder}"
+      }
+    ]
+  }
+}

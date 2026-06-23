@@ -1,0 +1,1595 @@
+% ============================================================================
+% Thuật toán tìm kiếm siêu tham số trong HAutoML
+% ============================================================================
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{longtable}
+
+\geometry{margin=2.5cm}
+
+% --- Theorem environments ---
+\newtheorem{definition}{Định nghĩa}[section]
+\newtheorem{theorem}{Định lý}[section]
+\newtheorem{remark}{Nhận xét}[section]
+
+% --- Custom commands ---
+\newcommand{\argmax}{\operatornamewithlimits{argmax}}
+\newcommand{\argmin}{\operatornamewithlimits{argmin}}
+\DeclareMathOperator{\EI}{EI}
+\DeclareMathOperator{\PI}{PI}
+\DeclareMathOperator{\LCB}{LCB}
+\DeclareMathOperator{\GP}{\mathcal{GP}}
+
+% --- Document ---
+\begin{document}
+
+% ============================================================================
+% TITLE
+% ============================================================================
+\title{%
+    \textbf{Các thuật toán tìm kiếm siêu tham số\\trong hệ thống HAutoML}
+}
+\author{Nhóm nghiên cứu AutoML --- OptiVisionLab}
+\date{\today}
+\maketitle
+
+\begin{abstract}
+Tài liệu này trình bày chi tiết cơ sở toán học, giả mã, phân tích độ phức tạp
+và chiến lược triển khai của các thuật toán tìm kiếm siêu tham số được sử dụng
+trong hệ thống HAutoML: \textbf{Grid Search} (tìm kiếm vét cạn),
+\textbf{Bayesian Optimization} (tối ưu hóa Bayesian sử dụng Gaussian Process),
+và \textbf{Genetic Algorithm} (thuật toán di truyền). Mỗi thuật toán được phân
+tích từ lý thuyết đến triển khai thực tế, kèm theo so sánh định lượng về hiệu
+suất và phạm vi ứng dụng phù hợp.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================================
+% 1. GIỚI THIỆU
+% ============================================================================
+\section{Giới thiệu}
+\label{sec:introduction}
+
+\subsection{Bài toán tối ưu hóa siêu tham số}
+
+Cho một mô hình học máy $\mathcal{M}$ với tập siêu tham số
+$\boldsymbol{\theta} = (\theta_1, \theta_2, \ldots, \theta_m)$ thuộc không gian
+tìm kiếm $\Theta = \Theta_1 \times \Theta_2 \times \cdots \times \Theta_m$,
+bài toán tối ưu hóa siêu tham số được phát biểu như sau:
+
+\begin{equation}
+    \boldsymbol{\theta}^* = \argmax_{\boldsymbol{\theta} \in \Theta}\;
+    \mathcal{L}\!\left(\mathcal{M}_{\boldsymbol{\theta}}, \mathcal{D}\right)
+    \label{eq:hpo_problem}
+\end{equation}
+
+\noindent trong đó $\mathcal{L}$ là hàm mục tiêu (ví dụ: accuracy, F1-score)
+được ước lượng trên tập dữ liệu $\mathcal{D}$ thông qua kiểm định chéo
+$k$-fold (cross-validation):
+
+\begin{equation}
+    \mathcal{L}(\mathcal{M}_{\boldsymbol{\theta}}, \mathcal{D}) =
+    \frac{1}{k} \sum_{i=1}^{k}
+    \text{Score}\!\left(
+        \mathcal{M}_{\boldsymbol{\theta}}^{(\mathcal{D} \setminus F_i)},\; F_i
+    \right)
+    \label{eq:cv_score}
+\end{equation}
+
+\noindent với $F_1, F_2, \ldots, F_k$ là $k$ fold rời rạc của $\mathcal{D}$,
+và $\mathcal{M}_{\boldsymbol{\theta}}^{(\mathcal{D} \setminus F_i)}$ là mô hình
+được huấn luyện trên $\mathcal{D} \setminus F_i$ với siêu tham số
+$\boldsymbol{\theta}$.
+
+\subsection{Các chỉ số đánh giá}
+
+\subsubsection{Bài toán phân loại (Classification)}
+
+\begin{align}
+    \text{Accuracy} &= \frac{\text{TP} + \text{TN}}
+                          {\text{TP} + \text{TN} + \text{FP} + \text{FN}}
+    \label{eq:accuracy} \\[6pt]
+    \text{Precision} &= \frac{\text{TP}}{\text{TP} + \text{FP}}
+    \label{eq:precision} \\[6pt]
+    \text{Recall} &= \frac{\text{TP}}{\text{TP} + \text{FN}}
+    \label{eq:recall} \\[6pt]
+    \text{F1} &= 2 \times \frac{\text{Precision} \times \text{Recall}}
+                               {\text{Precision} + \text{Recall}}
+    \label{eq:f1} \\[6pt]
+    \text{Balanced Accuracy} &= \frac{1}{K} \sum_{i=1}^{K}
+    \frac{\text{TP}_i}{\text{TP}_i + \text{FN}_i}
+    \label{eq:balanced_accuracy}
+\end{align}
+
+\noindent với $K$ là số lớp (classes).
+
+\subsubsection{Bài toán hồi quy (Regression)}
+
+\begin{align}
+    \text{MAE} &= \frac{1}{n} \sum_{i=1}^{n} |y_i - \hat{y}_i|
+    \label{eq:mae} \\[6pt]
+    \text{MSE} &= \frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2
+    \label{eq:mse} \\[6pt]
+    \text{RMSE} &= \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
+    \label{eq:rmse} \\[6pt]
+    \text{MAPE} &= \frac{1}{n} \sum_{i=1}^{n}
+    \left|\frac{y_i - \hat{y}_i}{y_i}\right| \times 100\%
+    \label{eq:mape} \\[6pt]
+    R^2 &= 1 - \frac{\displaystyle\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}
+                     {\displaystyle\sum_{i=1}^{n}(y_i - \bar{y})^2}
+    \label{eq:r2}
+\end{align}
+
+% ============================================================================
+% 2. GRID SEARCH
+% ============================================================================
+\newpage
+\section{Grid Search --- Tìm kiếm vét cạn}
+\label{sec:grid_search}
+
+\subsection{Định nghĩa}
+
+\begin{definition}[Grid Search]
+Cho không gian siêu tham số rời rạc
+$\Theta = V_1 \times V_2 \times \cdots \times V_m$, trong đó mỗi
+$V_j = \{v_j^{(1)}, v_j^{(2)}, \ldots, v_j^{(n_j)}\}$ là tập hữu hạn các giá
+trị thử nghiệm cho siêu tham số $\theta_j$. Grid Search duyệt qua
+\textbf{tất cả} các tổ hợp tham số trong $\Theta$ và chọn tổ hợp tối ưu:
+
+\begin{equation}
+    \boldsymbol{\theta}^* = \argmax_{\boldsymbol{\theta} \in \Theta}\;
+    \mathcal{L}(\mathcal{M}_{\boldsymbol{\theta}}, \mathcal{D})
+    \label{eq:grid_search}
+\end{equation}
+
+\noindent Tổng số tổ hợp cần đánh giá:
+\begin{equation}
+    N = \prod_{j=1}^{m} |V_j| = \prod_{j=1}^{m} n_j
+    \label{eq:grid_combinations}
+\end{equation}
+\end{definition}
+
+\subsection{Giả mã}
+
+Thuật toán Grid Search trong HAutoML sử dụng nhiều thủ tục phụ trợ bao gồm:
+lựa chọn backend thực thi (Thuật toán~\ref{alg:gs_backend}),
+tạo khóa hash cho bộ nhớ đệm (Thuật toán~\ref{alg:gs_hash}),
+đánh giá tổ hợp tham số đơn lẻ (Thuật toán~\ref{alg:gs_eval_single}),
+đánh giá theo batch (Thuật toán~\ref{alg:gs_eval_batch}),
+kiểm tra dừng sớm (Thuật toán~\ref{alg:gs_early_stop}),
+và kiểm tra thời gian proactive (Thuật toán~\ref{alg:should_start}).
+
+\subsubsection{Các thủ tục phụ trợ}
+
+\begin{algorithm}[H]
+\caption{Lựa chọn backend thực thi tối ưu (\textsc{SelectOptimalBackend})}
+\label{alg:gs_backend}
+\begin{algorithmic}[1]
+\Require $N$ (số tổ hợp tham số), $|\mathcal{D}|_{\text{size}}$ (kích thước dữ liệu = số mẫu $\times$ số đặc trưng), \texttt{auto\_select\_backend}
+\Ensure $\text{backend} \in \{\texttt{threading}, \texttt{loky}\}$
+\If{\texttt{auto\_select\_backend} = \texttt{false}}
+    \State \Return \texttt{loky} \Comment{Mặc định khi không auto select}
+\EndIf
+\If{$N \leq 4$}
+    \State \Return \texttt{threading} \Comment{Overhead thấp cho ít tổ hợp}
+\EndIf
+\State $W \gets |\mathcal{D}|_{\text{size}} \times N$ \Comment{Tổng workload}
+\If{$W > 10^6$}
+    \State \Return \texttt{loky} \Comment{Multiprocessing cho workload lớn}
+\EndIf
+\State \Return \texttt{threading} \Comment{Threading cho trường hợp trung bình}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tạo khóa hash cho bộ nhớ đệm (\textsc{GetParamsHash})}
+\label{alg:gs_hash}
+\begin{algorithmic}[1]
+\Require Mô hình $\mathcal{M}$, tổ hợp tham số $\boldsymbol{\theta}$
+\Ensure $h$ (chuỗi hash MD5 duy nhất)
+\State $\text{class\_info} \gets \mathcal{M}.\text{module} \mathbin{\Vert} \mathcal{M}.\text{class\_name}$
+\State $\text{base\_params} \gets \text{Sorted}(\mathcal{M}.\text{get\_params}())$
+\State $\text{input} \gets \text{class\_info} \mathbin{\Vert} \text{base\_params} \mathbin{\Vert} \text{Sorted}(\boldsymbol{\theta})$
+\State \Return $\text{MD5}(\text{input})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Đánh giá tổ hợp tham số đơn lẻ có bộ nhớ đệm (\textsc{EvaluateSingle})}
+\label{alg:gs_eval_single}
+\begin{algorithmic}[1]
+\Require $\boldsymbol{\theta}$, mô hình $\mathcal{M}$, dữ liệu $(\mathbf{X}, \mathbf{y})$, $k$-fold CV, $\text{scoring}$ (dict các metric), $\text{cache}$, \texttt{cache\_enabled}
+\Ensure $\text{result} = \{\text{test\_scores}, \text{params}, \text{fit\_time}, \text{score\_time}\}$
+\State $h \gets \textsc{GetParamsHash}(\mathcal{M}, \boldsymbol{\theta})$
+\If{\texttt{cache\_enabled} \textbf{và} $h \in \text{cache}$}
+    \State \Return $\text{cache}[h]$ \Comment{Cache hit --- bỏ qua đánh giá}
+\EndIf
+\State $\mathcal{M}.\text{set\_params}(\boldsymbol{\theta})$
+\State $\text{cv\_scores} \gets \textsc{CrossValidate}(\mathcal{M}, \mathbf{X}, \mathbf{y}, \text{cv}=k, \text{scoring}, \texttt{n\_jobs}=1, \texttt{error\_score}=\text{raise})$
+\Statex \Comment{$\texttt{n\_jobs}=1$ vì song song hóa ở mức batch (Thuật toán~\ref{alg:gs_eval_batch})}
+\State $\text{result} \gets \{\text{test\_scores}: \text{cv\_scores},\; \text{params}: \boldsymbol{\theta},\; \text{fit\_time}: \overline{t_{\text{fit}}},\; \text{score\_time}: \overline{t_{\text{score}}}\}$
+\If{\texttt{cache\_enabled}}
+    \State $\text{cache}[h] \gets \text{result}$
+\EndIf
+\State \Return result
+\Statex \textcolor{red}{\textit{// Nếu xảy ra lỗi: trả về result với test\_scores = None, error = mô tả lỗi}}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Đánh giá batch tổ hợp tham số --- song song hoặc tuần tự (\textsc{EvaluateParamsBatch})}
+\label{alg:gs_eval_batch}
+\begin{algorithmic}[1]
+\Require Danh sách $\text{batch} = [\boldsymbol{\theta}_1, \ldots, \boldsymbol{\theta}_b]$, mô hình $\mathcal{M}$, dữ liệu $(\mathbf{X}, \mathbf{y})$, $k$-fold, scoring
+\Require \texttt{parallel\_enabled}, \texttt{n\_jobs}, \texttt{model\_copies}
+\Ensure Danh sách $\text{results}$
+\If{\texttt{parallel\_enabled} \textbf{và} $|\text{batch}| > 1$}
+    \If{\texttt{n\_jobs} $= -1$}
+        \State $\texttt{n\_jobs} \gets \textsc{CpuCount}()$
+    \EndIf
+    \If{\texttt{n\_jobs} $> 1$}
+        \Statex \textcolor{blue}{\textit{\quad\quad// Tạo trước bản sao mô hình để quản lý bộ nhớ}}
+        \State $n_{\text{actual}} \gets \min(\texttt{n\_jobs}, |\text{batch}|)$
+        \If{$|\texttt{model\_copies}| < n_{\text{actual}}$}
+            \State $\texttt{model\_copies} \gets [\textsc{DeepCopy}(\mathcal{M})]_{i=1}^{n_{\text{actual}}}$
+        \EndIf
+        \State $\text{backend} \gets \textsc{SelectOptimalBackend}(|\text{batch}|,\; |\mathbf{X}|_{\text{rows}} \times |\mathbf{X}|_{\text{cols}})$
+        \State \Return $\textsc{Parallel}(\texttt{n\_jobs}, \text{backend})\Big[\textsc{EvaluateSingle}(\boldsymbol{\theta}_i, \texttt{model\_copies}[i \bmod n_{\text{actual}}], \ldots)\Big]$
+    \EndIf
+\EndIf
+\Statex \textcolor{blue}{\textit{// Fallback: đánh giá tuần tự}}
+\State \Return $\Big[\textsc{EvaluateSingle}(\boldsymbol{\theta}_i, \mathcal{M}, \ldots) \;\text{cho mỗi}\; \boldsymbol{\theta}_i \in \text{batch}\Big]$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Kiểm tra điều kiện dừng sớm (\textsc{CheckEarlyStopping})}
+\label{alg:gs_early_stop}
+\begin{algorithmic}[1]
+\Require $s^*$ (điểm tốt nhất), $\mathcal{H}$ (lịch sử best scores), $T_{\max}$
+\Require \texttt{es\_enabled}, $s_{\text{target}}$ (ngưỡng score), $n_{\text{best}}$, $n_{\text{no\_improve}}$
+\Ensure \texttt{should\_stop} $\in \{\text{true}, \text{false}\}$
+\Statex \textcolor{blue}{\textit{// Early stopping bị vô hiệu hóa khi có time limit}}
+\If{$T_{\max} \neq \text{None}$}
+    \State \Return \texttt{false} \Comment{Ưu tiên time limit}
+\EndIf
+\If{\texttt{es\_enabled} = \texttt{false}}
+    \State \Return \texttt{false}
+\EndIf
+\Statex \textcolor{blue}{\textit{// Kiểm tra ngưỡng score mục tiêu}}
+\If{$s_{\text{target}} \neq \text{None}$ \textbf{và} $s^* \geq s_{\text{target}}$}
+    \State $n_{\text{good}} \gets \left|\{s \in \mathcal{H} : s \geq s_{\text{target}}\}\right|$
+    \If{$n_{\text{good}} \geq \max(1, n_{\text{best}})$}
+        \State \Return \texttt{true} \Comment{Đạt đủ số kết quả tốt}
+    \EndIf
+\EndIf
+\Statex \textcolor{blue}{\textit{// Kiểm tra không cải thiện liên tiếp}}
+\If{$n_{\text{no\_improve}} \neq \text{None}$ \textbf{và} $|\mathcal{H}| \geq n_{\text{no\_improve}}$}
+    \State $\text{recent} \gets \mathcal{H}[-n_{\text{no\_improve}}:]$
+    \If{$|\text{Set}(\text{recent})| = 1$}
+        \State \Return \texttt{true} \Comment{Không cải thiện}
+    \EndIf
+\EndIf
+\State \Return \texttt{false}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Kiểm tra thời gian proactive --- EMA (\textsc{ShouldStartNextIteration})}
+\label{alg:should_start}
+\begin{algorithmic}[1]
+\Require $t_{\text{iter}}$ (thời gian iteration vừa hoàn thành, có thể None), $T_{\max}$, $t_{\text{start}}$, $\hat{t}_{\text{ema}}$
+\Ensure \texttt{should\_continue} $\in \{\text{true}, \text{false}\}$
+\If{$T_{\max} = \text{None}$}
+    \State \Return \texttt{true} \Comment{Không giới hạn thời gian}
+\EndIf
+\State $t_{\text{elapsed}} \gets \textsc{Time}() - t_{\text{start}}$
+\State $t_{\text{remaining}} \gets \max(0, T_{\max} - t_{\text{elapsed}})$
+\If{$t_{\text{elapsed}} \geq T_{\max}$}
+    \State \Return \texttt{false} \Comment{Đã vượt quá time limit}
+\EndIf
+\Statex \textcolor{blue}{\textit{// Cập nhật EMA nếu có iteration\_duration}}
+\If{$t_{\text{iter}} \neq \text{None}$}
+    \If{$\hat{t}_{\text{ema}} = \text{None}$}
+        \State $\hat{t}_{\text{ema}} \gets t_{\text{iter}}$
+    \Else
+        \State $\hat{t}_{\text{ema}} \gets 0.7 \cdot t_{\text{iter}} + 0.3 \cdot \hat{t}_{\text{ema}}$
+    \EndIf
+\EndIf
+\Statex \textcolor{blue}{\textit{// Kiểm tra proactive: ước tính iteration tiếp theo}}
+\If{$\hat{t}_{\text{ema}} \neq \text{None}$ \textbf{và} $1.2 \cdot \hat{t}_{\text{ema}} > t_{\text{remaining}}$}
+    \State \Return \texttt{false} \Comment{Dừng proactive --- safety factor $1.2\times$}
+\EndIf
+\State \Return \texttt{true}
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Thuật toán chính}
+
+\begin{algorithm}[H]
+\caption{Grid Search với tối ưu hóa tài nguyên trong HAutoML}
+\label{alg:grid_search}
+\scriptsize
+\begin{algorithmic}[1]
+\Require Mô hình $\mathcal{M}$, lưới tham số $\Theta$ (dict hoặc list-of-dicts), dữ liệu $\mathcal{D} = (\mathbf{X}, \mathbf{y})$, số fold $k$
+\Require Cấu hình: \texttt{parallel\_evaluation}, \texttt{batch\_size}, $T_{\max}$ (tùy chọn), \texttt{scoring} (dict các metric), \texttt{metric\_sort}
+\Require Early stopping: \texttt{es\_enabled}, $s_{\text{target}}$, $n_{\text{best}}$, $n_{\text{no\_improve}}$
+\Ensure $\boldsymbol{\theta}^*$, $s^*$, $\text{all\_scores}^*$, $\text{cv\_results}$, \texttt{time\_limit\_reached}
+\Statex \textcolor{blue}{\textit{// Khởi tạo}}
+\State $\textsc{StartTimer}()$;\quad $\hat{t}_{\text{ema}} \gets \text{None}$;\quad $s^* \gets -\infty$;\quad $\boldsymbol{\theta}^* \gets \varnothing$
+\State $\text{cache} \gets \varnothing$;\quad $\texttt{model\_copies} \gets []$;\quad $\mathcal{H} \gets []$
+\Statex \textcolor{blue}{\textit{// Chuẩn hóa param\_grid và sinh tất cả tổ hợp}}
+\State $\Theta_{\text{list}} \gets \textsc{NormalizeParamGrid}(\Theta)$ \Comment{Chuyển về list-of-dicts}
+\State $\mathcal{S} \gets []$
+\For{mỗi $\text{grid} \in \Theta_{\text{list}}$}
+    \State $\mathcal{S} \gets \mathcal{S} \cup \textsc{CartesianProduct}(\text{grid})$ \Comment{Sinh tổ hợp từ mỗi grid}
+\EndFor
+\State $N \gets |\mathcal{S}|$
+\If{$N = 0$}
+    \State \Return $\varnothing, -\infty, \varnothing, \varnothing, \text{false}$
+\EndIf
+\Statex \textcolor{blue}{\textit{// Điều tiết kích thước batch}}
+\If{$T_{\max} \neq \text{None}$}
+    \State $b \gets 1$ \Comment{batch = 1 khi có giới hạn thời gian}
+\Else
+    \State $b \gets \texttt{batch\_size}$ \Comment{Lấy từ tệp cấu hình hệ thống}
+\EndIf
+\Statex \textcolor{blue}{\textit{// Vòng lặp chính theo batch}}
+\State $i \gets 0$;\quad \texttt{early\_stopped} $\gets$ false;\quad \texttt{time\_stopped} $\gets$ false
+\While{$i < N$}
+    \If{$\textsc{ShouldStartNextIteration}(\text{None}, T_{\max}, \ldots) = \text{false}$}
+        \State \texttt{time\_stopped} $\gets$ true;\quad \textbf{break}
+    \EndIf
+    \State $\text{batch} \gets \mathcal{S}[i : i + b]$;\quad $t_0 \gets \textsc{Time}()$
+    \State $\text{results} \gets \textsc{EvaluateParamsBatch}(\text{batch}, \mathcal{M}, \mathbf{X}, \mathbf{y}, k, \text{scoring}, \ldots)$
+    \State $\textsc{ShouldStartNextIteration}(\textsc{Time}() - t_0, \ldots)$ \Comment{Cập nhật EMA}
+    \For{mỗi $\text{result} \in \text{results}$}
+        \If{$\text{result.test\_scores} \neq \text{None}$}
+            \State $s \gets \overline{\text{result.test\_scores}[\texttt{metric\_sort}]}$
+            \If{$s \geq s^*$}
+                \State $s^* \gets s$;\quad $\boldsymbol{\theta}^* \gets \text{result.params}$;\quad $\text{all\_scores}^* \gets \text{result.means}$
+            \EndIf
+        \EndIf
+        \State $\textsc{LogEvaluation}(\mathcal{M}, \text{result.params}, \text{scores}, i, N)$
+    \EndFor
+    \State $\mathcal{H}.\text{append}(s^*)$ \Comment{Cập nhật lịch sử best score}
+    \If{$\textsc{CheckEarlyStopping}(s^*, \mathcal{H}, T_{\max}, \texttt{es\_enabled}, s_{\text{target}}, n_{\text{best}}, n_{\text{no\_improve}})$}
+        \State \texttt{early\_stopped} $\gets$ true;\quad \textbf{break}
+    \EndIf
+    \State $i \gets i + b$
+\EndWhile
+\Statex \textcolor{blue}{\textit{// Xây dựng cv\_results\_ và ranking}}
+\State $\text{cv\_results} \gets \textsc{BuildCVResults}(\text{all\_results}, \text{scoring}, \texttt{metric\_sort})$
+\For{mỗi $\text{metric} \in \text{Keys}(\text{scoring})$}
+    \State $\text{cv\_results}[\texttt{rank\_test\_} \mathbin{\Vert} \text{metric}] \gets \textsc{Argsort}(-\text{scores}) + 1$
+\EndFor
+\Statex \textcolor{blue}{\textit{// Xóa cache và chuyển đổi kiểu numpy $\rightarrow$ Python gốc}}
+\State Xóa cache, model\_copies; Chuyển đổi numpy types
+\State \Return $\boldsymbol{\theta}^*,\; s^*,\; \text{all\_scores}^*,\; \text{cv\_results},\; \texttt{time\_stopped}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Phân tích độ phức tạp}
+
+\begin{itemize}
+    \item \textbf{Thời gian:}
+    $\mathcal{O}\!\left(k \cdot N \cdot T(\mathcal{D}, \boldsymbol{\theta})\right)$,
+    trong đó $N = \prod_{j=1}^{m} n_j$, $k$ là số fold,
+    $T(\mathcal{D}, \boldsymbol{\theta})$ là thời gian huấn luyện/đánh giá.
+    Sự bùng nổ theo hàm mũ ($N$ tăng theo $\prod n_j$) là rào cản kỹ thuật
+    chính khi quy mô tham số gia tăng.
+
+    \item \textbf{Không gian:} $\mathcal{O}(1)$ (ngoài cache tùy chọn).
+\end{itemize}
+
+\subsection{Tối ưu hóa triển khai trong HAutoML}
+
+Hệ thống HAutoML nâng cấp Grid Search thông qua các giải pháp tối ưu hóa
+tài nguyên vật lý:
+
+\begin{enumerate}
+    \item \textbf{Lưu trữ đệm (Caching)}: Cache kết quả theo
+    $\text{Hash}(\mathcal{M}.\text{class},\; \boldsymbol{\theta})$ để tránh
+    đánh giá trùng lặp.
+
+    \item \textbf{Xử lý theo lô (Batch Processing)}: Khi $T_{\max}$ được xác
+    lập, \texttt{batch\_size} tự động chuyển về 1 để kiểm soát thời gian chính
+    xác; ngược lại sử dụng giá trị từ tệp cấu hình.
+
+    \item \textbf{Đánh giá song song}: Kích hoạt khi
+    \texttt{parallel\_evaluation} = \texttt{true}. Nếu \texttt{false}, quy trình
+    thực thi tuần tự ngay cả khi \texttt{n\_jobs} > 1.
+
+    \item \textbf{Auto Backend Selection}: Tự động chọn \texttt{threading}
+    (overhead thấp) hoặc \texttt{loky} (multiprocessing) dựa trên tổng workload
+    $W = |\mathcal{D}| \times N$.
+
+    \item \textbf{Proactive Time Limit}: Sử dụng EMA (Exponential Moving Average)
+    để ước tính thời gian batch tiếp theo và dừng sớm nếu vượt quá giới hạn:
+    \begin{equation}
+        \hat{t}_{\text{next}} = 0.7 \cdot t_{\text{current}} + 0.3 \cdot \hat{t}_{\text{prev}}
+        \label{eq:ema_time}
+    \end{equation}
+\end{enumerate}
+
+% ============================================================================
+% 3. BAYESIAN OPTIMIZATION
+% ============================================================================
+
+
+\section{Bayesian Optimization --- Tối ưu hóa Bayesian}
+\label{sec:bayesian}
+
+\subsection{Nguyên lý hoạt động}
+
+Chiến lược Bayesian Optimization~\cite{snoek2012practical} được định vị là giải
+pháp tối ưu cho các kịch bản sở hữu chi phí điện toán lớn cho mỗi lần kiểm
+chứng cấu hình. Thay vì quét tuyến tính như Grid Search hay lấy mẫu xác suất
+độc lập như Random Search, phương pháp này thiết lập một mô hình xấp xỉ
+(surrogate model) nhằm ước lượng mối tương quan phi tuyến giữa hệ thống siêu
+tham số và hiệu năng thực thi của mô hình~\cite{shahriari2016taking}.
+
+\subsection{Gaussian Process}
+
+\begin{definition}[Gaussian Process]
+Gaussian Process (GP)~\cite{rasmussen2006gaussian} là một tập hợp các biến ngẫu
+nhiên, trong đó bất kỳ tập con hữu hạn nào đều có phân phối Gaussian đa chiều.
+GP được xác định hoàn toàn bởi:
+\begin{itemize}
+    \item Hàm trung bình: $\mu(\mathbf{x}) = \mathbb{E}[f(\mathbf{x})]$
+    \item Hàm hiệp phương sai (kernel): $k(\mathbf{x}, \mathbf{x}') = \text{Cov}[f(\mathbf{x}), f(\mathbf{x}')]$
+\end{itemize}
+
+\begin{equation}
+    f(\mathbf{x}) \sim \GP\!\left(\mu(\mathbf{x}),\; k(\mathbf{x}, \mathbf{x}')\right)
+    \label{eq:gp_prior}
+\end{equation}
+\end{definition}
+
+Cho tập quan sát $\mathcal{D}_n = \{(\mathbf{x}_i, y_i)\}_{i=1}^{n}$, phân
+phối hậu nghiệm tại điểm mới $\mathbf{x}$ là Gaussian:
+
+\begin{align}
+    \mu_n(\mathbf{x}) &= \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y}
+    \label{eq:gp_mean} \\
+    \sigma_n^2(\mathbf{x}) &= k(\mathbf{x}, \mathbf{x}) - \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}
+    \label{eq:gp_var}
+\end{align}
+
+\noindent trong đó $\mathbf{k} = [k(\mathbf{x}, \mathbf{x}_1), \ldots, k(\mathbf{x}, \mathbf{x}_n)]^T$
+là vector kernel giữa $\mathbf{x}$ và các điểm đã quan sát,
+$\mathbf{K}$ là ma trận kernel $n \times n$,
+$\sigma_n^2$ là phương sai nhiễu, và
+$\mathbf{y} = [y_1, \ldots, y_n]^T$.
+
+\subsection{Hàm thu nhận (Acquisition Functions)}
+
+Hàm thu nhận cân bằng giữa \textbf{khai thác} (exploitation --- chọn nơi
+$\mu(\mathbf{x})$ cao) và \textbf{khám phá} (exploration --- chọn nơi
+$\sigma(\mathbf{x})$ cao).
+
+\subsubsection{Expected Improvement (EI)}
+
+Hàm EI tính kỳ vọng của phần cải thiện so với giá trị tốt nhất hiện tại
+$f^+ = \max_{i} y_i$:
+
+\begin{equation}
+    \EI(\mathbf{x}) = \mathbb{E}\!\left[\max\!\left(f(\mathbf{x}) - f^+,\; 0\right)\right]
+    \label{eq:ei_definition}
+\end{equation}
+
+\noindent Với phân phối hậu nghiệm Gaussian, công thức có dạng đóng:
+
+\begin{equation}
+    \boxed{
+    \EI(\mathbf{x}) =
+    \begin{cases}
+        (\mu(\mathbf{x}) - f^+)\,\Phi(z) + \sigma(\mathbf{x})\,\phi(z),
+            & \text{nếu } \sigma(\mathbf{x}) > 0 \\
+        0, & \text{nếu } \sigma(\mathbf{x}) = 0
+    \end{cases}
+    }
+    \label{eq:ei_closed}
+\end{equation}
+
+\noindent trong đó:
+\begin{equation}
+    z = \frac{\mu(\mathbf{x}) - f^+}{\sigma(\mathbf{x})}
+    \label{eq:ei_z}
+\end{equation}
+
+$\Phi(\cdot)$ là hàm phân phối tích lũy (CDF) và $\phi(\cdot)$ là hàm mật độ
+xác suất (PDF) của phân phối chuẩn $\mathcal{N}(0, 1)$.
+
+\subsubsection{Probability of Improvement (PI)}
+
+\begin{equation}
+    \PI(\mathbf{x}) = \Phi\!\left(\frac{\mu(\mathbf{x}) - f^+ - \xi}{\sigma(\mathbf{x})}\right)
+    \label{eq:pi}
+\end{equation}
+
+\noindent với $\xi \geq 0$ là tham số điều khiển exploration--exploitation trade-off.
+Khi $\xi = 0$, PI hội tụ nhanh nhưng dễ kẹt tại cực trị cục bộ.
+
+\subsubsection{Lower Confidence Bound (LCB)}
+
+\begin{equation}
+    \LCB(\mathbf{x}) = \mu(\mathbf{x}) - \beta\,\sigma(\mathbf{x})
+    \label{eq:lcb}
+\end{equation}
+
+\noindent với $\beta > 0$ là hệ số cân bằng. Giá trị $\beta$ lớn ưu tiên khám phá.
+
+\begin{remark}
+Trong HAutoML, hàm \texttt{gp\_minimize} từ scikit-optimize sử dụng mặc định
+EI với chiến lược \texttt{gp\_hedge} --- tự động chọn giữa EI, PI, LCB dựa trên
+hiệu suất tích lũy.
+\end{remark}
+
+\subsection{Xử lý mất cân bằng lớp}
+
+Hệ thống tự động phát hiện mất cân bằng lớp dựa trên ngưỡng:
+
+\begin{equation}
+    \text{imbalanced} =
+    \begin{cases}
+        \text{True}, & \text{nếu } \max_c r_c - \min_c r_c > \tau \\
+        \text{False}, & \text{ngược lại}
+    \end{cases}
+    \label{eq:imbalance_detection}
+\end{equation}
+
+\noindent trong đó $r_c = \frac{|C_c|}{|\mathcal{D}|}$ là tỷ lệ mẫu của lớp $c$,
+$\tau = 0.3$ là ngưỡng mặc định. Nếu mất cân bằng, sử dụng
+\textit{weighted averaging}; ngược lại sử dụng \textit{macro averaging}.
+
+\subsection{Phép nghịch đảo dấu trong hàm mục tiêu}
+
+Do hàm \texttt{gp\_minimize} được thiết kế để giải bài toán tối thiểu hóa,
+trong khi các chỉ số hiệu năng (accuracy, F1, R$^2$) yêu cầu tối đa hóa, hàm
+mục tiêu phải được chuẩn hóa thông qua phép nghịch đảo dấu:
+
+\begin{equation}
+    \argmax_{\boldsymbol{\theta} \in \Theta}\;
+    \text{Score}(\boldsymbol{\theta})
+    \;\equiv\;
+    \argmin_{\boldsymbol{\theta} \in \Theta}\;
+    \bigl[-\text{Score}(\boldsymbol{\theta})\bigr]
+    \label{eq:negation}
+\end{equation}
+
+\noindent Ví dụ: cấu hình A đạt accuracy $= 0.90$ và cấu hình B đạt accuracy
+$= 0.85$ sẽ được ánh xạ thành $-0.90$ và $-0.85$. Thuật toán tối thiểu hóa tự
+động định danh $-0.90$ là kết quả ưu việt hơn, bảo đảm tính nhất quán với mục
+tiêu tìm kiếm điểm số cao nhất.
+
+\subsection{Giả mã}
+
+Thuật toán Bayesian Optimization trong HAutoML sử dụng các thủ tục phụ trợ:
+phát hiện mất cân bằng lớp (Thuật toán~\ref{alg:bo_imbalance}),
+chuyển đổi không gian tìm kiếm (Thuật toán~\ref{alg:bo_convert}),
+tải/lưu trạng thái optimizer cho warm start (Thuật toán~\ref{alg:bo_warmstart}),
+và tối ưu hóa trên một grid đơn lẻ (Thuật toán~\ref{alg:bo_single_grid}).
+
+\subsubsection{Các thủ tục phụ trợ}
+
+\begin{algorithm}[H]
+\caption{Phát hiện mất cân bằng lớp (\textsc{DetectClassImbalance})}
+\label{alg:bo_imbalance}
+\begin{algorithmic}[1]
+\Require $\mathbf{y}$ (mảng nhãn), $\tau = 0.3$ (ngưỡng mất cân bằng)
+\Ensure \texttt{is\_imbalanced} $\in \{\text{true}, \text{false}\}$
+\State $\text{counts} \gets \textsc{Counter}(\mathbf{y})$;\quad $n \gets |\mathbf{y}|$
+\State $\text{ratios} \gets \{c: \text{count}/n \;\text{cho mỗi}\; (c, \text{count}) \in \text{counts}\}$
+\State \Return $\max(\text{ratios}) - \min(\text{ratios}) > \tau$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Chuyển đổi không gian tìm kiếm sang định dạng skopt (\textsc{ConvertSearchSpace})}
+\label{alg:bo_convert}
+\begin{algorithmic}[1]
+\Require $\text{param\_grid}$ (dict: tên tham số $\rightarrow$ giá trị/dimension)
+\Ensure $\text{dims}$ (danh sách skopt dimensions), $\text{names}$ (danh sách tên)
+\State $\text{dims} \gets []$;\quad $\text{names} \gets []$
+\For{mỗi $(\text{name}, \text{values}) \in \text{param\_grid}$}
+    \If{$\text{values}$ là Real/Integer/Categorical (skopt dimension)}
+        \State Gán tên nếu chưa có;\quad $\text{dims}.\text{append}(\text{values})$
+    \ElsIf{$\text{values}$ là list hoặc tuple}
+        \State $\text{dims}.\text{append}(\textsc{Categorical}(\text{values}, \text{name}))$
+    \Else
+        \State \textbf{raise} ValueError \Comment{Kiểu không hợp lệ}
+    \EndIf
+    \State $\text{names}.\text{append}(\text{name})$
+\EndFor
+\State \Return $\text{dims},\; \text{names}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tải trạng thái optimizer cho warm start (\textsc{LoadOptimizerState})}
+\label{alg:bo_warmstart}
+\begin{algorithmic}[1]
+\Require $h_{\text{space}}$ (hash không gian tìm kiếm), $\text{model\_name}$, $\text{state\_store}$, \texttt{enabled}
+\Ensure $\mathbf{x}_0, \mathbf{y}_0$ (điểm + giá trị từ lần chạy trước, hoặc None)
+\If{\texttt{enabled} = false}
+    \State \Return None, None
+\EndIf
+\State $\text{key} \gets \text{model\_name} \mathbin{\Vert} h_{\text{space}}$
+\If{$\text{key} \in \text{state\_store}$ \textbf{và} $\text{state\_store}[\text{key}].h_{\text{space}} = h_{\text{space}}$}
+    \State $\mathbf{x}_0 \gets \text{state\_store}[\text{key}].\text{x\_iters}$;\quad $\mathbf{y}_0 \gets \text{state\_store}[\text{key}].\text{func\_vals}$
+    \If{$\mathbf{x}_0 \neq \varnothing$ \textbf{và} $\mathbf{y}_0 \neq \varnothing$}
+        \State \Return $\mathbf{x}_0, \mathbf{y}_0$ \Comment{Warm start với dữ liệu lịch sử}
+    \EndIf
+\EndIf
+\State \Return None, None
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tối ưu hóa Bayesian trên một grid đơn lẻ (\textsc{SearchSingleGrid})}
+\label{alg:bo_single_grid}
+\begin{algorithmic}[1]
+\Require $\mathcal{M}$, $\text{param\_grid}$ (một grid đơn lẻ), $(\mathbf{X}, \mathbf{y})$, $k$, $n_{\text{calls}}$, $n_{\text{init}}$, $\alpha(\cdot)$, $T_{\max}$
+\Require \texttt{es\_enabled}, \texttt{es\_patience} $p$, $\epsilon$ (convergence threshold), warm start config
+\Ensure $\boldsymbol{\theta}^*$, $s^*$, $\text{all\_scores}^*$, $\text{cv\_results}$
+\State $\text{dims}, \text{names} \gets \textsc{ConvertSearchSpace}(\text{param\_grid})$
+\State $\text{avg\_method} \gets \text{weighted nếu } \textsc{DetectClassImbalance}(\mathbf{y}),\; \text{macro nếu không}$
+\State $\mathcal{H} \gets []$;\quad $\text{best\_all\_scores} \gets \text{None}$;\quad $t_{\text{last}} \gets \textsc{Time}()$
+\Statex
+\Statex \textcolor{blue}{\textit{// Định nghĩa hàm mục tiêu}}
+\Function{Objective}{$\boldsymbol{\theta}$}
+    \State $\mathcal{M}.\text{set\_params}(\boldsymbol{\theta})$
+    \State $\text{cv\_scores} \gets \textsc{CrossValidate}(\mathcal{M}, \mathbf{X}, \mathbf{y}, k, \text{scoring})$
+    \State $\text{last\_metrics} \gets \{\text{key}: \overline{\text{cv\_scores}[\text{test\_key}]} \;\text{cho mỗi key}\}$
+    \State \Return $-\text{last\_metrics}[\texttt{metric\_sort}]$ \Comment{Đảo dấu: max $\rightarrow$ min}
+\EndFunction
+\Statex
+\Statex \textcolor{blue}{\textit{// Định nghĩa callback cho mỗi iteration}}
+\Function{OnStep}{$\text{res}$}
+    \State $t_{\text{iter}} \gets \textsc{Time}() - t_{\text{last}}$;\quad $t_{\text{last}} \gets \textsc{Time}()$
+    \State $s_{\text{current}} \gets -\text{res.func\_vals}[-1]$;\quad $s_{\text{best}} \gets -\text{res.fun}$
+    \State Cập nhật $\text{cv\_results}$, $\text{best\_all\_scores}$;\quad $\mathcal{H}.\text{append}(s_{\text{best}})$
+    \Statex \textcolor{blue}{\textit{\quad// Kiểm tra time limit (EMA proactive)}}
+    \If{$\textsc{ShouldStartNextIteration}(t_{\text{iter}}, T_{\max}, \ldots) = \text{false}$}
+        \State \Return \texttt{true} \Comment{Dừng gp\_minimize}
+    \EndIf
+    \Statex \textcolor{blue}{\textit{\quad// Kiểm tra early stopping (chỉ khi không có time limit)}}
+    \If{$T_{\max} = \text{None}$ \textbf{và} \texttt{es\_enabled} \textbf{và} $|\mathcal{H}| \geq p$}
+        \If{$|\text{Set}(\mathcal{H}[-p:])| = 1$}
+            \State \Return \texttt{true} \Comment{Dừng: không cải thiện}
+        \EndIf
+        \If{$|\mathcal{H}| > 1$ \textbf{và} $|\mathcal{H}[-1] - \mathcal{H}[-2]| < \epsilon$}
+            \State \Return \texttt{true} \Comment{Dừng: hội tụ}
+        \EndIf
+    \EndIf
+    \State \Return \texttt{false} \Comment{Tiếp tục tối ưu hóa}
+\EndFunction
+\Statex
+\Statex \textcolor{blue}{\textit{// Warm start: tải trạng thái từ lần chạy trước}}
+\State $h \gets \text{MD5}(\text{dims})[:8]$
+\State $\mathbf{x}_0, \mathbf{y}_0 \gets \textsc{LoadOptimizerState}(h, \mathcal{M}.\text{name}, \ldots)$
+\If{$\mathbf{x}_0 \neq \text{None}$}
+    \State $n_{\text{init}} \gets \max(1, \lfloor n_{\text{init}} / 2 \rfloor)$ \Comment{Giảm 50\% điểm khởi tạo}
+\EndIf
+\Statex \textcolor{blue}{\textit{// Thực thi tối ưu hóa Bayesian}}
+\State $\text{result} \gets \textsc{gp\_minimize}(\textsc{Objective}, \text{dims}, n_{\text{calls}}, n_{\text{init}}, \alpha, \text{callback}=[\textsc{OnStep}], \mathbf{x}_0, \mathbf{y}_0)$
+\State $\textsc{SaveOptimizerState}(\text{result}, h, \mathcal{M}.\text{name}, \ldots)$ \Comment{Lưu cho warm start tương lai}
+\State $\boldsymbol{\theta}^* \gets \{\text{names}[i]: \text{result.x}[i]\}$;\quad $s^* \gets -\text{result.fun}$
+\State \Return $\boldsymbol{\theta}^*,\; s^*,\; \text{best\_all\_scores},\; \text{cv\_results}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Thuật toán chính}
+
+\begin{algorithm}[H]
+\caption{Bayesian Optimization trong HAutoML --- hỗ trợ multi-grid (sử dụng \texttt{gp\_minimize})}
+\label{alg:bayesian}
+\scriptsize
+\begin{algorithmic}[1]
+\Require Mô hình $\mathcal{M}$, không gian tham số $\Theta$ (dict hoặc list-of-dicts), dữ liệu $\mathcal{D} = (\mathbf{X}, \mathbf{y})$, số fold $k$
+\Require $n_{\text{calls}}$, $n_{\text{init}}$, hàm thu nhận $\alpha(\cdot)$, $T_{\max}$ (tùy chọn)
+\Ensure $\boldsymbol{\theta}^*$, $s^*$, $\text{all\_scores}^*$, $\text{cv\_results}$, \texttt{time\_limit\_reached}
+\State $\textsc{StartTimer}()$;\quad $\text{state\_store} \gets \{\}$
+\Statex \textcolor{blue}{\textit{// Chuẩn hóa param\_grid về list-of-dicts}}
+\If{$\Theta$ là dict}
+    \State $\Theta_{\text{list}} \gets [\Theta]$
+\Else
+    \State $\Theta_{\text{list}} \gets \Theta$
+\EndIf
+\Statex \textcolor{blue}{\textit{// Chạy tối ưu hóa trên từng grid}}
+\State $\text{all\_results} \gets []$
+\For{mỗi $\text{grid} \in \Theta_{\text{list}}$}
+    \If{$\text{grid} = \varnothing$}
+        \State $\text{result} \gets \textsc{EvaluateDefaultParams}(\mathcal{M}, \mathbf{X}, \mathbf{y})$ \Comment{Model không có hyperparameters}
+    \Else
+        \State $\text{result} \gets \textsc{SearchSingleGrid}(\mathcal{M}, \text{grid}, \mathbf{X}, \mathbf{y}, k, n_{\text{calls}}, n_{\text{init}}, \alpha, T_{\max}, \ldots)$
+    \EndIf
+    \State $\text{all\_results}.\text{append}(\text{result})$
+\EndFor
+\Statex \textcolor{blue}{\textit{// Chọn kết quả tốt nhất từ tất cả các grid}}
+\State $i^* \gets \argmax_{i}\; \text{all\_results}[i].s^*$
+\State $\boldsymbol{\theta}^*, s^*, \text{all\_scores}^* \gets \text{all\_results}[i^*]$
+\State $\text{cv\_results} \gets \textsc{CombineCVResults}(\text{all\_results})$
+\Statex \textcolor{blue}{\textit{// Chuyển đổi kiểu numpy $\rightarrow$ Python gốc}}
+\State \Return $\boldsymbol{\theta}^*,\; s^*,\; \text{all\_scores}^*,\; \text{cv\_results},\; \texttt{time\_limit\_reached}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{remark}
+Khi $T_{\max}$ được xác lập, hệ thống ưu tiên tối ưu hóa tài nguyên theo dòng
+thời gian vật lý và \textbf{không} áp dụng early stopping. Ngược lại, khi không
+có ràng buộc thời hạn, early stopping đóng vai trò bộ lọc thông minh nhằm ngắt
+tiến trình nếu hiệu năng không cải thiện đáng kể.
+\end{remark}
+
+\subsection{Phân tích độ phức tạp}
+
+\begin{itemize}
+    \item \textbf{Thời gian:}
+    $\mathcal{O}\!\left(n_{\text{calls}} \cdot
+    \left[n^3 + k \cdot T(\mathcal{D}, \boldsymbol{\theta})\right]\right)$,
+    trong đó $n^3$ là chi phí đảo ma trận kernel ($n$ là số quan sát tích lũy).
+
+    \item \textbf{Không gian:}
+    $\mathcal{O}(n^2)$ cho ma trận kernel $\mathbf{K}$.
+\end{itemize}
+
+% ============================================================================
+% 5. GENETIC ALGORITHM
+% ============================================================================
+\newpage
+\section{Genetic Algorithm --- Thuật toán di truyền}
+\label{sec:genetic}
+
+\subsection{Tổng quan}
+
+Thuật toán di truyền (GA) mô phỏng quá trình tiến hóa tự nhiên thông qua ba
+toán tử chính: \textbf{Selection} (chọn lọc), \textbf{Crossover} (lai ghép),
+và \textbf{Mutation} (đột biến)~\cite{holland1975adaptation}.
+
+\subsection{Mã hóa cá thể}
+
+Mỗi cá thể trong quần thể biểu diễn một tổ hợp siêu tham số
+$\boldsymbol{\theta} = (\theta_1, \theta_2, \ldots, \theta_m)$. Hệ thống hỗ trợ
+ba kiểu mã hóa:
+
+\begin{itemize}
+    \item \textbf{Categorical}: $\theta_j \in \{v_1, v_2, \ldots, v_n\}$
+    $\rightarrow$ mã hóa dạng chỉ số $[0, n-1]$.
+
+    \item \textbf{Integer}: $\theta_j \in [\theta_j^{\min}, \theta_j^{\max}] \cap \mathbb{Z}$
+    $\rightarrow$ mã hóa liên tục, làm tròn khi giải mã.
+
+    \item \textbf{Continuous}: $\theta_j \in [\theta_j^{\min}, \theta_j^{\max}] \subset \mathbb{R}$
+    $\rightarrow$ mã hóa trực tiếp.
+\end{itemize}
+
+\subsection{Tournament Selection --- Chọn lọc đấu trường}
+
+Chọn ngẫu nhiên $k_t$ cá thể, lấy cá thể có fitness cao nhất. Xác suất cá thể
+có hạng $i$ (trong $P$ cá thể) chiến thắng:
+
+\begin{equation}
+    P_i = \frac{(P - i + 1)^{k_t} - (P - i)^{k_t}}{P^{k_t}}
+    \label{eq:tournament_prob}
+\end{equation}
+
+\begin{remark}[Adaptive Tournament Size]
+Khi đa dạng quần thể $d < 0.1$, tournament size giảm để tăng exploration; khi
+$d > 0.5$, tournament size tăng để tăng exploitation:
+
+\begin{equation}
+    k_t^{\text{adapt}} =
+    \begin{cases}
+        \max(2, k_t - 1), & \text{nếu } d < 0.1 \\
+        \min\!\left(\frac{P}{2},\, k_t + 1\right), & \text{nếu } d > 0.5 \\
+        k_t, & \text{ngược lại}
+    \end{cases}
+    \label{eq:adaptive_tournament}
+\end{equation}
+\end{remark}
+
+\subsection{BLX-$\alpha$ Crossover --- Lai ghép}
+
+Toán tử BLX-$\alpha$~\cite{eshelman1993real} mở rộng miền tìm kiếm ra ngoài
+khoảng giữa hai cha mẹ. Cho hai cha mẹ $p_1, p_2$ (với $p_1 \leq p_2$)
+tại chiều $j$:
+
+\begin{equation}
+    \boxed{
+    \begin{aligned}
+        I &= p_2 - p_1 \\
+        \text{lower} &= p_1 - \alpha \cdot I \\
+        \text{upper} &= p_2 + \alpha \cdot I \\
+        c_j &\sim \mathcal{U}(\text{lower},\; \text{upper})
+    \end{aligned}
+    }
+    \label{eq:blx_alpha}
+\end{equation}
+
+\noindent với $\alpha \in [0, 0.5]$ (mặc định $\alpha = 0.5$). Kết quả được
+giới hạn trong $[\theta_j^{\min}, \theta_j^{\max}]$.
+
+\begin{remark}[Adaptive Crossover Rate]
+Khi đa dạng quần thể $d < 0.1$, tỷ lệ lai ghép tự động tăng 20\%:
+\begin{equation}
+    p_c^{\text{adapt}} =
+    \begin{cases}
+        \min(1.0,\; p_c \times 1.2), & \text{nếu } d < 0.1 \\
+        p_c, & \text{ngược lại}
+    \end{cases}
+    \label{eq:adaptive_crossover}
+\end{equation}
+\end{remark}
+
+Đối với tham số categorical, sử dụng \textbf{hoán đổi ngẫu nhiên} (random swap)
+với xác suất 0.5.
+
+\subsection{Adaptive Gaussian Mutation --- Đột biến thích nghi}
+
+Tỷ lệ đột biến giảm dần theo thế hệ để chuyển từ khám phá sang tinh chỉnh:
+
+\begin{equation}
+    p_m(g) = p_m^{(0)} \cdot \left(1 - \frac{g}{G}\right)
+    \label{eq:adaptive_mutation_rate}
+\end{equation}
+
+\noindent với $p_m^{(0)}$ là tỷ lệ đột biến ban đầu, $g$ là thế hệ hiện tại,
+$G$ là tổng số thế hệ.
+
+Đối với tham số liên tục/nguyên, cường độ đột biến cũng giảm thích nghi:
+
+\begin{equation}
+    \sigma_{\text{mut}}(g) = (\theta_j^{\max} - \theta_j^{\min}) \cdot
+    0.2 \cdot \left(1 - \frac{g}{G + 1}\right)
+    \label{eq:mutation_strength}
+\end{equation}
+
+\begin{equation}
+    \theta_j' = \text{clip}\!\left(
+        \theta_j + \mathcal{N}(0, \sigma_{\text{mut}}^2),\;
+        \theta_j^{\min},\; \theta_j^{\max}
+    \right)
+    \label{eq:gaussian_mutation}
+\end{equation}
+
+Đối với tham số categorical, đột biến thay thế giá trị hiện tại bằng một giá
+trị ngẫu nhiên khác từ tập giá trị có thể.
+
+\subsection{Elitism}
+
+Giữ lại $e$ cá thể tốt nhất mà không qua chọn lọc/đột biến:
+
+\begin{equation}
+    \text{Elite}_g = \text{top-}e\!\left(\text{Population}_g,\; \text{fitness}\right)
+    \label{eq:elitism}
+\end{equation}
+
+\subsection{Độ đa dạng quần thể}
+
+\subsubsection{Phương pháp O(n) --- Variance-based (quần thể lớn, $P \geq 20$)}
+
+\begin{equation}
+    d_j =
+    \begin{cases}
+        \dfrac{|\text{unique}(\theta_j^{(1)}, \ldots, \theta_j^{(P)})|}{P},
+            & \text{categorical} \\[8pt]
+        \min\!\left(1,\; 4 \cdot \text{Var}\!\left(\dfrac{\theta_j^{(i)} - \theta_j^{\min}}
+            {\theta_j^{\max} - \theta_j^{\min}}\right)\right),
+            & \text{continuous/integer}
+    \end{cases}
+    \label{eq:diversity_fast}
+\end{equation}
+
+\begin{equation}
+    d = \frac{1}{m} \sum_{j=1}^{m} d_j
+    \label{eq:diversity_mean}
+\end{equation}
+
+\subsubsection{Phương pháp O($n^2$) --- Pairwise (quần thể nhỏ, $P < 20$)}
+
+\begin{equation}
+    d = \frac{2}{P(P-1)} \sum_{i < j} \frac{1}{m}
+    \sum_{l=1}^{m} \delta(x_i^{(l)}, x_j^{(l)})
+    \label{eq:diversity_pairwise}
+\end{equation}
+
+\noindent trong đó:
+\begin{equation}
+    \delta(a, b) =
+    \begin{cases}
+        \mathbb{1}[a \neq b], & \text{categorical} \\
+        \dfrac{|a - b|}{\theta_l^{\max} - \theta_l^{\min}}, & \text{continuous/integer}
+    \end{cases}
+\end{equation}
+
+\subsection{Diversity Injection --- Tiêm đa dạng}
+
+Khi quần thể trì trệ ($d < 0.05$ và không cải thiện trong 3 thế hệ liên tiếp),
+thay thế 20\% cá thể yếu nhất bằng cá thể ngẫu nhiên mới.
+
+\subsection{Giả mã}
+
+Thuật toán Genetic Algorithm trong HAutoML sử dụng hệ thống các thủ tục phụ trợ phức tạp bao gồm:
+mã hóa tham số (Thuật toán~\ref{alg:ga_encode}),
+giải mã cá thể (Thuật toán~\ref{alg:ga_decode}),
+khởi tạo thông minh (Thuật toán~\ref{alg:ga_init}),
+đánh giá fitness (Thuật toán~\ref{alg:ga_eval}),
+chọn lọc tournament thích nghi (Thuật toán~\ref{alg:ga_tournament}),
+lai ghép BLX-$\alpha$ (Thuật toán~\ref{alg:ga_crossover}),
+đột biến Gaussian thích nghi (Thuật toán~\ref{alg:ga_mutate}),
+tính đa dạng quần thể (Thuật toán~\ref{alg:ga_diversity}),
+tiêm đa dạng (Thuật toán~\ref{alg:ga_inject}),
+và tạo thế hệ mới (Thuật toán~\ref{alg:ga_next_gen}).
+
+\subsubsection{Các thủ tục phụ trợ}
+
+\begin{algorithm}[H]
+\caption{Mã hóa lưới tham số (\textsc{EncodeParameters})}
+\label{alg:ga_encode}
+\begin{algorithmic}[1]
+\Require $\text{param\_grid}$ (dict: tên $\rightarrow$ danh sách giá trị)
+\Ensure $\text{bounds}$ (list), $\text{types}$ (list), $\text{names}$ (list), $\text{original\_values}$ (dict)
+\State $\text{bounds} \gets []$;\quad $\text{types} \gets []$;\quad $\text{names} \gets []$;\quad $\text{original\_values} \gets \{\}$
+\For{mỗi $(\text{name}, \text{values}) \in \text{param\_grid}$}
+    \State $\text{names}.\text{append}(\text{name})$;\quad $\text{original\_values}[\text{name}] \gets \text{values}$
+    \If{Tất cả $v \in \text{values}$ là $\texttt{float}$}
+        \State $\text{types}.\text{append}(\texttt{continuous})$;\quad $\text{bounds}.\text{append}(\min(\text{values}), \max(\text{values}))$
+    \ElsIf{Tất cả $v \in \text{values}$ là $\texttt{int}$}
+        \State $\text{types}.\text{append}(\texttt{integer})$;\quad $\text{bounds}.\text{append}(\min(\text{values}), \max(\text{values}))$
+    \Else
+        \State $\text{types}.\text{append}(\texttt{categorical})$;\quad $\text{bounds}.\text{append}(0, |\text{values}| - 1)$
+    \EndIf
+\EndFor
+\State \Return $\text{bounds},\; \text{types},\; \text{names},\; \text{original\_values}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Giải mã cá thể về tham số gốc (\textsc{DecodeIndividual})}
+\label{alg:ga_decode}
+\begin{algorithmic}[1]
+\Require $\mathbf{x}$ (vector số thực), $\text{names}$, $\text{types}$, $\text{original\_values}$
+\Ensure $\boldsymbol{\theta}$ (dict: tên tham số $\rightarrow$ giá trị gốc)
+\State $\boldsymbol{\theta} \gets \{\}$
+\For{$j = 0$ \textbf{đến} $|\text{names}| - 1$}
+    \If{$\text{types}[j] = \texttt{categorical}$}
+        \State $\text{idx} \gets \min(\lfloor x_j \rceil, |\text{original\_values}[\text{names}[j]]| - 1)$ \Comment{Làm tròn + clip}
+        \State $\boldsymbol{\theta}[\text{names}[j]] \gets \text{original\_values}[\text{names}[j]][\text{idx}]$
+    \ElsIf{$\text{types}[j] = \texttt{integer}$}
+        \State $\boldsymbol{\theta}[\text{names}[j]] \gets \lfloor x_j \rceil$ \Comment{Làm tròn về integer}
+    \Else
+        \State $\boldsymbol{\theta}[\text{names}[j]] \gets x_j$ \Comment{Continuous: giữ nguyên}
+    \EndIf
+\EndFor
+\State \Return $\boldsymbol{\theta}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Khởi tạo thông minh quần thể (\textsc{SmartInitialization})}
+\label{alg:ga_init}
+\begin{algorithmic}[1]
+\Require $P$ (kích thước quần thể), $\text{bounds}$, $\text{types}$, $\text{original\_values}$
+\Ensure $\text{Pop}_0$ (danh sách $P$ cá thể)
+\State $\text{Pop}_0 \gets []$
+\Statex \textcolor{blue}{\textit{// Cá thể 1: Tất cả giá trị giữa (median)}}
+\State $\text{Pop}_0.\text{append}\Big(\Big[\frac{\text{lo}_j + \text{hi}_j}{2}\Big]_{j=1}^{m}\Big)$
+\Statex \textcolor{blue}{\textit{// Cá thể 2: Tất cả giá trị nhỏ nhất (lower bound)}}
+\State $\text{Pop}_0.\text{append}\Big([\text{lo}_j]_{j=1}^{m}\Big)$
+\Statex \textcolor{blue}{\textit{// Cá thể 3: Tất cả giá trị lớn nhất (upper bound)}}
+\State $\text{Pop}_0.\text{append}\Big([\text{hi}_j]_{j=1}^{m}\Big)$
+\Statex \textcolor{blue}{\textit{// Các cá thể còn lại: ngẫu nhiên với clip theo bounds}}
+\While{$|\text{Pop}_0| < P$}
+    \State $\mathbf{x} \gets [\mathcal{U}(\text{lo}_j, \text{hi}_j)]_{j=1}^{m}$
+    \For{$j = 1$ \textbf{đến} $m$}
+        \If{$\text{types}[j] \in \{\texttt{integer}, \texttt{categorical}\}$}
+            \State $x_j \gets \lfloor x_j \rceil$ \Comment{Làm tròn cho integer/categorical}
+        \EndIf
+    \EndFor
+    \State $\text{Pop}_0.\text{append}(\mathbf{x})$
+\EndWhile
+\State \Return $\text{Pop}_0$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Đánh giá fitness cá thể có cache (\textsc{EvaluateIndividual})}
+\label{alg:ga_eval}
+\begin{algorithmic}[1]
+\Require Cá thể $\mathbf{x}$, mô hình $\mathcal{M}$, dữ liệu $(\mathbf{X}, \mathbf{y})$, $k$-fold, scoring, cache
+\Ensure $\text{result}$ (fitness + all\_scores + params)
+\State $\boldsymbol{\theta} \gets \textsc{DecodeIndividual}(\mathbf{x}, \ldots)$
+\State $h \gets \textsc{GetParamsHash}(\mathcal{M}, \boldsymbol{\theta})$
+\If{$h \in \text{cache}$}
+    \State \Return $\text{cache}[h]$ \Comment{Cache hit}
+\EndIf
+\State $\mathcal{M}.\text{set\_params}(\boldsymbol{\theta})$
+\State $\text{cv\_scores} \gets \textsc{CrossValidate}(\mathcal{M}, \mathbf{X}, \mathbf{y}, k, \text{scoring})$
+\State $\text{fitness} \gets \overline{\text{cv\_scores}[\texttt{metric\_sort}]}$
+\State $\text{result} \gets (\text{fitness}, \{\text{key}: \overline{\text{cv\_scores}[\text{key}]}\}, \boldsymbol{\theta})$
+\State $\text{cache}[h] \gets \text{result}$
+\State \Return result
+\Statex \textcolor{red}{\textit{// Nếu xảy ra lỗi: trả về fitness $= -\infty$ (tự động loại bỏ)}}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Chọn lọc tournament thích nghi (\textsc{AdaptiveTournamentSelection})}
+\label{alg:ga_tournament}
+\begin{algorithmic}[1]
+\Require Quần thể $\text{Pop}$ (đã sắp xếp), fitness $\mathbf{f}$, $k_{\text{base}}$, đa dạng $d$
+\Ensure Cá thể được chọn $\mathbf{x}^*$
+\Statex \textcolor{blue}{\textit{// Adaptive tournament size: tăng áp lực chọn lọc khi đa dạng cao}}
+\If{$d > 0.3$}
+    \State $k_t \gets \min(|Pop|, k_{\text{base}} + 1)$
+\ElsIf{$d < 0.1$}
+    \State $k_t \gets \max(2, k_{\text{base}} - 1)$ \Comment{Giảm áp lực khi đa dạng thấp}
+\Else
+    \State $k_t \gets k_{\text{base}}$
+\EndIf
+\State $\text{pool} \gets \textsc{RandomSample}(\text{Pop}, k_t)$
+\State \Return $\argmax_{\mathbf{x} \in \text{pool}} f(\mathbf{x})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Lai ghép BLX-$\alpha$ chi tiết (\textsc{BLXAlphaCrossover})}
+\label{alg:ga_crossover}
+\begin{algorithmic}[1]
+\Require Cha mẹ $\mathbf{p}_1, \mathbf{p}_2$, tỷ lệ lai ghép $p_c$, đa dạng $d$, bounds, types, $\alpha = 0.5$
+\Ensure Con cái $\mathbf{c}_1, \mathbf{c}_2$
+\Statex \textcolor{blue}{\textit{// Adaptive crossover rate}}
+\If{$d < 0.1$}
+    \State $p_c^{\text{adapt}} \gets \min(1.0,\; p_c \times 1.2)$ \Comment{Tăng 20\% khi đa dạng thấp}
+\Else
+    \State $p_c^{\text{adapt}} \gets p_c$
+\EndIf
+\If{$\mathcal{U}(0, 1) > p_c^{\text{adapt}}$}
+    \State \Return $\mathbf{p}_1,\; \mathbf{p}_2$ \Comment{Không lai ghép}
+\EndIf
+\State $\mathbf{c}_1, \mathbf{c}_2 \gets \text{copy}(\mathbf{p}_1), \text{copy}(\mathbf{p}_2)$
+\For{$j = 0$ \textbf{đến} $m - 1$}
+    \If{$\text{types}[j] = \texttt{categorical}$}
+        \If{$\mathcal{U}(0, 1) < 0.5$}
+            \State $c_{1,j}, c_{2,j} \gets c_{2,j}, c_{1,j}$ \Comment{Hoán đổi ngẫu nhiên}
+        \EndIf
+    \Else
+        \Statex \textcolor{blue}{\textit{\quad\quad// BLX-$\alpha$ cho continuous/integer}}
+        \State $I \gets |p_{2,j} - p_{1,j}|$
+        \State $\text{lo} \gets \min(p_{1,j}, p_{2,j}) - \alpha \cdot I$;\quad $\text{hi} \gets \max(p_{1,j}, p_{2,j}) + \alpha \cdot I$
+        \State $c_{1,j} \gets \textsc{Clip}(\mathcal{U}(\text{lo}, \text{hi}),\; \text{bound}_j)$
+        \State $c_{2,j} \gets \textsc{Clip}(\mathcal{U}(\text{lo}, \text{hi}),\; \text{bound}_j)$
+        \If{$\text{types}[j] = \texttt{integer}$}
+            \State $c_{1,j} \gets \lfloor c_{1,j} \rceil$;\quad $c_{2,j} \gets \lfloor c_{2,j} \rceil$
+        \EndIf
+    \EndIf
+\EndFor
+\State \Return $\mathbf{c}_1,\; \mathbf{c}_2$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Đột biến Gaussian thích nghi (\textsc{AdaptiveMutate})}
+\label{alg:ga_mutate}
+\begin{algorithmic}[1]
+\Require Cá thể $\mathbf{x}$, thế hệ $g$, tổng thế hệ $G$, $p_m^{(0)}$, bounds, types
+\Ensure $\mathbf{x}'$ (cá thể sau đột biến)
+\State $\mathbf{x}' \gets \text{copy}(\mathbf{x})$
+\Statex \textcolor{blue}{\textit{// Adaptive mutation rate: giảm theo thế hệ}}
+\State $p_m(g) \gets p_m^{(0)} \cdot (1 - g / G)$ \Comment{Exploration $\rightarrow$ exploitation}
+\For{$j = 0$ \textbf{đến} $m - 1$}
+    \If{$\mathcal{U}(0, 1) < p_m(g)$}
+        \If{$\text{types}[j] = \texttt{categorical}$}
+            \State $x_j' \gets \mathcal{U}_{\text{int}}(\text{lo}_j, \text{hi}_j)$ \Comment{Chọn ngẫu nhiên index mới}
+        \Else
+            \Statex \textcolor{blue}{\textit{\quad\quad\quad// Gaussian mutation với cường độ thích nghi}}
+            \State $\sigma \gets (\text{hi}_j - \text{lo}_j) \times 0.2 \times (1 - g / (G + 1))$
+            \State $x_j' \gets \textsc{Clip}(x_j + \mathcal{N}(0, \sigma^2),\; \text{lo}_j,\; \text{hi}_j)$
+            \If{$\text{types}[j] = \texttt{integer}$}
+                \State $x_j' \gets \lfloor x_j' \rceil$
+            \EndIf
+        \EndIf
+    \EndIf
+\EndFor
+\State \Return $\mathbf{x}'$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tính đa dạng quần thể --- auto-switch (\textsc{CalculateDiversity})}
+\label{alg:ga_diversity}
+\begin{algorithmic}[1]
+\Require Quần thể $\text{Pop}$, bounds, types, ngưỡng $P_{\text{thresh}} = 20$
+\Ensure $d \in [0, 1]$
+\If{$|\text{Pop}| \geq P_{\text{thresh}}$}
+    \Statex \textcolor{blue}{\textit{\quad// Phương pháp nhanh $O(n)$ --- variance-based}}
+    \For{$j = 0$ \textbf{đến} $m - 1$}
+        \If{$\text{types}[j] = \texttt{categorical}$}
+            \State $d_j \gets |\text{unique}(\{x_j^{(i)}\}_{i=1}^{P})| / P$
+        \Else
+            \State $d_j \gets \min\!\left(1,\; 4 \cdot \text{Var}\!\left(\frac{x_j^{(i)} - \text{lo}_j}{\text{hi}_j - \text{lo}_j}\right)\right)$
+        \EndIf
+    \EndFor
+    \State \Return $\frac{1}{m}\sum_{j=0}^{m-1} d_j$
+\Else
+    \Statex \textcolor{blue}{\textit{\quad// Phương pháp chính xác $O(n^2)$ --- pairwise Hamming}}
+    \State $D \gets 0$;\quad $\text{count} \gets 0$
+    \For{mỗi cặp $(i, k)$ với $i < k$}
+        \For{$j = 0$ \textbf{đến} $m - 1$}
+            \If{$\text{types}[j] = \texttt{categorical}$}
+                \State $D \gets D + \mathbb{1}[x_j^{(i)} \neq x_j^{(k)}]$
+            \Else
+                \State $D \gets D + \frac{|x_j^{(i)} - x_j^{(k)}|}{\text{hi}_j - \text{lo}_j}$
+            \EndIf
+        \EndFor
+        \State $\text{count} \gets \text{count} + 1$
+    \EndFor
+    \State \Return $\min\!\left(1,\; D / (\text{count} \cdot m)\right)$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tiêm đa dạng vào quần thể (\textsc{InjectDiversity})}
+\label{alg:ga_inject}
+\begin{algorithmic}[1]
+\Require Quần thể $\text{Pop}$, fitness $\mathbf{f}$, bounds, types, $r_{\text{inject}} = 0.2$
+\Ensure $\text{Pop}'$ (quần thể sau tiêm đa dạng)
+\State $n_{\text{inject}} \gets \max(1, \lfloor r_{\text{inject}} \cdot |\text{Pop}| \rfloor)$
+\Statex \textcolor{blue}{\textit{// Sắp xếp theo fitness giảm dần, thay thế cá thể yếu nhất}}
+\State $\text{indices\_sorted} \gets \textsc{Argsort}(-\mathbf{f})$
+\For{$i = 0$ \textbf{đến} $n_{\text{inject}} - 1$}
+    \State $\text{idx} \gets \text{indices\_sorted}[|\text{Pop}| - 1 - i]$ \Comment{Cá thể yếu nhất}
+    \State $\text{Pop}[\text{idx}] \gets \textsc{CreateIndividual}(\text{bounds}, \text{types})$ \Comment{Cá thể ngẫu nhiên mới}
+    \State $\mathbf{f}[\text{idx}] \gets -\infty$ \Comment{Đánh dấu cần đánh giá lại}
+\EndFor
+\State \Return $\text{Pop}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Tạo thế hệ mới (\textsc{CreateNextGeneration})}
+\label{alg:ga_next_gen}
+\begin{algorithmic}[1]
+\Require Quần thể $\text{Pop}_g$ (đã sắp xếp), fitness $\mathbf{f}$, đa dạng $d$, thế hệ $g$, tổng $G$
+\Require $e$ (elite size), $P$ (pop size), $p_m$, $p_c$, bounds, types
+\Ensure $\text{Pop}_{g+1}$
+\Statex \textcolor{blue}{\textit{// Elitism: giữ lại $e$ cá thể tốt nhất}}
+\State $\text{Pop}_{g+1} \gets [\text{Pop}_g[0], \ldots, \text{Pop}_g[e-1]]$ \Comment{Đã sắp xếp giảm dần}
+\Statex \textcolor{blue}{\textit{// Sinh cá thể mới bằng chọn lọc + lai ghép + đột biến}}
+\While{$|\text{Pop}_{g+1}| < P$}
+    \State $\mathbf{p}_1 \gets \textsc{AdaptiveTournamentSelection}(\text{Pop}_g, \mathbf{f}, k_{\text{base}}, d)$
+    \State $\mathbf{p}_2 \gets \textsc{AdaptiveTournamentSelection}(\text{Pop}_g, \mathbf{f}, k_{\text{base}}, d)$
+    \State $\mathbf{c}_1, \mathbf{c}_2 \gets \textsc{BLXAlphaCrossover}(\mathbf{p}_1, \mathbf{p}_2, p_c, d, \text{bounds}, \text{types})$
+    \State $\mathbf{c}_1 \gets \textsc{AdaptiveMutate}(\mathbf{c}_1, g, G, p_m, \text{bounds}, \text{types})$
+    \State $\mathbf{c}_2 \gets \textsc{AdaptiveMutate}(\mathbf{c}_2, g, G, p_m, \text{bounds}, \text{types})$
+    \State $\text{Pop}_{g+1}.\text{extend}([\mathbf{c}_1, \mathbf{c}_2])$
+\EndWhile
+\State $\text{Pop}_{g+1} \gets \text{Pop}_{g+1}[:P]$ \Comment{Cắt bớt nếu vượt kích thước $P$}
+\State \Return $\text{Pop}_{g+1}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Thuật toán chính}
+
+\begin{algorithm}[H]
+\caption{Genetic Algorithm cho tối ưu hóa siêu tham số}
+\label{alg:ga}
+\scriptsize
+\begin{algorithmic}[1]
+\Require Mô hình $\mathcal{M}$, lưới tham số $\text{param\_grid}$, dữ liệu $\mathcal{D} = (\mathbf{X}, \mathbf{y})$, số fold $k$
+\Require $P$ (kích thước quần thể), $G$ (số thế hệ), $p_m$ (tỷ lệ đột biến), $p_c$ (tỷ lệ lai ghép), $e$ (elite size)
+\Require \texttt{scoring} (dict các metric), \texttt{metric\_sort}, $T_{\max}$ (tùy chọn)
+\Require Early stopping: \texttt{es\_enabled}, \texttt{patience\_max}
+\Ensure $\boldsymbol{\theta}^*$, $s^*$, $\text{all\_scores}^*$, $\text{cv\_results}$, \texttt{time\_limit\_reached}
+\Statex \textcolor{blue}{\textit{// Giai đoạn 1: Mã hóa và khởi tạo}}
+\State $\textsc{StartTimer}()$;\quad $\text{cache} \gets \{\}$;\quad $\hat{t}_{\text{ema}} \gets \text{None}$
+\State $\text{bounds}, \text{types}, \text{names}, \text{orig\_vals} \gets \textsc{EncodeParameters}(\text{param\_grid})$
+\State $\text{Pop}_0 \gets \textsc{SmartInitialization}(P, \text{bounds}, \text{types}, \text{orig\_vals})$
+\State $s^* \gets -\infty$;\quad $\boldsymbol{\theta}^* \gets \varnothing$;\quad $\text{patience} \gets 0$;\quad $\text{cv\_results} \gets []$
+\Statex \textcolor{blue}{\textit{// Giai đoạn 2: Vòng lặp tiến hóa}}
+\For{$g = 0$ \textbf{đến} $G - 1$}
+    \State $t_0 \gets \textsc{Time}()$
+    \Statex \textcolor{blue}{\textit{\quad// Kiểm tra time limit (EMA proactive)}}
+    \If{$\textsc{ShouldStartNextIteration}(\text{None}, T_{\max}, \ldots) = \text{false}$}
+        \State \texttt{time\_stopped} $\gets$ true;\quad \textbf{break}
+    \EndIf
+    \State $d \gets \textsc{CalculateDiversity}(\text{Pop}_g, \text{bounds}, \text{types})$
+    \Statex \textcolor{blue}{\textit{\quad// Đánh giá fitness cho toàn quần thể (song song)}}
+    \State $\text{results} \gets \textsc{Parallel}\Big[\textsc{EvaluateIndividual}(\mathbf{x}, \mathcal{M}, \ldots) \;\text{cho mỗi}\; \mathbf{x} \in \text{Pop}_g\Big]$
+    \State Sắp xếp $\text{Pop}_g$ theo fitness giảm dần
+    \State $s_{\text{prev}} \gets s^*$
+    \For{mỗi $\text{result} \in \text{results}$}
+        \If{$\text{result.fitness} > s^*$}
+            \State $s^* \gets \text{result.fitness}$;\quad $\boldsymbol{\theta}^* \gets \text{result.params}$;\quad $\text{all\_scores}^* \gets \text{result.all\_scores}$
+        \EndIf
+        \State Cập nhật $\text{cv\_results}$ với $\text{result.params}$, $\text{result.all\_scores}$
+    \EndFor
+    \Statex \textcolor{blue}{\textit{\quad// Kiểm tra early stopping}}
+    \If{$s^* = s_{\text{prev}}$}
+        \State $\text{patience} \gets \text{patience} + 1$
+    \Else
+        \State $\text{patience} \gets 0$
+    \EndIf
+    \If{$T_{\max} = \text{None}$ \textbf{và} \texttt{es\_enabled} \textbf{và} $\text{patience} \geq \texttt{patience\_max}$}
+        \State \textbf{break} \Comment{Early stopping}
+    \EndIf
+    \Statex \textcolor{blue}{\textit{\quad// Tiêm đa dạng nếu quần thể trì trệ}}
+    \If{$d < 0.05$ \textbf{và} $\text{patience} \geq 3$}
+        \State $\text{Pop}_g \gets \textsc{InjectDiversity}(\text{Pop}_g, \mathbf{f}, \text{bounds}, \text{types})$
+    \EndIf
+    \Statex \textcolor{blue}{\textit{\quad// Tạo thế hệ mới}}
+    \State $\text{Pop}_{g+1} \gets \textsc{CreateNextGeneration}(\text{Pop}_g, \mathbf{f}, d, g, G, e, P, p_m, p_c, \ldots)$
+    \State $\textsc{ShouldStartNextIteration}(\textsc{Time}() - t_0, T_{\max}, \ldots)$ \Comment{Cập nhật EMA}
+\EndFor
+\Statex \textcolor{blue}{\textit{// Giai đoạn 3: Xây dựng cv\_results và ranking}}
+\For{mỗi $\text{metric} \in \text{Keys}(\text{scoring})$}
+    \State $\text{cv\_results}[\texttt{rank\_test\_} \mathbin{\Vert} \text{metric}] \gets \textsc{Argsort}(-\text{scores}) + 1$
+\EndFor
+\State Xóa cache; Chuyển đổi numpy types
+\State \Return $\boldsymbol{\theta}^*,\; s^*,\; \text{all\_scores}^*,\; \text{cv\_results},\; \texttt{time\_stopped}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Phân tích độ phức tạp}
+
+\begin{itemize}
+    \item \textbf{Thời gian:}
+    $\mathcal{O}\!\left(G \cdot P \cdot k \cdot T(\mathcal{D}, \boldsymbol{\theta})\right)$,
+    trong đó $G$ là số thế hệ, $P$ là kích thước quần thể.
+
+    \item \textbf{Không gian:}
+    $\mathcal{O}(P \cdot m)$ cho quần thể, cộng thêm
+    $\mathcal{O}(C)$ cho cache ($C$ là kích thước cache tối đa).
+\end{itemize}
+
+% ============================================================================
+% 6. SO SÁNH
+% ============================================================================
+\newpage
+\section{So sánh các thuật toán}
+\label{sec:comparison}
+
+\subsection{Bảng so sánh chi tiết}
+
+\begin{table}[H]
+\centering
+\caption{Đối chiếu các chiến lược tối ưu hóa siêu tham số}
+\label{tab:comparison}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabularx}{\textwidth}{l X X X}
+\toprule
+\textbf{Tiêu chí} & \textbf{Grid Search} & \textbf{Bayesian Opt.} & \textbf{Genetic Alg.} \\
+\midrule
+Cơ chế xác lập & Quét tuyến tính toàn bộ & Surrogate model + hàm thu nhận & Tiến hóa: Selection, Crossover, Mutation \\
+Độ phức tạp thời gian & $\mathcal{O}(N \cdot k \cdot T)$ & $\mathcal{O}(n_c \cdot (n^3 + kT))$ & $\mathcal{O}(G \cdot P \cdot k \cdot T)$ \\
+Độ phức tạp không gian & $\mathcal{O}(1)$ & $\mathcal{O}(n^2)$ & $\mathcal{O}(P \cdot m)$ \\
+Tham số liên tục & Kém & Xuất sắc & Tốt \\
+Tham số rời rạc & Tốt & Tốt & Tốt \\
+Kế thừa tri thức & Không & Có (GP posterior) & Có (Elitism) \\
+Song song hóa & Hoàn toàn & Hạn chế & Theo thế hệ \\
+Khám phá toàn cục & Đầy đủ & Phụ thuộc prior & Tốt \\
+Hội tụ & N/A & Nhanh & Trung bình \\
+Thoát local optima & N/A & Khó & Tốt \\
+Triển khai HAutoML & Batch, cache, song song & \texttt{gp\_minimize}, dừng sớm & Smart init, adaptive \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent\textbf{Ký hiệu:} $N = \prod n_j$ (tổng tổ hợp Grid Search),
+$n_c$ = \texttt{n\_calls}, $n$ = số quan sát tích lũy, $G$ = số thế hệ,
+$P$ = kích thước quần thể, $k$ = số fold CV, $m$ = số siêu tham số,
+$T$ = thời gian train/evaluate.
+
+\subsection{Hướng dẫn chọn thuật toán}
+
+\begin{table}[H]
+\centering
+\caption{Khuyến nghị chọn thuật toán theo tình huống}
+\label{tab:recommendation}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{X l}
+\toprule
+\textbf{Tình huống} & \textbf{Khuyến nghị} \\
+\midrule
+Không gian nhỏ ($N < 100$), cần đảm bảo tìm tối ưu & Grid Search \\
+Tham số liên tục, budget đánh giá hạn chế & Bayesian Opt. \\
+Không gian phức tạp, nhiều local optima & Genetic Alg. \\
+Cần kết quả nhanh & Bayesian + Early stopping \\
+Giới hạn thời gian cứng & Bất kỳ + \texttt{max\_time} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Chi tiết các kịch bản ứng dụng}
+
+Việc lựa chọn chiến lược tối ưu hóa đóng vai trò quyết định đến sự cân bằng giữa hiệu suất và chi phí tài nguyên. Dưới đây là phân tích chi tiết cho từng kịch bản:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Không gian nhỏ ($N < 100$)}: Khi lưới tham số đủ nhỏ (thường gặp khi tinh chỉnh 1-2 tham số rời rạc hoặc số cây trong RandomForest), \textbf{Grid Search} là lựa chọn an toàn nhất. Khả năng duyệt cạn kết hợp với cơ chế \textit{batch processing} song song hoàn toàn sẽ đảm bảo tìm được nghiệm tối ưu toàn cục trong thời gian chấp nhận được, mà không chịu rủi ro bỏ sót như các thuật toán mang tính xác suất.
+
+    \item \textbf{Tham số liên tục \& Budget đánh giá hạn chế}: Các mô hình Gradient Boosting (XGBoost, LightGBM, CatBoost) hoặc Deep Learning có nhiều siêu tham số liên tục (như \texttt{learning\_rate}, \texttt{l2\_regularization}) và tốn rất nhiều thời gian để huấn luyện (đánh giá). \textbf{Bayesian Optimization} là lựa chọn duy nhất hợp lý ở đây do khả năng xây dựng mô hình xấp xỉ liên tục, giúp định vị vùng cực trị với số lần đánh giá ($n_{\text{calls}}$) cực nhỏ (thường $30-50$ lần).
+
+    \item \textbf{Không gian phức tạp \& Nhiều Local Optima}: Khi tối ưu hóa một pipeline phức tạp (bao gồm cả các tham số tiền xử lý và tham số của mô hình), không gian sẽ bị phân mảnh và chứa nhiều điểm cực tiểu cục bộ. Bayesian dễ bị kẹt (over-exploit) trong khi \textbf{Genetic Algorithm (GA)} duy trì một quần thể đa dạng, trải đều không gian và thoát local optima dễ dàng nhờ cơ chế đột biến (mutation) và tiêm đa dạng tự động.
+
+    \item \textbf{Cần kết quả nhanh \& Giới hạn thời gian cứng}: Khi hệ thống HAutoML được triển khai trên môi trường production bị giới hạn chặt chẽ về SLA (thời gian phản hồi), tính năng \texttt{max\_time} kết hợp với \textbf{EMA Proactive Stop} sẽ chặn thuật toán dừng đúng lúc. \textbf{Bayesian Optimization kết hợp với Early Stopping} thường cho ra một cấu hình đủ tốt (sub-optimal nhưng usable) nhanh nhất nhờ khả năng hội tụ sớm của Gaussian Process.
+\end{itemize}
+
+% ============================================================================
+% 7. CƠ CHẾ QUẢN LÝ THỜI GIAN
+% ============================================================================
+\section{Cơ chế quản lý thời gian chung}
+\label{sec:time_management}
+
+Tất cả các thuật toán chia sẻ cơ chế quản lý thời gian từ lớp cơ sở
+\texttt{SearchStrategy}:
+
+\subsection{Proactive Time Limit}
+
+Sử dụng Exponential Moving Average (EMA) để ước tính thời gian iteration tiếp
+theo và dừng sớm nếu không đủ thời gian:
+
+\begin{equation}
+    \hat{t}_{n+1} = 0.7 \cdot t_n + 0.3 \cdot \hat{t}_n
+    \label{eq:ema_general}
+\end{equation}
+
+\begin{equation}
+    \text{continue} =
+    \begin{cases}
+        \text{False}, & \text{nếu } 1.2 \cdot \hat{t}_{n+1} > t_{\text{remaining}} \\
+        \text{True}, & \text{ngược lại}
+    \end{cases}
+    \label{eq:proactive_stop}
+\end{equation}
+
+\noindent Hệ số $1.2$ là safety factor, dự phòng trường hợp iteration tiếp
+theo chậm hơn dự kiến.
+
+\subsection{Early Stopping vs.\ Time Limit}
+
+Hai cơ chế này hoạt động loại trừ lẫn nhau:
+
+\begin{equation}
+    \text{apply\_early\_stopping} =
+    \begin{cases}
+        \text{False}, & \text{nếu } T_{\max} \neq \text{None} \\
+        \text{True}, & \text{ngược lại}
+    \end{cases}
+    \label{eq:early_vs_time}
+\end{equation}
+
+\noindent Khi có \texttt{max\_time}, hệ thống ưu tiên sử dụng hết thời gian
+thay vì dừng sớm, nhằm tận dụng tối đa budget thời gian.
+
+% ============================================================================
+% APPENDIX: GLOSSARY
+% ============================================================================
+\newpage
+\appendix
+\section{Bảng giải nghĩa thuật ngữ và siêu tham số}
+\label{sec:appendix_glossary}
+
+Dưới đây là bảng giải nghĩa chi tiết các thuật ngữ khoa học và tham số cấu hình hệ thống được sử dụng xuyên suốt tài liệu này cũng như trong mã nguồn triển khai của hệ thống HAutoML.
+
+\subsection{Bảng giải nghĩa các thuật ngữ chung}
+
+\begin{longtable}{p{0.32\textwidth} p{0.63\textwidth}}
+\caption{Giải nghĩa các thuật ngữ khoa học} \label{tab:glossary_terms} \\
+\toprule
+\textbf{Tiếng Anh / Thuật ngữ} & \textbf{Tiếng Việt / Giải nghĩa} \\
+\midrule
+\endfirsthead
+\multicolumn{2}{c}%
+{{\bfseries Bảng \thetable\ (tiếp theo): Giải nghĩa các thuật ngữ khoa học}} \\
+\toprule
+\textbf{Tiếng Anh / Thuật ngữ} & \textbf{Tiếng Việt / Giải nghĩa} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+Hyperparameters & Siêu tham số của mô hình học máy. \\
+Parallel Computing & Tính toán song song trên nhiều đơn vị xử lý. \\
+Global Shared Memory & Bộ nhớ dùng chung toàn cục giữa các luồng/tiến trình. \\
+Single-objective & Bài toán tối ưu hóa chỉ tập trung vào một mục tiêu đơn lẻ. \\
+Multi-fidelity HPO & Tối ưu hóa siêu tham số đa độ trung thực, tăng tốc tìm kiếm bằng cách đánh giá trên tập con dữ liệu hoặc số vòng lặp ít hơn. \\
+Multi-objective HPO & Tối ưu hóa siêu tham số đa mục tiêu, cân bằng giữa nhiều tiêu chí đối nghịch nhau như độ chính xác và thời gian suy diễn. \\
+Distributed & Hệ thống phân tán, chạy trên nhiều nút mạng. \\
+Distributed Computing & Tính toán phân tán trong môi trường mạng kết nối. \\
+Parallel & Xử lý song song đồng thời nhiều tác vụ. \\
+Network & Kết nối mạng truyền thông giữa các máy tính. \\
+System Complexity & Độ phức tạp hệ thống phát sinh từ hạ tầng và cấu trúc phần mềm. \\
+Hyperparameter Optimization & Tối ưu hóa siêu tham số, là quá trình tìm kiếm siêu tham số tốt nhất cho mô hình học máy. \\
+Search Strategy & Chiến lược tìm kiếm siêu tham số được hệ thống sử dụng (ví dụ: Grid Search, Bayesian Optimization, Genetic Algorithm). \\
+Grid Search & Phương pháp tìm kiếm dạng lưới, duyệt toàn bộ các tổ hợp tham số được định nghĩa trước. \\
+Random Search & Phương pháp tìm kiếm ngẫu nhiên, lấy mẫu một số cấu hình trong không gian tham số thay vì duyệt toàn bộ. \\
+Bayesian Optimization & Kỹ thuật tối ưu hóa Bayesian, sử dụng mô hình thay thế (surrogate model) để định hướng lựa chọn cấu hình tiếp theo. \\
+Genetic Algorithm & Thuật toán di truyền, mô phỏng quá trình tiến hóa tự nhiên thông qua chọn lọc, lai ghép và đột biến. \\
+Gaussian Process & Quá trình Gauss, thường được dùng làm mô hình thay thế trong Bayesian Optimization. \\
+Surrogate Model & Mô hình thay thế hoặc mô hình xấp xỉ dùng để dự đoán hiệu năng của các cấu hình chưa được đánh giá thật. \\
+Acquisition Function & Hàm lợi ích (hoặc hàm thu nhận) dùng trong Bayesian Optimization để chọn cấu hình tiếp theo cần thử nghiệm. \\
+Expected Improvement (EI) & Kỳ vọng cải thiện, một loại hàm lợi ích dùng để ưu tiên các cấu hình có khả năng cải thiện kết quả hiện tại cao nhất. \\
+Cross-Validation & Kiểm chứng chéo, kỹ thuật chia dữ liệu thành nhiều fold để đánh giá mô hình ổn định và khách quan hơn. \\
+CASH & Bài toán lựa chọn đồng thời thuật toán học máy và tối ưu siêu tham số. Trong AutoML, CASH không chỉ tìm bộ tham số tốt nhất cho một mô hình cố định, mà còn so sánh nhiều thuật toán ứng viên để chọn ra mô hình và cấu hình tối ưu nhất. \\
+Fitness Score & Điểm thích nghi đánh giá chất lượng của một cá thể trong thuật toán di truyền. \\
+Selection & Phép toán chọn lọc các cá thể tốt để nhân bản và tạo thế hệ tiếp theo. \\
+Crossover & Phép toán lai ghép giữa các cá thể bố mẹ để tạo ra các cá thể con mới thừa hưởng đặc tính tốt. \\
+Mutation & Phép toán đột biến, thay đổi ngẫu nhiên một phần gen của cá thể nhằm tăng khả năng khám phá không gian tìm kiếm mới. \\
+Elitism & Cơ chế giữ lại một số cá thể xuất sắc nhất đi thẳng sang thế hệ tiếp theo không qua biến đổi. \\
+Population & Quần thể bao gồm tập hợp các cá thể (bộ siêu tham số) trong thuật toán di truyền. \\
+Generation & Thế hệ trong quá trình tiến hóa lặp của thuật toán di truyền. \\
+Warm Start & Khởi động quá trình tìm kiếm dựa trên kết quả hoặc trạng thái đã có từ các lần chạy trước đó để tiết kiệm thời gian. \\
+Early Stopping & Dừng sớm khi quá trình huấn luyện hoặc tìm kiếm không còn ghi nhận cải thiện hiệu năng đáng kể. \\
+Convergence Threshold & Ngưỡng hội tụ, dùng để xác định khi mức cải thiện giữa các bước lặp trở nên quá nhỏ để tiếp tục. \\
+Batch Size & Kích thước lô xử lý, là số cấu hình được gom lại để đánh giá đồng thời trong một lần xử lý. \\
+Parallel Evaluation & Đánh giá song song đồng thời nhiều cấu hình siêu tham số hoặc nhiều cá thể trong quần thể. \\
+Cache Evaluation & Cơ chế lưu đệm kết quả đánh giá để tránh việc tính toán lại đối với cùng một cấu hình siêu tham số. \\
+Time Budget & Ngân sách thời gian giới hạn được phân bổ cho toàn bộ quá trình tìm kiếm hoặc huấn luyện. \\
+Maximum Time & Thời gian chạy tối đa cho phép của thuật toán, tương ứng với tham số \texttt{max\_time} trong cấu hình. \\
+Metric Sort & Chỉ số chính dùng để xếp hạng và lựa chọn cấu hình/mô hình tối ưu nhất (ví dụ: accuracy, f1, loss). \\
+\end{longtable}
+
+\newpage
+\subsection{Bảng giải nghĩa các tham số cấu hình hệ thống và mô hình}
+
+\begin{longtable}{p{0.32\textwidth} p{0.63\textwidth}}
+\caption{Giải nghĩa các tham số cấu hình} \label{tab:glossary_params} \\
+\toprule
+\textbf{Tham số cấu hình} & \textbf{Ý nghĩa và chức năng trong hệ thống} \\
+\midrule
+\endfirsthead
+\multicolumn{2}{c}%
+{{\bfseries Bảng \thetable\ (tiếp theo): Giải nghĩa các tham số cấu hình}} \\
+\toprule
+\textbf{Tham số cấu hình} & \textbf{Ý nghĩa và chức năng trong hệ thống} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+\texttt{search\_algorithm} & Tham số chọn chiến lược tìm kiếm, ví dụ \texttt{grid\_search}, \texttt{bayesian\_search} hoặc \texttt{genetic\_algorithm}. \\
+\texttt{param\_grid} & Không gian siêu tham số cần tìm kiếm, được khai báo cấu trúc trong file YAML. \\
+\texttt{metric\_sort} & Chỉ số hiệu năng chính dùng để so sánh, xếp hạng và chọn cấu hình tối ưu. \\
+\texttt{max\_time} & Giới hạn ngân sách thời gian tối đa (tính bằng giây) cho quá trình tìm kiếm. \\
+\texttt{n\_jobs} & Số luồng hoặc tiến trình song song; giá trị \texttt{-1} nghĩa là tận dụng tối đa số nhân CPU khả dụng. \\
+\texttt{cv\_n\_splits} & Số lượng phân đoạn dữ liệu (folds) trong kiểm chứng chéo $k$-fold. \\
+\texttt{cv\_shuffle} & Xác định xem có xáo trộn dữ liệu trước khi thực hiện chia fold hay không. \\
+\texttt{cv\_random\_state} & Hạt giống ngẫu nhiên (seed) giúp quá trình chia fold dữ liệu có thể tái lập chính xác. \\
+\texttt{random\_state} & Hạt giống ngẫu nhiên chung nhằm đảm bảo khả năng tái lập kết quả của các thuật toán. \\
+\texttt{error\_score} & Giá trị trả về dự phòng khi một cấu hình tham số bị lỗi trong quá trình huấn luyện/đánh giá. \\
+\texttt{parallel\_evaluation} & Bật hoặc tắt đánh giá song song các cấu hình trong Grid Search hoặc các cá thể trong Genetic Algorithm. \\
+\texttt{batch\_size} & Số cấu hình được phân bổ vào mỗi batch thực thi trong Grid Search. \\
+\texttt{auto\_select\_backend} & Cơ chế tự động lựa chọn backend song song tối ưu giữa \texttt{threading} hoặc \texttt{loky}. \\
+\texttt{cache\_evaluations} & Bật hoặc tắt việc lưu đệm kết quả đánh giá cấu hình để tránh tính toán lại. \\
+\texttt{early\_stopping\_enabled} & Bật hoặc tắt cơ chế dừng sớm toàn bộ tiến trình tìm kiếm. \\
+\texttt{early\_stopping\_score} & Ngưỡng điểm mục tiêu mong muốn để Grid Search có thể dừng sớm ngay khi đạt được. \\
+\texttt{early\_stopping\_n\_best} & Số lượng cấu hình tốt cần đạt được trước khi kích hoạt cơ chế dừng sớm. \\
+\texttt{early\_stopping\_no\_improve} & Số batch liên tiếp không cải thiện điểm số để kích hoạt dừng sớm trong Grid Search. \\
+\texttt{n\_calls} & Số lần gọi đánh giá hàm mục tiêu tối đa trong Bayesian Optimization. \\
+\texttt{n\_initial\_points} & Số cấu hình khởi tạo ngẫu nhiên ban đầu trước khi Bayesian Optimization chuyển sang dùng mô hình dẫn hướng. \\
+\texttt{acq\_func} & Hàm thu nhận (acquisition function) sử dụng trong Bayesian Optimization; dự án hiện dùng EI (Expected Improvement). \\
+\texttt{acq\_optimizer} & Thuật toán tối ưu hóa dùng để tìm điểm cực đại của hàm thu nhận. \\
+\texttt{warm\_start\_enabled} & Cho phép kế thừa và tiếp tục tối ưu hóa từ lịch sử chạy trước đó. \\
+\texttt{save\_optimizer\_state} & Lưu trạng thái của bộ tối ưu hóa xuống đĩa để có thể tái sử dụng hoặc phục hồi sau này. \\
+\texttt{convergence\_threshold} & Ngưỡng kiểm tra hội tụ; nếu mức cải thiện nhỏ hơn ngưỡng này thì dừng tìm kiếm. \\
+\texttt{early\_stopping\_patience} & Số vòng lặp (hoặc thế hệ) liên tiếp không cải thiện điểm số tối ưu để kích hoạt dừng sớm. \\
+\texttt{population\_size} & Kích thước quần thể (số cá thể trong một thế hệ) của Genetic Algorithm. \\
+\texttt{min\_population} & Kích thước quần thể tối thiểu khi sử dụng cơ chế điều chỉnh kích thước quần thể thích ứng. \\
+\texttt{max\_population} & Kích thước quần thể tối đa cho phép trong Genetic Algorithm. \\
+\texttt{generation} & Số thế hệ tiến hóa tối đa cho phép của thuật toán di truyền. \\
+\texttt{mutation\_rate} & Tỷ lệ đột biến gen cơ sở của các cá thể trong Genetic Algorithm. \\
+\texttt{crossover\_rate} & Tỷ lệ lai ghép cơ sở giữa các cặp cá thể bố mẹ. \\
+\texttt{elite\_size} & Số lượng cá thể ưu tú nhất được sao chép nguyên vẹn sang thế hệ tiếp theo (Elitism). \\
+\texttt{tournament\_size} & Số lượng cá thể được chọn ngẫu nhiên tham gia mỗi lượt đấu trường chọn lọc. \\
+\texttt{adaptive\_tournament\_size} & Cơ chế tự điều chỉnh kích thước đấu trường dựa trên độ đa dạng của quần thể tại thế hệ hiện tại. \\
+\texttt{adaptive\_population} & Cơ chế điều khiển tự thích ứng kích thước quần thể theo độ phức tạp không gian tìm kiếm. \\
+\texttt{use\_global\_cache} & Cho phép cache kết quả đánh giá cá thể qua nhiều thế hệ của Genetic Algorithm. \\
+\texttt{max\_cache\_size} & Kích thước giới hạn của bộ nhớ đệm cache kết quả đánh giá. \\
+\texttt{fast\_mode} & Chế độ tối ưu hóa tốc độ thực thi cho Genetic Algorithm thông qua giảm tần suất đánh giá phụ. \\
+\texttt{ultra\_fast\_mode} & Chế độ tăng tốc cực hạn, cắt giảm tối đa các phép toán kiểm tra và đánh giá không cốt lõi. \\
+\texttt{skip\_diversity\_check} & Bỏ qua bước kiểm tra độ đa dạng quần thể để đẩy nhanh tốc độ chạy. \\
+\texttt{simple\_crossover} & Sử dụng cơ chế lai ghép một điểm hoặc hai điểm đơn giản thay vì lai ghép BLX-$\alpha$ phức tạp để giảm chi phí. \\
+\texttt{fast\_diversity} & Phương pháp tính toán độ đa dạng nhanh dựa trên độ lệch (variance) thay vì so sánh từng cặp cá thể ($O(n)$ thay vì $O(n^2)$). \\
+\texttt{alpha} & Hệ số pha trộn $\alpha$ trong toán tử lai ghép BLX-$\alpha$ liên tục. \\
+\texttt{max\_depth} & Độ sâu tối đa của Decision Tree hoặc các mô hình ensemble dựa trên cây (Random Forest, Gradient Boosting, XGBoost). \\
+\texttt{min\_samples\_split} & Số lượng mẫu tối thiểu ở một nút để nút đó được phép phân nhánh trong mô hình cây. \\
+\texttt{min\_samples\_leaf} & Số lượng mẫu tối thiểu bắt buộc phải có tại một nút lá của cây quyết định. \\
+\texttt{n\_estimators} & Số lượng cây quyết định thành phần được xây dựng trong Random Forest, Gradient Boosting hoặc XGBoost. \\
+\texttt{max\_features} & Số lượng (hoặc tỷ lệ) đặc trưng ngẫu nhiên được xét đến khi phân tách một nút trong Random Forest. \\
+\texttt{n\_neighbors} & Số lượng láng giềng gần nhất cần tham chiếu trong thuật toán KNN. \\
+\texttt{weights} & Hàm trọng số áp dụng cho các láng giềng trong KNN (ví dụ: \texttt{uniform} hoặc \texttt{distance}). \\
+\texttt{kernel} & Loại hàm nhân sử dụng trong thuật toán SVC (ví dụ: \texttt{rbf}, \texttt{linear}, \texttt{poly}). \\
+\texttt{C} & Tham số điều chuẩn (regularization parameter) trong SVC hoặc mô hình Logistic Regression. \\
+\texttt{gamma} & Hệ số kernel của các hàm nhân \texttt{rbf}, \texttt{poly} và \texttt{sigmoid} trong SVC. \\
+\texttt{solver} & Thuật toán tối ưu hóa số học dùng để giải bài toán cực trị trong Logistic Regression. \\
+\texttt{penalty} & Loại chuẩn hóa áp dụng chống quá khớp trong Logistic Regression (ví dụ: L1 hoặc L2). \\
+\texttt{max\_iter} & Số vòng lặp tối đa cho quá trình giải thuật tối ưu trong Logistic Regression hoặc SVC. \\
+\texttt{var\_smoothing} & Hệ số làm trơn phương sai (tránh chia cho 0) trong mô hình Gaussian Naive Bayes. \\
+\texttt{learning\_rate} & Tốc độ học (hệ số co hẹp) của mỗi cây đóng góp vào mô hình Gradient Boosting hoặc XGBoost. \\
+\texttt{colsample\_bytree} & Tỷ lệ các cột (đặc trưng) được lấy mẫu ngẫu nhiên khi xây dựng mỗi cây trong XGBoost. \\
+\end{longtable}
+
+% ============================================================================
+% REFERENCES
+% ============================================================================
+\newpage
+\begin{thebibliography}{99}
+
+\bibitem{snoek2012practical}
+Snoek, J., Larochelle, H., \& Adams, R.~P. (2012).
+\textit{Practical Bayesian Optimization of Machine Learning Algorithms}.
+In Advances in Neural Information Processing Systems (NeurIPS), 25, 2951--2959.
+
+\bibitem{rasmussen2006gaussian}
+Rasmussen, C.~E. \& Williams, C.~K.~I. (2006).
+\textit{Gaussian Processes for Machine Learning}.
+MIT Press.
+
+\bibitem{bergstra2012random}
+Bergstra, J. \& Bengio, Y. (2012).
+\textit{Random Search for Hyper-Parameter Optimization}.
+Journal of Machine Learning Research, 13(10), 281--305.
+
+\bibitem{holland1975adaptation}
+Holland, J.~H. (1975).
+\textit{Adaptation in Natural and Artificial Systems}.
+University of Michigan Press.
+
+\bibitem{eshelman1993real}
+Eshelman, L.~J. \& Schaffer, J.~D. (1993).
+\textit{Real-coded genetic algorithms and interval-schemata}.
+In L.~D. Whitley (Ed.), Foundations of Genetic Algorithms 2, 187--202.
+Morgan Kaufmann.
+
+\bibitem{hastie2009elements}
+Hastie, T., Tibshirani, R., \& Friedman, J. (2009).
+\textit{The Elements of Statistical Learning} (2nd ed.).
+Springer.
+
+\bibitem{pedregosa2011scikit}
+Pedregosa, F. et al. (2011).
+\textit{Scikit-learn: Machine Learning in Python}.
+Journal of Machine Learning Research, 12, 2825--2830.
+
+\bibitem{mockus1978application}
+Mockus, J., Tiesis, V., \& Zilinskas, A. (1978).
+\textit{The Application of Bayesian Methods for Seeking the Extremum}.
+In Towards Global Optimization, 2, 117--129. Elsevier.
+
+\bibitem{jones1998efficient}
+Jones, D.~R., Schonlau, M., \& Welch, W.~J. (1998).
+\textit{Efficient Global Optimization of Expensive Black-Box Functions}.
+Journal of Global Optimization, 13(4), 455--492.
+
+\bibitem{shahriari2016taking}
+Shahriari, B., Swersky, K., Wang, Z., Adams, R.~P., \& de~Freitas, N. (2016).
+\textit{Taking the Human Out of the Loop: A Review of Bayesian Optimization}.
+Proceedings of the IEEE, 104(1), 148--175.
+
+\end{thebibliography}
+
+\end{document}

@@ -23,6 +23,11 @@ import httpx
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..world.schema import WorldState
+from ..world.state_store import WorldStateStore
+from ..world import updater as world_updater
+from .config import get_world_state_config
+
 logger = logging.getLogger(__name__)
 
 from .config import (
@@ -64,11 +69,22 @@ async def lifespan(app: FastAPI):
     """Quản lý startup/shutdown."""
     mongo_cfg = get_mongodb_config()
     bridge_cfg = get_bridge_config()
+    world_state_cfg = get_world_state_config()
 
     # Kết nối MongoDB
     logger.info("Đang kết nối MongoDB tại %s ...", mongo_cfg["connect"])
     await conv_store.init_db()
     logger.info("Kết nối MongoDB thành công ✓")
+
+    # Khởi tạo WorldStateStore
+    app.state.world_state_store = WorldStateStore(
+        client=conv_store.get_db_client(),
+        db_name=mongo_cfg["db_name"],
+        collection_name=world_state_cfg["collection_name"],
+        ttl_seconds=world_state_cfg["ttl_seconds"]
+    )
+    await app.state.world_state_store.ensure_indexes()
+    logger.info("WorldStateStore đã khởi tạo ✓")
 
     logger.info(
         "HAgent Bridge khởi chạy trên port %d — Chỉ dùng HAgent Gateway",
@@ -118,6 +134,7 @@ async def _call_hagent_gateway(
     user_token: str | None = None,
     user_id: str | None = None,
     session_id: str | None = None,
+    context_extra: dict | None = None
 ) -> dict:
     """
     Gửi tin nhắn tới HAgent Gateway qua webhook API.
@@ -142,6 +159,9 @@ async def _call_hagent_gateway(
     if history:
         payload["history"] = history
 
+    if context_extra:
+        payload['context'].update(context_extra)
+
     try:
         async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(
@@ -160,6 +180,7 @@ async def _call_hagent_gateway(
                     "suggestions": data.get("suggestions", []),
                     "provider": "hagent",
                     "model": "hagent-agent",
+                    "tool_outputs": data.get("tool_outputs", [])
                 }
             logger.warning("Gateway trả về %d: %s", resp.status_code, resp.text)
             return _error_response(f"Lỗi HAgent Gateway (HTTP {resp.status_code})")
@@ -363,6 +384,42 @@ def _schedule_training_result_notification(
     logger.info("Đã schedule theo dõi kết quả training cho job %s", job_id)
 
 
+def _world_state_context(world_state: WorldState | None) -> dict:
+    return world_state.to_dict() if world_state else {}
+
+
+async def _apply_tool_outputs_to_world_state(
+    world_state_store: WorldStateStore,
+    user_id: str,
+    result: dict,
+) -> None:
+    tool_outputs = result.get("tool_outputs")
+    if not isinstance(tool_outputs, list):
+        return
+
+    current_state = await world_state_store.get(user_id)
+    if not current_state:
+        await world_state_store.ensure(user_id)
+        current_state = await world_state_store.get(user_id)
+    if not current_state:
+        return
+
+    for tool_call in tool_outputs:
+        if not isinstance(tool_call, dict):
+            continue
+
+        tool_name = tool_call.get("tool_name")
+        payload = tool_call.get("payload")
+        if not tool_name or not isinstance(payload, dict):
+            continue
+
+        patch = world_updater.apply_tool_output(current_state, tool_name, payload)
+        if patch:
+            updated_state = await world_state_store.upsert(user_id, patch)
+            if updated_state:
+                current_state = updated_state
+
+
 # ─── Endpoints ───────────────────────────────────────────
 
 
@@ -373,11 +430,12 @@ async def chat(
     user: TokenPayload = Depends(get_current_user),
 ):
     logger.debug(f"CHAT ENDPOINT HEADERS: {request.headers}")
-    """
-    Endpoint chat chính — nhận tin nhắn, chuyển tiếp tới HAgent,
-    lưu hội thoại vào MongoDB, trả phản hồi trợ lý.
-    """
     conversation_id = req.conversation_id or uuid.uuid4().hex
+    world_state_store: WorldStateStore = request.app.state.world_state_store
+
+    # Đảm bảo và lấy world state
+    await world_state_store.ensure(user.user_id)
+    world_state_snapshot = await world_state_store.get(user.user_id)
 
     # Lưu tin nhắn người dùng
     await conv_store.add_message(
@@ -391,14 +449,17 @@ async def chat(
     history = await conv_store.get_message_history(conversation_id, user.user_id, limit=20)
     history_dicts = [{"role": m.role, "content": m.content} for m in history[:-1]]
 
-    # Gọi HAgent Gateway
+    # Gọi HAgent Gateway với world_state trong context
     result = await _call_hagent_gateway(
         message=req.message,
         history=history_dicts if history_dicts else None,
         user_token=user.raw_token,
         user_id=user.user_id,
         session_id=conversation_id,
+        context_extra={"world_state": _world_state_context(world_state_snapshot)}
     )
+
+    await _apply_tool_outputs_to_world_state(world_state_store, user.user_id, result)
 
     # Lưu phản hồi trợ lý
     await conv_store.add_message(
@@ -431,6 +492,7 @@ async def chat(
 
 @hagent_bridge.post("/api/v1/chat/upload", response_model=ChatResponse)
 async def chat_with_file(
+    request: Request,
     message: str = Form(...),
     file: UploadFile = File(...),
     conversation_id: str | None = Form(None),
@@ -439,16 +501,21 @@ async def chat_with_file(
     """Chat kèm upload file — chuyển tiếp file tới HAutoML."""
     hautoml_cfg = get_hautoml_config()
     conv_id = conversation_id or uuid.uuid4().hex
+    world_state_store: WorldStateStore = request.app.state.world_state_store
+
+    # Đảm bảo và lấy world state
+    await world_state_store.ensure(user.user_id)
+    world_state_snapshot = await world_state_store.get(user.user_id)
 
     # Chuyển tiếp file tới HAutoML để upload data
     file_info = ""
     try:
         file_content = await file.read()
-        
+
         # Xác định data_type từ đuôi file
         filename = file.filename or "uploaded_data.csv"
         data_type = filename.split('.')[-1].lower() if '.' in filename else "csv"
-        
+
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
                 f"{hautoml_cfg['base_url']}/upload-dataset?user_id={user.user_id}",
@@ -480,7 +547,10 @@ async def chat_with_file(
         user_token=user.raw_token,
         user_id=user.user_id,
         session_id=conv_id,
+        context_extra={"world_state": _world_state_context(world_state_snapshot)}
     )
+
+    await _apply_tool_outputs_to_world_state(world_state_store, user.user_id, result)
 
     await conv_store.add_message(
         conv_id, user.user_id, "assistant", result["message"],
@@ -596,6 +666,40 @@ async def list_user_conversations(
     """Liệt kê các cuộc hội thoại gần nhất của người dùng."""
     conversations = await conv_store.list_conversations(user.user_id)
     return {"conversations": conversations}
+
+
+@hagent_bridge.get("/api/v1/world-state/{user_id}")
+async def get_world_state(
+    user_id: str,
+    request: Request,
+    user: TokenPayload = Depends(get_current_user),
+):
+    """
+    Lấy world state (trạng thái thế giới) của một người dùng cụ thể.
+    Chỉ người dùng đó mới có quyền truy cập world state của chính mình.
+    """
+    # So sánh user_id từ token JWT với user_id từ URL
+    if user.user_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Không có quyền truy cập world state của người dùng khác",
+        )
+
+    # Lấy world_state_store từ request.app.state
+    world_state_store: WorldStateStore = request.app.state.world_state_store
+
+    # Gọi store.get(user_id) để lấy bản ghi
+    world_state = await world_state_store.get(user_id)
+
+    # Nếu không tìm thấy bản ghi, raise 404
+    if not world_state:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy world state cho người dùng này",
+        )
+
+    # Trả về đối tượng world state dạng dict để serialization đáng tin cậy
+    return world_state.to_dict()
 
 
 @hagent_bridge.get("/api/v1/chat/conversation/{conversation_id}")

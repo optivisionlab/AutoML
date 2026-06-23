@@ -51,6 +51,7 @@ Truyền nguyên xi `"$USER_TOKEN"` và `"$USER_ID"` trong chuỗi lệnh.
 2. Lệnh phải dùng **đường dẫn tuyệt đối**: `/app/hagent/skills/hautoml/scripts/hautoml_tools.py`
 3. Output JSON — phân tích xong tóm tắt gọn bằng tiếng Việt (bảng/bullet, kèm ID).
 4. JSON có `"error"` hoặc exit code ≠ 0 → báo lỗi rõ + gợi ý.
+5. **Ưu tiên World State**: Nếu context có `World State Snapshot`, hãy dựa vào đó để trả lời câu hỏi về danh sách dataset/job trước khi gọi lại tool. Chỉ gọi `list_datasets` hoặc `list_jobs` nếu snapshot quá cũ hoặc không có.
 
 ## Các lệnh
 
@@ -131,6 +132,13 @@ python3 /app/hagent/skills/hautoml/scripts/hautoml_tools.py list_jobs \
 ```bash
 python3 /app/hagent/skills/hautoml/scripts/hautoml_tools.py get_job_info \
   --job-id "<JOB_ID>" --token "$USER_TOKEN"
+```
+
+### Lấy World State
+
+```bash
+python3 /app/hagent/skills/hautoml/scripts/hautoml_tools.py get_world_state \
+  --user-id "$USER_ID" --token "$USER_TOKEN"
 ```
 
 ## Xử lý lỗi

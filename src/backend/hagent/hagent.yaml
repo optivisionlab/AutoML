@@ -72,3 +72,8 @@ proxy:
     invalid_response: "HAgent chưa trả về phản hồi hợp lệ. Vui lòng thử lại sau."
     generic: "HAgent đang gặp lỗi khi xử lý yêu cầu. Chi tiết đã được ghi trong log backend."
 
+# ── World State ──────────────────────────────────────────
+world_state:
+  collection_name: "world_states"
+  ttl_seconds: 86400  # 24 giờ
+  snapshot_size_limit: 16384 # 16KB

@@ -171,17 +171,18 @@ class HAgentProxyHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length) if content_length > 0 else b''
             try:
                 data = json.loads(post_data.decode('utf-8'))
-                message = data.get("message", "Hello")
+                original_message = data.get("message", "Hello")
                 session_id = data.get("session_id", "default_session")
-                
+
                 # Trích xuất ngữ cảnh người dùng từ request của Bridge
                 context = data.get("context", {})
                 user_token = context.get("user_token", "")
                 user_id = context.get("user_id", "")
-                
-                logging.info(f"Received message from Bridge: {message} for session: {session_id}")
+                world_state = context.get("world_state") # Thêm dòng này
+
+                logging.info(f"Received message from Bridge: {original_message} for session: {session_id}")
                 logging.info(f"User context: user_id={user_id}, token_length={len(user_token) if user_token else 0}")
-                
+
                 # Chuẩn bị biến môi trường cho giao diện dòng lệnh HAgent để hautoml_tools.py sử dụng
                 env = os.environ.copy()
                 if user_token:
@@ -203,7 +204,7 @@ class HAgentProxyHandler(BaseHTTPRequestHandler):
                             uf.write(user_id)
                 except Exception as e:
                     logging.warning(f"Could not write user context fallback files: {e}")
-                
+
                 # Đọc SOUL.md để ghép vào lời nhắc hệ thống
                 soul_content = ""
                 try:
@@ -211,11 +212,41 @@ class HAgentProxyHandler(BaseHTTPRequestHandler):
                     if soul_path:
                         with open(soul_path, "r", encoding="utf-8") as f:
                             soul_content = f.read()
-                            # Ghép nội dung SOUL.md vào trước yêu cầu người dùng
-                            message = f"{soul_content}\n\n---\n\nUser request: {message}"
                 except Exception as e:
                     logging.warning(f"Could not read SOUL.md: {e}")
-                
+
+                message = f"{soul_content}\n\n---\n\n"
+
+                # Inject World State snapshot nếu có
+                if world_state and isinstance(world_state, dict):
+                    try:
+                        # Chỉ lấy các key chính, không cần toàn bộ chi tiết
+                        datasets_summary = list(world_state.get("datasets", {}).keys())
+                        jobs_summary = list(world_state.get("jobs", {}).keys())
+
+                        if datasets_summary or jobs_summary:
+                            world_state_md = '''## World State Snapshot
+
+- **User ID**: {user_id}
+- **Updated At**: {updated_at}
+- **Known Datasets ({num_datasets})**: {datasets}
+- **Known Jobs ({num_jobs})**: {jobs}
+
+---\n
+'''.format(
+                                user_id=world_state.get("user_id"),
+                                updated_at=world_state.get("updated_at"),
+                                num_datasets=len(datasets_summary),
+                                datasets=", ".join(datasets_summary) if datasets_summary else "None",
+                                num_jobs=len(jobs_summary),
+                                jobs=", ".join(jobs_summary) if jobs_summary else "None",
+                            )
+                            message += world_state_md
+                    except Exception as e:
+                        logging.warning(f"Could not format world_state: {e}")
+
+                message += f"User request: {original_message}"
+
                 # Thực thi lệnh HAgent qua giao diện dòng lệnh
                 cmd = ["openclaw", "agent", "--message", message, "--session-id", session_id, "--json"]
                 logging.info(f"Executing: {' '.join(cmd)}")

@@ -442,7 +442,9 @@ async def inference(
                 detail="Job not found"
             )
 
-        if str(job.get("user_id")) != str(current_user["_id"]):
+        job_user = job.get("user") if isinstance(job.get("user"), dict) else {}
+        job_user_id = job.get("user_id") or job_user.get("id")
+        if str(job_user_id) != str(current_user["_id"]) and current_user.get("role") != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You dont have permission"

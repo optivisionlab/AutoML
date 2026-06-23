@@ -185,3 +185,8 @@ async def list_conversations(user_id: str, limit: int = 20) -> list[dict]:
             "preview": last_msg[0].get("content", "")[:100] if last_msg else "",
         })
     return results
+
+
+def get_db_client():
+    """Trả về global MongoDB client instance."""
+    return _client

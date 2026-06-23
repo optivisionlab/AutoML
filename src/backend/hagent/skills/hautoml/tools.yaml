@@ -127,3 +127,8 @@ tools:
         type: string
         description: "The ID of the training job"
         required: true
+  - name: hautoml_get_world_state
+    description: "Get a snapshot of the user's known world state (datasets, jobs) from the Bridge"
+    command: "python3 ./skills/hautoml/scripts/hautoml_tools.py get_world_state --user-id \"$USER_ID\" --token \"$USER_TOKEN\""
+    outputFormat: json
+    requiresAuth: true
