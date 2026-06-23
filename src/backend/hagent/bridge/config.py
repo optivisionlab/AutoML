@@ -160,3 +160,109 @@ def get_world_state_config() -> dict:
         os.getenv("WORLD_STATE_SNAPSHOT_SIZE_LIMIT", ws.get("snapshot_size_limit", 16384))
     )
     return ws
+
+
+# ── DeerFlow-AutoML config accessors ────────────────────
+
+
+def get_llm_config() -> dict:
+    """Lấy cấu hình LLM providers."""
+    cfg = load_config()
+    llm = cfg.get("llm", {}) or {}
+    llm["default_model"] = os.getenv("LLM_DEFAULT_MODEL", llm.get("default_model", ""))
+    return llm
+
+
+def get_llm_models() -> list[dict]:
+    """Lấy danh sách model configs đã resolve env vars."""
+    llm = get_llm_config()
+    return llm.get("models", [])
+
+
+def get_agent_config() -> dict:
+    """Lấy cấu hình agent orchestration."""
+    cfg = load_config()
+    agent = cfg.get("agent", {}) or {}
+    agent["max_iterations"] = int(
+        os.getenv("AGENT_MAX_ITERATIONS", agent.get("max_iterations", 10))
+    )
+    agent["timeout_seconds"] = int(
+        os.getenv("AGENT_TIMEOUT_SECONDS", agent.get("timeout_seconds", 120))
+    )
+    return agent
+
+
+def get_routing_config() -> dict[str, list[str]]:
+    """
+    Lấy routing keywords cho từng sub-agent.
+
+    Returns:
+        Dict[agent_name, list[keyword]], ví dụ:
+        {"data_analyst": ["dataset", "data", ...], ...}
+    """
+    agent = get_agent_config()
+    routing_raw = agent.get("routing", {}) or {}
+    result = {}
+    for agent_name, conf in routing_raw.items():
+        if isinstance(conf, dict):
+            result[agent_name] = conf.get("keywords", [])
+        elif isinstance(conf, list):
+            result[agent_name] = conf
+    return result
+
+
+def get_suggestions() -> list[str]:
+    """Lấy danh sách gợi ý chat mặc định."""
+    agent = get_agent_config()
+    return agent.get("suggestions", [])
+
+
+def get_cache_config() -> dict:
+    """Lấy cấu hình cache cho tool results."""
+    agent = get_agent_config()
+    cache = agent.get("cache", {}) or {}
+    cache["enabled"] = os.getenv("AGENT_CACHE_ENABLED", str(cache.get("enabled", True))).lower() in ("true", "1", "yes")
+    cache["ttl_seconds"] = int(os.getenv("AGENT_CACHE_TTL", cache.get("ttl_seconds", 300)))
+    cache["max_entries"] = int(os.getenv("AGENT_CACHE_MAX_ENTRIES", cache.get("max_entries", 100)))
+    return cache
+
+
+def get_error_messages() -> dict[str, str]:
+    """Lấy cấu hình thông báo lỗi."""
+    cfg = load_config()
+    # Gộp từ cả proxy.error_messages (legacy) và error_messages (mới)
+    proxy = cfg.get("proxy", {}) or {}
+    legacy = proxy.get("error_messages", {}) or {}
+    new = cfg.get("error_messages", {}) or {}
+    # Mới ghi đè cũ
+    merged = {**legacy, **new}
+    return merged
+
+
+def load_prompt_file(relative_path: str | None = None) -> str:
+    """
+    Đọc nội dung file prompt (.md) — tương đối so với thư mục hagent/.
+
+    Args:
+        relative_path: Đường dẫn tương đối từ thư mục chứa hagent.yaml.
+                       Nếu None, lấy từ agent.system_prompt_path trong config.
+
+    Returns:
+        Nội dung file prompt dạng string.
+    """
+    if not relative_path:
+        agent = get_agent_config()
+        relative_path = agent.get("system_prompt_path", "./prompts/coordinator.md")
+
+    # Resolve đường dẫn tương đối so với thư mục chứa config
+    config_dir = _find_config_path().parent
+    prompt_path = config_dir / relative_path
+
+    if not prompt_path.exists():
+        raise FileNotFoundError(
+            f"Không tìm thấy file prompt tại {prompt_path}. "
+            f"Kiểm tra agent.system_prompt_path trong hagent.yaml."
+        )
+
+    return prompt_path.read_text(encoding="utf-8")
+

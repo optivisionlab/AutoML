@@ -1,17 +1,17 @@
 """
-HAgent — Chat Router tích hợp vào backend chính
+HAgent — Chat Router tích hợp DeerFlow-AutoML
 
-Các endpoint chat được mount trực tiếp vào FastAPI app chính (app.py).
-Hệ thống CHỈ sử dụng HAgent Gateway — không có multi-provider.
+Các endpoint chat mount trực tiếp vào FastAPI app chính (app.py).
+Sử dụng LangGraph agent runtime thay vì OpenClaw Gateway.
+Hỗ trợ cả synchronous và SSE streaming responses.
 Lưu lịch sử chat vào MongoDB database AutoML.
 """
 
 import uuid
 import logging
-import os
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import StreamingResponse
 from pymongo.asynchronous.database import AsyncDatabase
 from pydantic import BaseModel, Field
 
@@ -19,9 +19,9 @@ from database.database import get_db
 from users.routers import get_current_user
 from hagent import chat_store
 from hagent.bridge.config import (
-    get_hooks_config,
     get_hautoml_config,
-    get_gateway_config,
+    get_suggestions,
+    get_error_messages,
 )
 
 logger = logging.getLogger("hagent.chat_router")
@@ -35,6 +35,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="Nội dung tin nhắn")
     conversation_id: str | None = Field(None, description="ID cuộc hội thoại (tạo mới nếu null)")
     context: dict | None = Field(None, description="Ngữ cảnh bổ sung")
+    model: str | None = Field(None, description="Tên model LLM (None = dùng default từ config)")
 
 
 class ChatResponse(BaseModel):
@@ -42,74 +43,90 @@ class ChatResponse(BaseModel):
     conversation_id: str
     sources: list[str] = []
     suggestions: list[str] = []
+    tool_outputs: list[dict] = []
+    provider: str = ""
+    model: str = ""
+
+
+class StreamChatRequest(BaseModel):
+    message: str = Field(..., description="Nội dung tin nhắn")
+    conversation_id: str | None = Field(None, description="ID cuộc hội thoại")
+    model: str | None = Field(None, description="Tên model LLM")
 
 
 class HealthResponse(BaseModel):
-    hagent_url: str
-    connected: bool
+    agent_runtime: str
     hautoml_connected: bool
+    available_models: list[dict]
     mode: str
 
 
-# ─── Gọi HAgent Gateway ───────────────────────────────
-
-SYSTEM_PROMPT = (
-    "Bạn là HAgent, trợ lý AI cho nền tảng HAutoML. "
-    "Trả lời bằng ngôn ngữ mà người dùng sử dụng."
-)
+# ─── World Model helper ──────────────────────────────────
 
 
-async def _call_hagent_gateway(
+async def _load_world_model(db: AsyncDatabase, user_id: str) -> dict | None:
+    """Load World Model snapshot cho user."""
+    try:
+        from hagent.world.state_store import WorldStateStore
+        store = WorldStateStore(db)
+        return await store.get_snapshot(str(user_id))
+    except Exception as exc:
+        logger.debug("Không load được World Model: %s", exc)
+        return None
+
+
+# ─── Gọi DeerFlow-AutoML Agent ────────────────────────────
+
+
+async def _call_agent(
     message: str,
-    history: list[dict] | None = None,
+    *,
     user_token: str | None = None,
     user_id: str | None = None,
+    world_model: dict | None = None,
 ) -> dict:
-    """Gửi tin nhắn tới HAgent Gateway."""
-    hooks_cfg = get_hooks_config()
-    hautoml_cfg = get_hautoml_config()
-    gw_cfg = get_gateway_config()
-    gateway_url = os.getenv("HAGENT_GATEWAY_URL", f"http://{gw_cfg['host']}:{gw_cfg['port']}")
-
-    payload = {
-        "message": message,
-        "context": {
-            "user_token": user_token or "",
-            "user_id": user_id or "",
-            "hautoml_url": hautoml_cfg["base_url"],
-        },
-    }
-    if history:
-        payload["history"] = history
+    """Gọi LangGraph agent runtime — thay thế OpenClaw Gateway."""
+    error_messages = get_error_messages()
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{gateway_url}{hooks_cfg.get('path', '/hooks')}/agent",
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {hooks_cfg.get('token', '')}",
-                    "Content-Type": "application/json",
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return {
-                    "message": data.get("response", data.get("message", "")),
-                    "sources": data.get("sources", []),
-                    "suggestions": data.get("suggestions", []),
-                }
-            logger.warning("Gateway trả về %d: %s", resp.status_code, resp.text)
-    except httpx.ConnectError:
-        logger.warning("Không kết nối được HAgent Gateway tại %s", gateway_url)
-    except Exception as e:
-        logger.error("Lỗi khi gọi Gateway: %s", e)
+        from hagent.agent.graph import run_agent
 
-    return {
-        "message": "⚠️ Không thể kết nối tới HAgent Gateway. Vui lòng kiểm tra hệ thống.",
-        "sources": [],
-        "suggestions": ["Thử lại sau", "Kiểm tra trạng thái hệ thống"],
-    }
+        result = await run_agent(
+            message,
+            user_id=user_id,
+            user_token=user_token,
+            world_model=world_model,
+        )
+        return {
+            "message": result.get("response", ""),
+            "sources": result.get("sources", []),
+            "suggestions": [],
+            "tool_outputs": result.get("tool_outputs", []),
+            "provider": result.get("provider", "deerflow-automl"),
+            "model": result.get("model", ""),
+        }
+
+    except Exception as exc:
+        logger.exception("Agent runtime error")
+        # Phân loại lỗi từ config
+        err_str = str(exc).lower()
+        if "api key" in err_str or "authentication" in err_str or "401" in err_str:
+            msg = error_messages.get("llm_auth", str(exc))
+        elif "rate limit" in err_str or "429" in err_str:
+            msg = error_messages.get("llm_rate_limit", str(exc))
+        elif "timeout" in err_str:
+            msg = error_messages.get("timeout", str(exc))
+        else:
+            msg = error_messages.get("generic", str(exc))
+
+        return {
+            "message": f"⚠️ {msg}",
+            "sources": [],
+            "suggestions": ["Thử lại sau", "Kiểm tra trạng thái hệ thống"],
+            "tool_outputs": [],
+            "provider": "error",
+            "model": "",
+        }
 
 
 # ─── Endpoints ───────────────────────────────────────────
@@ -122,7 +139,7 @@ async def chat(
     db: AsyncDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Endpoint chat chính — gọi HAgent Gateway, lưu hội thoại vào database."""
+    """Endpoint chat chính — gọi LangGraph agent, lưu hội thoại vào database."""
     user_id = current_user["_id"]
     conversation_id = req.conversation_id or uuid.uuid4().hex
 
@@ -133,16 +150,15 @@ async def chat(
     # Lưu tin nhắn người dùng
     await chat_store.add_message(db, conversation_id, user_id, "user", req.message)
 
-    # Lấy lịch sử hội thoại
-    history = await chat_store.get_message_history(db, conversation_id, user_id, limit=20)
-    history_dicts = [{"role": m["role"], "content": m["content"]} for m in history[:-1]]
+    # Load World Model
+    world_model = await _load_world_model(db, str(user_id))
 
-    # Gọi HAgent Gateway
-    result = await _call_hagent_gateway(
+    # Gọi DeerFlow-AutoML Agent
+    result = await _call_agent(
         message=req.message,
-        history=history_dicts if history_dicts else None,
         user_token=user_token,
         user_id=str(user_id),
+        world_model=world_model,
     )
 
     # Lưu phản hồi trợ lý
@@ -153,6 +169,78 @@ async def chat(
         conversation_id=conversation_id,
         sources=result.get("sources", []),
         suggestions=result.get("suggestions", []),
+        tool_outputs=result.get("tool_outputs", []),
+        provider=result.get("provider", ""),
+        model=result.get("model", ""),
+    )
+
+
+@router.post("/stream")
+async def chat_stream(
+    req: StreamChatRequest,
+    request: Request,
+    db: AsyncDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    SSE streaming endpoint — trả về real-time token-by-token.
+
+    Response format: Server-Sent Events (text/event-stream)
+    Events:
+        data: {"type": "token", "content": "..."}
+        data: {"type": "tool_call", "tool": "...", "args": {...}}
+        data: {"type": "tool_result", "tool": "...", "output": "..."}
+        data: {"type": "done", "response": "..."}
+        data: [DONE]
+    """
+    user_id = current_user["_id"]
+    conversation_id = req.conversation_id or uuid.uuid4().hex
+
+    auth_header = request.headers.get("Authorization", "")
+    user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
+
+    # Lưu tin nhắn người dùng
+    await chat_store.add_message(db, conversation_id, user_id, "user", req.message)
+
+    # Load World Model
+    world_model = await _load_world_model(db, str(user_id))
+
+    from hagent.agent.streaming import sse_stream
+
+    async def _stream_wrapper():
+        """Wrap SSE stream và lưu response cuối cùng vào DB."""
+        full_response = ""
+        async for chunk in sse_stream(
+            req.message,
+            user_id=str(user_id),
+            user_token=user_token,
+            world_model=world_model,
+        ):
+            yield chunk
+            # Thu thập response để lưu DB
+            if '"type": "done"' in chunk:
+                import json
+                try:
+                    data = json.loads(chunk.replace("data: ", "").strip())
+                    full_response = data.get("response", "")
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # Lưu phản hồi hoàn chỉnh
+        if full_response:
+            await chat_store.add_message(
+                db, conversation_id, user_id, "assistant", full_response,
+            )
+
+    return StreamingResponse(
+        _stream_wrapper(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Conversation-Id": conversation_id,
+        },
     )
 
 
@@ -173,6 +261,7 @@ async def chat_with_file(
     auth_header = request.headers.get("Authorization", "")
     user_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
 
+    import httpx
     file_info = ""
     try:
         file_content = await file.read()
@@ -191,14 +280,13 @@ async def chat_with_file(
     full_message = f"{message}{file_info}"
     await chat_store.add_message(db, conv_id, user_id, "user", full_message)
 
-    history = await chat_store.get_message_history(db, conv_id, user_id, limit=20)
-    history_dicts = [{"role": m["role"], "content": m["content"]} for m in history[:-1]]
+    world_model = await _load_world_model(db, str(user_id))
 
-    result = await _call_hagent_gateway(
+    result = await _call_agent(
         message=full_message,
-        history=history_dicts if history_dicts else None,
         user_token=user_token,
         user_id=str(user_id),
+        world_model=world_model,
     )
 
     await chat_store.add_message(db, conv_id, user_id, "assistant", result["message"])
@@ -208,23 +296,17 @@ async def chat_with_file(
         conversation_id=conv_id,
         sources=result.get("sources", []),
         suggestions=result.get("suggestions", []),
+        tool_outputs=result.get("tool_outputs", []),
+        provider=result.get("provider", ""),
+        model=result.get("model", ""),
     )
 
 
 @router.get("/health")
 async def health_check():
-    """Kiểm tra kết nối tới HAgent Gateway."""
-    gw_cfg = get_gateway_config()
-    gateway_url = os.getenv("HAGENT_GATEWAY_URL", f"http://{gw_cfg['host']}:{gw_cfg['port']}")
+    """Kiểm tra kết nối — DeerFlow-AutoML agent + HAutoML backend."""
+    import httpx
     hautoml_cfg = get_hautoml_config()
-
-    hagent_ok = False
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{gateway_url}/health")
-            hagent_ok = resp.status_code == 200
-    except Exception:
-        pass
 
     hautoml_ok = False
     try:
@@ -234,26 +316,30 @@ async def health_check():
     except Exception:
         pass
 
+    # Liệt kê LLM models từ config
+    from hagent.agent.llm_config import list_available_models
+    models = list_available_models()
+
     return {
-        "hagent_url": gateway_url,
-        "connected": hagent_ok,
+        "agent_runtime": "deerflow-automl (LangGraph)",
         "hautoml_connected": hautoml_ok,
-        "mode": "hagent",
+        "available_models": models,
+        "mode": "multi-agent",
     }
 
 
 @router.get("/suggestions")
-async def get_suggestions():
-    """Gợi ý chat ban đầu."""
-    return {
-        "suggestions": [
-            "📊 Hiển thị danh sách dataset của tôi",
-            "🚀 Huấn luyện model phân loại mới",
-            "📈 Có những thuật toán ML nào khả dụng?",
-            "🔍 Kiểm tra trạng thái các job training",
-            "💡 Giúp tôi chọn model phù hợp",
-        ]
-    }
+async def get_chat_suggestions():
+    """Gợi ý chat ban đầu — đọc từ config."""
+    suggestions = get_suggestions()
+    return {"suggestions": suggestions}
+
+
+@router.get("/models")
+async def list_llm_models():
+    """Liệt kê các LLM models khả dụng."""
+    from hagent.agent.llm_config import list_available_models
+    return {"models": list_available_models()}
 
 
 @router.delete("/conversation/{conversation_id}")

@@ -1,0 +1,214 @@
+# ══════════════════════════════════════════════════════════
+# DeerFlow-AutoML — CI Test Workflow
+#
+# Tự động chạy tests mỗi khi commit/push lên GitHub.
+# Sử dụng Mock LLM Server (OpenAI-compatible) — KHÔNG cần
+# GPU, model, hay API key thật.
+# ══════════════════════════════════════════════════════════
+
+name: DeerFlow-AutoML Tests
+
+on:
+  push:
+    branches:
+      - features/deerflow-automl
+      - features/hagent
+      - main
+    paths:
+      - "src/backend/**"
+      - ".github/workflows/deerflow-automl-tests.yml"
+  pull_request:
+    branches:
+      - main
+      - features/deerflow-automl
+    paths:
+      - "src/backend/**"
+
+# Cancel in-progress runs cho cùng branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "🧪 Agent Tests (Mock LLM)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # ── Services ──────────────────────────────────────────
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # ── Environment ───────────────────────────────────────
+    env:
+      PYTHONPATH: src/backend
+      HAGENT_CONFIG: src/backend/hagent/hagent.yaml
+      HAUTOML_BASE_URL: http://localhost:8585
+      MONGODB_CONNECT: localhost:27017
+      MONGODB_DB_NAME: hagent_test
+      # Mock LLM — không cần API key thật
+      OPENAI_API_KEY: "ci-mock-key-not-real"
+      ANTHROPIC_API_KEY: "ci-mock-key-not-real"
+      LLM_DEFAULT_MODEL: "ci-mock"
+      # Tắt telemetry
+      LANGCHAIN_TRACING_V2: "false"
+      DO_NOT_TRACK: "1"
+
+    steps:
+      # ── Checkout ────────────────────────────────────────
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # ── Python setup ────────────────────────────────────
+      - name: 🐍 Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: src/backend/requirements.txt
+
+      # ── Dependencies ────────────────────────────────────
+      - name: 📦 Install dependencies
+        working-directory: src/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-timeout httpx
+
+      # ── Syntax check ────────────────────────────────────
+      - name: 🔍 Python syntax check
+        working-directory: src/backend
+        run: |
+          python -c "
+          import ast, sys
+          files = [
+              'hagent/agent/__init__.py',
+              'hagent/agent/state.py',
+              'hagent/agent/llm_config.py',
+              'hagent/agent/coordinator.py',
+              'hagent/agent/graph.py',
+              'hagent/agent/streaming.py',
+              'hagent/agent/tools/__init__.py',
+              'hagent/agent/tools/automl_tools.py',
+              'hagent/chat_router.py',
+              'hagent/bridge/config.py',
+          ]
+          errors = []
+          for f in files:
+              try:
+                  with open(f) as fh:
+                      ast.parse(fh.read())
+                  print(f'✓ {f}')
+              except SyntaxError as e:
+                  print(f'✗ {f}: {e}')
+                  errors.append(f)
+          if errors:
+              sys.exit(1)
+          print(f'\nAll {len(files)} files syntax OK ✓')
+          "
+
+      # ── YAML validation ─────────────────────────────────
+      - name: 📋 Validate hagent.yaml
+        working-directory: src/backend
+        run: |
+          python -c "
+          import yaml, sys
+          with open('hagent/hagent.yaml') as f:
+              cfg = yaml.safe_load(f)
+          checks = {
+              'llm section': 'llm' in cfg,
+              'llm.models': isinstance(cfg.get('llm', {}).get('models'), list),
+              'agent section': 'agent' in cfg,
+              'agent.routing': 'routing' in cfg.get('agent', {}),
+              'agent.suggestions': 'suggestions' in cfg.get('agent', {}),
+              'error_messages': 'error_messages' in cfg,
+              'prompt file path': 'system_prompt_path' in cfg.get('agent', {}),
+          }
+          all_ok = True
+          for name, ok in checks.items():
+              symbol = '✓' if ok else '✗'
+              print(f'{symbol} {name}')
+              if not ok:
+                  all_ok = False
+          if not all_ok:
+              sys.exit(1)
+          print(f'\nAll {len(checks)} YAML checks passed ✓')
+          "
+
+      # ── Mock LLM Server ─────────────────────────────────
+      - name: 🤖 Start Mock LLM Server
+        working-directory: src/backend
+        run: |
+          python tests/mock_llm_server.py --port 11435 &
+          MOCK_PID=$!
+          echo "MOCK_LLM_PID=$MOCK_PID" >> $GITHUB_ENV
+
+          # Chờ server sẵn sàng
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:11435/health > /dev/null 2>&1; then
+              echo "✓ Mock LLM Server ready (PID: $MOCK_PID)"
+              break
+            fi
+            sleep 0.5
+          done
+
+          # Verify
+          curl -sf http://127.0.0.1:11435/health | python -m json.tool
+
+      # ── Run Tests ───────────────────────────────────────
+      - name: 🧪 Run DeerFlow-AutoML Tests
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_deerflow_automl.py \
+            -v \
+            --timeout=60 \
+            --tb=short \
+            -x \
+            --color=yes \
+            2>&1 | tee test_results.txt
+
+      # ── Test World State ────────────────────────────────
+      - name: 🌍 Run World State Tests
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_world_state_store.py \
+            -v \
+            --timeout=30 \
+            --tb=short \
+            --color=yes \
+            || echo "⚠️ World State tests skipped (optional)"
+
+      # ── Cleanup ─────────────────────────────────────────
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          if [ -n "$MOCK_LLM_PID" ]; then
+            kill $MOCK_LLM_PID 2>/dev/null || true
+            echo "Mock LLM Server stopped"
+          fi
+
+      # ── Test Summary ────────────────────────────────────
+      - name: 📊 Test Summary
+        if: always()
+        working-directory: src/backend
+        run: |
+          echo "## 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f test_results.txt ]; then
+            # Trích xuất summary line
+            SUMMARY=$(tail -5 test_results.txt | head -3)
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

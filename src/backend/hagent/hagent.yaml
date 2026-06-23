@@ -57,7 +57,10 @@ logging:
   level: "info"
   file: "./logs/hagent.log"
 
-# ── Bộ chuyển tiếp HAgent ────────────────────────────────
+# ── [DEPRECATED] Bộ chuyển tiếp HAgent ───────────────────
+# DeerFlow-AutoML dùng LangGraph runtime trực tiếp,
+# không cần proxy/OpenClaw Gateway nữa.
+# Giữ lại cho backward compatibility.
 proxy:
   soul_path: "./SOUL.md"
   workspace_dir: "/home/node/.openclaw/workspace"
@@ -77,3 +80,156 @@ world_state:
   collection_name: "world_states"
   ttl_seconds: 86400  # 24 giờ
   snapshot_size_limit: 16384 # 16KB
+
+# ══════════════════════════════════════════════════════════
+# DeerFlow-AutoML — Cấu hình Multi-Agent
+# ══════════════════════════════════════════════════════════
+
+# ── LLM Providers ────────────────────────────────────────
+llm:
+  # Model mặc định khi không chỉ định tên
+  default_model: "openai-gpt4o-mini"
+
+  models:
+    - name: "openai-gpt4o-mini"
+      provider: "openai"
+      model: "gpt-4o-mini"
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.0
+      max_tokens: 4096
+      default: true
+
+    - name: "openai-gpt4o"
+      provider: "openai"
+      model: "gpt-4o"
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.0
+      max_tokens: 8192
+
+    - name: "anthropic-sonnet"
+      provider: "anthropic"
+      model: "claude-sonnet-4-20250514"
+      api_key: "${ANTHROPIC_API_KEY}"
+      temperature: 0.0
+      max_tokens: 4096
+
+    - name: "ollama-llama"
+      provider: "ollama"
+      model: "llama3.1"
+      base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+      temperature: 0.0
+      max_tokens: 4096
+
+    # Bất kỳ endpoint OpenAI-compatible nào (vLLM, LM Studio, etc.)
+    - name: "local-compatible"
+      provider: "openai_compatible"
+      model: "${LOCAL_MODEL_NAME:-default}"
+      api_key: "${LOCAL_API_KEY:-not-needed}"
+      base_url: "${LOCAL_BASE_URL:-http://localhost:8000/v1}"
+      temperature: 0.0
+      max_tokens: 4096
+
+# ── Agent Orchestration ──────────────────────────────────
+agent:
+  # Đường dẫn tới system prompt (Markdown)
+  system_prompt_path: "./prompts/coordinator.md"
+
+  # Đường dẫn tới SOUL.md (nhân cách agent)
+  soul_path: "./SOUL.md"
+
+  # Cấu hình routing keywords cho từng sub-agent
+  # (dùng để quick-route trước khi gọi LLM)
+  routing:
+    data_analyst:
+      keywords:
+        - "dataset"
+        - "data"
+        - "dữ liệu"
+        - "phân tích"
+        - "analyze"
+        - "feature"
+        - "cột"
+        - "column"
+        - "thống kê"
+        - "statistics"
+        - "preview"
+        - "xem trước"
+        - "liệt kê"
+        - "danh sách"
+        - "list"
+
+    model_selector:
+      keywords:
+        - "model"
+        - "thuật toán"
+        - "algorithm"
+        - "chọn model"
+        - "đề xuất"
+        - "suggest"
+        - "recommend"
+        - "phù hợp"
+        - "so sánh thuật toán"
+        - "có những"
+        - "khả dụng"
+        - "available"
+
+    training_monitor:
+      keywords:
+        - "train"
+        - "huấn luyện"
+        - "training"
+        - "job"
+        - "start"
+        - "bắt đầu"
+        - "trạng thái"
+        - "status"
+        - "chạy"
+        - "submit"
+        - "theo dõi"
+        - "monitor"
+
+    evaluator:
+      keywords:
+        - "evaluate"
+        - "đánh giá"
+        - "so sánh"
+        - "compare"
+        - "kết quả"
+        - "result"
+        - "best"
+        - "tốt nhất"
+        - "accuracy"
+        - "f1"
+        - "score"
+        - "benchmark"
+        - "deploy"
+
+  # Gợi ý chat mặc định
+  suggestions:
+    - "📊 Hiển thị danh sách dataset của tôi"
+    - "🚀 Huấn luyện model phân loại mới"
+    - "📈 Có những thuật toán ML nào khả dụng?"
+    - "🔍 Kiểm tra trạng thái các job training"
+    - "💡 Giúp tôi chọn model phù hợp"
+
+  # Caching cho tool results
+  cache:
+    enabled: true
+    ttl_seconds: 300  # 5 phút
+    max_entries: 100
+
+  # Giới hạn agent loop
+  max_iterations: 10
+  timeout_seconds: 120
+
+# ── Thông báo lỗi ────────────────────────────────────────
+error_messages:
+  model_memory: "HAgent đã kết nối tới provider AI, nhưng model hiện tại không load được vì thiếu RAM. Model cần {required}, hệ thống hiện còn {available}. Hãy kiểm tra lại provider/model đang cấu hình rồi thử lại."
+  model_endpoint: "HAgent đã gọi provider AI nhưng endpoint trả về trang lỗi thay vì API response. Hãy kiểm tra lại cấu hình provider/model đang sử dụng."
+  gateway_connection: "HAgent Gateway đang đóng kết nối bất thường. Vui lòng thử lại sau ít phút; nếu vẫn lỗi, kiểm tra log."
+  timeout: "HAgent xử lý quá lâu và bị timeout. Vui lòng thử lại hoặc dùng yêu cầu ngắn hơn."
+  invalid_response: "HAgent chưa trả về phản hồi hợp lệ. Vui lòng thử lại sau."
+  generic: "HAgent đang gặp lỗi khi xử lý yêu cầu. Chi tiết đã được ghi trong log backend."
+  llm_auth: "API key cho LLM provider không hợp lệ hoặc chưa được cấu hình. Kiểm tra biến môi trường tương ứng."
+  llm_rate_limit: "Đã vượt quá giới hạn gọi API của LLM provider. Vui lòng thử lại sau ít phút."
+
