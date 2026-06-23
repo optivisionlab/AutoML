@@ -442,3 +442,159 @@ class TestIntegrationMockLLM:
             choice = data["choices"][0]
             assert choice["finish_reason"] == "tool_calls"
             assert choice["message"]["tool_calls"][0]["function"]["name"] == "list_datasets"
+
+
+# ══════════════════════════════════════════════════════════
+# 8. Integration Test (with Ollama — real LLM)
+# ══════════════════════════════════════════════════════════
+
+OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+
+
+def _ollama_available() -> bool:
+    """Kiểm tra Ollama server có chạy không."""
+    try:
+        resp = httpx.get(f"{OLLAMA_URL}/api/tags", timeout=3)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+@pytest.mark.ollama
+class TestOllamaIntegration:
+    """Integration test với Ollama — dùng model thật, không mock."""
+
+    @pytest.mark.asyncio
+    async def test_ollama_server_health(self):
+        """Ollama server phản hồi."""
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{OLLAMA_URL}/api/tags")
+            assert resp.status_code == 200
+            data = resp.json()
+            models = data.get("models", [])
+            model_names = [m["name"] for m in models]
+            print(f"✓ Ollama models: {model_names}")
+            assert len(models) >= 1, "Ollama chưa có model nào"
+
+    @pytest.mark.asyncio
+    async def test_ollama_chat_basic(self):
+        """Ollama trả lời được câu hỏi cơ bản."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": [{"role": "user", "content": "What is 2+2? Answer with just the number."}],
+                    "stream": False,
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            content = data["message"]["content"]
+            print(f"✓ Ollama response: {content[:100]}")
+            assert len(content) > 0, "Ollama trả về response rỗng"
+            assert "4" in content, f"Expected '4' in response, got: {content}"
+
+    @pytest.mark.asyncio
+    async def test_ollama_chat_vietnamese(self):
+        """Ollama hiểu và trả lời tiếng Việt."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": [{"role": "user", "content": "Xin chào, bạn là ai?"}],
+                    "stream": False,
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            content = data["message"]["content"]
+            print(f"✓ Vietnamese response: {content[:200]}")
+            assert len(content) > 0
+
+    @pytest.mark.asyncio
+    async def test_ollama_via_langchain(self):
+        """Gọi Ollama qua LangChain ChatOllama — đúng integration path."""
+        from langchain_ollama import ChatOllama
+        from langchain_core.messages import HumanMessage
+
+        llm = ChatOllama(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_URL,
+            temperature=0.0,
+            num_predict=100,
+        )
+        response = await llm.ainvoke([HumanMessage(content="What is machine learning? Answer in one sentence.")])
+        content = response.content
+        print(f"✓ LangChain+Ollama: {content[:200]}")
+        assert len(content) > 10, "Response quá ngắn"
+
+    @pytest.mark.asyncio
+    async def test_ollama_via_llm_config(self):
+        """Gọi Ollama qua llm_config factory — đúng production path."""
+        from hagent.agent.llm_config import ModelConfig, _build_model
+        from langchain_core.messages import HumanMessage
+
+        cfg = ModelConfig(
+            name="ollama-ci",
+            provider="ollama",
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_URL,
+            temperature=0.0,
+            max_tokens=100,
+        )
+        llm = _build_model("ollama", cfg, None, 0.0, 100)
+        response = await llm.ainvoke([HumanMessage(content="Say hello")])
+        content = response.content
+        print(f"✓ llm_config+Ollama: {content[:200]}")
+        assert len(content) > 0
+
+    @pytest.mark.asyncio
+    async def test_ollama_coordinator_prompt(self):
+        """Coordinator system prompt + Ollama model = phản hồi hợp lệ."""
+        from hagent.agent.llm_config import ModelConfig, _build_model
+        from hagent.agent.coordinator import _load_system_prompt
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        system_prompt = _load_system_prompt(None)
+        cfg = ModelConfig(
+            name="ollama-ci",
+            provider="ollama",
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_URL,
+            temperature=0.0,
+            max_tokens=200,
+        )
+        llm = _build_model("ollama", cfg, None, 0.0, 200)
+        response = await llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content="Xin chào"),
+        ])
+        content = response.content
+        print(f"✓ Coordinator+Ollama: {content[:300]}")
+        assert len(content) > 0, "Coordinator không trả lời"
+
+    @pytest.mark.asyncio
+    async def test_ollama_response_latency(self):
+        """Đo latency — đảm bảo response trong giới hạn chấp nhận được."""
+        import time
+        from langchain_ollama import ChatOllama
+        from langchain_core.messages import HumanMessage
+
+        llm = ChatOllama(
+            model=OLLAMA_MODEL,
+            base_url=OLLAMA_URL,
+            temperature=0.0,
+            num_predict=50,
+        )
+
+        start = time.time()
+        response = await llm.ainvoke([HumanMessage(content="Hi")])
+        elapsed = time.time() - start
+
+        print(f"✓ Latency: {elapsed:.2f}s (response: {response.content[:50]})")
+        # CI runner chậm hơn local — cho phép tới 30s
+        assert elapsed < 30, f"Response quá chậm: {elapsed:.2f}s"
+

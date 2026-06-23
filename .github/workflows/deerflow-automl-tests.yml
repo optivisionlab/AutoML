@@ -1,9 +1,9 @@
 # ══════════════════════════════════════════════════════════
 # DeerFlow-AutoML — CI Test Workflow
 #
-# Tự động chạy tests mỗi khi commit/push lên GitHub.
-# Sử dụng Mock LLM Server (OpenAI-compatible) — KHÔNG cần
-# GPU, model, hay API key thật.
+# 2 jobs:
+# 1. unit-test: Mock LLM Server (nhanh, ~2 phút)
+# 2. integration-test: Ollama + model thật (chậm hơn, ~8 phút)
 # ══════════════════════════════════════════════════════════
 
 name: DeerFlow-AutoML Tests
@@ -24,18 +24,19 @@ on:
     paths:
       - "src/backend/**"
 
-# Cancel in-progress runs cho cùng branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: "🧪 Agent Tests (Mock LLM)"
+  # ════════════════════════════════════════════════════════
+  # Job 1: Unit Tests — Mock LLM (nhanh)
+  # ════════════════════════════════════════════════════════
+  unit-test:
+    name: "🧪 Unit Tests (Mock LLM)"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
-    # ── Services ──────────────────────────────────────────
     services:
       mongodb:
         image: mongo:7
@@ -47,27 +48,22 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    # ── Environment ───────────────────────────────────────
     env:
       PYTHONPATH: src/backend
       HAGENT_CONFIG: src/backend/hagent/hagent.yaml
       HAUTOML_BASE_URL: http://localhost:8585
       MONGODB_CONNECT: localhost:27017
       MONGODB_DB_NAME: hagent_test
-      # Mock LLM — không cần API key thật
       OPENAI_API_KEY: "ci-mock-key-not-real"
       ANTHROPIC_API_KEY: "ci-mock-key-not-real"
       LLM_DEFAULT_MODEL: "ci-mock"
-      # Tắt telemetry
       LANGCHAIN_TRACING_V2: "false"
       DO_NOT_TRACK: "1"
 
     steps:
-      # ── Checkout ────────────────────────────────────────
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      # ── Python setup ────────────────────────────────────
       - name: 🐍 Setup Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -75,7 +71,6 @@ jobs:
           cache: "pip"
           cache-dependency-path: src/backend/requirements.txt
 
-      # ── Dependencies ────────────────────────────────────
       - name: 📦 Install dependencies
         working-directory: src/backend
         run: |
@@ -83,7 +78,6 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-timeout httpx
 
-      # ── Syntax check ────────────────────────────────────
       - name: 🔍 Python syntax check
         working-directory: src/backend
         run: |
@@ -115,7 +109,6 @@ jobs:
           print(f'\nAll {len(files)} files syntax OK ✓')
           "
 
-      # ── YAML validation ─────────────────────────────────
       - name: 📋 Validate hagent.yaml
         working-directory: src/backend
         run: |
@@ -143,7 +136,6 @@ jobs:
           print(f'\nAll {len(checks)} YAML checks passed ✓')
           "
 
-      # ── Mock LLM Server ─────────────────────────────────
       - name: 🤖 Start Mock LLM Server
         working-directory: src/backend
         run: |
@@ -151,7 +143,6 @@ jobs:
           MOCK_PID=$!
           echo "MOCK_LLM_PID=$MOCK_PID" >> $GITHUB_ENV
 
-          # Chờ server sẵn sàng
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:11435/health > /dev/null 2>&1; then
               echo "✓ Mock LLM Server ready (PID: $MOCK_PID)"
@@ -159,12 +150,9 @@ jobs:
             fi
             sleep 0.5
           done
-
-          # Verify
           curl -sf http://127.0.0.1:11435/health | python -m json.tool
 
-      # ── Run Tests ───────────────────────────────────────
-      - name: 🧪 Run DeerFlow-AutoML Tests
+      - name: 🧪 Run Unit Tests
         working-directory: src/backend
         run: |
           python -m pytest tests/test_deerflow_automl.py \
@@ -172,10 +160,10 @@ jobs:
             --timeout=60 \
             --tb=short \
             -x \
+            -m "not ollama" \
             --color=yes \
             2>&1 | tee test_results.txt
 
-      # ── Test World State ────────────────────────────────
       - name: 🌍 Run World State Tests
         working-directory: src/backend
         run: |
@@ -186,25 +174,160 @@ jobs:
             --color=yes \
             || echo "⚠️ World State tests skipped (optional)"
 
-      # ── Cleanup ─────────────────────────────────────────
       - name: 🧹 Cleanup
         if: always()
         run: |
           if [ -n "$MOCK_LLM_PID" ]; then
             kill $MOCK_LLM_PID 2>/dev/null || true
-            echo "Mock LLM Server stopped"
           fi
 
-      # ── Test Summary ────────────────────────────────────
-      - name: 📊 Test Summary
+      - name: 📊 Unit Test Summary
         if: always()
         working-directory: src/backend
         run: |
-          echo "## 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🧪 Unit Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f test_results.txt ]; then
-            # Trích xuất summary line
             SUMMARY=$(tail -5 test_results.txt | head -3)
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+  # ════════════════════════════════════════════════════════
+  # Job 2: Integration Tests — Ollama + Model thật
+  # ════════════════════════════════════════════════════════
+  integration-test:
+    name: "🦙 Integration Tests (Ollama)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit-test  # Chỉ chạy khi unit tests pass
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PYTHONPATH: src/backend
+      HAGENT_CONFIG: src/backend/hagent/hagent.yaml
+      HAUTOML_BASE_URL: http://localhost:8585
+      MONGODB_CONNECT: localhost:27017
+      MONGODB_DB_NAME: hagent_test
+      # Ollama config — dùng model thật
+      OLLAMA_BASE_URL: http://localhost:11434
+      OLLAMA_MODEL: "qwen2.5:7b"
+      LLM_DEFAULT_MODEL: "ollama-ci"
+      OPENAI_API_KEY: "not-needed-for-ollama"
+      ANTHROPIC_API_KEY: "not-needed-for-ollama"
+      LANGCHAIN_TRACING_V2: "false"
+      DO_NOT_TRACK: "1"
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: src/backend/requirements.txt
+
+      - name: 📦 Install dependencies
+        working-directory: src/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-timeout httpx
+
+      # ── Ollama Setup ──────────────────────────────────────
+      - name: 🦙 Install Ollama
+        run: |
+          echo "=== Installing Ollama ==="
+          curl -fsSL https://ollama.com/install.sh | sh
+          echo "✓ Ollama installed: $(ollama --version)"
+
+      - name: 🚀 Start Ollama Server
+        run: |
+          echo "=== Starting Ollama server ==="
+          ollama serve &
+          OLLAMA_PID=$!
+          echo "OLLAMA_PID=$OLLAMA_PID" >> $GITHUB_ENV
+
+          # Chờ server sẵn sàng
+          echo "Waiting for Ollama server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "✓ Ollama server ready (PID: $OLLAMA_PID)"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "✗ Ollama server failed to start"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: 📥 Pull Model (${{ env.OLLAMA_MODEL }})
+        run: |
+          echo "=== Pulling $OLLAMA_MODEL ==="
+          echo "  (qwen2.5:7b ≈ 4.7GB — chất lượng cao, hỗ trợ tool calling)"
+          ollama pull $OLLAMA_MODEL
+
+          echo ""
+          echo "=== Verify model ==="
+          ollama list
+          echo ""
+          echo "✓ Model $OLLAMA_MODEL ready"
+
+      - name: 🔥 Warm up model
+        run: |
+          echo "=== Warming up model ==="
+          curl -sf http://localhost:11434/api/generate \
+            -d "{\"model\": \"$OLLAMA_MODEL\", \"prompt\": \"Hello\", \"stream\": false}" \
+            | python -m json.tool | head -5
+          echo "✓ Model warmed up"
+
+      # ── Run Integration Tests ─────────────────────────────
+      - name: 🧪 Run Ollama Integration Tests
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_deerflow_automl.py \
+            -v \
+            --timeout=120 \
+            --tb=short \
+            -m "ollama" \
+            --color=yes \
+            2>&1 | tee ollama_test_results.txt
+
+      # ── Cleanup ───────────────────────────────────────────
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          if [ -n "$OLLAMA_PID" ]; then
+            kill $OLLAMA_PID 2>/dev/null || true
+            echo "Ollama server stopped"
+          fi
+
+      - name: 📊 Integration Test Summary
+        if: always()
+        working-directory: src/backend
+        run: |
+          echo "## 🦙 Ollama Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Model:** $OLLAMA_MODEL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f ollama_test_results.txt ]; then
+            SUMMARY=$(tail -5 ollama_test_results.txt | head -3)
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
