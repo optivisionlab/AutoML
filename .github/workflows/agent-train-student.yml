@@ -22,7 +22,7 @@ on:
       ollama_model:
         description: "Ollama model to use"
         required: false
-        default: "gemma3:12b"
+        default: "qwen2.5:14b"
       run_conversation:
         description: "Run full conversation flow"
         required: false
@@ -50,9 +50,9 @@ jobs:
       HAGENT_CONFIG: ${{ github.workspace }}/src/backend/hagent/hagent.yaml
       HAUTOML_BASE_URL: http://localhost:8585
       OLLAMA_BASE_URL: http://localhost:11434
-      OLLAMA_MODEL: ${{ github.event.inputs.ollama_model || 'gemma3:12b' }}
+      OLLAMA_MODEL: ${{ github.event.inputs.ollama_model || 'qwen2.5:14b' }}
       LLM_PROVIDER: ollama
-      LLM_MODEL: ${{ github.event.inputs.ollama_model || 'gemma3:12b' }}
+      LLM_MODEL: ${{ github.event.inputs.ollama_model || 'qwen2.5:14b' }}
       LLM_DEFAULT_MODEL: ollama-ci
       OPENAI_API_KEY: "not-needed"
       LANGCHAIN_TRACING_V2: "false"

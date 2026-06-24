@@ -47,7 +47,7 @@ async def test_e2e():
     print("─" * 60)
     print("  Test: LLM Direct Response")
     print("─" * 60)
-    model_name = os.environ.get("OLLAMA_MODEL", os.environ.get("LLM_MODEL", "gemma3:12b"))
+    model_name = os.environ.get("OLLAMA_MODEL", os.environ.get("LLM_MODEL", "qwen2.5:14b"))
     async with httpx.AsyncClient(timeout=120) as client:
         start = time.time()
         r = await client.post(
