@@ -51,7 +51,7 @@ jobs:
 
     env:
       PYTHONPATH: src/backend
-      HAGENT_CONFIG: src/backend/hagent/hagent.yaml
+      HAGENT_CONFIG: ${{ github.workspace }}/src/backend/hagent/hagent.yaml
       HAUTOML_BASE_URL: http://localhost:8585
       MONGODB_CONNECT: localhost:27017
       MONGODB_DB_NAME: hagent_test
@@ -236,7 +236,7 @@ jobs:
 
     env:
       PYTHONPATH: src/backend
-      HAGENT_CONFIG: src/backend/hagent/hagent.yaml
+      HAGENT_CONFIG: ${{ github.workspace }}/src/backend/hagent/hagent.yaml
       HAUTOML_BASE_URL: http://localhost:8585
       MONGODB_CONNECT: localhost:27017
       MONGODB_DB_NAME: hagent_test
