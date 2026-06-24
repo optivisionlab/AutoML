@@ -1,6 +1,10 @@
 name: Agent Train Student Dataset
 
 on:
+  push:
+    paths:
+      - ".github/workflows/agent-train-student.yml"
+      - "src/backend/scripts/run_agent_training_action.py"
   workflow_dispatch:
 
 jobs:
