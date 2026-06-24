@@ -9,8 +9,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Sao chép mã nguồn bridge
-COPY . /app/hagent/bridge/
+# Sao chép mã nguồn hagent
+COPY hagent/ /app/hagent/
 
 # Tạo __init__.py cho package hagent
 RUN echo "# HAgent" > /app/hagent/__init__.py

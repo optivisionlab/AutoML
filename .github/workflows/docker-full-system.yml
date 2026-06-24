@@ -1,0 +1,158 @@
+# ══════════════════════════════════════════════════════════
+# DeerFlow-AutoML — Docker-based Full System Integration Tests
+#
+# Runs the entire AutoML backend and multi-agent system on
+# Docker Compose using real database services and a real LLM.
+# ══════════════════════════════════════════════════════════
+
+name: "🐳 Full System Docker E2E"
+
+on:
+  push:
+    branches:
+      - features/deerflow-automl
+      - features/hagent
+      - main
+    paths:
+      - "src/backend/**"
+      - ".github/workflows/docker-full-system.yml"
+  pull_request:
+    branches:
+      - main
+      - features/deerflow-automl
+    paths:
+      - "src/backend/**"
+
+concurrency:
+  group: docker-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-e2e:
+    name: "🐳 Docker E2E & AutoML Worker"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      OLLAMA_MODEL: "qwen2.5:7b"
+      LLM_DEFAULT_MODEL: "ollama-ci"
+
+    steps:
+      # ── Checkout Code ──────────────────────────────────
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # ── Setup Python (on Host for Test Runner) ─────────
+      - name: 🐍 Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: src/backend/requirements.txt
+
+      - name: 📦 Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx
+
+      # ── Ollama Setup (on Host) ─────────────────────────
+      - name: 🦙 Install Ollama
+        run: |
+          echo "=== Installing Ollama ==="
+          curl -fsSL https://ollama.com/install.sh | sh
+          echo "✓ Ollama installed: $(ollama --version)"
+
+      - name: 🚀 Start Ollama Server
+        run: |
+          ollama serve &
+          OLLAMA_PID=$!
+          echo "OLLAMA_PID=$OLLAMA_PID" >> $GITHUB_ENV
+
+          echo "Waiting for Ollama server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "✓ Ollama server ready (PID: $OLLAMA_PID)"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "✗ Ollama server failed to start"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: 📥 Pull Model (${{ env.OLLAMA_MODEL }})
+        run: |
+          echo "=== Pulling $OLLAMA_MODEL ==="
+          ollama pull $OLLAMA_MODEL
+          echo ""
+          echo "=== Verify model ==="
+          ollama list
+          echo "✓ Model $OLLAMA_MODEL ready"
+
+      - name: 🔥 Warm up model
+        run: |
+          echo "=== Warming up model ==="
+          curl -sf http://localhost:11434/api/generate \
+            -d "{\"model\": \"$OLLAMA_MODEL\", \"prompt\": \"Hello\", \"stream\": false}" \
+            | python -m json.tool | head -5
+          echo "✓ Model warmed up"
+
+      # ── Start Docker System ────────────────────────────
+      - name: ⚙️ Prepare environment configuration
+        run: |
+          cp src/backend/.env.example src/backend/.env
+
+      - name: 🏗️ Build AutoML Worker image
+        run: |
+          docker build -t workers:latest -f src/backend/worker.dockerfile src/backend
+
+      - name: 🚀 Start full system via Docker Compose
+        run: |
+          docker compose -f src/backend/docker-compose.yaml --profile worker up --build -d
+
+      - name: ⏳ Wait for services to be ready
+        run: |
+          echo "Waiting for HAutoML and HAgent Bridge to pass health checks..."
+          for i in {1..40}; do
+            AUTOML_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5370/home || echo "000")
+            BRIDGE_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5360/api/v1/chat/health || echo "000")
+            
+            echo "Attempt $i: AutoML status = $AUTOML_HEALTH, Bridge status = $BRIDGE_HEALTH"
+            if [ "$AUTOML_HEALTH" = "200" ] && [ "$BRIDGE_HEALTH" = "200" ]; then
+              echo "✓ All systems are healthy and ready!"
+              break
+            fi
+            
+            if [ $i -eq 40 ]; then
+              echo "✗ Timeout waiting for Docker services to start"
+              exit 1
+            fi
+            sleep 3
+          done
+
+      # ── Execute E2E Tests ──────────────────────────────
+      - name: 🧪 Run Docker-based E2E System Tests
+        run: |
+          python src/backend/scripts/e2e_docker_test.py
+
+      # ── Troubleshooting logs ───────────────────────────
+      - name: 📊 Print docker-compose logs on failure
+        if: failure()
+        run: |
+          echo "=== DOCKER COMPOSE LOGS ==="
+          docker compose -f src/backend/docker-compose.yaml logs --tail=200
+
+      # ── Cleanup ────────────────────────────────────────
+      - name: 🧹 Cleanup containers and servers
+        if: always()
+        run: |
+          echo "Stopping Docker containers..."
+          docker compose -f src/backend/docker-compose.yaml --profile worker down -v
+          
+          if [ -n "$OLLAMA_PID" ]; then
+            echo "Stopping Ollama server (PID: $OLLAMA_PID)..."
+            kill $OLLAMA_PID 2>/dev/null || true
+          fi
+          echo "✓ Cleanup done."

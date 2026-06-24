@@ -168,8 +168,8 @@ services:
     ports:
       - "${HAGENT_BRIDGE_HOST_PORT:-5360}:${HAGENT_BRIDGE_PORT:-9900}"
     build:
-      context: ./hagent/bridge
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: hagent/bridge/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -180,6 +180,8 @@ services:
       MONGODB_CONNECT: mongo:27017
       HAUTOML_BASE_URL: http://toolkit:${TOOLKIT_PORT:-8585}
       HAGENT_GATEWAY_URL: http://toolkit:${OPENCLAW_PROXY_PORT:-18790}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
     depends_on:
       - mongo
     logging:
