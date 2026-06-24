@@ -76,12 +76,12 @@ def load_llm_configs() -> list[ModelConfig]:
 
 
 def _fallback_config() -> ModelConfig:
-    """Config mặc định khi YAML không có llm section."""
+    """Config mặc định khi YAML không có llm section — đọc hoàn toàn từ env vars."""
     return ModelConfig(
-        name="default",
-        provider=os.getenv("LLM_PROVIDER", "openai"),
-        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-        api_key=os.getenv("OPENAI_API_KEY", ""),
+        name=os.getenv("LLM_DEFAULT_MODEL", "default"),
+        provider=os.getenv("LLM_PROVIDER", ""),
+        model=os.getenv("LLM_MODEL", ""),
+        api_key=os.getenv("OPENAI_API_KEY", os.getenv("LLM_API_KEY", "")),
         base_url=os.getenv("LLM_BASE_URL"),
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
         is_default=True,
@@ -201,9 +201,16 @@ def _build_model(
 
     if provider == "ollama":
         from langchain_ollama import ChatOllama
+        # base_url đọc từ YAML config hoặc env var — KHÔNG hardcode
+        ollama_url = config.base_url or os.getenv("OLLAMA_BASE_URL", "")
+        if not ollama_url:
+            raise ValueError(
+                f"Model '{config.name}' dùng provider ollama "
+                f"nhưng thiếu base_url. Cấu hình trong YAML hoặc đặt OLLAMA_BASE_URL."
+            )
         return ChatOllama(
             model=config.model,
-            base_url=config.base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            base_url=ollama_url,
             temperature=temperature,
             num_predict=max_tokens,
             **(config.extra or {}),

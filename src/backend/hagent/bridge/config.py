@@ -192,6 +192,17 @@ def get_agent_config() -> dict:
     return agent
 
 
+def get_subagents_config() -> dict:
+    """
+    Lấy cấu hình sub-agents registry từ agent.subagents.
+
+    Returns:
+        Dict[agent_name, agent_config] từ YAML.
+    """
+    agent = get_agent_config()
+    return agent.get("subagents", {}) or {}
+
+
 def get_routing_config() -> dict[str, list[str]]:
     """
     Lấy routing keywords cho từng sub-agent.

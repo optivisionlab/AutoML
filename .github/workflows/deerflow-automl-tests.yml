@@ -152,7 +152,7 @@ jobs:
           done
           curl -sf http://127.0.0.1:11435/health | python -m json.tool
 
-      - name: 🧪 Run Unit Tests
+      - name: 🧪 Run Unit Tests (Phase 1)
         working-directory: src/backend
         run: |
           python -m pytest tests/test_deerflow_automl.py \
@@ -163,6 +163,17 @@ jobs:
             -m "not ollama" \
             --color=yes \
             2>&1 | tee test_results.txt
+
+      - name: 🤖 Run Multi-Agent Tests (Phase 2)
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_phase2_multiagent.py \
+            -v \
+            --timeout=60 \
+            --tb=short \
+            -x \
+            --color=yes \
+            2>&1 | tee -a test_results.txt
 
       - name: 🌍 Run World State Tests
         working-directory: src/backend

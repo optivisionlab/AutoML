@@ -137,6 +137,43 @@ agent:
   # Đường dẫn tới SOUL.md (nhân cách agent)
   soul_path: "./SOUL.md"
 
+  # ── Sub-agents Registry ──────────────────────────────
+  # Khai báo tất cả sub-agents tại đây.
+  # Python code đọc config này để build graph — KHÔNG hardcode.
+  subagents:
+    data_analyst:
+      module: "hagent.agent.subagents.data_analyst"
+      node_function: "data_analyst_node"
+      prompt_file: "data_analyst.md"
+      tools:
+        - "list_datasets"
+        - "get_dataset_info"
+
+    model_selector:
+      module: "hagent.agent.subagents.model_selector"
+      node_function: "model_selector_node"
+      prompt_file: "model_selector.md"
+      tools:
+        - "get_available_models"
+        - "get_dataset_info"
+
+    training_monitor:
+      module: "hagent.agent.subagents.training_monitor"
+      node_function: "training_monitor_node"
+      prompt_file: "training_monitor.md"
+      tools:
+        - "start_training"
+        - "get_job_info"
+        - "list_jobs"
+
+    evaluator:
+      module: "hagent.agent.subagents.evaluator"
+      node_function: "evaluator_node"
+      prompt_file: "evaluator.md"
+      tools:
+        - "get_job_info"
+        - "list_jobs"
+
   # Cấu hình routing keywords cho từng sub-agent
   # (dùng để quick-route trước khi gọi LLM)
   routing:
