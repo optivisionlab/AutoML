@@ -202,10 +202,12 @@ async def run_agent(
     world_model: dict[str, Any] | None = None,
     memory_context: str | None = None,
 ) -> dict[str, Any]:
-    """Chạy multi-agent graph cho một message."""
+    """Chạy multi-agent graph với middleware pipeline."""
     from langchain_core.messages import HumanMessage
+    from hagent.agent.middlewares import create_default_chain
 
     graph = get_automl_graph()
+    middleware = create_default_chain()
 
     initial_state: AutoMLState = {
         "messages": [HumanMessage(content=message)],
@@ -222,6 +224,9 @@ async def run_agent(
         os.environ["USER_TOKEN"] = user_token
     if user_id:
         os.environ["USER_ID"] = user_id
+
+    # Middleware pre-process
+    initial_state = await middleware.run_pre(initial_state)
 
     final_state = await graph.ainvoke(initial_state)
 
@@ -241,7 +246,7 @@ async def run_agent(
 
     response_text = last_ai_message.content if last_ai_message else "Không có phản hồi."
 
-    return {
+    result = {
         "response": response_text,
         "tool_outputs": list(reversed(tool_outputs)),
         "sources": [],
@@ -249,6 +254,11 @@ async def run_agent(
         "model": "multi-agent",
         "route": final_state.get("current_phase", "direct"),
     }
+
+    # Middleware post-process
+    result = await middleware.run_post(initial_state, result)
+
+    return result
 
 
 def _safe_json_parse(text: str) -> Any:

@@ -1,9 +1,10 @@
 # ══════════════════════════════════════════════════════════
-# DeerFlow-AutoML — CI Test Workflow
+# DeerFlow-AutoML — CI/CD Test Workflow (Complete)
 #
-# 2 jobs:
-# 1. unit-test: Mock LLM Server (nhanh, ~2 phút)
-# 2. integration-test: Ollama + model thật (chậm hơn, ~8 phút)
+# 3 jobs:
+# 1. unit-test: Mock LLM — test nhanh tất cả modules
+# 2. integration-test: Ollama — test end-to-end với model thật
+# 3. e2e-test: End-user flow — test toàn bộ pipeline
 # ══════════════════════════════════════════════════════════
 
 name: DeerFlow-AutoML Tests
@@ -30,7 +31,7 @@ concurrency:
 
 jobs:
   # ════════════════════════════════════════════════════════
-  # Job 1: Unit Tests — Mock LLM (nhanh)
+  # Job 1: Unit Tests — Mock LLM (nhanh, ~3 phút)
   # ════════════════════════════════════════════════════════
   unit-test:
     name: "🧪 Unit Tests (Mock LLM)"
@@ -78,35 +79,26 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-timeout httpx
 
-      - name: 🔍 Python syntax check
+      - name: 🔍 Python syntax check (auto-discover)
         working-directory: src/backend
         run: |
           python -c "
-          import ast, sys
-          files = [
-              'hagent/agent/__init__.py',
-              'hagent/agent/state.py',
-              'hagent/agent/llm_config.py',
-              'hagent/agent/coordinator.py',
-              'hagent/agent/graph.py',
-              'hagent/agent/streaming.py',
-              'hagent/agent/tools/__init__.py',
-              'hagent/agent/tools/automl_tools.py',
-              'hagent/chat_router.py',
-              'hagent/bridge/config.py',
-          ]
+          import ast, sys, pathlib
+          all_py = list(pathlib.Path('hagent').rglob('*.py'))
+          all_py += list(pathlib.Path('tests').rglob('*.py'))
           errors = []
-          for f in files:
+          for f in all_py:
+              if '__pycache__' in str(f):
+                  continue
               try:
                   with open(f) as fh:
                       ast.parse(fh.read())
-                  print(f'✓ {f}')
               except SyntaxError as e:
                   print(f'✗ {f}: {e}')
-                  errors.append(f)
+                  errors.append(str(f))
           if errors:
               sys.exit(1)
-          print(f'\nAll {len(files)} files syntax OK ✓')
+          print(f'All {len(all_py)} Python files syntax OK ✓')
           "
 
       - name: 📋 Validate hagent.yaml
@@ -120,8 +112,11 @@ jobs:
               'llm section': 'llm' in cfg,
               'llm.models': isinstance(cfg.get('llm', {}).get('models'), list),
               'agent section': 'agent' in cfg,
+              'agent.subagents': 'subagents' in cfg.get('agent', {}),
               'agent.routing': 'routing' in cfg.get('agent', {}),
               'agent.suggestions': 'suggestions' in cfg.get('agent', {}),
+              'memory section': 'memory' in cfg,
+              'middlewares section': 'middlewares' in cfg,
               'error_messages': 'error_messages' in cfg,
               'prompt file path': 'system_prompt_path' in cfg.get('agent', {}),
           }
@@ -152,7 +147,7 @@ jobs:
           done
           curl -sf http://127.0.0.1:11435/health | python -m json.tool
 
-      - name: 🧪 Run Unit Tests (Phase 1)
+      - name: 🧪 Phase 1 — Foundation Tests
         working-directory: src/backend
         run: |
           python -m pytest tests/test_deerflow_automl.py \
@@ -164,7 +159,7 @@ jobs:
             --color=yes \
             2>&1 | tee test_results.txt
 
-      - name: 🤖 Run Multi-Agent Tests (Phase 2)
+      - name: 🤖 Phase 2 — Multi-Agent Tests
         working-directory: src/backend
         run: |
           python -m pytest tests/test_phase2_multiagent.py \
@@ -175,7 +170,18 @@ jobs:
             --color=yes \
             2>&1 | tee -a test_results.txt
 
-      - name: 🌍 Run World State Tests
+      - name: 🧠 Phase 3 — Context Engineering Tests
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_phase3_context.py \
+            -v \
+            --timeout=60 \
+            --tb=short \
+            -x \
+            --color=yes \
+            2>&1 | tee -a test_results.txt
+
+      - name: 🌍 World State Tests
         working-directory: src/backend
         run: |
           python -m pytest tests/test_world_state_store.py \
@@ -183,9 +189,9 @@ jobs:
             --timeout=30 \
             --tb=short \
             --color=yes \
-            || echo "⚠️ World State tests skipped (optional)"
+            2>&1 | tee -a test_results.txt
 
-      - name: 🧹 Cleanup
+      - name: 🧹 Cleanup Mock Server
         if: always()
         run: |
           if [ -n "$MOCK_LLM_PID" ]; then
@@ -209,12 +215,13 @@ jobs:
 
   # ════════════════════════════════════════════════════════
   # Job 2: Integration Tests — Ollama + Model thật
+  # Test toàn bộ hệ thống với LLM thật
   # ════════════════════════════════════════════════════════
   integration-test:
     name: "🦙 Integration Tests (Ollama)"
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: unit-test  # Chỉ chạy khi unit tests pass
+    needs: unit-test
 
     services:
       mongodb:
@@ -233,7 +240,6 @@ jobs:
       HAUTOML_BASE_URL: http://localhost:8585
       MONGODB_CONNECT: localhost:27017
       MONGODB_DB_NAME: hagent_test
-      # Ollama config — dùng model thật
       OLLAMA_BASE_URL: http://localhost:11434
       OLLAMA_MODEL: "qwen2.5:7b"
       LLM_DEFAULT_MODEL: "ollama-ci"
@@ -274,7 +280,6 @@ jobs:
           OLLAMA_PID=$!
           echo "OLLAMA_PID=$OLLAMA_PID" >> $GITHUB_ENV
 
-          # Chờ server sẵn sàng
           echo "Waiting for Ollama server..."
           for i in $(seq 1 30); do
             if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
@@ -291,13 +296,12 @@ jobs:
       - name: 📥 Pull Model (${{ env.OLLAMA_MODEL }})
         run: |
           echo "=== Pulling $OLLAMA_MODEL ==="
-          echo "  (qwen2.5:7b ≈ 4.7GB — chất lượng cao, hỗ trợ tool calling)"
+          echo "  (qwen2.5:7b ≈ 4.7GB — hỗ trợ tool calling)"
           ollama pull $OLLAMA_MODEL
 
           echo ""
           echo "=== Verify model ==="
           ollama list
-          echo ""
           echo "✓ Model $OLLAMA_MODEL ready"
 
       - name: 🔥 Warm up model
@@ -308,8 +312,8 @@ jobs:
             | python -m json.tool | head -5
           echo "✓ Model warmed up"
 
-      # ── Run Integration Tests ─────────────────────────────
-      - name: 🧪 Run Ollama Integration Tests
+      # ── Run All Tests with Real Model ──────────────────────
+      - name: 🧪 Phase 1 — Ollama Integration Tests
         working-directory: src/backend
         run: |
           python -m pytest tests/test_deerflow_automl.py \
@@ -319,6 +323,106 @@ jobs:
             -m "ollama" \
             --color=yes \
             2>&1 | tee ollama_test_results.txt
+
+      - name: 🤖 Phase 2 — Multi-Agent with Real LLM
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_phase2_multiagent.py \
+            -v \
+            --timeout=120 \
+            --tb=short \
+            --color=yes \
+            2>&1 | tee -a ollama_test_results.txt
+
+      - name: 🧠 Phase 3 — Context Engineering with Real LLM
+        working-directory: src/backend
+        run: |
+          python -m pytest tests/test_phase3_context.py \
+            -v \
+            --timeout=120 \
+            --tb=short \
+            --color=yes \
+            2>&1 | tee -a ollama_test_results.txt
+
+      # ── End-to-End User Flow Test ──────────────────────────
+      - name: 🎯 E2E — End-User Flow Test
+        working-directory: src/backend
+        run: |
+          python -c "
+          import asyncio, os, json
+
+          os.environ['OLLAMA_BASE_URL'] = 'http://localhost:11434'
+          os.environ['LLM_PROVIDER'] = 'ollama'
+          os.environ['LLM_MODEL'] = os.environ.get('OLLAMA_MODEL', 'qwen2.5:7b')
+
+          async def test_e2e():
+              print('=== E2E Test: Simulating end-user conversation ===')
+              print()
+
+              # Test 1: Health check
+              import httpx
+              async with httpx.AsyncClient() as client:
+                  r = await client.get('http://localhost:11434/api/tags')
+                  models = r.json().get('models', [])
+                  print(f'✓ Ollama has {len(models)} model(s) loaded')
+
+              # Test 2: Registry loads from YAML
+              from hagent.agent.registry import get_agent_registry, reset_registry
+              reset_registry()
+              registry = get_agent_registry()
+              agents = registry.agent_names()
+              print(f'✓ Agent Registry: {sorted(agents)}')
+              assert len(agents) >= 4, f'Expected >=4 agents, got {len(agents)}'
+
+              # Test 3: Memory system works
+              from hagent.agent.memory import Fact, LocalFactStore
+              import tempfile
+              store = LocalFactStore(tempfile.mkdtemp())
+              await store.save('e2e_user', Fact(key='pref', content='User prefers RF'))
+              fact = await store.get('e2e_user', 'pref')
+              assert fact is not None
+              print(f'✓ Memory: saved and retrieved fact')
+
+              # Test 4: Cache works
+              from hagent.agent.cache import ToolCache
+              cache = ToolCache(ttl_seconds=60)
+              cache.set('list_datasets', {}, {'datasets': []})
+              assert cache.get('list_datasets', {}) is not None
+              print(f'✓ Cache: set/get works, stats={cache.stats()}')
+
+              # Test 5: Middleware chain
+              from hagent.agent.middlewares import create_default_chain
+              chain = create_default_chain()
+              state = await chain.run_pre({'messages': [], 'user_id': 'e2e'})
+              assert '_start_time' in state
+              print(f'✓ Middleware: {len(chain._middlewares)} middlewares active')
+
+              # Test 6: Fact extraction
+              from hagent.agent.memory.extractor import extract_from_tool_output
+              facts = extract_from_tool_output('get_dataset_info', {
+                  'id': 'd1', 'name': 'test.csv', 'n_rows': 100,
+                  'n_cols': 5, 'problem_type': 'classification', 'target': 'y'
+              })
+              assert len(facts) >= 1
+              print(f'✓ Extractor: {len(facts)} facts from tool output')
+
+              # Test 7: Graph compiles with registry
+              from hagent.agent.graph import build_automl_graph, reset_graph
+              reset_graph()
+              graph = build_automl_graph()
+              compiled = graph.compile()
+              nodes = set(graph.nodes.keys())
+              print(f'✓ Graph: {len(nodes)} nodes compiled')
+              for agent in agents:
+                  assert agent in nodes, f'Missing node: {agent}'
+
+              print()
+              print('══════════════════════════════════════════')
+              print('  ✅ ALL E2E TESTS PASSED')
+              print('══════════════════════════════════════════')
+
+          asyncio.run(test_e2e())
+          "
 
       # ── Cleanup ───────────────────────────────────────────
       - name: 🧹 Cleanup
@@ -333,7 +437,7 @@ jobs:
         if: always()
         working-directory: src/backend
         run: |
-          echo "## 🦙 Ollama Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## 🦙 Integration + E2E Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Model:** $OLLAMA_MODEL" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

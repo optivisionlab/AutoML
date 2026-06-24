@@ -47,10 +47,24 @@ skills:
   directories:
     - "./skills"
 
-# ── Bộ nhớ ───────────────────────────────────────────────
+# ── Bộ nhớ (Phase 3 — Context Engineering) ───────────────
 memory:
   enabled: true
-  backend: "local"
+  backend: "local"           # local | mongodb
+  storage_dir: "./data/memory"
+  max_facts: 15              # Max facts inject vào prompt
+  extraction:
+    from_tools: true         # Rút trích facts từ tool outputs
+    from_responses: true     # Rút trích facts từ AI responses
+
+# ── Middleware Pipeline ──────────────────────────────────
+middlewares:
+  enabled: true
+  pipeline:
+    - "timing"
+    - "input_sanitizer"
+    - "world_model"
+    - "memory"
 
 # ── Ghi log ──────────────────────────────────────────────
 logging:
