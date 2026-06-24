@@ -102,7 +102,8 @@ world_state:
 # ── LLM Providers ────────────────────────────────────────
 llm:
   # Model mặc định khi không chỉ định tên
-  default_model: "openai-gpt4o-mini"
+  # Override bằng env var LLM_DEFAULT_MODEL nếu cần (CI/CD)
+  default_model: "${LLM_DEFAULT_MODEL:-openai-gpt4o-mini}"
 
   models:
     - name: "openai-gpt4o-mini"
@@ -130,6 +131,14 @@ llm:
     - name: "ollama-llama"
       provider: "ollama"
       model: "llama3.1"
+      base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+      temperature: 0.0
+      max_tokens: 4096
+
+    # Ollama CI — dùng trong GitHub Actions
+    - name: "ollama-ci"
+      provider: "ollama"
+      model: "${OLLAMA_MODEL:-gemma3:12b}"
       base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
       temperature: 0.0
       max_tokens: 4096
