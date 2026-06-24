@@ -1,80 +1,241 @@
-name: Agent Train Student Dataset
+# ══════════════════════════════════════════════════════════
+# DeerFlow-AutoML — Agent Training Demo (Student Dataset)
+#
+# Workflow này chạy Agent với Ollama để:
+# 1. List datasets
+# 2. Phân tích dataset Student Performance
+# 3. Training với 3 thuật toán: RF, XGBoost, SVR
+# 4. Đánh giá kết quả
+#
+# Trigger: manual (workflow_dispatch) hoặc push
+# ══════════════════════════════════════════════════════════
+
+name: "🎓 Agent Training — Student Dataset"
 
 on:
-  push:
-    paths:
-      - ".github/workflows/agent-train-student.yml"
-      - "src/backend/scripts/run_agent_training_action.py"
   workflow_dispatch:
+    inputs:
+      models:
+        description: "Danh sách models (comma separated)"
+        required: false
+        default: "RandomForestRegressor,XGBRegressor,SVR"
+      ollama_model:
+        description: "Ollama model to use"
+        required: false
+        default: "qwen2.5:7b"
+      run_conversation:
+        description: "Run full conversation flow"
+        required: false
+        default: "true"
+        type: boolean
+  push:
+    branches:
+      - features/deerflow-automl
+    paths:
+      - "src/backend/scripts/**"
+      - ".github/workflows/agent-train-student.yml"
+
+concurrency:
+  group: agent-training-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  run-training:
+  agent-training:
+    name: "🤖 Agent Training with Ollama"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
     env:
       PYTHONPATH: src/backend
       HAGENT_CONFIG: ${{ github.workspace }}/src/backend/hagent/hagent.yaml
-      OLLAMA_BASE_URL: http://localhost:11434
-      OLLAMA_MODEL: "qwen2.5:7b"
-      LLM_PROVIDER: "ollama"
-      LLM_MODEL: "qwen2.5:7b"
       HAUTOML_BASE_URL: http://localhost:8585
-      MONGODB_CONNECT: localhost:27017
-      MONGODB_DB_NAME: hagent_test
-    
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+      OLLAMA_BASE_URL: http://localhost:11434
+      OLLAMA_MODEL: ${{ github.event.inputs.ollama_model || 'qwen2.5:7b' }}
+      LLM_PROVIDER: ollama
+      LLM_MODEL: ${{ github.event.inputs.ollama_model || 'qwen2.5:7b' }}
+      LLM_DEFAULT_MODEL: ollama-ci
+      OPENAI_API_KEY: "not-needed"
+      LANGCHAIN_TRACING_V2: "false"
+      DO_NOT_TRACK: "1"
 
     steps:
-      - name: Checkout code
+      # ── Setup ──────────────────────────────────────────
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
+      - name: 🐍 Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: src/backend/requirements.txt
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         working-directory: src/backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install httpx fastapi uvicorn
 
-      - name: Install and Start Ollama
+      # ── Ollama Setup ───────────────────────────────────
+      - name: 🦙 Install Ollama
         run: |
+          echo "=== Installing Ollama ==="
           curl -fsSL https://ollama.com/install.sh | sh
+          echo "✓ Ollama installed: $(ollama --version)"
+
+      - name: 🚀 Start Ollama Server
+        run: |
           ollama serve &
-          echo "Waiting for Ollama..."
-          sleep 5
-          ollama pull qwen2.5:7b
+          OLLAMA_PID=$!
+          echo "OLLAMA_PID=$OLLAMA_PID" >> $GITHUB_ENV
 
-      - name: Start Mock HAutoML Server
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "✓ Ollama server ready (PID: $OLLAMA_PID)"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "✗ Ollama failed to start"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: 📥 Pull Model (${{ env.OLLAMA_MODEL }})
+        run: |
+          echo "=== Pulling $OLLAMA_MODEL ==="
+          ollama pull $OLLAMA_MODEL
+          echo ""
+          ollama list
+          echo "✓ Model ready"
+
+      - name: 🔥 Warm up model
+        run: |
+          curl -sf http://localhost:11434/api/generate \
+            -d "{\"model\": \"$OLLAMA_MODEL\", \"prompt\": \"Hello\", \"stream\": false}" \
+            | python -m json.tool | head -3
+          echo "✓ Model warmed up"
+
+      # ── Mock HAutoML Server ────────────────────────────
+      - name: 🏗️ Start Mock HAutoML Server
         working-directory: src/backend
         run: |
-          python scripts/mock_hautoml_server.py &
-          sleep 3
+          python scripts/mock_hautoml_server.py --port 8585 &
+          MOCK_PID=$!
+          echo "MOCK_PID=$MOCK_PID" >> $GITHUB_ENV
 
-      - name: Run Agent (Train & Generate Report)
+          sleep 2
+          curl -sf http://localhost:8585/home | python -m json.tool
+          echo "✓ Mock HAutoML Server ready"
+
+      # ── Agent Training ─────────────────────────────────
+      - name: 🎓 Agent — List & Analyze Dataset
         working-directory: src/backend
-        run: python scripts/run_agent_training_action.py
-
-      - name: Commit and Push Report
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/backend/docs/Student_Training_Report.md
-          git commit -m "docs: agent generated student training report [skip ci]" || echo "No changes"
-          git push
+          echo "═══════════════════════════════════════"
+          echo "  Step 1: List datasets"
+          echo "═══════════════════════════════════════"
+          python scripts/run_agent_training.py \
+            --message "Hiển thị danh sách dataset của tôi" \
+            --user-id ci_user \
+            --output results/step1_list.json
+
+      - name: 🔍 Agent — Dataset Info
+        working-directory: src/backend
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  Step 2: Dataset details"
+          echo "═══════════════════════════════════════"
+          python scripts/run_agent_training.py \
+            --message "Cho tôi xem thông tin chi tiết dataset Student Performance" \
+            --user-id ci_user \
+            --output results/step2_info.json
+
+      - name: 🚀 Agent — Train with 3 Models
+        working-directory: src/backend
+        run: |
+          MODELS="${{ github.event.inputs.models || 'RandomForestRegressor,XGBRegressor,SVR' }}"
+          echo "═══════════════════════════════════════"
+          echo "  Step 3: Training with $MODELS"
+          echo "═══════════════════════════════════════"
+          python scripts/run_agent_training.py \
+            --message "Huấn luyện dataset Student Performance với 3 thuật toán: ${MODELS}. Target là cột G3, problem_type là regression, dataset_id là ds_student_001." \
+            --user-id ci_user \
+            --output results/step3_training.json
+
+      - name: 📊 Agent — Evaluate Results
+        working-directory: src/backend
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  Step 4: Evaluate & Compare"
+          echo "═══════════════════════════════════════"
+          python scripts/run_agent_training.py \
+            --message "So sánh kết quả training vừa xong. Model nào tốt nhất?" \
+            --user-id ci_user \
+            --output results/step4_evaluate.json
+
+      # ── Full Conversation (Optional) ───────────────────
+      - name: 💬 Agent — Full Conversation Flow
+        if: ${{ github.event.inputs.run_conversation != 'false' }}
+        working-directory: src/backend
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "  Full E2E Conversation"
+          echo "═══════════════════════════════════════"
+          python scripts/run_agent_training.py \
+            --conversation \
+            --user-id ci_user \
+            --output results/full_conversation.json
+
+      # ── Upload Results ─────────────────────────────────
+      - name: 📁 Upload Training Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-training-results
+          path: src/backend/results/
+          retention-days: 30
+
+      # ── Summary ────────────────────────────────────────
+      - name: 📊 Training Summary
+        if: always()
+        working-directory: src/backend
+        run: |
+          echo "## 🎓 Agent Training — Student Dataset" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Ollama Model:** $OLLAMA_MODEL" >> $GITHUB_STEP_SUMMARY
+          echo "**Dataset:** Student Performance (395 rows × 33 cols)" >> $GITHUB_STEP_SUMMARY
+          echo "**Models:** ${{ github.event.inputs.models || 'RandomForestRegressor, XGBRegressor, SVR' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📋 Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f results/step3_training.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            python -c "
+          import json
+          with open('results/step3_training.json') as f:
+              data = json.load(f)
+          if isinstance(data, list) and data:
+              d = data[0]
+              print(json.dumps({
+                  'response_preview': d.get('response', '')[:300],
+                  'tool_outputs': len(d.get('tool_outputs', [])),
+                  'route': d.get('route', 'N/A'),
+              }, indent=2, ensure_ascii=False))
+          " >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      # ── Cleanup ────────────────────────────────────────
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          [ -n "$MOCK_PID" ] && kill $MOCK_PID 2>/dev/null || true
+          [ -n "$OLLAMA_PID" ] && kill $OLLAMA_PID 2>/dev/null || true
+          echo "Servers stopped"
