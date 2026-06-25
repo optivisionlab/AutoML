@@ -152,7 +152,7 @@ async def test_e2e_docker():
         print(f"  [{attempt}/{max_retries}] Polling messages...")
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.get(
-                f"{HAGENT_URL}/api/v1/chat/conversation/{conversation_id}/messages",
+                f"{HAGENT_URL}/api/v1/chat/conversation/{conversation_id}",
                 headers=headers
             )
             if r.status_code == 200:

@@ -31,11 +31,11 @@ jobs:
   docker-e2e:
     name: "🐳 Docker E2E & AutoML Worker"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
-      OLLAMA_MODEL: "qwen2.5:7b"
+      OLLAMA_MODEL: "qwen2.5:14b"
       LLM_DEFAULT_MODEL: "ollama-ci"
 
     steps:
@@ -101,8 +101,65 @@ jobs:
 
       # ── Start Docker System ────────────────────────────
       - name: ⚙️ Prepare environment configuration
+        working-directory: src/backend
         run: |
-          cp src/backend/.env.example src/backend/.env
+          # Create .env file with CI-appropriate values inline
+          cat > .env <<'ENVFILE'
+          SECRET_KEY=ci-secret-key-for-testing
+          ALGORITHM=HS256
+          ACCESS_EXPIRE=60
+          REFRESH_EXPIRE=7
+          HAGENT_HOOKS_TOKEN=ci-hagent-hooks-token
+          SKIP_EMAIL_VERIFICATION=true
+          CUSTOM_API_KEY=sk-ci-test-key
+
+          TOOLKIT_IMAGE=hautoml-toolkit
+          TOOLKIT_CONTAINER_NAME=toolkit-testing
+          TOOLKIT_HOST_PORT=5370
+          TOOLKIT_PORT=8585
+
+          WORKER_IMAGE=workers:latest
+          WORKER_CONTAINER_NAME=hautoml-woker-1-testing
+          WORKER_PORT=5101
+          WORKER_INDEX=1
+
+          MONGO_IMAGE=mongo:latest
+          MONGO_CONTAINER_NAME=mongodb_hautoml_testing
+          MONGO_HOST_PORT=5380
+          MONGO_DATA_DIR=/tmp/mongo-automl-ci
+          MONGODB_DB_NAME=hautoml
+
+          KAFKA_IMAGE=apache/kafka:latest
+          KAFKA_CONTAINER_NAME=kafka-testing
+          KAFKA_HOST_PORT=5383
+          KAFKA_TOPIC=example-topic
+
+          MINIO_IMAGE=minio/minio:latest
+          MINIO_CONTAINER_NAME=minio_hautoml_testing
+          MINIO_HOST_PORT=5381
+          MINIO_ACCESS_KEY=minioadmin
+          MINIO_SECRET_KEY=minioadmin
+
+          HAGENT_BRIDGE_IMAGE=hagent-bridge:latest
+          HAGENT_BRIDGE_CONTAINER_NAME=hagent_bridge_testing
+          HAGENT_BRIDGE_HOST_PORT=5360
+          HAGENT_BRIDGE_PORT=9900
+
+          OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest
+          OPENCLAW_CONTAINER_NAME=openclaw_gateway_testing
+          OPENCLAW_HOST_PORT=5361
+          OPENCLAW_GATEWAY_PORT=18789
+          OPENCLAW_PROXY_PORT=18790
+          OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1
+          OPENCLAW_BUNDLED_PLUGINS_DIR=/app/extensions
+          ENVFILE
+
+          # Inject CI-specific Ollama variables
+          echo "OLLAMA_BASE_URL=${OLLAMA_BASE_URL}" >> .env
+          echo "OLLAMA_MODEL=${OLLAMA_MODEL}" >> .env
+
+          echo "✓ .env file created"
+          cat .env
 
       - name: 🏗️ Build AutoML Worker image
         run: |
@@ -112,24 +169,53 @@ jobs:
         run: |
           docker compose -f src/backend/docker-compose.yaml --profile worker up --build -d
 
+      - name: 🔍 Show container status after startup
+        run: |
+          echo "=== CONTAINER STATUS ==="
+          docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo ""
+          echo "=== BRIDGE CONTAINER LOGS (early) ==="
+          docker logs hagent_bridge_testing 2>&1 | tail -30 || echo "(no logs yet)"
+          echo ""
+          echo "=== TOOLKIT CONTAINER LOGS (early) ==="
+          docker logs toolkit-testing 2>&1 | tail -30 || echo "(no logs yet)"
+
       - name: ⏳ Wait for services to be ready
         run: |
           echo "Waiting for HAutoML and HAgent Bridge to pass health checks..."
-          for i in {1..40}; do
+          for i in {1..60}; do
             AUTOML_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5370/home || echo "000")
             BRIDGE_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5360/api/v1/chat/health || echo "000")
             
-            echo "Attempt $i: AutoML status = $AUTOML_HEALTH, Bridge status = $BRIDGE_HEALTH"
+            echo "Attempt $i/60: AutoML=$AUTOML_HEALTH, Bridge=$BRIDGE_HEALTH"
             if [ "$AUTOML_HEALTH" = "200" ] && [ "$BRIDGE_HEALTH" = "200" ]; then
               echo "✓ All systems are healthy and ready!"
               break
             fi
             
-            if [ $i -eq 40 ]; then
+            # Print bridge container logs every 10 attempts to diagnose failures
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "--- Bridge container logs (attempt $i) ---"
+              docker logs hagent_bridge_testing 2>&1 | tail -20 || true
+              echo "--- Toolkit container logs (attempt $i) ---"
+              docker logs toolkit-testing 2>&1 | tail -20 || true
+              echo "---"
+            fi
+
+            if [ $i -eq 60 ]; then
               echo "✗ Timeout waiting for Docker services to start"
+              echo ""
+              echo "=== ALL CONTAINER STATUS ==="
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              echo ""
+              echo "=== BRIDGE LOGS ==="
+              docker logs hagent_bridge_testing 2>&1 | tail -50 || true
+              echo ""
+              echo "=== TOOLKIT LOGS ==="
+              docker logs toolkit-testing 2>&1 | tail -50 || true
               exit 1
             fi
-            sleep 3
+            sleep 5
           done
 
       # ── Execute E2E Tests ──────────────────────────────
@@ -141,7 +227,7 @@ jobs:
       - name: 📊 Print docker-compose logs on failure
         if: failure()
         run: |
-          echo "=== DOCKER COMPOSE LOGS ==="
+          echo "=== DOCKER COMPOSE FULL LOGS ==="
           docker compose -f src/backend/docker-compose.yaml logs --tail=200
 
       # ── Cleanup ────────────────────────────────────────

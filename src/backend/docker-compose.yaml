@@ -184,6 +184,7 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b}
     depends_on:
       - mongo
+      - toolkit
     logging:
       driver: "json-file"
       options:

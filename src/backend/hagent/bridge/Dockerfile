@@ -5,8 +5,8 @@ LABEL description="HAgent Bridge — Lớp trung gian giữa frontend và HAgent
 
 WORKDIR /app
 
-# Cài đặt thư viện
-COPY requirements.txt .
+# Cài đặt thư viện (dùng requirements.txt của bridge)
+COPY hagent/bridge/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Sao chép mã nguồn hagent
