@@ -26,7 +26,7 @@ services:
     environment:
       WORKER_LIST: "http://hautoml-worker:4000,"
       KAFKA_SERVER: "kafka:9092"
-      MONGODB_CONNECT: "mongodb:27017"
+      MONGODB_CONNECT: "mongodb://root:password123@mongodb:27017/admin?authSource=admin"
       MINIO_ENDPOINT: "minio:9000"
       REDIRECT_URI: "http://hautoml-toolkit:9996"
       FRONTEND_URL: "http://hautoml-frontend:3000"
@@ -68,6 +68,8 @@ services:
     container_name: mongodb
     environment:
       MONGODB_ADVERTISED_HOSTNAME: "mongodb"
+      MONGODB_ROOT_USER: "root"
+      MONGODB_ROOT_PASSWORD: "password123"
     networks:
       - hautoml-network
     ports:
@@ -96,6 +98,8 @@ services:
     ports:
       - "3000:3000"
     command: npm run dev
+    networks:
+      - hautoml-network
     logging: *default-logging
 
 networks:
