@@ -2,6 +2,10 @@
 
 Tài liệu này cung cấp một cái nhìn tổng quan chi tiết về các điểm cuối (endpoints) API có sẵn trong backend của HAutoML.
 
+<div class="flow-heading">Luồng request huấn luyện</div>
+
+--8<-- "flow-training-pipeline.html"
+
 ## URL cơ sở
 Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi backend đang chạy (ví dụ: `http://localhost:8000`).
 
@@ -96,7 +100,24 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
 
 ## 3. Tác vụ AutoML & Huấn luyện
 
-### `POST /train-from-requestbody-json/`
+API chính cho frontend: prefix **`/v2/auto`**.
+
+<div class="flow-heading">Luồng người dùng qua API</div>
+
+--8<-- "flow-user-journey.html"
+
+### `POST /v2/auto/jobs/training`
+- **Mô tả**: Gửi job huấn luyện vào Kafka (bất đồng bộ).
+- **Request Body**: `{ "id_data", "id_user", "config": { choose, method, problem_type, target, list_feature, metric_sort } }`
+- **Response**: `{ "status": "success", "job_id": "..." }`
+
+### `GET /v2/auto/jobs/offset/{id_user}`
+- **Mô tả**: Lấy danh sách job có phân trang.
+
+### `POST /v2/auto/{job_id}/predictions`
+- **Mô tả**: Suy luận batch trên dữ liệu mới.
+
+### `POST /train-from-requestbody-json/` (legacy)
 - **Mô tả**: Bắt đầu một công việc huấn luyện mới dựa trên cấu hình JSON.
 - **Tham số truy vấn (Query Parameters)**: `userId` (string), `id_data` (string).
 - **Request Body**: Một đối tượng JSON (`Item`) chứa cấu hình huấn luyện (features, target, models, metrics, v.v.).

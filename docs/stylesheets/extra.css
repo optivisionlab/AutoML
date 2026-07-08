@@ -1,1 +1,595 @@
-/* This file can be used for custom CSS styling */
+/* ── HAutoML interactive flow pipelines ───────────────── */
+
+:root {
+  --flow-accent: var(--md-primary-fg-color, #4051b5);
+  --flow-surface: var(--md-code-bg-color, #f0f4ff);
+  --flow-card: var(--md-default-bg-color, #fff);
+  --flow-muted: var(--md-default-fg-color--light, #6b7280);
+  --flow-user: #6366f1;
+  --flow-data: #0ea5e9;
+  --flow-api: #8b5cf6;
+  --flow-queue: #f59e0b;
+  --flow-process: #10b981;
+  --flow-storage: #ec4899;
+  --flow-ml: #14b8a6;
+  --flow-done: #22c55e;
+}
+
+[data-md-color-scheme="slate"] {
+  --flow-surface: var(--md-default-bg-color--light, #1e1e2e);
+}
+
+/* Break out of narrow article column */
+.md-typeset .flow-pipeline,
+.md-typeset .flow-grid,
+.md-typeset .flow-lifecycle {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ── Pipeline track ───────────────────────────────────── */
+
+.flow-pipeline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.35rem;
+  row-gap: 1.1rem;
+  margin: 1.5rem 0 2rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 16px;
+  min-height: unset;
+  border: 1px solid color-mix(in srgb, var(--flow-accent) 18%, transparent);
+  background: linear-gradient(
+    135deg,
+    var(--flow-surface) 0%,
+    color-mix(in srgb, var(--flow-accent) 6%, var(--flow-surface)) 100%
+  );
+  overflow: visible;
+  position: relative;
+}
+
+/* Atomic wrap unit: step + trailing connector */
+.flow-unit {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+}
+
+.flow-unit .flow-connector {
+  flex: 0 0 1rem;
+  min-width: 1rem;
+  max-width: 1.25rem;
+  margin: 0 0.2rem;
+}
+
+.flow-pipeline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: radial-gradient(
+    ellipse 80% 50% at 50% 0%,
+    color-mix(in srgb, var(--flow-accent) 12%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.flow-pipeline--wide .flow-step {
+  min-width: 5.25rem;
+}
+
+/* Vertical layout — readable without oversized steps */
+.flow-pipeline--vertical {
+  flex-direction: column;
+  align-items: stretch;
+  min-height: unset;
+  padding: 1.75rem 2rem;
+  overflow-x: visible;
+}
+
+.flow-pipeline--vertical .flow-step {
+  display: grid;
+  grid-template-columns: 5.75rem 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 1.25rem;
+  row-gap: 0.2rem;
+  min-width: unset;
+  width: 100%;
+  padding: 1.1rem 1.35rem;
+  opacity: 0.55;
+}
+
+.flow-pipeline--vertical .flow-icon {
+  grid-row: 1 / -1;
+  grid-column: 1;
+  width: 5.5rem;
+  height: 5.5rem;
+  flex-shrink: 0;
+  border-width: 2px;
+}
+
+.flow-pipeline--vertical .flow-step__label {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 1.15rem;
+  text-align: left;
+  max-width: none;
+}
+
+.flow-pipeline--vertical .flow-step__desc {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 0.95rem;
+  text-align: left;
+  max-width: none;
+}
+
+.flow-pipeline--vertical .flow-logo {
+  width: 3.25rem;
+  height: 3.25rem;
+}
+
+.flow-pipeline--vertical .flow-icon--dual {
+  min-width: 5.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.flow-pipeline--vertical .flow-icon--dual .flow-logo {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.flow-pipeline--vertical .flow-icon svg {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.flow-pipeline--vertical .flow-connector {
+  flex: none;
+  width: 5px;
+  height: 1.75rem;
+  min-width: 5px;
+  max-width: 5px;
+  margin: 0 auto;
+  align-self: center;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--flow-accent) 0,
+    var(--flow-accent) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  background-size: 5px 32px;
+  animation: flowStreamV 1.2s linear infinite;
+}
+
+.flow-pipeline--vertical .flow-connector::after {
+  right: auto;
+  left: 50%;
+  top: auto;
+  bottom: -4px;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--flow-accent);
+  border-left-color: transparent;
+}
+
+.flow-pipeline--compact .flow-step {
+  min-width: 5rem;
+  padding: 0.5rem 0.35rem;
+}
+
+/* ── Step card ────────────────────────────────────────── */
+
+.flow-step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 4.75rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--flow-card);
+  opacity: 0.42;
+  transform: scale(0.97) translateY(1px);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--flow-accent) 6%, transparent);
+  animation: flowGlow 6s ease-in-out infinite;
+}
+
+.flow-step__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.25;
+  color: var(--md-default-fg-color, #1f2937);
+  max-width: 5.5rem;
+}
+
+.flow-step__desc {
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.2;
+  color: var(--flow-muted);
+  max-width: 5.5rem;
+}
+
+/* ── Icon circle ──────────────────────────────────────── */
+
+.flow-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--icon-color, var(--flow-accent)) 14%, var(--flow-card));
+  border: 1px solid color-mix(in srgb, var(--icon-color, var(--flow-accent)) 30%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--icon-color, var(--flow-accent)) 16%, transparent);
+  transition: transform 0.3s ease;
+}
+
+.flow-step[data-step="1"] .flow-icon,
+.flow-step[data-step="1"] { --icon-color: var(--flow-user); }
+.flow-step[data-step="2"] .flow-icon,
+.flow-step[data-step="2"] { --icon-color: var(--flow-data); }
+.flow-step[data-step="3"] .flow-icon,
+.flow-step[data-step="3"] { --icon-color: var(--flow-ml); }
+.flow-step[data-step="4"] .flow-icon,
+.flow-step[data-step="4"] { --icon-color: var(--flow-api); }
+.flow-step[data-step="5"] .flow-icon,
+.flow-step[data-step="5"] { --icon-color: var(--flow-queue); }
+.flow-step[data-step="6"] .flow-icon,
+.flow-step[data-step="6"] { --icon-color: var(--flow-process); }
+.flow-step[data-step="7"] .flow-icon,
+.flow-step[data-step="7"] { --icon-color: var(--flow-storage); }
+.flow-step[data-step="8"] .flow-icon,
+.flow-step[data-step="8"] { --icon-color: var(--flow-done); }
+
+.flow-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  stroke: var(--icon-color, var(--flow-accent));
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Official brand logos ─────────────────────────────── */
+
+.flow-icon--brand {
+  background: var(--flow-card);
+  padding: 0.2rem;
+}
+
+.flow-logo {
+  display: block;
+  width: 1.35rem;
+  height: 1.35rem;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.flow-icon--dual {
+  flex-direction: row;
+  gap: 0.2rem;
+  width: auto;
+  min-width: 2.4rem;
+  padding: 0.2rem 0.3rem;
+}
+
+.flow-icon--dual .flow-logo {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.flow-logo--nextdotjs    { background-image: url(../assets/logos/nextdotjs.svg); }
+.flow-logo--fastapi     { background-image: url(../assets/logos/fastapi.svg); }
+.flow-logo--mongodb     { background-image: url(../assets/logos/mongodb.svg); }
+.flow-logo--apachekafka { background-image: url(../assets/logos/apachekafka.svg); }
+.flow-logo--minio       { background-image: url(../assets/logos/minio.svg); }
+.flow-logo--docker      { background-image: url(../assets/logos/docker.svg); }
+.flow-logo--git         { background-image: url(../assets/logos/git.svg); }
+.flow-logo--python      { background-image: url(../assets/logos/python.svg); }
+.flow-logo--scikitlearn { background-image: url(../assets/logos/scikitlearn.svg); }
+.flow-logo--pandas      { background-image: url(../assets/logos/pandas.svg); }
+.flow-logo--numpy       { background-image: url(../assets/logos/numpy.svg); }
+.flow-logo--google      { background-image: url(../assets/logos/google.svg); }
+
+[data-md-color-scheme="slate"] .flow-logo--nextdotjs,
+[data-md-color-scheme="slate"] .flow-logo--apachekafka,
+[data-md-color-scheme="slate"] .flow-logo--git {
+  filter: invert(1) brightness(1.1);
+}
+
+.flow-step[data-brand="nextdotjs"]    { --icon-color: #000000; }
+.flow-step[data-brand="fastapi"]     { --icon-color: #009688; }
+.flow-step[data-brand="mongodb"]      { --icon-color: #47A248; }
+.flow-step[data-brand="apachekafka"]  { --icon-color: #231F20; }
+.flow-step[data-brand="minio"]        { --icon-color: #C72E49; }
+.flow-step[data-brand="docker"]       { --icon-color: #2496ED; }
+.flow-step[data-brand="git"]          { --icon-color: #F05032; }
+.flow-step[data-brand="python"]       { --icon-color: #3776AB; }
+.flow-step[data-brand="scikitlearn"]  { --icon-color: #F7931E; }
+.flow-step[data-brand="pandas"]       { --icon-color: #150458; }
+.flow-step[data-brand="numpy"]        { --icon-color: #013243; }
+.flow-step[data-brand="google"]       { --icon-color: #4285F4; }
+
+/* ── Connector ────────────────────────────────────────── */
+
+.flow-connector {
+  position: relative;
+  z-index: 0;
+  align-self: center;
+  height: 3px;
+  margin: 0 0.15rem;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--flow-accent) 0,
+    var(--flow-accent) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  background-size: 32px 4px;
+  opacity: 0.28;
+  animation: flowStream 1.4s linear infinite;
+}
+
+.flow-connector::after {
+  content: "";
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 4px solid transparent;
+  border-left-color: var(--flow-accent);
+  opacity: 0.5;
+}
+
+/* Staggered glow per step */
+.flow-step[data-step="1"] { animation-delay: 0s; }
+.flow-step[data-step="2"] { animation-delay: 0.75s; }
+.flow-step[data-step="3"] { animation-delay: 1.5s; }
+.flow-step[data-step="4"] { animation-delay: 2.25s; }
+.flow-step[data-step="5"] { animation-delay: 3s; }
+.flow-step[data-step="6"] { animation-delay: 3.75s; }
+.flow-step[data-step="7"] { animation-delay: 4.5s; }
+.flow-step[data-step="8"] { animation-delay: 5.25s; }
+
+.flow-unit:nth-child(1) .flow-connector { animation-delay: 0.35s; }
+.flow-unit:nth-child(2) .flow-connector { animation-delay: 1.1s; }
+.flow-unit:nth-child(3) .flow-connector { animation-delay: 1.85s; }
+.flow-unit:nth-child(4) .flow-connector { animation-delay: 2.6s; }
+.flow-unit:nth-child(5) .flow-connector { animation-delay: 3.35s; }
+.flow-unit:nth-child(6) .flow-connector { animation-delay: 4.1s; }
+.flow-unit:nth-child(7) .flow-connector { animation-delay: 4.85s; }
+
+.flow-pipeline--slow .flow-step { animation-duration: 7.5s; }
+.flow-pipeline--slow .flow-connector { animation-duration: 1.6s; }
+
+@keyframes flowGlow {
+  0%, 100% {
+    opacity: 0.38;
+    transform: scale(0.97) translateY(1px);
+    border-color: transparent;
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--flow-accent) 5%, transparent);
+  }
+  7%, 16% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    border-color: var(--icon-color, var(--flow-accent));
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--icon-color, var(--flow-accent)) 10%, transparent),
+      0 4px 12px color-mix(in srgb, var(--icon-color, var(--flow-accent)) 18%, transparent);
+  }
+}
+
+.flow-step .flow-icon {
+  animation: flowIconLift 6s ease-in-out infinite;
+}
+
+.flow-step[data-step="1"] .flow-icon { animation-delay: 0s; }
+.flow-step[data-step="2"] .flow-icon { animation-delay: 0.75s; }
+.flow-step[data-step="3"] .flow-icon { animation-delay: 1.5s; }
+.flow-step[data-step="4"] .flow-icon { animation-delay: 2.25s; }
+.flow-step[data-step="5"] .flow-icon { animation-delay: 3s; }
+.flow-step[data-step="6"] .flow-icon { animation-delay: 3.75s; }
+.flow-step[data-step="7"] .flow-icon { animation-delay: 4.5s; }
+.flow-step[data-step="8"] .flow-icon { animation-delay: 5.25s; }
+
+@keyframes flowIconLift {
+  0%, 100% { transform: scale(1); }
+  7%, 16% { transform: scale(1.04); }
+}
+
+@keyframes flowStream {
+  0%   { background-position: 0 0; opacity: 0.22; }
+  50%  { opacity: 0.75; }
+  100% { background-position: 32px 0; opacity: 0.22; }
+}
+
+/* ── Component grid (architecture) ────────────────────── */
+
+.flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.flow-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.85rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--card-color, var(--flow-accent)) 22%, transparent);
+  background: var(--flow-card);
+  text-align: center;
+  animation: flowCardPulse 8s ease-in-out infinite;
+}
+
+.flow-card:nth-child(1) { --card-color: var(--flow-user); animation-delay: 0s; }
+.flow-card:nth-child(2) { --card-color: var(--flow-api); animation-delay: 1s; }
+.flow-card:nth-child(3) { --card-color: var(--flow-storage); animation-delay: 2s; }
+.flow-card:nth-child(4) { --card-color: var(--flow-queue); animation-delay: 3s; }
+.flow-card:nth-child(5) { --card-color: var(--flow-process); animation-delay: 4s; }
+.flow-card:nth-child(6) { --card-color: var(--flow-data); animation-delay: 5s; }
+
+.flow-card .flow-icon {
+  --icon-color: var(--card-color, var(--flow-accent));
+}
+
+.flow-card .flow-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.flow-card .flow-logo {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.flow-card__title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color, #1f2937);
+}
+
+.flow-card__sub {
+  font-size: 0.65rem;
+  color: var(--flow-muted);
+  line-height: 1.3;
+}
+
+@keyframes flowCardPulse {
+  0%, 100% { transform: translateY(0); box-shadow: none; }
+  50% { transform: translateY(-3px); box-shadow: 0 8px 20px color-mix(in srgb, var(--card-color) 20%, transparent); }
+}
+
+/* ── Vertical lifecycle ───────────────────────────────── */
+
+.flow-lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1.5rem 0 2rem;
+  padding: 1rem 1.25rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--flow-accent) 18%, transparent);
+  background: var(--flow-surface);
+  max-width: 100%;
+}
+
+.flow-lifecycle .flow-step {
+  flex-direction: row;
+  width: 100%;
+  min-width: unset;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  animation-duration: 5s;
+  opacity: 0.55;
+}
+
+.flow-lifecycle .flow-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+}
+
+.flow-lifecycle .flow-logo {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.flow-lifecycle .flow-icon--dual {
+  min-width: 2.4rem;
+  padding: 0.2rem 0.3rem;
+}
+
+.flow-lifecycle .flow-icon--dual .flow-logo {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.flow-lifecycle .flow-step__label {
+  font-size: 0.75rem;
+  text-align: left;
+  max-width: none;
+}
+
+.flow-lifecycle .flow-step__desc {
+  font-size: 0.65rem;
+  text-align: left;
+  max-width: none;
+}
+
+.flow-lifecycle .flow-connector {
+  flex: none;
+  width: 5px;
+  height: 1.75rem;
+  min-width: 5px;
+  max-width: 5px;
+  margin: 0 auto;
+  align-self: center;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--flow-accent) 0,
+    var(--flow-accent) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  background-size: 5px 32px;
+  animation: flowStreamV 1.2s linear infinite;
+}
+
+.flow-lifecycle .flow-connector::after {
+  right: auto;
+  left: 50%;
+  top: auto;
+  bottom: -4px;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--flow-accent);
+}
+
+@keyframes flowStreamV {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 24px; }
+}
+
+/* ── Section heading for flows ────────────────────────── */
+
+.flow-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--flow-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.flow-heading::before {
+  content: "";
+  width: 1.25rem;
+  height: 2px;
+  background: var(--flow-accent);
+  border-radius: 2px;
+}

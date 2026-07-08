@@ -42,7 +42,8 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ['docs/includes']
   - pymdownx.arithmatex:
       generic: true
   - admonition
@@ -54,7 +55,9 @@ markdown_extensions:
 nav:
   - 'Trang chủ': 'index.md'
   - 'Bắt đầu': 'getting_started.md'
-  - 'Kiến trúc': 'architecture.md'
+  - 'Kiến trúc':
+    - 'Tổng quan': 'architecture.md'
+    - 'Quy trình HAutoML': 'hautoml-workflow.md'
   - 'Phương pháp khoa học': 'scientific_approach.md'
   - 'Tài liệu API':
     - 'Backend API': 'backend_api.md'

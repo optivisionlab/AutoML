@@ -47,36 +47,15 @@ Xem chi tiết tại [Phương pháp khoa học](scientific_approach.md).
 
 HAutoML sử dụng kiến trúc **microservices** hiện đại:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend (Next.js)                       │
-│                  Giao diện người dùng web                    │
-└────────────────────────────┬────────────────────────────────┘
-                             │ HTTP/REST
-┌────────────────────────────▼────────────────────────────────┐
-│                  Backend (FastAPI)                          │
-│              API, Business Logic, Orchestration              │
-└─┬────────────┬──────────────┬─────────────┬────────────────┘
-  │            │              │             │
-  │            │              │             │
-┌─▼─┐    ┌────▼────┐    ┌────▼─────┐  ┌──▼───────┐
-│   │    │ MongoDB  │    │ Apache    │  │  Minio   │
-│   │    │          │    │ Kafka     │  │ (Storage)│
-│   │    │(Database)│    │ (Queue)   │  │          │
-│   │    └──────────┘    └─────┬────┘  └──────────┘
-│   │                          │
-│   └──────────────────────────┼───────────────────┐
-│                              │                   │
-└──────────────────────────────┼───────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │      Workers       │
-                    │ (Process Training  │
-                    │   Jobs from Kafka) │
-                    └───────────────────┘
-```
+<div class="flow-heading">Nền tảng</div>
 
-Xem chi tiết tại [Kiến trúc hệ thống](architecture.md).
+--8<-- "flow-platform.html"
+
+<div class="flow-heading">Quy trình AutoML</div>
+
+--8<-- "flow-automl-stages.html"
+
+Xem chi tiết tại [Kiến trúc hệ thống](architecture.md) và [Quy trình HAutoML](hautoml-workflow.md).
 
 ## 🚀 Bắt đầu nhanh
 

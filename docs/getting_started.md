@@ -1,6 +1,10 @@
 ## Bắt đầu
 ---
 
+<div class="flow-heading">Quy trình triển khai</div>
+
+--8<-- "flow-deploy.html"
+
 ### Cách đơn giản nhất: Sử dụng Docker
 
 Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.

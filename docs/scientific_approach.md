@@ -10,9 +10,9 @@ HAutoML là một nền tảng **Automated Machine Learning (AutoML)** được 
 
 HAutoML thực hiện tự động hóa các giai đoạn chính của pipeline học máy:
 
-```
-Dữ liệu thô → Tiền xử lý → Lựa chọn mô hình & Tuning → Mô hình tối ưu → Suy luận (Inference)
-```
+<div class="flow-heading">Pipeline AutoML</div>
+
+--8<-- "flow-automl-stages.html"
 
 #### Giai đoạn 1: Tiền xử lý dữ liệu (Data Preprocessing)
 
@@ -120,9 +120,9 @@ Sau khi tìm kiếm, hệ thống:
 
 Hệ thống sử dụng Apache Kafka để quản lý hàng đợi công việc huấn luyện:
 
-```
-Frontend → Backend → Kafka Queue → Workers → MongoDB (kết quả)
-```
+<div class="flow-heading">Luồng xử lý bất đồng bộ</div>
+
+--8<-- "flow-training-pipeline.html"
 
 **Ưu điểm:**
 - **Scalability**: Có thể thêm workers để xử lý song song
@@ -132,11 +132,9 @@ Frontend → Backend → Kafka Queue → Workers → MongoDB (kết quả)
 
 ### 2.2 Các trạng thái công việc (Job States)
 
-```
-Submitted → Queued → Processing → Completed
-                          ↓
-                       Failed (retry)
-```
+<div class="flow-heading">Vòng đời job</div>
+
+--8<-- "flow-job-lifecycle.html"
 
 **Trạng thái:**
 - **Submitted**: Công việc được submittted từ user
