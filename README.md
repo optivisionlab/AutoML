@@ -104,6 +104,11 @@ docker-compose up -d --build
 docker-compose down
 ```
 
+> **Để xác minh tài khoản**
+```bash
+docker exec mongodb mongosh --quiet AutoML --eval 'db.tbl_User.updateOne({username:"TÊN_CỦA_BẠN"},{$set:{is_verified:true}})'
+```
+
 Chi tiết đầy đủ xem tại [Hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/docs/getting_started/) trong tài liệu.
 
 ## 🏗️ Kiến trúc hệ thống

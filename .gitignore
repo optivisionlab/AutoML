@@ -210,3 +210,4 @@ next-env.d.ts
 .gradio
 *.swp
 src/frontend/components.json
+Data

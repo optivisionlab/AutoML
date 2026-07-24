@@ -12,6 +12,10 @@ services:
       - hautoml-network
       - kafka-network
     command: python -m cluster.worker
+    depends_on: # chờ hạ tầng sẵn sàng rồi mới chạy (tránh crash khi reboot)
+      mongo: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      minio: { condition: service_healthy }
     logging: &default-logging
       driver: "json-file"
       options:
@@ -21,6 +25,7 @@ services:
   hautoml_toolkit:
     image: optivisionlab/hautoml:v2.2
     container_name: hautoml-toolkit
+    restart: unless-stopped
     env_file:
       - ./src/backend/.env
     environment:
@@ -36,11 +41,16 @@ services:
     networks:
       - hautoml-network
       - kafka-network
+    depends_on: # FIX: chờ Kafka/Mongo/MinIO "healthy" rồi mới chạy -> hết crash KafkaConnectionError khi reboot
+      mongo: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      minio: { condition: service_healthy }
     logging: *default-logging
 
   kafka:
     image: apache/kafka:latest
     container_name: kafka
+    restart: unless-stopped
     ports:
       - "9092:9092"
       - "9093:9093"
@@ -62,16 +72,33 @@ services:
       - kafka_data:/var/lib/kafka/data
     networks:
       - kafka-network
+    healthcheck: # báo "healthy" khi broker đã sẵn sàng nhận kết nối
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging: *default-logging
 
   mongo:
     image: bitnami/mongodb:latest
     container_name: mongodb
+    restart: unless-stopped
     environment:
       MONGODB_ADVERTISED_HOSTNAME: "mongodb"
+      ALLOW_EMPTY_PASSWORD: "yes" # FIX: cho phép mongo khởi động không mật khẩu (backend kết nối không auth)
     networks:
       - hautoml-network
     ports:
       - "27017:27017"
+    volumes:
+      - mongo_data:/bitnami/mongodb # FIX: giữ dữ liệu mongo qua các lần down/up (hết mất tài khoản)
+    healthcheck: # báo "healthy" khi MongoDB trả lời ping
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     logging: *default-logging
 
   minio:
@@ -87,15 +114,28 @@ services:
     command: server /data --console-address ":9001"
     networks:
       - hautoml-network
+    volumes:
+      - minio_data:/data # FIX: giữ dataset + model qua các lần down/up (hết mất model)
+    healthcheck: # báo "healthy" khi MinIO sẵn sàng
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
 
   hautoml_frontend:
     image: optivisionlab/hautoml-frontend:v2.2
     container_name: hautoml-frontend
+    restart: unless-stopped
     env_file:
       - ./src/frontend/.env
-    ports:
-      - "3000:3000"
+    # FIX: host network để NextAuth (server-side trong container) gọi backend qua
+    # localhost:9996 giống trình duyệt -> hết lỗi ECONNREFUSED khi đăng nhập.
+    network_mode: "host"
     command: npm run dev
+    depends_on:
+      - hautoml_toolkit
     logging: *default-logging
 
 networks:
@@ -106,3 +146,5 @@ networks:
 
 volumes:
   kafka_data:
+  mongo_data:
+  minio_data:
