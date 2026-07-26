@@ -1,14 +1,22 @@
 "use client";
 
-import { useApi } from "@/hooks/useApi";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
-import { CheckCircle2, XCircle, Loader2, Mail, Send, ArrowRight } from "lucide-react";
+import { CheckCircle2, XCircle, Mail, Send, ArrowRight } from "lucide-react";
+import {
+  useResendVerificationEmailMutation,
+  useVerifyEmailTokenMutation,
+} from "@/redux/api/authApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import AppLoading from "@/components/common/AppLoading";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function VerifyEmailPage() {
   const params = useSearchParams();
   const router = useRouter();
-  const { post } = useApi();
+  const [verifyEmailToken] = useVerifyEmailTokenMutation();
+  const [resendVerificationEmail, { isLoading: isResending }] =
+    useResendVerificationEmailMutation();
 
   const email = params?.get("email");
   const token = params?.get("token");
@@ -16,8 +24,6 @@ export default function VerifyEmailPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   
-  // State cho chức năng gửi lại email
-  const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState("");
 
   const isVerifying = useRef(false);
@@ -31,7 +37,7 @@ export default function VerifyEmailPage() {
       setStatus("loading");
 
       try {
-        await post(`/auth/verifications`, { token });
+        await verifyEmailToken({ token }).unwrap();
         setStatus("success");
 
         setTimeout(() => {
@@ -40,15 +46,13 @@ export default function VerifyEmailPage() {
       } catch (err: any) {
         setStatus("error");
         setErrorMessage(
-          err?.response?.data?.detail || 
-          err?.response?.data?.message || 
-          "Liên kết không hợp lệ hoặc đã hết hạn."
+          getApiErrorMessage(err, "Liên kết không hợp lệ hoặc đã hết hạn."),
         );
       }
     };
 
     verifyToken();
-  }, [token, post, router]);
+  }, [token, verifyEmailToken, router]);
 
   // Gửi lại email
   const handleResendEmail = async () => {
@@ -57,16 +61,12 @@ export default function VerifyEmailPage() {
       return;
     }
 
-    setIsResending(true);
     setResendMessage("");
     try {
-      const response = await post("/auth/token/verifications", { email });
-      setResendMessage(response.data?.detail || "Đã gửi lại link xác nhận thành công!");
+      const response = await resendVerificationEmail({ email }).unwrap();
+      setResendMessage(response.detail || "Đã gửi lại link xác nhận thành công!");
     } catch (err: any) {
-      const errorDetail = err?.response?.data?.detail || "Có lỗi xảy ra khi gửi lại email.";
-      alert(errorDetail);
-    } finally {
-      setIsResending(false);
+      alert(getApiErrorMessage(err, "Có lỗi xảy ra khi gửi lại email."));
     }
   };
 
@@ -75,15 +75,10 @@ export default function VerifyEmailPage() {
   // Đang loading (gọi API)
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0f0f0f] px-4 transition-colors duration-300">
-        <div className="bg-white dark:bg-[#1a1a1a] border border-transparent dark:border-gray-800 shadow-xl rounded-3xl p-8 max-w-md w-full text-center">
-          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-6" />
-          <h1 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">Đang xác minh...</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm animate-pulse">
-            Hệ thống đang kiểm tra mã xác nhận của bạn.
-          </p>
-        </div>
-      </div>
+      <AppLoading
+        variant="page"
+        label="Đang xác minh email..."
+      />
     );
   }
 
@@ -102,7 +97,7 @@ export default function VerifyEmailPage() {
             Tài khoản của bạn đã được kích hoạt hoàn toàn.
           </p>
           <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Spinner className="h-4 w-4" />
             Đang chuyển hướng đến trang đăng nhập...
           </div>
         </div>
@@ -174,7 +169,7 @@ export default function VerifyEmailPage() {
             className="flex items-center justify-center gap-2 w-full bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 py-3.5 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isResending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Spinner className="h-5 w-5" />
             ) : (
               <Send className="w-4 h-4" />
             )}

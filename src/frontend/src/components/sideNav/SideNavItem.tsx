@@ -1,69 +1,46 @@
-import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { NavItems } from "@/config";
+import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useSession } from "next-auth/react";
 
-export const SideNavItem: React.FC<{
+export const SideNavItem = ({
+  label,
+  icon,
+  path,
+  active,
+  collapsed = false,
+  onNavigate,
+}: {
   label: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon: any;
+  icon: ReactNode;
   path: string;
   active: boolean;
-  isSidebarExpanded: boolean;
-}> = ({ label, icon, path, active, isSidebarExpanded }) => {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) => {
   return (
-    <>
-      {isSidebarExpanded ? (
-        <Link
-          href={path}
-          className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
-            active
-              ? "font-base text-sm bg-neutral-200 shadow-sm text-neutral-700 dark:bg-neutral-800 dark:text-white"
-              : "hover:bg-neutral-200 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-          }`}
-          suppressHydrationWarning
-        >
-          <div className="relative font-base text-sm py-1.5 px-2 flex flex-row items-center space-x-2 rounded-md duration-100">
-            {icon}
-            <span>{label}</span>
-          </div>
-        </Link>
-      ) : (
-        <TooltipProvider delayDuration={70}>
-          <Tooltip>
-            <TooltipTrigger>
-              <Link
-                href={path}
-                className={`h-full relative flex items-center whitespace-nowrap rounded-md ${
-                  active
-                    ? "font-base text-sm bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-white"
-                    : "hover:bg-neutral-200 hover:text-neutral-700 text-neutral-500 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                }`}
-                suppressHydrationWarning={true}
-              >
-                <div className="relative font-base text-sm p-2 flex flex-row items-center space-x-2 rounded-md duration-100">
-                  {icon}
-                </div>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent
-              side="left"
-              className="px-3 py-1.5 text-xs"
-              sideOffset={10}
-            >
-              <span>{label}</span>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+    <Link
+      href={path}
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      className={cn(
+        "group flex items-center rounded-2xl text-sm font-bold transition",
+        collapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3",
+        active
+          ? "bg-automl-blue-soft text-automl-blue shadow-sm"
+          : "text-slate-500 hover:bg-slate-100 hover:text-automl-ink dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white",
       )}
-    </>
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition",
+          active
+            ? "border-automl-blue/20 bg-white text-automl-blue"
+            : "border-slate-200 bg-white text-slate-400 group-hover:text-automl-blue dark:border-white/10 dark:bg-white/10",
+        )}
+      >
+        {icon}
+      </span>
+      {!collapsed && <span className="truncate">{label}</span>}
+    </Link>
   );
 };

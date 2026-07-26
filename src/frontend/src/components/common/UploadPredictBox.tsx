@@ -1,9 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Spinner } from "@/components/ui/spinner";
-import { useApi } from "@/hooks/useApi";
+import AppLoading from "@/components/common/AppLoading";
 import { useSession } from "next-auth/react";
+import {
+  useCancelPredictionMutation,
+  useRunPredictionMutation,
+} from "@/redux/api/inferenceApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import { useTranslations } from "next-intl";
 
 type Props = {
   jobId: string;
@@ -11,7 +16,9 @@ type Props = {
 };
 
 const UploadPredictBox = ({ jobId, disabled }: Props) => {
-  const { post, remove } = useApi();
+  const t = useTranslations("UploadPredict");
+  const [runPrediction] = useRunPredictionMutation();
+  const [cancelPrediction] = useCancelPredictionMutation();
   const { data: session } = useSession();
 
   const [loading, setLoading] = useState(false);
@@ -23,31 +30,11 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
       setLoading(true);
       setIsError(false);
 
-      const formData = new FormData();
-      formData.append("file_data", file);
-
-      const response = await post(`/v2/auto/${jobId}/predictions`, formData, {
-        isBlob: true,
-      });
-
-      const blob = response.data;
+      const { blob, fileName } = await runPrediction({ jobId, file }).unwrap();
 
       if (!(blob instanceof Blob)) {
-        alert("API không trả file");
+        alert(t("apiNoFile"));
         return;
-      }
-
-      const contentDisposition = response.headers["content-disposition"];
-      let fileName = "result.csv";
-
-      if (contentDisposition) {
-        const match =
-          contentDisposition.match(/filename\*=UTF-8''(.+)/) ||
-          contentDisposition.match(/filename="?([^"]+)"?/);
-
-        if (match?.[1]) {
-          fileName = decodeURIComponent(match[1]);
-        }
       }
 
       const url = window.URL.createObjectURL(blob);
@@ -64,7 +51,7 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
       setLoading(false);
     } catch (err: any) {
       setIsError(true);
-      const blob = err.response?.data;
+      const blob = err?.data;
 
       if (blob instanceof Blob) {
         const text = await blob.text();
@@ -77,7 +64,9 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
           // không phải JSON thì giữ nguyên text
         }
 
-        alert("Lỗi: " + message);
+        alert(t("errorWithMessage", { message }));
+      } else {
+        alert(t("errorWithMessage", { message: getApiErrorMessage(err, t("runFailed")) }));
       }
     } finally {
       setLoading(false);
@@ -93,7 +82,7 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
     );
 
     if (!isValid) {
-      alert("Chỉ chấp nhận file .csv, .xls, .xlsx");
+      alert(t("invalidFile"));
       return;
     }
 
@@ -163,40 +152,34 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
             e.stopPropagation();
 
             const confirmLeave = confirm(
-              "Tiến trình đang chạy. Nếu thoát sẽ bị hủy. Bạn có chắc không?",
+              t("cancelConfirm"),
             );
 
             if (!confirmLeave) return;
 
             // gọi API cancel
-            await remove(`/v2/auto/${jobId}/predictions`);
+            await cancelPrediction(jobId).unwrap();
 
             // cho reload hoặc quay lại
             window.location.reload();
           }}
         >
-          <div
-            className="bg-white px-6 py-4 rounded-lg shadow-lg flex flex-col items-center gap-2"
-            onClick={(e) => e.stopPropagation()} // chặn click vào box
-          >
-            <Spinner />
-            <p className="text-sm text-gray-600">
-              Đang xử lý, vui lòng không rời trang...
-            </p>
+          <div onClick={(e) => e.stopPropagation()}>
+            <AppLoading label={t("processing")} />
           </div>
         </div>
       ) : (
         <>
           <p className="text-lg font-semibold">
-            Chạy thử mô hình của bạn ngay bây giờ
+            {t("title")}
           </p>
 
           <p className="text-sm text-gray-500 mt-2">
-            Kéo thả hoặc nhấp để chọn tệp
+            {t("dropHint")}
           </p>
 
           <p className="text-xs text-gray-400 mt-4">
-            Chấp nhận tệp .csv, .xls, .xlsx
+            {t("acceptedFiles")}
           </p>
         </>
       )}

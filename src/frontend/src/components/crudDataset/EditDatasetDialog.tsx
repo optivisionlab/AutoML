@@ -18,7 +18,10 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useApi } from "@/hooks/useApi";
+import { useUpdateDatasetMutation } from "@/redux/api/datasetApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import { PencilLine } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 type Props = {
   open: boolean;
@@ -31,7 +34,9 @@ type Props = {
 };
 
 const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
-  const { put } = useApi();
+  const t = useTranslations("DatasetDialogs.edit");
+  const common = useTranslations("Common");
+  const [updateDataset, { isLoading }] = useUpdateDatasetMutation();
 
   const [dataName, setDataName] = useState("");
   const [dataType, setDataType] = useState("");
@@ -51,18 +56,16 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
   }, [dataset]);
 
   const handleUpdate = async () => {
-    const formData = new FormData();
-    formData.append("data_name", dataName);
-    formData.append("data_type", dataType);
-    if (file) {
-      formData.append("file_data", file);
-    }
-
     try {
-      await put(`/update-dataset/${dataset._id}`, formData);
+      await updateDataset({
+        datasetId: dataset._id,
+        dataName,
+        dataType,
+        file,
+      }).unwrap();
 
       toast({
-        title: "Cập nhật thành công",
+        title: t("updateSuccess"),
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
@@ -70,8 +73,8 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
       onOpenChange(false);
     } catch (error) {
       toast({
-        title: "Cập nhật thất bại",
-        description: error instanceof Error ? error.message : "Có lỗi xảy ra",
+        title: t("updateFailed"),
+        description: getApiErrorMessage(error, t("errorDescription")),
         variant: "destructive",
         duration: 3000,
       });
@@ -82,58 +85,63 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
     <>
       {/* Dialog chỉnh sửa dữ liệu */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="dark:bg-[#171717]">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-center w-full">
-              Chỉnh sửa dữ liệu
+        <DialogContent className="automl-dialog-content max-w-md">
+          <DialogHeader className="automl-dialog-header">
+            <div className="automl-dialog-kicker mb-3">
+              <PencilLine className="h-5 w-5" />
+            </div>
+            <DialogTitle className="automl-dialog-title">
+              {t("title")}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Tên dữ liệu</Label>
+          <div className="automl-dialog-body automl-dialog-fields">
+            <div className="automl-dialog-field">
+              <Label>{t("datasetName")}</Label>
               <Input
+                className="automl-dialog-input"
                 value={dataName}
                 onChange={(e) => setDataName(e.target.value)}
               />
             </div>
-            <div>
-              <Label>Loại dữ liệu</Label>
+            <div className="automl-dialog-field">
+              <Label>{t("dataType")}</Label>
               <Select value={dataType} onValueChange={setDataType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn kiểu" />
+                <SelectTrigger className="automl-dialog-input">
+                  <SelectValue placeholder={t("chooseType")} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="table">Table</SelectItem>
-                  <SelectItem value="image">Image</SelectItem>
+                <SelectContent className="border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]">
+                  <SelectItem value="table">{t("types.table")}</SelectItem>
+                  <SelectItem value="image">{t("types.image")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Chọn file dữ liệu (.csv)</Label>
+            <div className="automl-dialog-field">
+              <Label>{t("chooseFile")}</Label>
               <Input
+                className="automl-dialog-input py-2"
                 type="file"
                 accept=".csv"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
               />
               {!file && (
-                <p className="text-sm text-muted-foreground">
-                  Nếu không chọn file mới, dữ liệu hiện tại sẽ được giữ nguyên.
+                <p className="automl-dialog-helper">
+                  {t("keepCurrentFile")}
                 </p>
               )}
             </div>
-            <div className="flex justify-center mt-4 space-x-4">
+            <div className="flex justify-end gap-3 pt-2">
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="w-20 px-4 py-2 rounded-md"
+                className="automl-dialog-button-muted px-4"
               >
-                Hủy
+                {common("cancel")}
               </Button>
               <Button
                 onClick={() => setConfirmOpen(true)}
-                className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+                className="automl-action-primary px-4"
               >
-                Lưu
+                {common("save")}
               </Button>
             </div>
           </div>
@@ -142,28 +150,29 @@ const EditDatasetDialog = ({ open, onOpenChange, dataset }: Props) => {
 
       {/* Dialog confirm trước khi cập nhật */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-center w-full">
-              Xác nhận chỉnh sửa
+        <DialogContent className="automl-dialog-content max-w-md">
+          <DialogHeader className="automl-dialog-header">
+            <DialogTitle className="automl-dialog-title">
+              {t("confirmTitle")}
             </DialogTitle>
           </DialogHeader>
-          <p className="text-center mb-6">
-            Bạn có chắc chắn muốn sửa bộ dữ liệu này?
+          <p className="automl-dialog-confirm-text">
+            {t("confirmDescription")}
           </p>
-          <div className="flex justify-center space-x-4">
+          <div className="automl-dialog-footer">
             <Button
               variant="outline"
               onClick={() => setConfirmOpen(false)}
-              className="w-20 px-4 py-2 rounded-md"
+              className="automl-dialog-button-muted px-4"
             >
-              Hủy
+              {common("cancel")}
             </Button>
             <Button
+              disabled={isLoading}
               onClick={handleUpdate}
-              className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+              className="automl-action-primary px-4"
             >
-              Đồng ý
+              {isLoading ? "..." : common("confirm")}
             </Button>
           </div>
         </DialogContent>

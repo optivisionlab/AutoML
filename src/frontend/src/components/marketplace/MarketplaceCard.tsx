@@ -1,106 +1,110 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import toSlug from "@/utils/toSlug";
-import React from "react";
-import Image from "next/image";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  Clock3,
+  Database,
+  Gauge,
+  ShieldCheck,
+} from "lucide-react";
+import {
+  MarketplaceModel,
+} from "@/data/marketplace";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
-export interface MarketplaceModel {
-  id: number;
-  name: string;
-  img: string;
-  description: string;
-  category: string;
-  price: string;
-  provider: string;
-}
+const statusClassName: Record<MarketplaceModel["status"], string> = {
+  ready: "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300",
+  beta: "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300",
+  internal: "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/70",
+};
 
-interface Props {
-  model: MarketplaceModel;
-  onViewDetail?: (model: MarketplaceModel) => void;
-}
-
-export default function MarketplaceCard({ model, onViewDetail }: Props) {
-  const router = useRouter();
+export default function MarketplaceCard({ model }: { model: MarketplaceModel }) {
+  const t = useTranslations("Marketplace");
 
   return (
-    <div
-      onClick={() => {
-        router.push(`/market-place/${toSlug(model.name)}`);
-        console.log(model.name);
-      }}
-      className="relative group flex bg-white border rounded-lg p-5 hover:shadow-md transition cursor-pointer"
+    <Link
+      href={`/market-place/${model.slug}`}
+      className="group flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-automl-blue/40 hover:shadow-xl hover:shadow-slate-900/10 dark:border-white/10 dark:bg-white/10"
     >
-      {/* Icon */}
-      <div className="w-12 h-12 border rounded-sm text-xs text-gray-400">
-        <Image
-          src={model.img}
-          width={10}
-          height={10}
-          className="w-10 h-10"
-          alt={model.name}
-        />
+      <div className="flex items-start gap-4">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-automl-blue-soft text-base font-black text-automl-blue ring-1 ring-automl-blue/10">
+          {model.shortName}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-black",
+                statusClassName[model.status],
+              )}
+            >
+              {t(`status.${model.status}`)}
+            </span>
+          </div>
+          <h3 className="mt-3 line-clamp-2 text-xl font-black text-automl-ink dark:text-white">
+            {model.name}
+          </h3>
+          <p className="mt-1 text-xs font-bold text-automl-muted dark:text-white/55">
+            {model.owner}
+          </p>
+        </div>
+        <ArrowUpRight className="h-5 w-5 text-slate-300 transition group-hover:text-automl-blue" />
       </div>
 
-      {/* Content */}
-      <div className="ml-4 flex flex-col flex-1">
-        <div className="text-xs text-gray-500 mb-1">{model.provider}</div>
+      <p className="mt-5 line-clamp-3 text-sm leading-6 text-automl-muted-strong dark:text-white/60">
+        {model.shortDescription}
+      </p>
 
-        <h3 className="text-lg font-semibold text-gray-900">{model.name}</h3>
-
-        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-          {model.description}
-        </p>
-
-        <div className="flex justify-between items-center mt-3 text-xs">
-          <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">
-            {model.category.toUpperCase()}
+      <div className="mt-5 flex flex-wrap gap-2">
+        {model.tags.slice(0, 3).map((tag) => (
+          <span
+            key={tag}
+            className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-white/60"
+          >
+            {tag}
           </span>
-          <span className="text-blue-600 font-medium">{model.price}</span>
-        </div>
+        ))}
       </div>
 
-      {/* Hover Detail Bubble */}
-      <div
-        className="
-                absolute left-1/2 top-full mt-3 -translate-x-1/2
-                w-72 bg-white border rounded-lg shadow-lg p-4
-                opacity-0 scale-95
-                group-hover:opacity-100 group-hover:scale-100
-                transition-all duration-200
-                pointer-events-none
-                z-20
-        "
-      >
-        {/* Arrow */}
-        <div
-          className="
-                absolute -top-2 left-1/2 -translate-x-1/2
-                w-4 h-4 bg-white
-                border-l border-t
-                rotate-45
-        "
-        />
-
-        <h4 className="text-sm font-semibold text-gray-900">
-          Thông tin chi tiết
-        </h4>
-
-        <p className="text-xs text-gray-600 mt-2">{model.description}</p>
-
-        <div className="mt-3 space-y-1 text-xs text-gray-700">
-          <div>
-            <span className="font-medium">Nhà cung cấp:</span> {model.provider}
-          </div>
-          <div>
-            <span className="font-medium">Danh mục:</span>{" "}
-            {model.category.toUpperCase()}
-          </div>
-          <div>
-            <span className="font-medium">Giá:</span> {model.price}
-          </div>
-        </div>
+      <div className="mt-6 grid grid-cols-3 gap-3 text-center">
+        <Metric icon={Gauge} label={t("card.metric")} value={model.metrics.accuracy} />
+        <Metric icon={Clock3} label={t("card.latency")} value={model.metrics.latency} />
+        <Metric icon={Database} label={t("card.runs")} value={model.metrics.runs} />
       </div>
-    </div>
+
+      <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-bold text-automl-muted dark:border-white/10 dark:text-white/55">
+        <span className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          {t("card.updated", { date: model.updatedAt })}
+        </span>
+        <span className="flex items-center gap-2 text-automl-blue">
+          <ShieldCheck className="h-4 w-4" />
+          {t("card.viewDetails")}
+        </span>
+      </div>
+    </Link>
   );
 }
+
+const Metric = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Gauge;
+  label: string;
+  value: string;
+}) => (
+  <div className="rounded-2xl bg-slate-50 p-3 dark:bg-white/5">
+    <Icon className="mx-auto h-4 w-4 text-automl-blue" />
+    <p className="mt-2 truncate text-sm font-black text-automl-ink dark:text-white">
+      {value}
+    </p>
+    <p className="mt-1 text-[11px] font-bold text-automl-muted dark:text-white/45">
+      {label}
+    </p>
+  </div>
+);

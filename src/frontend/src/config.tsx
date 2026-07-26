@@ -1,20 +1,19 @@
 import {
-  Home,
-  User,
   Database,
-  Users,
   DatabaseZap,
   History,
-  RocketIcon,
+  LayoutDashboard,
   MapPinHouse,
+  RocketIcon,
+  Users,
 } from "lucide-react";
 
 export function NavItems(role: string) {
   const commonItems = [
     {
-      name: "Trang chủ",
-      icon: <Home size={18} />,
-      href: "/",
+      labelKey: "dashboard",
+      icon: <LayoutDashboard size={18} />,
+      href: "/dashboard",
       active: false,
       position: "top",
       role: ["user", "admin"],
@@ -23,15 +22,7 @@ export function NavItems(role: string) {
 
   const userItems = [
     {
-      name: "Tài khoản",
-      icon: <User size={18} />,
-      href: "/profile",
-      active: false,
-      position: "top",
-      role: ["user"],
-    },
-    {
-      name: "Bộ dữ liệu có sẵn",
+      labelKey: "publicDatasets",
       icon: <Database size={18} />,
       href: "/public-datasets",
       active: false,
@@ -39,7 +30,7 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Bộ dữ liệu của tôi",
+      labelKey: "myDatasets",
       icon: <DatabaseZap size={18} />,
       href: "/my-datasets",
       active: false,
@@ -47,7 +38,7 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Xem lịch sử huấn luyện",
+      labelKey: "trainingHistory",
       icon: <History size={18} />,
       href: "/training-history",
       active: false,
@@ -55,7 +46,7 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Triển khai mô hình",
+      labelKey: "deployModel",
       icon: <RocketIcon size={18} />,
       href: "/implement-project",
       active: false,
@@ -63,7 +54,7 @@ export function NavItems(role: string) {
       role: ["user"],
     },
     {
-      name: "Marketplace",
+      labelKey: "modelStore",
       icon: <MapPinHouse size={18} />,
       href: "/market-place",
       active: false,
@@ -74,7 +65,7 @@ export function NavItems(role: string) {
 
   const adminItems = [
     {
-      name: "Quản lý tài khoản",
+      labelKey: "accountManagement",
       icon: <Users size={18} />,
       href: "/admin/users",
       active: false,
@@ -82,7 +73,7 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Bộ dữ liệu có sẵn",
+      labelKey: "publicDatasets",
       icon: <Database size={18} />,
       href: "/admin/datasets/public",
       active: false,
@@ -90,7 +81,7 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Bộ dữ liệu của người dùng",
+      labelKey: "userDatasets",
       icon: <DatabaseZap size={18} />,
       href: "/admin/datasets/users",
       active: false,
@@ -98,7 +89,7 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Xem lịch sử huấn luyện",
+      labelKey: "trainingHistory",
       icon: <History size={18} />,
       href: "/training-history",
       active: false,
@@ -106,7 +97,7 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Triển khai mô hình",
+      labelKey: "deployModel",
       icon: <RocketIcon size={18} />,
       href: "/implement-project",
       active: false,
@@ -114,7 +105,7 @@ export function NavItems(role: string) {
       role: ["admin"],
     },
     {
-      name: "Marketplace",
+      labelKey: "modelStore",
       icon: <MapPinHouse size={18} />,
       href: "/market-place",
       active: false,
@@ -124,6 +115,6 @@ export function NavItems(role: string) {
   ];
 
   return [...commonItems, ...userItems, ...adminItems].filter((item) =>
-    item.role.includes(role)
+    item.role.includes(role),
   );
 }

@@ -17,12 +17,13 @@ import {
   AlertDialogAction,
   AlertDialogDescription,
 } from "@/components/ui/alert-dialog";
-import { useApi } from "@/hooks/useApi";
+import { useActivateModelMutation } from "@/redux/api/inferenceApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import BackButton from "@/components/common/BackButton";
 
 const ProjectImplementation = () => {
-  const { post } = useApi();
-
   const { toast } = useToast();
+  const [activateModel] = useActivateModelMutation();
   const params = useParams();
   const [actionType, setActionType] = React.useState<
     "enable" | "disable" | null
@@ -78,7 +79,7 @@ print(response.text)`;
     }
 
     try {
-      await post(`/activate-model?job_id=${jobID}&activate=${activate}`);
+      await activateModel({ jobId: jobID, activate }).unwrap();
       setModelActivated(activate === 1);
 
       toast({
@@ -94,7 +95,7 @@ print(response.text)`;
     } catch (err) {
       toast({
         title: "Lỗi",
-        description: "Không thể thực hiện yêu cầu.",
+        description: getApiErrorMessage(err, "Không thể thực hiện yêu cầu."),
         variant: "destructive",
       });
       console.log("Toggle model error:", err);
@@ -102,7 +103,8 @@ print(response.text)`;
   };
 
   return (
-    <div className="max-w-4xl mx-auto mt-10 px-4">
+    <div className="mt-2 w-full space-y-4">
+      <BackButton fallbackHref="/implement-project" />
       <Card className="shadow-md border border-border bg-white dark:bg-[#1e1e1e] text-gray-900 dark:text-gray-100">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl font-bold text-[#3b6cf5] dark:text-[#6587f5] text-center w-full">

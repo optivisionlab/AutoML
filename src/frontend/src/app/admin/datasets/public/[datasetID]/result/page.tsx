@@ -9,8 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useEffect, useState, useCallback } from "react";
-import { LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChartContainer } from "@/components/ui/chart";
@@ -19,7 +18,9 @@ import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import { useSession } from "next-auth/react";
-import { useApi } from "@/hooks/useApi";
+import { useStartTrainingJobMutation } from "@/redux/api/automlApi";
+import AppLoading from "@/components/common/AppLoading";
+import BackButton from "@/components/common/BackButton";
 
 type Props = {
   params: Promise<{
@@ -28,7 +29,8 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
-  const { post } = useApi();
+  const [startTrainingJob, { isLoading }] = useStartTrainingJobMutation();
+  const hasSubmittedRef = useRef(false);
 
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -36,7 +38,7 @@ const ResultPage = ({ params }: Props) => {
   const [error, setError] = useState<string | null>(null);
   const { data: session } = useSession();
   const [isClient, setIsClient] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isPending, setIsPending] = useState(true);
 
   const [showChart, setShowChart] = useState(false);
 
@@ -91,9 +93,10 @@ const ResultPage = ({ params }: Props) => {
   // Gửi dataTrain và config tới API tiếp theo
   useEffect(() => {
     const trainModel = async () => {
-      if (!config || !session?.user?.id || !datasetID) {
+      if (!config || !session?.user?.id || !datasetID || hasSubmittedRef.current) {
         return;
       }
+      hasSubmittedRef.current = true;
       const requestBody = {
         id_data: datasetID,
         id_user: session.user.id,
@@ -105,22 +108,27 @@ const ResultPage = ({ params }: Props) => {
         },
       };
 
-      setIsLoading(true);
+      setIsPending(true);
       try {
-        const resultData = await post(`/v2/auto/jobs/training`, requestBody);
+        const resultData = await startTrainingJob(requestBody).unwrap();
         setResult(resultData);
       } catch (err) {
         console.error("Lỗi khi gọi API train:", err);
       } finally {
-        setIsLoading(false);
+        setIsPending(false);
       }
     };
 
     trainModel();
-  }, [config]);
+  }, [config, datasetID, session?.user?.id, startTrainingJob]);
 
   if (error) {
-    return <div>{error}</div>;
+    return (
+      <div className="space-y-4">
+        <BackButton fallbackHref="/admin/datasets/public" />
+        <div>{error}</div>
+      </div>
+    );
   }
 
   // Chart data
@@ -153,15 +161,11 @@ const ResultPage = ({ params }: Props) => {
   } satisfies ChartConfig;
 
   return (
-    <div className="relative p-6">
+    <div className="relative space-y-4 p-6">
+      <BackButton fallbackHref="/admin/datasets/public" />
       {/* Hiển thị loading bao trùm toàn màn hình */}
-      {isLoading && (
-        <div className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 bg-white/80 p-4">
-          <div className="flex items-center gap-2 text-blue-700">
-            <LoaderCircle className="w-6 h-6 animate-spin" />
-            <span className="text-lg font-medium">Đang tải...</span>
-          </div>
-        </div>
+      {(isPending || isLoading) && (
+<AppLoading variant="overlay" label="Đang tải..." />
       )}
 
       {/* Card chứa kết quả huấn luyện */}

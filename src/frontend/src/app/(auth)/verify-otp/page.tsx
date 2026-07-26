@@ -20,6 +20,11 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import {
+  useSendOtpVerificationMutation,
+  useVerifyOtpMutation,
+} from "@/redux/api/authApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
 
 export default function VerifyOTPForm() {
   const params = useSearchParams();
@@ -27,7 +32,9 @@ export default function VerifyOTPForm() {
 
   const email = params?.get("email") || "";
   const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [verifyOtp, { isLoading: isVerifying }] = useVerifyOtpMutation();
+  const [sendOtpVerification, { isLoading: isResending }] =
+    useSendOtpVerificationMutation();
 
   const [timeLeft, setTimeLeft] = useState(60);
 
@@ -44,25 +51,7 @@ export default function VerifyOTPForm() {
     }
 
     try {
-      setLoading(true);
-
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/auth/verify-otp`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ email, otp }),
-        },
-      );
-
-      if (!res.ok) {
-        throw new Error("Xác thực thất bại");
-      }
-
-      const data: any = await res.json(); // FIX thiếu await
-      console.log(data);
+      const data = await verifyOtp({ email, otp }).unwrap();
 
       const epOld = {
         oldPassword: data.password,
@@ -73,30 +62,19 @@ export default function VerifyOTPForm() {
 
       router.push("/change-pw");
     } catch (error) {
-      alert("Mã OTP không đúng hoặc đã hết hạn");
-    } finally {
-      setLoading(false);
+      alert(getApiErrorMessage(error, "Mã OTP không đúng hoặc đã hết hạn"));
     }
   };
 
   const handleResend = async () => {
     try {
-      await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/auth/otp/verifications`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ email }),
-        },
-      );
+      await sendOtpVerification({ email }).unwrap();
 
       setTimeLeft(60); // reset timer
       setOtp(""); // clear otp (optional)
       alert("Đã gửi lại mã OTP");
     } catch (err) {
-      alert("Không thể gửi lại OTP");
+      alert(getApiErrorMessage(err, "Không thể gửi lại OTP"));
     }
   };
 
@@ -124,7 +102,7 @@ export default function VerifyOTPForm() {
         <Field>
           <div className="flex items-center justify-between">
             <FieldLabel>Mã xác thực</FieldLabel>
-            <Button variant="outline" size="xs" onClick={handleResend}>
+            <Button variant="outline" size="sm" onClick={handleResend} disabled={isResending}>
               <RefreshCwIcon className="mr-1 h-4 w-4" />
               Gửi lại
             </Button>
@@ -172,9 +150,9 @@ export default function VerifyOTPForm() {
             type="button"
             className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
             onClick={handleVerify}
-            disabled={loading}
+            disabled={isVerifying}
           >
-            {loading ? "Đang xác thực..." : "Xác nhận"}
+            {isVerifying ? "Đang xác thực..." : "Xác nhận"}
           </Button>
 
           <div className="text-sm text-muted-foreground text-center mt-2">

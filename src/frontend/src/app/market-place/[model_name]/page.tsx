@@ -1,164 +1,231 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import {
+  CheckCircle2,
+  Clock3,
+  Database,
+  Gauge,
+  Play,
+  Rocket,
+  ShieldCheck,
+} from "lucide-react";
+import {
+  getMarketplaceModelBySlug,
+  marketplaceStatusLabels,
+} from "@/data/marketplace";
+import BackButton from "@/components/common/BackButton";
+import { useTranslations } from "next-intl";
 
-import { MarketplaceModelDetail } from "@/types/marketplace";
-import { useState } from "react";
-import InferenceAPI from "@/components/marketplace/model/InterfaceApi";
-import Details from "@/components/marketplace/model/Details";
-import PerformanceEvaluation from "@/components/marketplace/model/PerformanceEvaluation";
-import AccessRestrictions from "@/components/marketplace/model/AccessRestrictions";
-import Review from "@/components/marketplace/model/Review";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import toSlug from "@/utils/toSlug";
-
-export const marketplaceModels: MarketplaceModelDetail[] = [
-  {
-    id: "1",
-    slug: "gpt-4-turbo",
-    name: "GPT-4 Turbo",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    shortDescription:
-      "Mô hình OCR AI nhận dạng và trích xuất văn bản từ ảnh và PDF.",
-    description:
-      "DeepSeek OCR là mô hình AI chuyên xử lý tài liệu hình ảnh và PDF với khả năng nhận dạng văn bản, bảng biểu và bố cục phức tạp. Phù hợp cho doanh nghiệp số hóa tài liệu, hóa đơn, hợp đồng và biểu mẫu.",
-    category: "Vision AI",
-    provider: "DeepSeek",
-    tags: ["OCR", "PDF", "Document AI", "Vision"],
-    supportedFormats: ["PNG", "JPG", "PDF"],
-    features: [
-      "Nhận dạng văn bản đa ngôn ngữ",
-      "Giữ nguyên cấu trúc bảng và bố cục",
-      "Hỗ trợ tài liệu scan chất lượng thấp",
-      "Xuất kết quả dạng Text, Markdown, CSV",
-    ],
-    specs: [
-      { label: "Đầu vào", value: "Ảnh, PDF" },
-      { label: "Đầu ra", value: "Text / Markdown / CSV" },
-      { label: "Ngôn ngữ", value: "100+ ngôn ngữ" },
-      { label: "Độ chính xác", value: "Cao" },
-      { label: "Độ trễ", value: "< 2s / tài liệu" },
-    ],
-    pricing: [
-      {
-        name: "Free",
-        price: "Miễn phí",
-        description: "Giới hạn số request, phù hợp thử nghiệm",
-      },
-      {
-        name: "Pro",
-        price: "Theo lượt sử dụng",
-        description: "Xử lý nhanh, file lớn",
-        highlight: true,
-      },
-      {
-        name: "Enterprise",
-        price: "Liên hệ",
-        description: "SLA, hỗ trợ doanh nghiệp, tích hợp riêng",
-      },
-    ],
-  },
-];
-
-const TABS = [
-  { key: "inference_api", label: "Inference API" },
-  { key: "details", label: "Chi tiết" },
-  { key: "performance_evaluation", label: "Đánh giá hiệu năng" },
-  { key: "access_restrictions", label: "Giới hạn truy cập" },
-  { key: "review", label: "Đánh giá" },
-];
+const tabs = ["Tổng quan", "Đầu vào/đầu ra", "Kiểm tra", "API"];
 
 export default function MarketplaceDetailPage() {
   const params = useParams();
   const router = useRouter();
-
-  const model = marketplaceModels.find(
-    (m) => m.slug === (params?.model_name as string)
-  );
+  const common = useTranslations("Common");
+  const slug = params?.model_name as string;
+  const model = getMarketplaceModelBySlug(slug);
 
   if (!model) {
-    return <div className="p-10">Không tìm thấy model</div>;
+    return (
+      <div className="rounded-[2rem] border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-white/10 dark:bg-white/10">
+        <h1 className="text-2xl font-black text-automl-ink dark:text-white">
+          Không tìm thấy template
+        </h1>
+        <p className="mt-2 text-sm text-automl-muted dark:text-white/55">
+          Template này có thể đã bị ẩn hoặc đổi đường dẫn.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <BackButton
+            fallbackHref="/market-place"
+            label={common("backToModelStore")}
+            variant="primary"
+          />
+        </div>
+      </div>
+    );
   }
 
-  // active tabs
-  const [activeTab, setActiveTab] = useState("inference_api");
-
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10 space-y-10">
-      {/* Header */}
-      <div className="flex justify-between items-start bg-[#F9FAFB] p-6 rounded-lg">
-        <div className="flex items-center gap-6">
-          <div className="w-34 h-34 bg-white aspect-square border rounded-lg flex items-center justify-center overflow-hidden">
-            <Image
-              src={model.img}
-              alt={model.name}
-              width={100}
-              height={100}
-              className="w-full h-full object-contain"
-            />
-          </div>
-          <div>
-            <h1 className="text-3xl font-semibold text-gray-900">
-              {model.name}
-            </h1>
-            <p className="text-gray-600 mt-2">{model.shortDescription}</p>
-            <div className="flex gap-2 mt-3">
-              {model.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs px-2 py-1 bg-gray-100 rounded"
-                >
-                  {tag}
+    <div className="space-y-6">
+      <BackButton
+        fallbackHref="/market-place"
+        label={common("backToModelStore")}
+        variant="ghost"
+      />
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/10">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex gap-5">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl bg-automl-blue-soft text-2xl font-black text-automl-blue">
+              {model.shortName}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-automl-blue-soft px-3 py-1 text-xs font-black text-automl-blue">
+                  {marketplaceStatusLabels[model.status]}
                 </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-white/60">
+                  Cập nhật {model.updatedAt}
+                </span>
+              </div>
+              <h1 className="mt-4 text-4xl font-black tracking-tight text-automl-ink dark:text-white">
+                {model.name}
+              </h1>
+              <p className="mt-3 max-w-3xl text-base leading-7 text-automl-muted dark:text-white/60">
+                {model.description}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => router.push(`/playground?model=${model.slug}`)}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-automl-blue to-cyan-500 px-5 text-sm font-black text-white shadow-sm transition hover:opacity-95"
+          >
+            <Play className="h-4 w-4" />
+            Dùng template
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-4">
+          <MetricCard icon={Gauge} label="Chỉ số chính" value={model.metrics.accuracy} />
+          <MetricCard icon={Clock3} label="Độ trễ" value={model.metrics.latency} />
+          <MetricCard icon={Database} label="Lượt chạy" value={model.metrics.runs} />
+          <MetricCard icon={ShieldCheck} label="Chủ sở hữu" value={model.owner} />
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+        <main className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/10">
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-4 dark:border-white/10">
+            {tabs.map((tab, index) => (
+              <span
+                key={tab}
+                className={
+                  index === 0
+                    ? "rounded-2xl bg-automl-blue px-4 py-2 text-sm font-black text-white"
+                    : "rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-500 dark:bg-white/10 dark:text-white/60"
+                }
+              >
+                {tab}
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-6 space-y-8">
+            <ContentSection title="Trường hợp sử dụng" body={model.useCase} />
+
+            <section>
+              <h2 className="text-xl font-black text-automl-ink dark:text-white">
+                Tính năng chính
+              </h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {model.features.map((feature) => (
+                  <div
+                    key={feature}
+                    className="flex gap-3 rounded-2xl bg-slate-50 p-4 dark:bg-white/5"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                    <p className="text-sm font-semibold leading-6 text-slate-600 dark:text-white/70">
+                      {feature}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="grid gap-4 md:grid-cols-2">
+              <IOPanel title="Đầu vào" items={model.inputs} />
+              <IOPanel title="Đầu ra" items={model.outputs} />
+            </section>
+
+            <section>
+              <h2 className="text-xl font-black text-automl-ink dark:text-white">
+                API nội bộ
+              </h2>
+              <div className="mt-4 rounded-2xl bg-slate-950 p-4 text-sm text-cyan-100">
+                <code>POST {model.endpoint}</code>
+              </div>
+            </section>
+          </div>
+        </main>
+
+        <aside className="space-y-6">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/10">
+            <h2 className="text-xl font-black text-automl-ink dark:text-white">
+              Danh sách kiểm tra trước khi chạy
+            </h2>
+            <div className="mt-5 space-y-4">
+              {model.checklist.map((item) => (
+                <div key={item} className="flex gap-3">
+                  <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-automl-blue" />
+                  <p className="text-sm font-semibold leading-6 text-automl-muted-strong dark:text-white/60">
+                    {item}
+                  </p>
+                </div>
               ))}
             </div>
           </div>
-        </div>
 
-        <button
-          onClick={() => router.push(`/playground?model=${toSlug(model.name)}`)}
-          className="px-5 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          Dùng thử model
-        </button>
-      </div>
-
-      <div className="text-sm text-gray-600">{model.description}</div>
-
-      {/* Tab nội dung */}
-      <div className="space-y-6 min-h-[500px]">
-        {/* Tabs */}
-        <nav className="flex gap-6 border-b">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`pb-3 text-sm font-medium transition
-            ${
-              activeTab === tab.key
-                ? "border-b-2 border-blue-600 text-blue-600 translate-x-0 duration-200"
-                : "text-gray-500 hover:text-gray-900"
-            }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        {/* Tab Content */}
-        {activeTab === "inference_api" && (
-          <InferenceAPI description={model.description} />
-        )}
-        {activeTab === "details" && <Details model={model} />}
-        {activeTab === "performance_evaluation" && <PerformanceEvaluation />}
-        {activeTab === "access_restrictions" && <AccessRestrictions />}
-        {activeTab === "review" && <Review />}
-      </div>
-
-      {/* Model liên quan */}
-      <hr />
-      <h1>Model liên quan</h1>
+          <div className="rounded-[2rem] border border-automl-blue/20 bg-automl-blue-soft p-6">
+            <Rocket className="h-8 w-8 text-automl-blue" />
+            <h2 className="mt-4 text-xl font-black text-automl-ink">
+              Sẵn sàng đưa vào pipeline
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-automl-muted-strong">
+              Template sẽ đi qua các bước upload dữ liệu, kiểm tra schema, huấn luyện và review trước khi deploy.
+            </p>
+          </div>
+        </aside>
+      </section>
     </div>
   );
 }
+
+const MetricCard = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Gauge;
+  label: string;
+  value: string;
+}) => (
+  <div className="rounded-3xl bg-slate-50 p-4 dark:bg-white/5">
+    <Icon className="h-5 w-5 text-automl-blue" />
+    <p className="mt-3 text-xs font-bold text-automl-muted dark:text-white/50">
+      {label}
+    </p>
+    <p className="mt-1 truncate text-lg font-black text-automl-ink dark:text-white">
+      {value}
+    </p>
+  </div>
+);
+
+const ContentSection = ({ title, body }: { title: string; body: string }) => (
+  <section>
+    <h2 className="text-xl font-black text-automl-ink dark:text-white">
+      {title}
+    </h2>
+    <p className="mt-3 text-sm leading-7 text-automl-muted-strong dark:text-white/60">
+      {body}
+    </p>
+  </section>
+);
+
+const IOPanel = ({ title, items }: { title: string; items: string[] }) => (
+  <div className="rounded-3xl border border-slate-200 p-5 dark:border-white/10">
+    <h3 className="font-black text-automl-ink dark:text-white">{title}</h3>
+    <div className="mt-4 flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span
+          key={item}
+          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-white/60"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  </div>
+);

@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import RowActionMenu from "@/components/common/RowActionMenu";
+import AppLoading from "@/components/common/AppLoading";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,17 +20,12 @@ import DialogForm from "../../../../components/dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
 import { CirclePlus } from "lucide-react";
-import { useApi } from "@/hooks/useApi";
-
-type Dataset = {
-  _id: string;
-  dataName: string;
-  dataType: string;
-  createDate: number;
-  latestUpdate?: number;
-  lastestUpdate?: number;
-  userId: string;
-};
+import {
+  Dataset,
+  useDeleteDatasetMutation,
+  useGetDatasetsByUserIdQuery,
+} from "@/redux/api/datasetApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
 
 const formatDate = (timestamp?: number): string => {
   if (!timestamp) return "Không có dữ liệu";
@@ -36,13 +33,18 @@ const formatDate = (timestamp?: number): string => {
 };
 
 const Page = () => {
-  const { post, remove } = useApi();
-
   const { data: session } = useSession();
   const router = useRouter();
+  const { toast } = useToast();
 
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: datasets = [],
+    isLoading,
+    refetch,
+  } = useGetDatasetsByUserIdQuery("0");
+
+  const [deleteDataset] = useDeleteDatasetMutation();
+
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
 
@@ -51,27 +53,6 @@ const Page = () => {
     null,
   );
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-
-  const { toast } = useToast();
-
-  const fetchDatasets = async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
-
-    try {
-      const data = await post(`/get-list-data-by-userid?id=0`);
-      setDatasets(data || []);
-    } catch (err) {
-      console.error("Lỗi khi lấy dữ liệu:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDatasets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
 
   const handleOpenEdit = (dataset: Dataset) => {
     setSelectedDataset(dataset);
@@ -82,19 +63,22 @@ const Page = () => {
     if (!datasetIdToDelete) return;
 
     try {
-      await remove(`/delete-dataset/${datasetIdToDelete}`);
+      await deleteDataset(datasetIdToDelete).unwrap();
 
       toast({
         title: "Xóa thành công",
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
-      fetchDatasets();
+      refetch();
     } catch (err) {
       console.log("Lỗi xoá:", err);
       toast({
         title: "Xóa thất bại",
-        description: "Có lỗi xảy ra khi xoá bộ dữ liệu.",
+        description: getApiErrorMessage(
+          err,
+          "Có lỗi xảy ra khi xoá bộ dữ liệu.",
+        ),
         variant: "destructive",
         duration: 3000,
       });
@@ -106,40 +90,50 @@ const Page = () => {
 
   return (
     <>
-      <Card className="max-w-6xl mx-auto mt-8 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
-            Quản lý bộ dữ liệu có sẵn
-          </CardTitle>
+      <Card className="automl-data-card mt-2 w-full">
+        <CardHeader className="automl-data-toolbar">
+          <div>
+            <CardTitle className="automl-data-title">
+              Quản lý bộ dữ liệu có sẵn
+            </CardTitle>
+            <p className="automl-data-subtitle">
+              Tạo, chỉnh sửa và huấn luyện trên các dataset public dùng chung.
+            </p>
+          </div>
 
-          <div className="flex justify-end mt-4">
+          <div className="automl-data-actions">
+            <span className="automl-data-chip">{datasets.length} datasets</span>
             <Button
-              className="bg-[#1e8449] text-white hover:bg-[#196f3d] px-6 py-2 rounded-md"
+              className="automl-action-primary gap-2 px-4"
               onClick={() => setAddDialogOpen(true)}
             >
-              <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
+              <CirclePlus className="h-4 w-4" /> Thêm bộ dữ liệu
             </Button>
           </div>
         </CardHeader>
 
-        <CardContent>
-          {loading ? (
-            <div>Đang tải dữ liệu...</div>
+        <CardContent className="automl-table-wrap pt-5">
+          {isLoading ? (
+            <AppLoading />
+          ) : datasets.length === 0 ? (
+            <div className="automl-state-panel">Chưa có bộ dữ liệu public.</div>
           ) : (
-            <Table>
+            <Table className="automl-data-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Tên bộ dữ liệu</TableHead>
                   <TableHead>Kiểu dữ liệu</TableHead>
                   <TableHead>Ngày tạo</TableHead>
                   <TableHead>Lần cập nhật mới nhất</TableHead>
-                  <TableHead className="text-center">Chức năng</TableHead>
+                  <TableHead className="text-center">Tác vụ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {datasets.map((dataset) => (
                   <TableRow key={dataset._id}>
-                    <TableCell>{dataset.dataName || "Không có tên"}</TableCell>
+                    <TableCell className="font-bold text-[var(--automl-data-text)]">
+                      {dataset.dataName || "Không có tên"}
+                    </TableCell>
                     <TableCell>{dataset.dataType || "Chưa rõ"}</TableCell>
                     <TableCell>{formatDate(dataset.createDate)}</TableCell>
                     <TableCell>
@@ -147,32 +141,27 @@ const Page = () => {
                         dataset.latestUpdate || dataset.lastestUpdate,
                       )}
                     </TableCell>
-                    <TableCell className="text-center space-x-2">
-                      <Button
-                        className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
-                        onClick={() =>
-                          router.push(
-                            `/admin/datasets/public/${dataset._id}/train`,
-                          )
-                        }
-                      >
-                        Huấn luyện
-                      </Button>
-                      <Button
-                        className="bg-yellow-500 text-white hover:bg-yellow-600"
-                        onClick={() => handleOpenEdit(dataset)}
-                      >
-                        Sửa
-                      </Button>
-                      <Button
-                        className="bg-red-500 text-white hover:bg-red-600"
-                        onClick={() => {
-                          setDatasetIdToDelete(dataset._id);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        Xoá
-                      </Button>
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">
+                        <RowActionMenu
+                          label={`Mở tác vụ ${dataset.dataName}`}
+                          items={[
+                            {
+                              label: "Huấn luyện",
+                              onClick: () => router.push(`/admin/datasets/public/${dataset._id}/train`),
+                            },
+                            { label: "Sửa", onClick: () => handleOpenEdit(dataset) },
+                            {
+                              label: "Xoá",
+                              destructive: true,
+                              onClick: () => {
+                                setDatasetIdToDelete(dataset._id);
+                                setDeleteDialogOpen(true);
+                              },
+                            },
+                          ]}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -187,13 +176,12 @@ const Page = () => {
           open={editDialogOpen}
           onOpenChange={(open) => {
             setEditDialogOpen(open);
-            if (!open) fetchDatasets();
+            if (!open) refetch();
           }}
           dataset={selectedDataset}
         />
       )}
 
-      {/* Form Dialog */}
       <DialogForm
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
@@ -209,7 +197,7 @@ const Page = () => {
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}
           userId={session.user.id}
-          onSuccess={fetchDatasets}
+          onSuccess={refetch}
         />
       )}
     </>

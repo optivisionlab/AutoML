@@ -1,124 +1,161 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { Filter, PackageOpen } from "lucide-react";
 import MarketplaceCard from "@/components/marketplace/MarketplaceCard";
 import MarketplaceHeader from "@/components/marketplace/MarketplaceHeader";
-import React, { useState } from "react";
+import {
+  marketplaceCategories,
+  marketplaceModels,
+  MarketplaceModelStatus,
+} from "@/data/marketplace";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
-const categories = [
-  { id: "all", name: "Tất cả dịch vụ" },
-  { id: "text", name: "Text AI" },
-  { id: "image", name: "Image AI" },
-  { id: "audio", name: "Audio AI" },
-  { id: "video", name: "Video AI" },
-];
-
-const models = [
-  {
-    id: 1,
-    name: "GPT-4 Turbo",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    description: "Mô hình AI xử lý ngôn ngữ tự nhiên, tối ưu cho doanh nghiệp.",
-    category: "text",
-    price: "Trả phí",
-    provider: "OpenAI",
-  },
-  {
-    id: 2,
-    name: "Claude 3",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    description:
-      "AI hội thoại thông minh, an toàn cho môi trường doanh nghiệp.",
-    category: "text",
-    price: "Trả phí",
-    provider: "Anthropic",
-  },
-  {
-    id: 3,
-    name: "DALL·E",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    description: "Dịch vụ tạo hình ảnh AI từ văn bản.",
-    category: "image",
-    price: "Miễn phí",
-    provider: "OpenAI",
-  },
-  {
-    id: 4,
-    name: "Stable Diffusion",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    description: "Nền tảng tạo ảnh AI mã nguồn mở.",
-    category: "image",
-    price: "Miễn phí",
-    provider: "Community",
-  },
-  {
-    id: 5,
-    name: "Whisper",
-    img: "https://cdn.prod.website-files.com/66841c2a95405226a60d332e/67c6daab82fff6c435bc3e9b_deepseek_R1.webp",
-    description: "Nhận dạng và chuyển giọng nói thành văn bản.",
-    category: "audio",
-    price: "Miễn phí",
-    provider: "OpenAI",
-  },
+const statusFilters: Array<{ id: "all" | MarketplaceModelStatus }> = [
+  { id: "all" },
+  { id: "ready" },
+  { id: "beta" },
+  { id: "internal" },
 ];
 
 export default function MarketplacePage() {
+  const t = useTranslations("Marketplace");
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState<
+    "all" | MarketplaceModelStatus
+  >("all");
 
-  const filteredModels =
-    selectedCategory === "all"
-      ? models
-      : models.filter((m) => m.category === selectedCategory);
+  const filteredModels = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    return marketplaceModels.filter((model) => {
+      const matchesCategory =
+        selectedCategory === "all" || model.category === selectedCategory;
+      const matchesStatus =
+        selectedStatus === "all" || model.status === selectedStatus;
+      const searchable = [
+        model.name,
+        model.useCase,
+        model.shortDescription,
+        model.owner,
+        ...model.tags,
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesSearch = !keyword || searchable.includes(keyword);
+
+      return matchesCategory && matchesStatus && matchesSearch;
+    });
+  }, [search, selectedCategory, selectedStatus]);
+
+  const readyCount = marketplaceModels.filter(
+    (model) => model.status === "ready",
+  ).length;
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA]">
-      {/* Header */}
-      <MarketplaceHeader searchValue={search} onSearchChange={setSearch} />
+    <div className="space-y-6">
+      <MarketplaceHeader
+        searchValue={search}
+        onSearchChange={setSearch}
+        total={marketplaceModels.length}
+        ready={readyCount}
+      />
 
-      {/* Content */}
-      <div className="max-w-8xl mx-auto px-10 py-8 grid grid-cols-12 gap-6">
-        {/* Sidebar */}
-        <aside className="col-span-12 md:col-span-2">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">
-              Danh mục dịch vụ
-            </h2>
-
-            <ul className="space-y-1">
-              {categories.map((cat) => (
-                <li
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-3 rounded-md text-sm cursor-pointer transition border-l-4
-                    ${
-                      selectedCategory === cat.id
-                        ? "bg-blue-50 text-blue-600 font-medium border-l-4 border-blue-600"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }
-                  `}
-                >
-                  {cat.name}
-                </li>
-              ))}
-            </ul>
+      <section className="grid gap-6 xl:grid-cols-[280px_1fr]">
+        <aside className="space-y-4 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/10">
+          <div className="flex items-center gap-2 text-sm font-black text-automl-ink dark:text-white">
+            <Filter className="h-4 w-4 text-automl-blue" />
+            {t("filters.title")}
           </div>
+
+          <FilterGroup
+            title={t("filters.category")}
+            items={marketplaceCategories}
+            value={selectedCategory}
+            onChange={setSelectedCategory}
+            getLabel={(id) => t(`categories.${id}`)}
+          />
+
+          <FilterGroup
+            title={t("filters.status")}
+            items={statusFilters}
+            value={selectedStatus}
+            onChange={(value) =>
+              setSelectedStatus(value as "all" | MarketplaceModelStatus)
+            }
+            getLabel={(id) => t(`statusFilters.${id}`)}
+          />
         </aside>
 
-        {/* Main */}
-        {models.length === 0 ? (
-          <div className="col-span-12 md:col-span-10 text-center text-[#fff]">
-            Không có dịch vụ nào trong danh mục này.
+        <main className="min-w-0">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <p className="text-sm font-bold text-automl-muted dark:text-white/55">
+              {t("summary", { shown: filteredModels.length, total: marketplaceModels.length })}
+            </p>
+            <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-black text-slate-500 dark:bg-white/10 dark:text-white/60">
+              {t("sortUpdated")}
+            </span>
           </div>
-        ) : (
-          <main className="col-span-12 md:col-span-10">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+
+          {filteredModels.length > 0 ? (
+            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
               {filteredModels.map((model) => (
                 <MarketplaceCard key={model.id} model={model} />
               ))}
             </div>
-          </main>
-        )}
-      </div>
+          ) : (
+            <div className="flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center dark:border-white/15 dark:bg-white/10">
+              <PackageOpen className="h-10 w-10 text-slate-400" />
+              <h2 className="mt-4 text-xl font-black text-automl-ink dark:text-white">
+                {t("empty.title")}
+              </h2>
+              <p className="mt-2 max-w-md text-sm leading-6 text-automl-muted dark:text-white/55">
+                {t("empty.body")}
+              </p>
+            </div>
+          )}
+        </main>
+      </section>
     </div>
   );
 }
+
+const FilterGroup = ({
+  title,
+  items,
+  value,
+  onChange,
+  getLabel,
+}: {
+  title: string;
+  items: Array<{ id: string; name?: string }>;
+  value: string;
+  onChange: (value: string) => void;
+  getLabel: (id: string, fallback?: string) => string;
+}) => (
+  <div>
+    <p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-400">
+      {title}
+    </p>
+    <div className="space-y-2">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onChange(item.id)}
+          className={cn(
+            "flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition",
+            value === item.id
+              ? "bg-automl-blue-soft text-automl-blue"
+              : "text-slate-500 hover:bg-slate-100 hover:text-automl-ink dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white",
+          )}
+        >
+          {getLabel(item.id, item.name)}
+          {value === item.id && <span className="h-2 w-2 rounded-full bg-automl-blue" />}
+        </button>
+      ))}
+    </div>
+  </div>
+);

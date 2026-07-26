@@ -1,4 +1,7 @@
 "use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,45 +15,32 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-
 import {
   Calendar,
+  Database,
   Mail,
   Pencil,
   Phone,
+  Rocket,
+  ShieldCheck,
   SquarePen,
-  User2,
   UserIcon,
-  VenetianMask,
 } from "lucide-react";
 import { z } from "zod";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
-import React, { useCallback, useEffect, useState } from "react";
-import { useApi } from "@/hooks/useApi";
+import {
+  UpdateUserPayload,
+  useGetUserQuery,
+  useUpdateAvatarMutation,
+  useUpdateUserMutation,
+} from "@/redux/api/userApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import AppLoading from "@/components/common/AppLoading";
+import { useTranslations } from "next-intl";
 
-interface User {
-  _id: string;
-  username: string;
-  email: string;
-  image: string;
-  role: string;
-  number: string;
-  gender: string;
-  date: string;
-  fullName: string;
-}
-
-interface EditUser {
-  email: string;
-  gender: string;
-  date: string;
-  fullName: string;
-  number: string;
-}
+type EditUser = UpdateUserPayload;
 
 type FormErrors = {
   fullName?: string;
@@ -60,26 +50,52 @@ type FormErrors = {
   number?: string;
 };
 
-const formSchema = z.object({
-  fullName: z.string().min(5, "Họ và tên có ít nhất 5 ký tự"),
-  email: z.string().email("Email không hợp lệ"),
-  date: z
-    .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Ngày sinh không hợp lệ"),
-  gender: z.enum(["male", "female"], {
-    errorMap: () => ({ message: "Giới tính không hợp lệ" }),
-  }),
-  number: z.string().regex(/^0(3|5|7|8|9)[0-9]{8}$/, {
-    message: "Số điện thoại không hợp lệ",
-  }),
-});
+const accountStats = [
+  { labelKey: "stats.datasets", value: "12", icon: Database },
+  { labelKey: "stats.runs", value: "34", icon: ShieldCheck },
+  { labelKey: "stats.deployments", value: "4", icon: Rocket },
+];
+
+const recentActivities = [
+  ["activities.uploaded", "activities.twoMinutesAgo", "bg-emerald-100"],
+  ["activities.training", "activities.twelveMinutesAgo", "bg-amber-100"],
+  ["activities.deployed", "activities.oneHourAgo", "bg-blue-100"],
+  ["activities.viewedModelStore", "activities.yesterday", "bg-indigo-100"],
+];
+
+const profileTabs = ["tabs.profile", "tabs.security", "tabs.apiKey", "tabs.preferences"];
+
+const inputClass =
+  "mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-automl-ink outline-none transition focus:border-automl-blue focus:ring-4 focus:ring-automl-blue/10 dark:border-white/10 dark:bg-white/10 dark:text-white";
+
+const getAvatarSrc = (avatar?: string | null) => {
+  if (!avatar) return "";
+
+  if (
+    avatar.startsWith("http://") ||
+    avatar.startsWith("https://") ||
+    avatar.startsWith("/") ||
+    avatar.startsWith("data:image")
+  ) {
+    return avatar;
+  }
+
+  return `data:image/png;base64,${avatar}`;
+};
 
 const Profile = () => {
-  const { put, get, post } = useApi();
-
+  const t = useTranslations("Profile");
   const { data: session, status } = useSession();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const username = session?.user?.username;
+  const {
+    data: user,
+    isLoading,
+    refetch,
+  } = useGetUserQuery(username ?? "", {
+    skip: !username,
+  });
+  const [updateUser] = useUpdateUserMutation();
+  const [updateAvatar] = useUpdateAvatarMutation();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editFormData, setEditFormData] = useState<EditUser | null>(null);
@@ -88,40 +104,40 @@ const Profile = () => {
   const [originalAvatar, setOriginalAvatar] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const { toast } = useToast();
-
-  const fetchUser = useCallback(async () => {
-    try {
-      const username = session?.user?.username;
-      if (!username) return;
-
-      const res = await get(`/users/?username=${username}`);
-      setUser(res);
-      setEditFormData(res);
-
-      const avatarBase64 = res.avatar || "";
-
-      const avatar = avatarBase64
-        ? `data:image/png;base64,${avatarBase64}`
-        : "";
-
-      setAvatarUrl(avatar);
-      setOriginalAvatar(avatar);
-    } catch (error) {
-      console.error("❌ Lỗi khi lấy thông tin người dùng:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [session?.user?.username]);
+  const formSchema = useMemo(
+    () =>
+      z.object({
+        fullName: z.string().min(5, t("validation.fullNameMin")),
+        email: z.string().email(t("validation.email")),
+        date: z
+          .string()
+          .refine((val) => !isNaN(Date.parse(val)), t("validation.date")),
+        gender: z.enum(["male", "female"], {
+          errorMap: () => ({ message: t("validation.gender") }),
+        }),
+        number: z.string().regex(/^0(3|5|7|8|9)[0-9]{8}$/, {
+          message: t("validation.phone"),
+        }),
+      }),
+    [t],
+  );
 
   useEffect(() => {
-    if (status === "authenticated") {
-      fetchUser();
-    } else if (status === "unauthenticated") {
-      setLoading(false);
-    }
-  }, [fetchUser, status]);
+    if (!user) return;
 
-  // Xử lý upload avatar và hiển thị ngay trong AvatarImage
+    setEditFormData({
+      email: user.email,
+      gender: user.gender,
+      date: user.date,
+      fullName: user.fullName,
+      number: user.number,
+    });
+
+    const avatar = getAvatarSrc(user.avatar ?? user.image);
+    setAvatarUrl(avatar);
+    setOriginalAvatar(avatar);
+  }, [user]);
+
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
@@ -130,8 +146,8 @@ const Profile = () => {
 
     if (!allowedTypes.includes(selectedFile.type)) {
       toast({
-        title: "Định dạng ảnh không hợp lệ",
-        description: "Chỉ chấp nhận ảnh PNG hoặc JPEG.",
+        title: t("toast.invalidImage"),
+        description: t("toast.invalidImageDescription"),
         variant: "destructive",
         duration: 3000,
       });
@@ -158,32 +174,28 @@ const Profile = () => {
       const username = session.user.username;
 
       if (file) {
-        const formData = new FormData();
-        formData.append("avatar", file);
-
-        await post(`/update_avatar?username=${username}`, formData);
-
+        await updateAvatar({ username, avatar: file }).unwrap();
         window.dispatchEvent(new Event("avatar-updated"));
       }
 
-      await put(`/update/${username}`, editFormData);
+      await updateUser({ username, data: editFormData }).unwrap();
 
       toast({
-        title: "Cập nhật thành công!",
-        description: "Thông tin người dùng đã được cập nhật.",
+        title: t("toast.updateSuccess"),
+        description: t("toast.updateSuccessDescription"),
         className:
           "bg-green-50 border border-green-300 text-green-700 [&>div>h3]:text-lg [&>div>h3]:font-semibold",
         duration: 3000,
       });
 
-      await fetchUser();
+      await refetch();
       setIsEditing(false);
       setIsAlertDialogOpen(false);
     } catch (error) {
-      console.error("❌ Lỗi cập nhật thông tin:", error);
+      console.error("Profile update error:", error);
       toast({
-        title: "Cập nhật thất bại",
-        description: "Đã xảy ra lỗi khi cập nhật.",
+        title: t("toast.updateFailed"),
+        description: getApiErrorMessage(error, t("toast.updateFailedDescription")),
         variant: "destructive",
         duration: 3000,
       });
@@ -194,7 +206,6 @@ const Profile = () => {
     if (user) {
       const { email, gender, date, fullName, number } = user;
 
-      // Tạo đối tượng theo interface EditUser
       const editUserData: EditUser = {
         email,
         gender,
@@ -225,297 +236,369 @@ const Profile = () => {
     }
 
     setFormErrors({});
-    setIsAlertDialogOpen(true); // chỉ mở dialog nếu hợp lệ
+    setIsAlertDialogOpen(true);
   };
 
-  if (loading) {
-    return (
-      <Card className="w-[800px] mx-auto mt-10 p-4">
-        <CardHeader className="space-y-4">
-          <div className="flex justify-between items-center">
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-6 w-16" />
-          </div>
-
-          <div className="flex justify-center">
-            <Skeleton className="w-24 h-24 rounded-full" />
-          </div>
-
-          <Skeleton className="h-5 w-1/3 mx-auto" />
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-        </CardContent>
-      </Card>
-    );
+  if (status === "loading" || isLoading) {
+    return <AppLoading label={t("loading")} />;
   }
 
-  const InfoRow = ({
-    icon: Icon,
-    label,
-    value,
-  }: {
-    icon: any;
-    label: string;
-    value: string;
-  }) => (
-    <div className="flex items-start gap-4 p-4 border rounded-lg shadow-sm bg-white dark:bg-[#1e1e1e]">
-      <div className="flex-shrink-0 mt-1">
-        <div className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 rounded-full p-2 flex items-center justify-center w-10 h-10">
-          <Icon className="w-6 h-6" />
-        </div>
-      </div>
-      <div className="flex flex-col">
-        <Label className="text-sm text-muted-foreground">{label}</Label>
-        <span className="text-base font-medium text-gray-900 dark:text-gray-100">
-          {value}
-        </span>
-      </div>
-    </div>
-  );
+  const initials = (user?.username || username || "HA").slice(0, 2).toUpperCase();
+  const displayName = user?.fullName || user?.username || t("fallbackUser");
+  const roleLabel =
+    session?.user?.role === "admin" ? t("roles.admin") : t("roles.user");
 
   return (
-    <>
-      <Card className="w-[800px] mx-auto mt-10 p-4">
-        <CardHeader className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-xl font-semibold text-[#191919] dark:text-white">
-              Thông tin cá nhân
-            </h1>
-            {!isEditing && (
-              <button
-                onClick={handleEditClick}
-                className="flex items-center gap-1 text-[#3a6df4] hover:underline"
-              >
-                <SquarePen className="w-4 h-4" />
-                <span>Sửa</span>
-              </button>
+    <div className="space-y-7">
+      <section className="grid gap-7 xl:grid-cols-[0.8fr_1.7fr]">
+        <aside className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/10">
+          <div className="relative h-32 w-32 overflow-hidden rounded-[2rem] bg-automl-blue-soft">
+            <Avatar className="h-full w-full rounded-[2rem]">
+              <AvatarImage
+                key={avatarUrl}
+                src={avatarUrl || ""}
+                alt="avatar"
+                className="object-cover"
+              />
+              <AvatarFallback className="rounded-[2rem] bg-automl-blue-soft text-4xl font-black text-automl-blue">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+
+            {isEditing && (
+              <label className="absolute bottom-3 right-3 flex h-10 w-10 cursor-pointer items-center justify-center rounded-2xl bg-white text-automl-blue shadow-md">
+                <input
+                  type="file"
+                  accept="image/png, image/jpeg"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+                <SquarePen className="h-5 w-5" />
+              </label>
             )}
           </div>
 
-          {/* Avatar ở giữa */}
-          <div className="flex justify-center">
-            <div className="relative w-24 h-24">
-              <Avatar className="w-full h-full cursor-pointer">
-                <AvatarImage
-                  key={avatarUrl}
-                  src={avatarUrl || ""}
-                  alt="avatar"
-                  className="object-cover"
-                />
+          <h2 className="mt-6 text-3xl font-black tracking-tight text-automl-ink dark:text-white">
+            {displayName}
+          </h2>
+          <p className="mt-3 text-base font-bold text-automl-muted dark:text-white/60">
+            @{user?.username || username} · {roleLabel}
+          </p>
+          <span className="mt-4 inline-flex rounded-full bg-automl-cyan-soft px-4 py-2 text-sm font-black text-cyan-700">
+            {t("openedFromMenu")}
+          </span>
 
-                <AvatarFallback className="bg-gray-100">
-                  <User2 className="w-10 h-10" />
-                </AvatarFallback>
-              </Avatar>
-
-              {isEditing && (
-                <label className="absolute bottom-0 right-0 p-1 bg-white rounded-full shadow-md cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg"
-                    onChange={handleAvatarChange}
-                    className="hidden"
-                  />
-                  <SquarePen className="w-5 h-5 text-[#3a6df4]" />
-                </label>
-              )}
-            </div>
+          <div className="mt-7 grid grid-cols-3 gap-3">
+            {accountStats.map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div
+                  key={stat.labelKey}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center dark:border-white/10 dark:bg-white/5"
+                >
+                  <Icon className="mx-auto mb-2 h-4 w-4 text-automl-blue" />
+                  <p className="text-2xl font-black text-automl-ink dark:text-white">
+                    {stat.value}
+                  </p>
+                  <p className="text-xs font-bold text-automl-muted dark:text-white/55">
+                    {t(stat.labelKey)}
+                  </p>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Tên hiển thị */}
-          <CardTitle className="text-center text-lg">
-            {user?.fullName}
-            <span className="block text-gray-800 opacity-70 text-sm dark:text-white">
-              @{user?.username}
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isEditing && editFormData ? (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Họ và tên</Label>
-                  <input
-                    type="text"
-                    value={editFormData.fullName}
-                    onChange={(e) =>
-                      setEditFormData({
-                        ...editFormData,
-                        fullName: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded px-3 py-2 mt-1"
-                  />
-                  {formErrors.fullName && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.fullName}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label>Email</Label>
-                  <input
-                    type="email"
-                    value={editFormData.email}
-                    onChange={(e) =>
-                      setEditFormData({
-                        ...editFormData,
-                        email: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded px-3 py-2 mt-1"
-                  />
-                  {formErrors.email && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.email}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label>Ngày sinh</Label>
-                  <input
-                    type="date"
-                    value={editFormData.date}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, date: e.target.value })
-                    }
-                    className="w-full border rounded px-3 py-2 mt-1"
-                  />
-                  {formErrors.date && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.date}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label>Giới tính</Label>
-                  <select
-                    value={editFormData.gender}
-                    onChange={(e) =>
-                      setEditFormData({
-                        ...editFormData,
-                        gender: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded px-3 py-2 mt-1"
-                  >
-                    <option value="male">Nam</option>
-                    <option value="female">Nữ</option>
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  <Label>Số điện thoại</Label>
-                  <input
-                    type="text"
-                    value={editFormData.number}
-                    onChange={(e) =>
-                      setEditFormData({
-                        ...editFormData,
-                        number: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded px-3 py-2 mt-1"
-                  />
-                  {formErrors.number && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {formErrors.number}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setIsEditing(false)}>
-                  Hủy
-                </Button>
-
-                <AlertDialog
-                  open={isAlertDialogOpen}
-                  onOpenChange={setIsAlertDialogOpen}
-                >
-                  <Button
-                    onClick={handleValidateAndOpenDialog}
-                    className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
-                  >
-                    Lưu
-                  </Button>
-
-                  <AlertDialogOverlay className="fixed inset-0 bg-black/60 z-40" />
-
-                  {/* Alert dialog xác nhận */}
-                  <AlertDialogContent className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-[#1e1e1e] shadow-xl p-6 rounded-xl w-full max-w-md">
-                    <AlertDialogHeader className="text-center space-y-2">
-                      <AlertDialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                        XÁC NHẬN
-                      </AlertDialogTitle>
-                      <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
-                        Bạn có chắc chắn muốn lưu các thay đổi này không?
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-
-                    <AlertDialogFooter className="mt-6 flex w-full justify-center gap-4">
-                      <AlertDialogCancel className="bg-red-600 w-20 text-white hover:bg-red-500 px-4 py-2 rounded-md">
-                        Hủy
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleConfirmUpdate}
-                        className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
-                      >
-                        Đồng ý
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </>
-          ) : (
-            <>
-              <InfoRow
-                icon={UserIcon}
-                label="Tên người dùng"
-                value={user?.username || ""}
-              />
-              <InfoRow
-                icon={Pencil}
-                label="Họ và tên"
-                value={user?.fullName || ""}
-              />
-              <InfoRow icon={Mail} label="Email" value={user?.email || ""} />
-              <InfoRow
-                icon={Calendar}
-                label="Ngày sinh"
-                value={user?.date || ""}
-              />
-              <InfoRow
-                icon={VenetianMask}
-                label="Giới tính"
-                value={
-                  user?.gender === "male"
-                    ? "Nam"
-                    : user?.gender === "female"
-                      ? "Nữ"
-                      : "Khác"
-                }
-              />
-              <InfoRow
-                icon={Phone}
-                label="Số điện thoại"
-                value={user?.number || ""}
-              />
-            </>
+          {!isEditing && (
+            <Button
+              onClick={handleEditClick}
+              className="mt-6 h-12 rounded-2xl bg-gradient-to-r from-automl-blue to-cyan-500 px-8 font-black text-white shadow-none hover:opacity-95"
+            >
+              <Pencil className="h-4 w-4" />
+              {t("editProfile")}
+            </Button>
           )}
-        </CardContent>
-      </Card>
-    </>
+        </aside>
+
+        <main className="space-y-6">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight text-automl-ink dark:text-white lg:text-5xl">
+              {t("title")}
+            </h1>
+            <p className="mt-5 max-w-3xl text-lg leading-8 text-automl-muted dark:text-white/60">
+              {t("subtitle")}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {profileTabs.map((tab, index) => (
+              <button
+                key={tab}
+                type="button"
+                className={
+                  index === 0
+                    ? "h-12 rounded-2xl bg-gradient-to-r from-automl-blue to-cyan-500 px-8 text-sm font-black text-white shadow-sm"
+                    : "h-12 rounded-2xl bg-automl-blue-soft px-8 text-sm font-black text-automl-blue transition hover:bg-automl-blue-soft/80"
+                }
+              >
+                {t(tab)}
+              </button>
+            ))}
+          </div>
+
+          <section className="grid gap-6 xl:grid-cols-2">
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/10">
+              {isEditing && editFormData ? (
+                <EditForm
+                  editFormData={editFormData}
+                  setEditFormData={setEditFormData}
+                  formErrors={formErrors}
+                  setIsEditing={setIsEditing}
+                  isAlertDialogOpen={isAlertDialogOpen}
+                  setIsAlertDialogOpen={setIsAlertDialogOpen}
+                  handleValidateAndOpenDialog={handleValidateAndOpenDialog}
+                  handleConfirmUpdate={handleConfirmUpdate}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <InfoRow icon={UserIcon} label={t("fields.username")} value={user?.username || ""} code="TK" />
+                  <InfoRow icon={Mail} label={t("fields.email")} value={user?.email || ""} code="EM" />
+                  <InfoRow icon={Phone} label={t("fields.phone")} value={user?.number || t("notUpdated")} code="SD" />
+                  <InfoRow icon={Calendar} label={t("fields.birthDate")} value={user?.date || t("notUpdated")} code="NS" />
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/10">
+              <h3 className="text-xl font-black text-automl-ink dark:text-white">
+                {t("recentActivity")}
+              </h3>
+              <div className="mt-6 space-y-5">
+                {recentActivities.map(([titleKey, timeKey, tone]) => (
+                  <div key={titleKey} className="flex gap-4">
+                    <span className={`mt-1 h-5 w-5 rounded-lg ${tone}`} />
+                    <div>
+                      <p className="font-black text-automl-ink dark:text-white">
+                        {t(titleKey)}
+                      </p>
+                      <p className="text-sm font-medium text-automl-muted dark:text-white/55">
+                        {t(timeKey)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
   );
 };
+
+const InfoRow = ({
+  icon: Icon,
+  label,
+  value,
+  code,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  code: string;
+}) => (
+  <div className="flex items-center gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-automl-blue-soft text-xs font-black text-automl-blue">
+      {code}
+    </div>
+    <Icon className="hidden h-4 w-4 text-automl-blue sm:block" />
+    <div className="min-w-0">
+      <Label className="text-sm font-bold text-automl-muted dark:text-white/55">
+        {label}
+      </Label>
+      <p className="truncate text-base font-black text-automl-ink dark:text-white">
+        {value}
+      </p>
+    </div>
+  </div>
+);
+
+const EditForm = ({
+  editFormData,
+  setEditFormData,
+  formErrors,
+  setIsEditing,
+  isAlertDialogOpen,
+  setIsAlertDialogOpen,
+  handleValidateAndOpenDialog,
+  handleConfirmUpdate,
+}: {
+  editFormData: EditUser;
+  setEditFormData: React.Dispatch<React.SetStateAction<EditUser | null>>;
+  formErrors: FormErrors;
+  setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  isAlertDialogOpen: boolean;
+  setIsAlertDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  handleValidateAndOpenDialog: () => void;
+  handleConfirmUpdate: () => Promise<void>;
+}) => (
+  <EditFormContent
+    editFormData={editFormData}
+    setEditFormData={setEditFormData}
+    formErrors={formErrors}
+    setIsEditing={setIsEditing}
+    isAlertDialogOpen={isAlertDialogOpen}
+    setIsAlertDialogOpen={setIsAlertDialogOpen}
+    handleValidateAndOpenDialog={handleValidateAndOpenDialog}
+    handleConfirmUpdate={handleConfirmUpdate}
+  />
+);
+
+const EditFormContent = ({
+  editFormData,
+  setEditFormData,
+  formErrors,
+  setIsEditing,
+  isAlertDialogOpen,
+  setIsAlertDialogOpen,
+  handleValidateAndOpenDialog,
+  handleConfirmUpdate,
+}: {
+  editFormData: EditUser;
+  setEditFormData: React.Dispatch<React.SetStateAction<EditUser | null>>;
+  formErrors: FormErrors;
+  setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  isAlertDialogOpen: boolean;
+  setIsAlertDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  handleValidateAndOpenDialog: () => void;
+  handleConfirmUpdate: () => Promise<void>;
+}) => {
+  const t = useTranslations("Profile");
+  const common = useTranslations("Common");
+
+  return (
+  <div className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-2">
+      <EditField
+        label={t("fields.fullName")}
+        value={editFormData.fullName}
+        error={formErrors.fullName}
+        onChange={(value) =>
+          setEditFormData({ ...editFormData, fullName: value })
+        }
+      />
+      <EditField
+        label={t("fields.email")}
+        type="email"
+        value={editFormData.email}
+        error={formErrors.email}
+        onChange={(value) => setEditFormData({ ...editFormData, email: value })}
+      />
+      <EditField
+        label={t("fields.birthDate")}
+        type="date"
+        value={editFormData.date}
+        error={formErrors.date}
+        onChange={(value) => setEditFormData({ ...editFormData, date: value })}
+      />
+      <div>
+        <Label className="font-bold text-automl-ink dark:text-white">{t("fields.gender")}</Label>
+        <select
+          value={editFormData.gender}
+          onChange={(e) =>
+            setEditFormData({ ...editFormData, gender: e.target.value })
+          }
+          className={inputClass}
+        >
+          <option value="male">{t("gender.male")}</option>
+          <option value="female">{t("gender.female")}</option>
+        </select>
+        {formErrors.gender && (
+          <p className="mt-2 text-sm font-semibold text-red-500">
+            {formErrors.gender}
+          </p>
+        )}
+      </div>
+      <div className="md:col-span-2">
+        <EditField
+          label={t("fields.phone")}
+          value={editFormData.number}
+          error={formErrors.number}
+          onChange={(value) =>
+            setEditFormData({ ...editFormData, number: value })
+          }
+        />
+      </div>
+    </div>
+
+    <div className="flex justify-end gap-3">
+      <Button
+        variant="outline"
+        onClick={() => setIsEditing(false)}
+        className="rounded-2xl"
+      >
+        {common("cancel")}
+      </Button>
+
+      <AlertDialog open={isAlertDialogOpen} onOpenChange={setIsAlertDialogOpen}>
+        <Button
+          onClick={handleValidateAndOpenDialog}
+          className="rounded-2xl bg-automl-blue text-white hover:bg-automl-blue-hover"
+        >
+          {t("saveChanges")}
+        </Button>
+
+        <AlertDialogOverlay className="fixed inset-0 z-40 bg-black/60" />
+        <AlertDialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-6 shadow-xl dark:bg-automl-navy">
+          <AlertDialogHeader className="space-y-2 text-center">
+            <AlertDialogTitle className="text-xl font-black text-automl-ink dark:text-white">
+              {t("confirm.title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-automl-muted dark:text-white/60">
+              {t("confirm.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter className="mt-6 flex w-full justify-center gap-3">
+            <AlertDialogCancel className="rounded-2xl px-5">
+              {common("cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmUpdate}
+              className="rounded-2xl bg-automl-blue px-5 text-white hover:bg-automl-blue-hover"
+            >
+              {common("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  </div>
+  );
+};
+
+const EditField = ({
+  label,
+  value,
+  onChange,
+  error,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  type?: string;
+}) => (
+  <div>
+    <Label className="font-bold text-automl-ink dark:text-white">{label}</Label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass}
+    />
+    {error && <p className="mt-2 text-sm font-semibold text-red-500">{error}</p>}
+  </div>
+);
 
 export default Profile;

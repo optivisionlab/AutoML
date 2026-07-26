@@ -13,7 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
-import { useApi } from "@/hooks/useApi";
+import { useUploadDatasetMutation } from "@/redux/api/datasetApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import { UploadCloud } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 type Props = {
   open: boolean;
@@ -23,13 +26,14 @@ type Props = {
 };
 
 const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
-  const { post } = useApi();
+  const t = useTranslations("DatasetDialogs.add");
+  const common = useTranslations("Common");
   const { toast } = useToast();
+  const [uploadDataset, { isLoading }] = useUploadDatasetMutation();
 
   const [dataName, setDataName] = useState("");
   const [dataType, setDataType] = useState("table");
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const resetForm = () => {
@@ -41,25 +45,23 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
   const handleUpload = async () => {
     if (!dataName || !file) {
       toast({
-        title: "Vui lòng nhập đầy đủ thông tin",
+        title: t("missingInfo"),
         variant: "destructive",
         duration: 3000,
       });
       return;
     }
 
-    const formData = new FormData();
-    formData.append("data_name", dataName);
-    formData.append("data_type", dataType);
-    formData.append("file_data", file);
-
     try {
-      setLoading(true);
-
-      await post(`/upload-dataset?user_id=${userId}`, formData);
+      await uploadDataset({
+        userId,
+        dataName,
+        dataType,
+        file,
+      }).unwrap();
 
       toast({
-        title: "Tải lên thành công!",
+        title: t("uploadSuccess"),
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
@@ -71,51 +73,56 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
     } catch (err) {
       console.error("Upload error:", err);
       toast({
-        title: "Có lỗi xảy ra",
-        description: "Không thể tải lên dữ liệu.",
+        title: t("errorTitle"),
+        description: getApiErrorMessage(err, t("uploadFailed")),
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md dark:bg-[#171717]">
-          <DialogHeader className="flex flex-col items-center text-center">
-            <DialogTitle>Thêm bộ dữ liệu</DialogTitle>
-            <DialogDescription>
-              Nhập thông tin và chọn file để tải lên.
+        <DialogContent className="automl-dialog-content max-w-md">
+          <DialogHeader className="automl-dialog-header">
+            <div className="automl-dialog-kicker mb-3">
+              <UploadCloud className="h-5 w-5" />
+            </div>
+            <DialogTitle className="automl-dialog-title">
+              {t("title")}
+            </DialogTitle>
+            <DialogDescription className="automl-dialog-description">
+              {t("description")}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label>Tên bộ dữ liệu</Label>
+          <div className="automl-dialog-body automl-dialog-fields">
+            <div className="automl-dialog-field">
+              <Label>{t("datasetName")}</Label>
               <Input
+                className="automl-dialog-input"
                 value={dataName}
                 onChange={(e) => setDataName(e.target.value)}
               />
             </div>
 
-            <div>
-              <Label>Kiểu dữ liệu</Label>
+            <div className="automl-dialog-field">
+              <Label>{t("dataType")}</Label>
               <select
                 value={dataType}
                 onChange={(e) => setDataType(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2"
+                className="automl-dialog-input w-full"
               >
-                <option value="table">Bảng</option>
-                <option value="image">Hình ảnh</option>
-                <option value="text">Văn bản</option>
+                <option value="table">{t("types.table")}</option>
+                <option value="image">{t("types.image")}</option>
+                <option value="text">{t("types.text")}</option>
               </select>
             </div>
 
-            <div>
-              <Label>Chọn file</Label>
+            <div className="automl-dialog-field">
+              <Label>{t("chooseFile")}</Label>
               <Input
+                className="automl-dialog-input py-2"
                 type="file"
                 accept=".csv"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -123,13 +130,13 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
             </div>
           </div>
 
-          <DialogFooter className="mt-6">
+          <DialogFooter className="automl-dialog-footer">
             <Button
-              disabled={loading}
+              disabled={isLoading}
               onClick={() => setConfirmOpen(true)}
-              className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+              className="automl-action-primary"
             >
-              {loading ? "Đang tải..." : "Tải lên"}
+              {isLoading ? t("uploading") : t("upload")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -137,23 +144,27 @@ const AddDatasetDialog = ({ open, onOpenChange, userId, onSuccess }: Props) => {
 
       {/* Dialog xác nhận đơn giản */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Xác nhận</DialogTitle>
-            <DialogDescription>
-              Bạn có chắc chắn muốn tải lên bộ dữ liệu này?
+        <DialogContent className="automl-dialog-content max-w-md">
+          <DialogHeader className="automl-dialog-header">
+            <DialogTitle className="automl-dialog-title">{common("confirm")}</DialogTitle>
+            <DialogDescription className="automl-dialog-description">
+              {t("confirmDescription")}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Hủy
+          <DialogFooter className="automl-dialog-footer">
+            <Button
+              variant="outline"
+              className="automl-dialog-button-muted"
+              onClick={() => setConfirmOpen(false)}
+            >
+              {common("cancel")}
             </Button>
             <Button
-              disabled={loading}
+              disabled={isLoading}
               onClick={handleUpload}
-              className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+              className="automl-action-primary"
             >
-              {loading ? "Đang tải..." : "Xác nhận"}
+              {isLoading ? t("uploading") : common("confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

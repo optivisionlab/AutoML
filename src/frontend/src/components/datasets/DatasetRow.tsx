@@ -2,7 +2,6 @@
 
 import { memo } from "react";
 import { TableRow, TableCell } from "@/components/ui/table";
-import { useRouter } from "next/navigation";
 import DatasetActions from "./DatasetAction";
 
 export type Dataset = {
@@ -12,7 +11,8 @@ export type Dataset = {
   createDate: number;
   latestUpdate?: number;
   lastestUpdate?: number;
-  username: string;
+  userId: string;
+  username?: string;
 };
 
 type Props = {
@@ -27,26 +27,16 @@ const formatDate = (timestamp?: number) => {
 };
 
 const DatasetRow = ({ dataset, onEdit, onDelete }: Props) => {
-  const router = useRouter();
-
   return (
-    <TableRow className="hover:bg-muted/50 transition">
-      <TableCell className="py-3 px-4 font-medium text-gray-800">
+    <TableRow>
+      <TableCell className="font-bold text-[var(--automl-data-text)]">
         {dataset.dataName || "Không có tên"}
       </TableCell>
-      <TableCell className="py-3 px-4 text-gray-700">
-        {dataset.dataType || "Chưa rõ"}
-      </TableCell>
-      <TableCell className="py-3 px-4 text-gray-600">
-        {formatDate(dataset.createDate)}
-      </TableCell>
-      <TableCell className="py-3 px-4 text-gray-600">
-        {formatDate(dataset.latestUpdate || dataset.lastestUpdate)}
-      </TableCell>
-      <TableCell className="py-3 px-4 text-gray-700">
-        {dataset.username}
-      </TableCell>
-      <TableCell className="py-3 px-4 text-center space-x-2">
+      <TableCell>{dataset.dataType || "Chưa rõ"}</TableCell>
+      <TableCell>{formatDate(dataset.createDate)}</TableCell>
+      <TableCell>{formatDate(dataset.latestUpdate || dataset.lastestUpdate)}</TableCell>
+      <TableCell className="text-center">{dataset.username || "Hệ thống"}</TableCell>
+      <TableCell className="text-center">
         <DatasetActions
           datasetId={dataset._id}
           onEdit={() => onEdit(dataset)}

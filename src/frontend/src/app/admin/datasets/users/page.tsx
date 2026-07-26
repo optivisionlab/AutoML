@@ -1,40 +1,30 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import AppLoading from "@/components/common/AppLoading";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import EditDatasetDialog from "@/components/crudDataset/EditDatasetDialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
 import DialogForm from "../../../../components/dialog";
 import DatasetTable from "@/components/datasets/DatasetTable";
-import { useApi } from "@/hooks/useApi";
-
-type Dataset = {
-  _id: string;
-  dataName: string;
-  dataType: string;
-  createDate: number;
-  latestUpdate?: number;
-  lastestUpdate?: number;
-  userId: string;
-  username: string;
-};
-
-const formatDate = (timestamp?: number): string => {
-  if (!timestamp) return "Không có dữ liệu";
-  return new Date(timestamp * 1000).toLocaleDateString("vi-VN");
-};
+import {
+  Dataset,
+  useDeleteDatasetMutation,
+  useGetAllUserDatasetsQuery,
+} from "@/redux/api/datasetApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
 
 const Page = () => {
-  const { get, remove } = useApi();
-
   const { data: session } = useSession();
-  const router = useRouter();
+  const {
+    data: datasets = [],
+    isLoading,
+    refetch,
+  } = useGetAllUserDatasetsQuery();
+  const [deleteDataset] = useDeleteDatasetMutation();
 
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [loading, setLoading] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
 
@@ -46,31 +36,11 @@ const Page = () => {
 
   const { toast } = useToast();
 
-  const fetchDatasets = async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
-
-    try {
-      const data = await get(`/get-list-data-user`);
-      setDatasets(data || []);
-    } catch (err) {
-      console.error("Lỗi khi lấy dữ liệu:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDatasets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
-
   const handleOpenEdit = (dataset: Dataset) => {
     setSelectedDataset(dataset);
     setEditDialogOpen(true);
   };
 
-  // Khi click xoá dataset trong bảng
   const handleOpenDelete = (id: string) => {
     setDatasetIdToDelete(id);
     setDeleteDialogOpen(true);
@@ -80,19 +50,22 @@ const Page = () => {
     if (!datasetIdToDelete) return;
 
     try {
-      await remove(`/delete-dataset/${datasetIdToDelete}`);
+      await deleteDataset(datasetIdToDelete).unwrap();
 
       toast({
         title: "Xóa thành công",
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
-      fetchDatasets();
+      refetch();
     } catch (err) {
       console.log("Lỗi xoá:", err);
       toast({
         title: "Xóa thất bại",
-        description: "Có lỗi xảy ra khi xoá bộ dữ liệu.",
+        description: getApiErrorMessage(
+          err,
+          "Có lỗi xảy ra khi xoá bộ dữ liệu.",
+        ),
         variant: "destructive",
         duration: 3000,
       });
@@ -104,16 +77,27 @@ const Page = () => {
 
   return (
     <>
-      <Card className="max-w-6xl mx-auto mt-8 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
-            Quản lý bộ dữ liệu của người dùng
-          </CardTitle>
+      <Card className="automl-data-card mt-2 w-full">
+        <CardHeader className="automl-data-toolbar">
+          <div>
+            <CardTitle className="automl-data-title">
+              Quản lý bộ dữ liệu của người dùng
+            </CardTitle>
+            <p className="automl-data-subtitle">
+              Theo dõi dataset đã upload trong toàn workspace và xử lý quyền quản trị.
+            </p>
+          </div>
+          <div className="automl-data-actions">
+            <span className="automl-data-chip">{datasets.length} datasets</span>
+            <span className="automl-data-chip automl-data-chip-secondary">
+              User workspace
+            </span>
+          </div>
         </CardHeader>
 
-        <CardContent>
-          {loading ? (
-            <div>Đang tải dữ liệu...</div>
+        <CardContent className="automl-table-wrap pt-5">
+          {isLoading ? (
+            <AppLoading />
           ) : (
             <DatasetTable
               datasets={datasets}
@@ -124,19 +108,17 @@ const Page = () => {
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
       {selectedDataset && (
         <EditDatasetDialog
           open={editDialogOpen}
           onOpenChange={(open) => {
             setEditDialogOpen(open);
-            if (!open) fetchDatasets();
+            if (!open) refetch();
           }}
           dataset={selectedDataset}
         />
       )}
 
-      {/* Delete Dialog */}
       <DialogForm
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
@@ -152,7 +134,7 @@ const Page = () => {
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}
           userId={session.user.id}
-          onSuccess={fetchDatasets}
+          onSuccess={refetch}
         />
       )}
     </>

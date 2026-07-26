@@ -1,52 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import TrainCard from "@/components/publicDatasetUser/TrainCard";
+import { useGetDatasetInfoQuery } from "@/redux/api/datasetApi";
+import BackButton from "@/components/common/BackButton";
 
 export default function Page() {
   const params = useParams();
   const datasetID = Array.isArray(params?.datasetID)
     ? params.datasetID[0]
     : params?.datasetID;
-
-  const [dataName, setDataName] = useState<string>("Đang tải...");
+  const { data, isError } = useGetDatasetInfoQuery(datasetID ?? "", {
+    skip: !datasetID,
+  });
+  const dataName = isError
+    ? "Không thể tải tên bộ dữ liệu"
+    : data?.dataName || "Đang tải...";
 
   useEffect(() => {
     sessionStorage.clear();
-
-    const fetchData = async () => {
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/get-data-info?id=${datasetID}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-            body: "",
-            cache: "no-store",
-          }
-        );
-
-        if (!res.ok) throw new Error("Lỗi khi gọi API");
-
-        const data = await res.json();
-        setDataName(data.dataName || "Không rõ");
-      } catch (error) {
-        console.log("Lỗi lấy dữ liệu:", error);
-        setDataName("Không thể tải tên bộ dữ liệu");
-      }
-    };
-
-    if (datasetID) {
-      fetchData();
-    }
-  }, [datasetID]);
+  }, []);
 
   return datasetID ? (
-    <TrainCard datasetID={datasetID} datasetName={dataName} />
+    <div className="space-y-4">
+      <BackButton fallbackHref="/admin/datasets/public" />
+      <TrainCard datasetID={datasetID} datasetName={dataName} />
+    </div>
   ) : (
-    <div>Không tìm thấy ID dataset</div>
+    <div className="space-y-4">
+      <BackButton fallbackHref="/admin/datasets/public" />
+      <div>Không tìm thấy ID dataset</div>
+    </div>
   );
 }

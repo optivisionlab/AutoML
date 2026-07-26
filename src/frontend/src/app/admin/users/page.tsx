@@ -1,5 +1,6 @@
 "use client";
 
+import AppLoading from "@/components/common/AppLoading";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -11,26 +12,28 @@ import AddUserForm from "@/components/addUserForm/AddUserForm";
 import { Plus } from "lucide-react";
 import UserTable from "./UserTable";
 
-import UserForm from "./UserForm";
-import { User } from "@/hooks/useUsers";
+import UserForm, { FormData as UserFormData } from "./UserForm";
 import useUsers from "@/hooks/useUsers";
 import DialogForm from "../../../components/dialog";
-import { useApi } from "@/hooks/useApi";
+import {
+  User,
+  useDeleteUserMutation,
+  useUpdateUserMutation,
+} from "@/redux/api/userApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
 
-// Main Page Component
 const UserManagementPage = () => {
-  const { remove } = useApi();
-
-  // const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [pendingFormData, setPendingFormData] = useState<FormData | null>(null);
+  const [pendingFormData, setPendingFormData] = useState<UserFormData | null>(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const { users, fetchUsers } = useUsers();
+  const { users, fetchUsers, isLoading } = useUsers();
+  const [updateUser] = useUpdateUserMutation();
+  const [deleteUser] = useDeleteUserMutation();
   const { toast } = useToast();
 
   const handleEdit = (user: User) => {
@@ -48,7 +51,7 @@ const UserManagementPage = () => {
     setIsDialogOpen(false);
   };
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = (data: UserFormData) => {
     setPendingFormData(data);
     setIsConfirmDialogOpen(true);
   };
@@ -57,26 +60,10 @@ const UserManagementPage = () => {
     if (!editingUser || !pendingFormData) return;
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_API}/update/${editingUser.username}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(pendingFormData),
-        },
-      );
-
-      if (!res.ok) {
-        toast({
-          title: "Cập nhật thất bại",
-          description: "Đã xảy ra lỗi khi cập nhật.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        throw new Error("Failed to update user");
-      }
+      await updateUser({
+        username: editingUser.username,
+        data: pendingFormData,
+      }).unwrap();
 
       toast({
         title: "Cập nhật thành công!",
@@ -90,6 +77,12 @@ const UserManagementPage = () => {
       setIsConfirmDialogOpen(false);
       handleDialogClose();
     } catch (error) {
+      toast({
+        title: "Cập nhật thất bại",
+        description: getApiErrorMessage(error, "Đã xảy ra lỗi khi cập nhật."),
+        variant: "destructive",
+        duration: 3000,
+      });
       console.log("Update error:", error);
     }
   };
@@ -98,9 +91,7 @@ const UserManagementPage = () => {
     if (!userToDelete) return;
 
     try {
-      await remove(
-        `${process.env.NEXT_PUBLIC_BASE_API}/delete/${userToDelete.username}`,
-      );
+      await deleteUser(userToDelete.username).unwrap();
 
       toast({
         title: "Xóa thành công!",
@@ -110,11 +101,11 @@ const UserManagementPage = () => {
         duration: 3000,
       });
 
-      await fetchUsers(); // refresh list
+      await fetchUsers();
     } catch (error) {
       toast({
         title: "Xóa thất bại",
-        description: "Đã xảy ra lỗi khi xóa người dùng.",
+        description: getApiErrorMessage(error, "Đã xảy ra lỗi khi xóa người dùng."),
         variant: "destructive",
         duration: 3000,
       });
@@ -127,18 +118,24 @@ const UserManagementPage = () => {
   };
 
   return (
-    <div className="p-6">
-      <Card className="shadow-lg">
-        <CardHeader className="px-4">
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
-            Quản lý tài khoản người dùng
-          </CardTitle>
-          <div className="flex justify-end w-full mt-2">
+    <div>
+      <Card className="automl-data-card mt-2 w-full">
+        <CardHeader className="automl-data-toolbar">
+          <div>
+            <CardTitle className="automl-data-title">
+              Quản lý tài khoản người dùng
+            </CardTitle>
+            <p className="automl-data-subtitle">
+              Theo dõi thông tin tài khoản, chỉnh sửa hồ sơ và phân quyền workspace.
+            </p>
+          </div>
+          <div className="automl-data-actions">
+            <span className="automl-data-chip">{users.length} users</span>
             <Button
               onClick={() => setIsAddDialogOpen(true)}
-              className="flex gap-2 bg-blue-500 text-white px-3 py-2 text-sm hover:bg-blue-600"
+              className="automl-action-primary gap-2 px-4"
             >
-              <span className="w-5 h-5 rounded-full bg-white text-blue-500 flex items-center justify-center">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/15">
                 <Plus size={14} />
               </span>
               Thêm mới
@@ -146,15 +143,18 @@ const UserManagementPage = () => {
           </div>
         </CardHeader>
 
-        <CardContent className="overflow-auto">
-          <UserTable
-            users={users}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
+        <CardContent className="automl-table-wrap pt-5">
+          {isLoading ? (
+            <AppLoading />
+          ) : (
+            <UserTable
+              users={users}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          )}
         </CardContent>
       </Card>
-      {/* Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <UserForm
           editingUser={editingUser}
@@ -162,7 +162,6 @@ const UserManagementPage = () => {
           onClose={handleDialogClose}
         />
       </Dialog>
-      {/* Dialog Confirm  */}
       <DialogForm
         open={isConfirmDialogOpen}
         onOpenChange={setIsConfirmDialogOpen}
@@ -174,7 +173,6 @@ const UserManagementPage = () => {
         onConfirm={handleConfirmUpdate}
       />
 
-      {/* Dialog delete */}
       <DialogForm
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}

@@ -1,15 +1,7 @@
 "use client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { AlertCircle, LoaderCircle } from "lucide-react";
+
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ChartContainer } from "@/components/ui/chart";
@@ -19,9 +11,24 @@ import { ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { type ChartConfig } from "@/components/ui/chart";
 import React from "react";
 import toTitleLabel from "@/utils/toTitleLable";
-import { useApi } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import UploadPredictBox from "@/components/common/UploadPredictBox";
+import AppLoading from "@/components/common/AppLoading";
+import BackButton from "@/components/common/BackButton";
+import ProgressMap from "@/components/training/ProgressMap";
+import { progressMapSample } from "@/data/progressMapSample";
+import { useGetMetricsQuery } from "@/redux/api/automlApi";
+import { useGetJobInfoQuery } from "@/redux/api/jobApi";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+const CHART_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed"];
 
 type Props = {
   params: Promise<{
@@ -29,15 +36,18 @@ type Props = {
   }>;
 };
 
+const formatMetric = (value?: number) => {
+  if (typeof value !== "number") return "-";
+  return value.toFixed(6);
+};
+
+const formatPercent = (value?: number) => {
+  if (typeof value !== "number") return "-";
+  return `${(value * 100).toFixed(2)}%`;
+};
+
 const ResultPage = ({ params }: Props) => {
-  const { post, get } = useApi();
-
   const [datasetID, setDatasetID] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
-
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   const [showChart, setShowChart] = useState(false);
   const [openRow, setOpenRow] = useState<string | null>(null);
 
@@ -50,93 +60,49 @@ const ResultPage = ({ params }: Props) => {
     unwrapParams();
   }, [params]);
 
-  // Lấy danh sách độ đo theo loại bài toán
-  type MetricOb = Record<string, string>;
-  const [metrics, setMetrics] = useState<MetricOb>({});
+  const {
+    data: result,
+    isError,
+    isLoading,
+  } = useGetJobInfoQuery(datasetID ?? "", {
+    skip: !datasetID,
+  });
 
-  const getMetrics = useCallback(async (type: string) => {
-    try {
-      const data = await get(`/v2/auto/metrics?problem_type=${type}`);
+  const problemType = result?.config?.problem_type || "classification";
+  const hasClassificationMetrics = Boolean(
+    result?.orther_model_scores?.[0]?.scores?.f1,
+  );
 
-      console.log(data.metrics);
-      setMetrics(data.metrics);
-    } catch (err) {
-      console.error("Lỗi khi gọi API:", err);
-      alert("Không thể tải dữ liệu huấn luyện.");
-    }
-  }, []);
+  const { data: metricsData } = useGetMetricsQuery(problemType, {
+    skip: !result || hasClassificationMetrics,
+  });
 
-  // Fetch data train từ API đầu tiên
-  const fetchDataResult = useCallback(async () => {
-    if (datasetID) {
-      setIsLoading(true);
-      try {
-        const data = await post(`get-job-info?id=${datasetID}`);
-        setResult(data);
-
-        const problemType = data.config?.problem_type || "classification";
-        const test_value = data?.orther_model_scores[0]?.scores?.f1;
-
-        if (!test_value && problemType) {
-          getMetrics(problemType);
-        } else {
-          setMetrics({
+  const metrics = useMemo(
+    () =>
+      hasClassificationMetrics
+        ? {
             0: "accuracy",
             1: "f1",
             2: "precision",
             3: "recall",
-          });
-        }
-      } catch (err) {
-        console.log("Lỗi khi gọi API:", err);
-        setError(
-          "Có lỗi xảy ra trong quá trình huấn luyện, vui lòng xem lại cấu hình thuộc tính.",
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [datasetID]);
+          }
+        : metricsData?.metrics ?? {},
+    [hasClassificationMetrics, metricsData?.metrics],
+  );
 
-  useEffect(() => {
-    fetchDataResult();
-  }, [datasetID, fetchDataResult]);
+  const chartConfig = useMemo(
+    () =>
+      Object.entries(metrics).reduce((config: Record<string, unknown>, [key, value], index) => {
+        config[key] = {
+          label: value,
+          value,
+          color: CHART_COLORS[index % CHART_COLORS.length],
+        };
+        return config;
+      }, {}) satisfies ChartConfig,
+    [metrics],
+  );
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-muted/50 px-4">
-        <Card className="w-full max-w-md shadow-lg border border-red-300">
-          <CardHeader className="flex flex-row items-center gap-3">
-            <AlertCircle className="text-red-500" />
-            <CardTitle className="text-red-600 text-lg">
-              Đã xảy ra lỗi
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-700">{error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Setup biểu đồ
-  // Chart config
-  const randomColor = () => `hsl(${Math.floor(Math.random() * 360)}, 70%, 45%)`;
-
-  const chartConfig = Object.entries(metrics).reduce(
-    (config: any, [key, value]) => {
-      config[key] = {
-        label: value, // <-- HIỂN THỊ CHỮ NÀY
-        value: value, // dùng để map scores
-        color: randomColor(),
-      };
-      return config;
-    },
-    {},
-  ) satisfies ChartConfig;
-
-  // Chart data
   const chartData = useMemo(() => {
     if (!result?.orther_model_scores) return [];
 
@@ -151,7 +117,7 @@ const ResultPage = ({ params }: Props) => {
         return true;
       })
       .map((model: any) => {
-        const row: any = { name: model.model_name };
+        const row: Record<string, string | number> = { name: model.model_name };
         Object.entries(chartConfig).forEach(([key, metric]: any) => {
           let val = model.scores?.[metric.value] || 0;
           if (metric.value === "r2" && val < 0) val = 0;
@@ -161,179 +127,222 @@ const ResultPage = ({ params }: Props) => {
       });
   }, [result, chartConfig]);
 
-  return (
-    <div className="relative p-6">
-      {/* Hiển thị loading bao trùm toàn màn hình */}
-      {isLoading && (
-        <div className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 bg-white/80 p-4">
-          <div className="flex items-center gap-2 text-blue-700">
-            <LoaderCircle className="w-6 h-6 animate-spin" />
-            <span className="text-lg font-medium">Đang tải...</span>
+  const sortedModels = useMemo(() => {
+    if (!result?.orther_model_scores) return [];
+    const metricSort = result.config?.metric_sort || "accuracy";
+
+    return [...result.orther_model_scores].sort((a: any, b: any) => {
+      const scoreA = a.scores?.[metricSort] ?? 0;
+      const scoreB = b.scores?.[metricSort] ?? 0;
+      return scoreB - scoreA;
+    });
+  }, [result]);
+
+  const features = result?.config?.list_feature?.join(", ") || "Không có dữ liệu";
+  const metricSort = result?.config?.metric_sort || "accuracy";
+  const progressMapPipeline = useMemo(() => {
+    if (!result) return progressMapSample;
+
+    return {
+      ...progressMapSample,
+      predictionColumn: result.config?.target || progressMapSample.predictionColumn,
+      rankBy: toTitleLabel(metricSort),
+      nodes: progressMapSample.nodes.map((node) => {
+        if (node.id === "xgb") {
+          return {
+            ...node,
+            label: result.best_model || node.label,
+            params: {
+              ...node.params,
+              ...(typeof result.best_params === "object" && result.best_params
+                ? (result.best_params as Record<string, string | number | boolean>)
+                : {}),
+            },
+            result: {
+              ...node.result,
+              [metricSort]: formatMetric(result.best_score),
+            },
+          };
+        }
+
+        if (node.id === "model-selection") {
+          return {
+            ...node,
+            params: {
+              ...node.params,
+              metric: metricSort,
+              problem_type: result.config?.problem_type || problemType,
+            },
+            result: {
+              ...node.result,
+              best_model: result.best_model || "Không rõ",
+            },
+          };
+        }
+
+        return node;
+      }),
+    };
+  }, [metricSort, problemType, result]);
+
+  if (isError) {
+    return (
+      <div className="space-y-4 bg-[var(--automl-workspace-bg)] px-4">
+        <BackButton fallbackHref="/training-history" />
+        <div className="flex min-h-[70vh] items-center justify-center">
+        <div className="w-full max-w-md rounded-[18px] border border-red-900/70 bg-[var(--automl-data-card-bg)] p-6 text-[var(--automl-data-text)]">
+          <div className="mb-4 flex items-center gap-3">
+            <AlertCircle className="text-red-400" />
+            <h2 className="text-lg font-bold text-red-300">Đã xảy ra lỗi</h2>
           </div>
+          <p className="text-sm leading-relaxed text-[var(--automl-data-muted)]">
+            Có lỗi xảy ra trong quá trình tải kết quả huấn luyện.
+          </p>
         </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[calc(100vh-96px)] rounded-[24px] bg-[var(--automl-workspace-bg)] p-4 text-[var(--automl-data-text)] sm:p-6">
+      <div className="mb-4">
+        <BackButton fallbackHref="/training-history" />
+      </div>
+      {isLoading && (
+        <AppLoading variant="overlay" label="Đang tải kết quả..." />
       )}
 
-      {/* Card chứa kết quả huấn luyện */}
       {result && (
-        <Card className="mb-6 text-center p-6">
-          <h2 className="text-xl font-semibold text-[#3a6df4]">
-            Kết quả huấn luyện
-          </h2>
+        <div className="flex w-full flex-col gap-6">
+          <section className="rounded-[20px] border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-wide text-automl-blue">
+                  Kết quả huấn luyện · Model ID {result.best_model_id || "-"}
+                </p>
+                <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight text-[var(--automl-data-text)]">
+                  {result.best_model || "Không rõ"}
+                </h1>
+                <p className="mt-1 truncate text-sm font-semibold text-[var(--automl-data-muted)]">
+                  Cột dự đoán {result.config?.target || "Không rõ"} · {features}
+                </p>
+              </div>
 
-          {/* Bảng kết quả mô hình tốt nhất */}
-          <Table className="mt-4 p-4">
-            <TableHeader>
-              <TableRow className="text-center">
-                <TableHead className="text-center">Best Model ID</TableHead>
-                <TableHead className="text-center">Best Model Name</TableHead>
-                <TableHead className="text-center">Best Score</TableHead>
-                <TableHead className="text-center">Best Params</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell>{result.best_model_id}</TableCell>
-                <TableCell>{result.best_model}</TableCell>
-                <TableCell>{result.best_score}</TableCell>
-                <TableCell>{JSON.stringify(result.best_params)}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+              <div className="grid gap-2 sm:grid-cols-3 xl:w-[520px]">
+                <CompactSummary label="Điểm" value={formatPercent(result.best_score)} />
+                <CompactSummary label="Chỉ số" value={toTitleLabel(metricSort)} />
+                <CompactSummary label="Chế độ" value={result.config?.choose || "Không rõ"} />
+              </div>
 
-          <div className="mt-6">
-            <p className="text-[#3a6df4] text-xl font-semibold">
-              Cấu hình thuộc tính
-            </p>
-
-            <Table className="mt-4 p-4">
-              <TableHeader>
-                <TableRow className="text-center">
-                  <TableHead className="text-center">
-                    Mô hình huấn luyện
-                  </TableHead>
-                  <TableHead className="text-center">
-                    Thuộc tính mục tiêu
-                  </TableHead>
-                  <TableHead className="text-center">
-                    Thuộc tính huấn luyện
-                  </TableHead>
-                  <TableHead className="text-center">Chỉ số đánh giá</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell>{result.config.choose}</TableCell>
-                  <TableCell>{result.config.target}</TableCell>
-                  <TableCell>{result.config.list_feature.join(", ")}</TableCell>
-                  <TableCell>{result.config.metric_sort}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Bảng thông tin các mô hình khác */}
-          <div className="mt-6">
-            <p className="text-[#3a6df4] text-xl font-semibold">
-              Thông tin tất cả các mô hình
-            </p>
-
-            <div className="flex items-center justify-end mb-4 gap-2">
-              <Label htmlFor="toggle-chart">Hiển thị dạng biểu đồ</Label>
-              <Switch
-                id="toggle-chart"
-                checked={showChart}
-                onCheckedChange={setShowChart}
-              />
-            </div>
-
-            {showChart ? (
-              <ChartContainer
-                config={chartConfig}
-                className="max-h-[450px] w-full"
+              <Button
+                className={`h-10 shrink-0 px-4 ${openRow === datasetID ? "automl-action-danger" : "bg-[#1fc761] text-white hover:bg-[#18b354]"}`}
+                onClick={() => setOpenRow(openRow === datasetID ? null : datasetID)}
               >
-                <BarChart accessibilityLayer data={chartData}>
-                  <CartesianGrid vertical={false} />
+                {openRow === datasetID ? "Đóng upload" : "Upload kiểm thử"}
+              </Button>
+            </div>
+          </section>
 
-                  <XAxis
-                    dataKey="name"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickFormatter={(value) =>
-                      value.replace(/([a-z])([A-Z])/g, "$1 $2")
-                    }
-                  />
-
-                  <YAxis domain={[0, 1]} tickLine={false} axisLine={false} />
-
-                  <ChartTooltip content={<ChartTooltipContent />} />
-
-                  {/* Chú thích */}
-                  <ChartLegend content={<ChartLegendContent />} />
-
-                  {Object.entries(chartConfig).map(([key]) => (
-                    <Bar
-                      key={key}
-                      dataKey={key} //
-                      fill={`var(--color-${key})`}
-                      radius={4}
-                    />
-                  ))}
-                </BarChart>
-              </ChartContainer>
-            ) : (
-              <Table className="mt-4 p-4">
-                <TableHeader>
-                  <TableRow className="text-center">
-                    <TableHead className="text-center">Model</TableHead>
-                    {Object.entries(metrics).map(([metric, value]) => (
-                      <TableHead key={metric} className="text-center">
-                        {toTitleLabel(value)}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.orther_model_scores.map(
-                    (model: any, index: number) => (
-                      <TableRow key={index} className="text-center">
-                        <TableCell>{model.model_name}</TableCell>
-
-                        {Object.values(metrics).map((metricKey: string) => (
-                          <TableCell key={metricKey}>
-                            {model.scores?.[metricKey]?.toFixed(6) ?? "-"}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ),
-                  )}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-
-          <div className="text-right mt-10 py-5">
-            <Button
-              className={`px-4 py-2 text-white transition ${
-                openRow === datasetID
-                  ? "bg-red-500 hover:bg-red-600"
-                  : "bg-green-600 hover:bg-green-700"
-              }`}
-              onClick={() =>
-                setOpenRow(openRow === datasetID ? null : datasetID)
-              }
-            >
-              {openRow === datasetID ? "X" : "Upload Test"}
-            </Button>
-          </div>
+          <ProgressMap pipeline={progressMapPipeline} />
 
           {openRow === datasetID && (
-            <UploadPredictBox jobId={datasetID || ""} />
+            <section className="rounded-[22px] border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-5">
+              <UploadPredictBox jobId={datasetID || ""} />
+            </section>
           )}
-        </Card>
+
+          <section className="automl-data-card">
+            <div className="automl-data-toolbar">
+              <div>
+                <h2 className="automl-data-title">Bảng xếp hạng pipeline</h2>
+                <p className="automl-data-subtitle">Các pipeline được sắp xếp theo chỉ số đang tối ưu.</p>
+              </div>
+              <div className="automl-data-actions">
+                <span className="automl-data-chip">Sắp xếp theo {toTitleLabel(metricSort)}</span>
+                <div className="flex items-center gap-2 text-[var(--automl-data-muted)]">
+                  <Label htmlFor="toggle-chart" className="text-sm font-bold">Biểu đồ</Label>
+                  <Switch
+                    id="toggle-chart"
+                    checked={showChart}
+                    onCheckedChange={setShowChart}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="automl-table-wrap pt-5">
+              {showChart ? (
+                <div className="rounded-[14px] border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] p-4">
+                  <ChartContainer config={chartConfig} className="max-h-[450px] w-full">
+                    <BarChart accessibilityLayer data={chartData}>
+                      <CartesianGrid vertical={false} stroke="var(--automl-data-card-border)" />
+                      <XAxis
+                        dataKey="name"
+                        tickLine={false}
+                        tickMargin={10}
+                        axisLine={false}
+                        tickFormatter={(value) => value.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                      />
+                      <YAxis domain={[0, 1]} tickLine={false} axisLine={false} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      {Object.entries(chartConfig).map(([key]) => (
+                        <Bar key={key} dataKey={key} fill={`var(--color-${key})`} radius={4} />
+                      ))}
+                    </BarChart>
+                  </ChartContainer>
+                </div>
+              ) : (
+                <Table className="automl-data-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Hạng</TableHead>
+                      <TableHead>Mô hình</TableHead>
+                      <TableHead>Thuật toán</TableHead>
+                      {Object.entries(metrics).map(([metric, value]) => (
+                        <TableHead key={metric}>{toTitleLabel(value)}</TableHead>
+                      ))}
+                      <TableHead>Thao tác</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedModels.map((model: any, index: number) => (
+                      <TableRow key={`${model.model_name}-${index}`} className={index === 0 ? "automl-row-highlight" : undefined}>
+                        <TableCell className="font-extrabold">{index + 1}</TableCell>
+                        <TableCell className="font-extrabold text-[var(--automl-data-text)]">Pipeline {index + 1}</TableCell>
+                        <TableCell>{model.model_name}</TableCell>
+                        {Object.values(metrics).map((metricKey: string) => (
+                          <TableCell key={metricKey}>{formatMetric(model.scores?.[metricKey])}</TableCell>
+                        ))}
+                        <TableCell>{index === 0 ? "Lưu" : "Mô hình"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );
 };
+
+const CompactSummary = ({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) => (
+  <div className="min-w-0 rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-3 py-2">
+    <p className="text-[11px] font-black uppercase tracking-wide text-[var(--automl-data-muted)]">
+      {label}
+    </p>
+    <p className="mt-0.5 truncate text-sm font-extrabold text-[var(--automl-data-text)]">
+      {value}
+    </p>
+  </div>
+);
 
 export default ResultPage;

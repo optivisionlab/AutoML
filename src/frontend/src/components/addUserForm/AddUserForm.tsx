@@ -27,6 +27,8 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import { useCreateUserMutation } from "@/redux/api/userApi";
 
 const addUserSchema = z
   .object({
@@ -65,6 +67,7 @@ export default function AddUserForm({
   onSuccess,
 }: AddUserFormProps) {
   const { toast } = useToast();
+  const [createUser] = useCreateUserMutation();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -91,18 +94,19 @@ export default function AddUserForm({
 
   const onSubmit = async (data: AddUserFormValues) => {
     try {
-      const { confirmPassword, ...submitData } = data;
+      const submitData = {
+        username: data.username,
+        email: data.email,
+        password: data.password,
+        gender: data.gender,
+        date: data.date,
+        number: data.number,
+        fullName: data.fullName,
+        role: data.role,
+        avatar: data.avatar,
+      };
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submitData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Thêm người dùng thất bại");
-      }
+      await createUser(submitData).unwrap();
 
       toast({
         title: "Thành công!",
@@ -113,10 +117,10 @@ export default function AddUserForm({
       reset();
       onClose();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: "Lỗi",
-        description: err.message || "Không thể thêm người dùng.",
+        description: getApiErrorMessage(err, "Không thể thêm người dùng."),
         variant: "destructive",
       });
       console.log(err);
@@ -125,42 +129,61 @@ export default function AddUserForm({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-center">Thêm người dùng mới</DialogTitle>
+      <DialogContent className="automl-dialog-content max-w-lg">
+        <DialogHeader className="automl-dialog-header">
+          <DialogTitle className="automl-dialog-title">
+            Thêm người dùng mới
+          </DialogTitle>
         </DialogHeader>
-        <form className="space-y-4">
-          <div>
-            <Input placeholder="Username" {...register("username")} />
+        <form className="automl-dialog-body automl-dialog-fields">
+          <div className="automl-dialog-field">
+            <Input
+              className="automl-dialog-input"
+              placeholder="Username"
+              {...register("username")}
+            />
             {errors.username && (
               <p className="text-red-500">{errors.username.message}</p>
             )}
           </div>
 
-          <div>
-            <Input placeholder="Họ và tên" {...register("fullName")} />
+          <div className="automl-dialog-field">
+            <Input
+              className="automl-dialog-input"
+              placeholder="Họ và tên"
+              {...register("fullName")}
+            />
             {errors.fullName && (
               <p className="text-red-500">{errors.fullName.message}</p>
             )}
           </div>
 
-          <div>
-            <Input placeholder="Email" {...register("email")} />
+          <div className="automl-dialog-field">
+            <Input
+              className="automl-dialog-input"
+              placeholder="Email"
+              {...register("email")}
+            />
             {errors.email && (
               <p className="text-red-500">{errors.email.message}</p>
             )}
           </div>
 
-          <div>
-            <Input placeholder="Số điện thoại" {...register("number")} />
+          <div className="automl-dialog-field">
+            <Input
+              className="automl-dialog-input"
+              placeholder="Số điện thoại"
+              {...register("number")}
+            />
             {errors.number && (
               <p className="text-red-500">{errors.number.message}</p>
             )}
           </div>
 
           {/* Mật khẩu */}
-          <div className="relative">
+          <div className="automl-dialog-field relative">
             <Input
+              className="automl-dialog-input pr-11"
               type={showPassword ? "text" : "password"}
               placeholder="Mật khẩu"
               {...register("password")}
@@ -179,8 +202,9 @@ export default function AddUserForm({
           </div>
 
           {/* Xác nhận mật khẩu */}
-          <div className="relative">
+          <div className="automl-dialog-field relative">
             <Input
+              className="automl-dialog-input pr-11"
               type={showConfirmPassword ? "text" : "password"}
               placeholder="Xác nhận mật khẩu"
               {...register("confirmPassword")}
@@ -198,7 +222,7 @@ export default function AddUserForm({
             )}
           </div>
 
-          <div>
+          <div className="automl-dialog-field">
             <Label>Giới tính</Label>
             <Controller
               control={control}
@@ -223,20 +247,24 @@ export default function AddUserForm({
             )}
           </div>
 
-          <div>
+          <div className="automl-dialog-field">
             <Label>Ngày sinh</Label>
-            <Input type="date" {...register("date")} />
+            <Input
+              className="automl-dialog-input"
+              type="date"
+              {...register("date")}
+            />
             {errors.date && (
               <p className="text-red-500">{errors.date.message}</p>
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 pt-2">
             <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
               <AlertDialogTrigger asChild>
                 <Button
                   type="button"
-                  className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                  className="automl-action-primary"
                   onClick={handleSubmit((data) => {
                     setFormData(data);
                     setConfirmOpen(true);
@@ -247,16 +275,18 @@ export default function AddUserForm({
                 </Button>
               </AlertDialogTrigger>
 
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
+              <AlertDialogContent className="automl-dialog-content max-w-md">
+                <AlertDialogHeader className="automl-dialog-header">
+                  <AlertDialogTitle className="automl-dialog-title">
                     Bạn có chắc muốn thêm người dùng mới?
                   </AlertDialogTitle>
                 </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                <AlertDialogFooter className="automl-dialog-footer">
+                  <AlertDialogCancel className="automl-dialog-button-muted mt-0">
+                    Hủy
+                  </AlertDialogCancel>
                   <AlertDialogAction
-                    className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+                    className="automl-action-primary"
                     onClick={() => {
                       if (formData) {
                         onSubmit(formData);
@@ -270,7 +300,12 @@ export default function AddUserForm({
               </AlertDialogContent>
             </AlertDialog>
 
-            <Button type="button" variant="secondary" onClick={onClose}>
+            <Button
+              type="button"
+              variant="secondary"
+              className="automl-dialog-button-muted"
+              onClick={onClose}
+            >
               Hủy
             </Button>
           </DialogFooter>

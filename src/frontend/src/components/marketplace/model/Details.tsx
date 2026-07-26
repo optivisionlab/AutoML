@@ -1,4 +1,4 @@
-import { MarketplaceModelDetail } from "@/types/marketplace";
+import { MarketplaceModelDetail } from "@/types/marketplace/marketplace";
 
 export default function Details({ model }: { model: MarketplaceModelDetail }) {
   return (

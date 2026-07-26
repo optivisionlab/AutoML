@@ -56,10 +56,29 @@ module.exports = {
     				'3': 'hsl(var(--chart-3))',
     				'4': 'hsl(var(--chart-4))',
     				'5': 'hsl(var(--chart-5))'
+    			},
+    			automl: {
+    				canvas: 'hsl(var(--automl-canvas) / <alpha-value>)',
+    				surface: 'hsl(var(--automl-surface) / <alpha-value>)',
+    				'surface-muted': 'hsl(var(--automl-surface-muted) / <alpha-value>)',
+    				line: 'hsl(var(--automl-line) / <alpha-value>)',
+    				ink: 'hsl(var(--automl-ink) / <alpha-value>)',
+    				muted: 'hsl(var(--automl-muted) / <alpha-value>)',
+    				'muted-strong': 'hsl(var(--automl-muted-strong) / <alpha-value>)',
+    				blue: 'hsl(var(--automl-blue) / <alpha-value>)',
+    				'blue-hover': 'hsl(var(--automl-blue-hover) / <alpha-value>)',
+    				'blue-soft': 'hsl(var(--automl-blue-soft) / <alpha-value>)',
+    				'orange-soft': 'hsl(var(--automl-orange-soft) / <alpha-value>)',
+    				orange: 'hsl(var(--automl-orange) / <alpha-value>)',
+    				'cyan-soft': 'hsl(var(--automl-cyan-soft) / <alpha-value>)',
+    				'green-soft': 'hsl(var(--automl-green-soft) / <alpha-value>)',
+    				green: 'hsl(var(--automl-green) / <alpha-value>)',
+    				lavender: 'hsl(var(--automl-lavender) / <alpha-value>)',
+    				navy: 'hsl(var(--automl-navy) / <alpha-value>)',
+    				'navy-soft': 'hsl(var(--automl-navy-soft) / <alpha-value>)'
     			}
     		}
     	}
     },
 	plugins: ["tailwindcss-animated", "tailwindcss-animate", require("tailwindcss-animate")]
 }
-

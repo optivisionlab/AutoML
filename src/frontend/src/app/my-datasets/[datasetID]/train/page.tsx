@@ -1,41 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import TrainMyDataCard from "@/components/myDatasetUser/TrainMyDataCard";
-import { useApi } from "@/hooks/useApi";
+import { useGetDatasetInfoQuery } from "@/redux/api/datasetApi";
+import BackButton from "@/components/common/BackButton";
 
 export default function Page() {
-  const { get } = useApi();
-
   const params = useParams();
   const datasetID = Array.isArray(params?.datasetID)
     ? params.datasetID[0]
     : params?.datasetID;
-
-  const [dataName, setDataName] = useState<string>("Đang tải...");
+  const { data, isError } = useGetDatasetInfoQuery(datasetID ?? "", {
+    skip: !datasetID,
+  });
+  const dataName = isError
+    ? "Không thể tải tên bộ dữ liệu"
+    : data?.dataName || "Đang tải...";
 
   useEffect(() => {
     sessionStorage.clear();
-
-    const fetchData = async () => {
-      try {
-        const data = await get(`/get-data-info?id=${datasetID}`);
-        setDataName(data.dataName || "Không rõ");
-      } catch (error) {
-        console.error("Lỗi lấy dữ liệu:", error);
-        setDataName("Không thể tải tên bộ dữ liệu");
-      }
-    };
-
-    if (datasetID) {
-      fetchData();
-    }
-  }, [datasetID]);
+  }, []);
 
   return datasetID ? (
-    <TrainMyDataCard datasetID={datasetID} datasetName={dataName} />
+    <div className="space-y-4">
+      <BackButton fallbackHref="/my-datasets" />
+      <TrainMyDataCard datasetID={datasetID} datasetName={dataName} />
+    </div>
   ) : (
-    <div>Không tìm thấy ID dataset</div>
+    <div className="space-y-4">
+      <BackButton fallbackHref="/my-datasets" />
+      <div>Không tìm thấy ID dataset</div>
+    </div>
   );
 }

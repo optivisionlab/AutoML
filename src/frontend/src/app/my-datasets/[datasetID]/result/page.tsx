@@ -1,11 +1,14 @@
 "use client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEffect, useState, useCallback } from "react";
-import { AlertCircle, CheckCircle, LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, CheckCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import React from "react";
-import { useApi } from "@/hooks/useApi";
+import { useStartTrainingJobMutation } from "@/redux/api/automlApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import AppLoading from "@/components/common/AppLoading";
+import BackButton from "@/components/common/BackButton";
+import { useTranslations } from "next-intl";
 
 type Props = {
   params: Promise<{
@@ -14,19 +17,16 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
-  const { post } = useApi();
+  const common = useTranslations("Common");
+  const [startTrainingJob, { isLoading }] = useStartTrainingJobMutation();
+  const hasSubmittedRef = useRef(false);
 
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
-  const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(true);
   const { data: session } = useSession();
-
-  const [showChart, setShowChart] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     setIsClient(true); // Đảm bảo code chạy trên client
@@ -82,9 +82,10 @@ const ResultPage = ({ params }: Props) => {
     const trainModel = async () => {
       // Kiểm tra đầy đủ trước khi gọi API
 
-      if (!config || !session?.user?.id || !datasetID) {
+      if (!config || !session?.user?.id || !datasetID || hasSubmittedRef.current) {
         return;
       }
+      hasSubmittedRef.current = true;
 
       // body gửi lên sv
       const requestBody = {
@@ -99,26 +100,26 @@ const ResultPage = ({ params }: Props) => {
         },
       };
 
-      setIsLoading(true);
+      setIsPending(true);
       setError(null); // Reset lỗi trước khi gọi mới
 
       try {
-        const resultData = await post(`/v2/auto/jobs/training`, requestBody);
-
-        setResult(resultData);
-        setJobStatus(resultData.status || null);
+        await startTrainingJob(requestBody).unwrap();
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
         setError(
-          "Có lỗi xảy ra khi huấn luyện mô hình, vui lòng xem lại cấu hình thuộc tính.",
+          getApiErrorMessage(
+            err,
+            "Có lỗi xảy ra khi huấn luyện mô hình, vui lòng xem lại cấu hình thuộc tính.",
+          ),
         );
       } finally {
-        setIsLoading(false);
+        setIsPending(false);
       }
     };
 
     trainModel();
-  }, [config, session?.user?.id, datasetID]);
+  }, [config, session?.user?.id, datasetID, startTrainingJob]);
 
   if (error) {
     return (
@@ -132,12 +133,10 @@ const ResultPage = ({ params }: Props) => {
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
             <p className="text-sm text-gray-700 leading-relaxed">{error}</p>
-            <button
-              onClick={() => router.back()}
-              className="inline-block px-4 py-2 bg-blue-100 text-blue-600 text-sm rounded hover:bg-blue-200 transition"
-            >
-              ← Quay lại trang trước
-            </button>
+            <BackButton
+              fallbackHref="/my-datasets"
+              label={common("backToPrevious")}
+            />
           </CardContent>
         </Card>
       </div>
@@ -147,17 +146,8 @@ const ResultPage = ({ params }: Props) => {
   return (
     <div className="relative p-6">
       {/* Hiển thị loading bao trùm toàn màn hình */}
-      {isLoading ? (
-        <div className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
-          <Card className="w-[360px] bg-white shadow-2xl rounded-3xl border-0">
-            <CardContent className="flex items-center gap-4 p-6 text-blue-700">
-              <LoaderCircle className="h-6 w-6 animate-spin text-blue-700" />
-              <span className="text-base font-semibold tracking-wide">
-                Đang tải dữ liệu vào hàng chờ...
-              </span>
-            </CardContent>
-          </Card>
-        </div>
+      {isPending || isLoading ? (
+<AppLoading variant="page" label="Đang tải dữ liệu vào hàng chờ..." />
       ) : (
         <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-[#0f0f0f]">
           <Card className="w-full max-w-md bg-white dark:bg-[#171717] border border-green-200 dark:border-green-800 shadow-lg rounded-xl">
@@ -171,14 +161,12 @@ const ResultPage = ({ params }: Props) => {
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                 {error}
               </p>
-              <button
-                onClick={() => {
-                  router.push("/training-history");
-                }}
-                className="w-full text-center py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition duration-200"
-              >
-                ← Về trang lịch sử huấn luyện
-              </button>
+              <BackButton
+                fallbackHref="/training-history"
+                label={common("backToTrainingHistory")}
+                variant="primary"
+                className="w-full justify-center"
+              />
             </CardContent>
           </Card>
         </div>

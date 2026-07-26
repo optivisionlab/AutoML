@@ -1,7 +1,6 @@
 // Form edit users
 import { useEffect } from "react";
 import {
-  Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -66,27 +65,32 @@ export default function UserForm({
   }, [editingUser, reset]);
 
   return (
-    <DialogContent>
-      <DialogHeader className="flex flex-col items-center text-center">
-        <DialogTitle>Chỉnh sửa người dùng</DialogTitle>
+    <DialogContent className="automl-dialog-content max-w-md">
+      <DialogHeader className="automl-dialog-header">
+        <DialogTitle className="automl-dialog-title">
+          Chỉnh sửa người dùng
+        </DialogTitle>
       </DialogHeader>
 
-      <form className="grid gap-4 mt-2" onSubmit={handleSubmit(onSubmit)}>
-        <div>
+      <form
+        className="automl-dialog-body automl-dialog-fields"
+        onSubmit={handleSubmit(onSubmit)}
+      >
+        <div className="automl-dialog-field">
           <Label>Email</Label>
-          <Input {...register("email")} />
+          <Input className="automl-dialog-input" {...register("email")} />
           {errors.email && (
             <p className="text-red-500 text-sm">{errors.email.message}</p>
           )}
         </div>
-        <div>
+        <div className="automl-dialog-field">
           <Label>Họ tên</Label>
-          <Input {...register("fullName")} />
+          <Input className="automl-dialog-input" {...register("fullName")} />
           {errors.fullName && (
             <p className="text-red-500 text-sm">{errors.fullName.message}</p>
           )}
         </div>
-        <div>
+        <div className="automl-dialog-field">
           <Label>Giới tính</Label>
           <RadioGroup
             className="flex gap-4"
@@ -108,32 +112,32 @@ export default function UserForm({
             <p className="text-red-500 text-sm">{errors.gender.message}</p>
           )}
         </div>
-        <div>
+        <div className="automl-dialog-field">
           <Label>Ngày sinh</Label>
-          <Input type="date" {...register("date")} />
+          <Input className="automl-dialog-input" type="date" {...register("date")} />
           {errors.date && (
             <p className="text-red-500 text-sm">{errors.date.message}</p>
           )}
         </div>
-        <div>
+        <div className="automl-dialog-field">
           <Label>Số điện thoại</Label>
-          <Input {...register("number")} />
+          <Input className="automl-dialog-input" {...register("number")} />
           {errors.number && (
             <p className="text-red-500 text-sm">{errors.number.message}</p>
           )}
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3 pt-2">
           <Button
             type="button"
             variant="outline"
             onClick={onClose}
-            className=" w-20 text-black px-4 py-2 rounded-md"
+            className="automl-dialog-button-muted px-4"
           >
             Hủy
           </Button>
           <Button
             type="submit"
-            className="bg-[#3a6df4] w-20 text-white hover:bg-[#5b85f7] px-4 py-2 rounded-md"
+            className="automl-action-primary px-4"
           >
             Lưu
           </Button>

@@ -18,16 +18,20 @@ type Props = {
 };
 
 const DatasetTable = ({ datasets, onEdit, onDelete }: Props) => {
+  if (datasets.length === 0) {
+    return <div className="automl-state-panel">Không có bộ dữ liệu nào.</div>;
+  }
+
   return (
-    <Table>
+    <Table className="automl-data-table">
       <TableHeader>
         <TableRow>
-          <th>Tên bộ dữ liệu</th>
-          <th>Kiểu dữ liệu</th>
-          <th>Ngày tạo</th>
-          <th>Lần cập nhật mới nhất</th>
-          <th className="text-center">Người dùng</th>
-          <th className="text-center">Chức năng</th>
+          <TableHead>Tên bộ dữ liệu</TableHead>
+          <TableHead>Kiểu dữ liệu</TableHead>
+          <TableHead>Ngày tạo</TableHead>
+          <TableHead>Lần cập nhật mới nhất</TableHead>
+          <TableHead className="text-center">Người dùng</TableHead>
+          <TableHead className="text-center">Tác vụ</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

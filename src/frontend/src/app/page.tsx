@@ -1,202 +1,363 @@
+"use client";
+
 import Image from "next/image";
-import MemberLab from "@/components/memberLab/MemberLab";
-import { Mail, MapPin } from "lucide-react";
-import { FaFacebook, FaYoutube, FaLinkedin } from "react-icons/fa";
 import Link from "next/link";
-import ImageCarousel from "@/components/homeCarousel/ImageCarousel";
+import {
+  ArrowRight,
+  BrainCircuit,
+  Database,
+  GitBranch,
+  Mail,
+  MapPin,
+  Rocket,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
+import { FaFacebook, FaYoutube } from "react-icons/fa";
+
+import HAutoMLHeroScene from "@/components/home/HAutoMLHeroScene";
+import MemberLab from "@/components/memberLab/MemberLab";
+import { useTranslations } from "next-intl";
+
+const stats = [
+  ["8+", "stats.algorithms"],
+  ["4", "stats.sampleSources"],
+  ["1-click", "stats.deployTest"],
+];
+
+const valueCards = [
+  {
+    icon: Database,
+    titleKey: "cards.realData.title",
+    bodyKey: "cards.realData.body",
+    tone: "bg-automl-cyan-soft text-cyan-700 dark:text-cyan-200",
+  },
+  {
+    icon: GitBranch,
+    titleKey: "cards.pipeline.title",
+    bodyKey: "cards.pipeline.body",
+    tone: "bg-automl-blue-soft text-blue-700 dark:text-blue-200",
+  },
+  {
+    icon: Rocket,
+    titleKey: "cards.deploy.title",
+    bodyKey: "cards.deploy.body",
+    tone: "bg-automl-green-soft text-emerald-700 dark:text-emerald-200",
+  },
+];
+
+const templates = [
+  {
+    title: "Glass classification",
+    path: "table -> preprocess -> KNN",
+    badge: "65.92%",
+  },
+  {
+    title: "Credit approval",
+    path: "cleaning -> ensemble -> deploy",
+    badge: "ready",
+  },
+  {
+    title: "Customer churn",
+    path: "feature engineering -> XGBoost",
+    badge: "ROC 0.793",
+  },
+];
+
+const footerGroups = [
+  ["footer.product", "footer.workflowCanvas", "footer.autoTrain", "footer.deployTest"],
+  ["footer.resources", "footer.publicDatasets", "footer.marketplace", "footer.trainingHistory"],
+  ["footer.research", "footer.optivisionLab", "footer.haui", "footer.openSource"],
+  ["footer.links", "footer.github", "footer.community", "footer.docs"],
+];
 
 export default function Home() {
+  const t = useTranslations("Home");
+
   return (
-    <>
-      {/* Header Section */}
-      <section id="home" className="w-full relative">
-        <ImageCarousel />
-      </section>
+    <main className="min-h-screen overflow-hidden bg-automl-canvas text-automl-ink">
+      <section id="home" className="relative px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.88fr_1.12fr]">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-automl-line bg-automl-surface">
+                <Image
+                  src="/logoHautoMLNotext.png"
+                  alt="HAutoML"
+                  width={34}
+                  height={34}
+                  className="h-8 w-8 object-contain"
+                  priority
+                />
+              </div>
+              <div>
+                <p className="text-xl font-black text-automl-ink">HAutoML</p>
+                <p className="text-sm font-bold text-automl-muted">
+                  Hyper-processor Automated Machine Learning
+                </p>
+              </div>
+            </div>
 
-      {/* Introduction Section */}
-      <section
-        id="introduction"
-        className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto"
-      >
-        <h2 className="text-3xl font-bold mb-10 text-center text-gray-900 dark:text-white">
-          Giới thiệu
-        </h2>
+            <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-automl-line bg-automl-surface px-4 py-2 text-sm font-bold text-automl-muted">
+              <Sparkles className="h-4 w-4 text-automl-orange" />
+              {t("badge")}
+            </div>
 
-        {/* Video + Poem Block */}
-        <div className="flex flex-col md:flex-row gap-8 md:gap-12 mb-20">
-          {/* Poem */}
-          <div className="w-full md:w-1/3 flex items-center justify-center md:justify-start text-center md:text-left text-gray-800 dark:text-gray-200">
-            <div>
-              <p className="text-xl leading-relaxed italic mb-4">
-                "Không có việc gì khó
-                <br />
-                Chỉ sợ lòng không bền
-                <br />
-                Đào núi và lấp biển
-                <br />
-                Quyết chí ắt làm nên"
-              </p>
-              <p className="font-semibold">– Chủ tịch Hồ Chí Minh</p>
+            <h1 className="mt-6 max-w-2xl text-5xl font-black leading-none text-automl-ink sm:text-6xl lg:text-7xl">
+              {t("heroTitle")}
+            </h1>
+            <p className="mt-6 max-w-xl text-lg font-semibold leading-8 text-automl-muted">
+              {t("heroSubtitle")}
+            </p>
+
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Link href="/register" className="automl-button-primary h-12">
+                {t("startFree")}
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+              <Link href="/public-datasets" className="automl-button-dark h-12">
+                {t("viewSamples")}
+              </Link>
             </div>
           </div>
 
-          {/* Video */}
-          <div className="w-full md:w-2/3 aspect-video">
-            <iframe
-              className="w-full h-full rounded-lg shadow-md border-0"
-              src="https://www.youtube.com/embed/BYV0fBPNuu8?autoplay=1&mute=1"
-              title="Hệ thống HAutoML - Giới thiệu"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              referrerPolicy="strict-origin-when-cross-origin"
-              allowFullScreen
-            ></iframe>
-          </div>
+          <HAutoMLHeroScene />
         </div>
 
-        {/* Block 1 */}
-        <div className="flex flex-col md:flex-row items-center gap-8 mb-16">
-          <div className="flex-shrink-0">
-            <Image
-              src="/computer_image.png"
-              alt="ảnh máy tính"
-              width={280}
-              height={280}
-              className="rounded-lg object-cover shadow-md"
-            />
-          </div>
-          <div className="text-justify text-gray-700 dark:text-gray-300">
-            <h3 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Hệ thống HAutoML
-            </h3>
-            <p>
-              HAutoML là viết tắt của{" "}
-              <strong className="text-blue-600 dark:text-blue-400">
-                HYPER-PROCESSOR AUTOMATED MACHINE LEARNING
-              </strong>
-              . Đây là dự án nghiên cứu khoa học của sinh viên trường Công nghệ
-              thông tin và truyền thông, Đại học Công nghiệp Hà Nội. Hệ thống
-              được xây dựng nhằm mục tiêu phát triển một nền tảng AutoML linh
-              hoạt, hiện đại, phục vụ cho nhu cầu nghiên cứu và ứng dụng trong
-              môi trường học thuật.
-            </p>
-          </div>
+        <div className="mx-auto mt-10 grid max-w-6xl gap-4 border-y border-automl-line py-5 md:grid-cols-[1.55fr_repeat(3,1fr)]">
+          <p className="text-base font-black leading-6 text-automl-ink">
+            {t("statsIntro")}
+          </p>
+          {stats.map(([value, label]) => (
+            <div key={label} className="md:text-center">
+              <p className="text-3xl font-black text-automl-ink">{value}</p>
+              <p className="text-sm font-bold text-automl-muted">{t(label)}</p>
+            </div>
+          ))}
         </div>
+      </section>
 
-        {/* Block 2 */}
-        <div className="flex flex-col-reverse md:flex-row items-center gap-8">
-          <div className="text-justify text-gray-700 dark:text-gray-300">
-            <h3 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Xu hướng công nghệ mới
-            </h3>
-            <p>
-              Với sự phát triển mạnh mẽ của xu hướng{" "}
-              <strong className="text-blue-600 dark:text-blue-400">
-                NO-CODE VÀ LOW-CODE
-              </strong>
-              , hệ thống HAutoML mang đến một giải pháp giúp người dùng không
-              chuyên về công nghệ cũng có thể dễ dàng xây dựng và sử dụng các mô
-              hình học máy.
+      <section id="workflow" className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-automl-line bg-automl-surface px-4 py-2 text-sm font-bold text-automl-muted">
+                <Workflow className="h-4 w-4 text-automl-blue" />
+                {t("workflowBadge")}
+              </div>
+              <h2 className="mt-5 text-4xl font-black leading-tight text-automl-ink sm:text-5xl">
+                {t("workflowTitle")}
+              </h2>
+            </div>
+            <p className="text-base font-semibold leading-7 text-automl-muted">
+              {t("workflowBody")}
             </p>
           </div>
-          <div className="flex-shrink-0">
-            <Image
-              src="/AI_image.png"
-              alt="ảnh AI"
-              width={280}
-              height={280}
-              className="rounded-lg object-cover shadow-md"
-            />
+
+          <div className="mt-9 grid gap-4 md:grid-cols-3">
+            {valueCards.map((card) => {
+              const Icon = card.icon;
+
+              return (
+                <article
+                  key={card.title}
+                  className="rounded-lg border border-automl-line bg-automl-surface p-6"
+                >
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${card.tone}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="mt-6 text-2xl font-black leading-tight text-automl-ink">
+                    {t(card.titleKey)}
+                  </h3>
+                  <p className="mt-5 text-base font-semibold leading-7 text-automl-muted">
+                    {t(card.bodyKey)}
+                  </p>
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* About Us Section */}
-      <section id="about-us" className="bg-gray-100 dark:bg-background py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold text-center mb-6 text-gray-900 dark:text-white">
-            Về chúng tôi
+      <section id="marketplace" className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-8 rounded-lg border border-automl-line bg-automl-navy px-6 py-8 text-white md:grid-cols-[0.95fr_1.05fr] md:px-8">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-bold text-slate-300">
+              <BrainCircuit className="h-4 w-4 text-cyan-300" />
+              {t("marketplaceBadge")}
+            </div>
+            <h2 className="mt-5 max-w-xl text-4xl font-black leading-tight sm:text-5xl">
+              {t("marketplaceTitle")}
+            </h2>
+            <p className="mt-5 max-w-xl text-base font-semibold leading-7 text-slate-300">
+              {t("marketplaceBody")}
+            </p>
+            <Link
+              href="/market-place"
+              className="mt-8 inline-flex h-12 items-center justify-center rounded-lg bg-automl-blue px-6 text-sm font-bold text-white transition hover:bg-automl-blue-hover"
+            >
+              {t("exploreMarketplace")}
+            </Link>
+          </div>
+
+          <div className="grid gap-3">
+            {templates.map((item, index) => (
+              <div
+                key={item.title}
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-4 rounded-lg border border-white/10 bg-white/5 px-4 py-4"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-sm font-black text-cyan-200">
+                  {index + 1}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-black text-white">{item.title}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-400">
+                    {item.path}
+                  </p>
+                </div>
+                <span className="rounded-full bg-emerald-400/12 px-4 py-2 text-sm font-black text-emerald-300">
+                  {item.badge}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="product" className="px-4 py-16 text-center sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl">
+          <h2 className="text-4xl font-black leading-tight text-automl-ink sm:text-5xl">
+            {t("productTitle")}
           </h2>
-          <p className="text-center max-w-3xl mx-auto mb-12 text-gray-700 dark:text-gray-300">
-            OptivisionLab là phòng nghiên cứu tập trung vào trí tuệ nhân tạo,
-            với sứ mệnh khám phá và phát triển các giải pháp công nghệ tiên tiến
-            phục vụ cho giáo dục, y tế và công nghiệp. Chúng tôi kết nối nghiên
-            cứu học thuật với ứng dụng thực tiễn nhằm tạo ra giá trị bền vững
-            cho cộng đồng.
+          <p className="mx-auto mt-5 max-w-3xl text-base font-semibold leading-7 text-automl-muted">
+            {t("productBody")}
           </p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link href="/register" className="automl-button-primary h-12">
+              {t("tryFree")}
+            </Link>
+            <Link href="/training-history" className="automl-button-dark h-12">
+              {t("viewTrainingHistory")}
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section id="introduction" className="border-y border-automl-line bg-automl-surface px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.82fr_1.18fr]">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-automl-line bg-automl-surface-muted px-4 py-2 text-sm font-bold text-automl-muted">
+              <Workflow className="h-4 w-4 text-automl-blue" />
+              {t("introBadge")}
+            </div>
+            <h2 className="mt-5 text-4xl font-black text-automl-ink">
+              {t("introTitle")}
+            </h2>
+          </div>
+          <div className="space-y-6 text-base font-semibold leading-8 text-automl-muted">
+            <p>
+              {t("introBodyPrefix")}{" "}
+              <strong className="font-black text-automl-blue">
+                HYPER-PROCESSOR AUTOMATED MACHINE LEARNING
+              </strong>
+              . {t("introBodySuffix")}
+            </p>
+            <p>
+              {t("introLowCode")}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="about-us" className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto mb-10 max-w-3xl text-center">
+            <h2 className="text-4xl font-black text-automl-ink">
+              {t("aboutTitle")}
+            </h2>
+            <p className="mt-5 text-base font-semibold leading-7 text-automl-muted">
+              {t("aboutBody")}
+            </p>
+          </div>
           <MemberLab />
         </div>
       </section>
 
-      <footer id="contact" className="py-12 bg-white dark:bg-background">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Left column: Company Info */}
-          <div className="flex flex-col justify-between">
-            <div>
-              <Image
-                src="/textHAutoML-removebg-preview.png"
-                priority
-                width={120}
-                height={80}
-                alt="logo"
-                className="mb-8 mt-5"
-              />
-              <div className="flex items-start text-sm text-gray-800 dark:text-gray-200 mb-2">
-                <MapPin className="w-4 h-4 mt-0.5 mr-2" />
+      <footer id="contact" className="bg-automl-navy px-4 py-14 text-white sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-10 md:grid-cols-[1.05fr_0.95fr]">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white">
+                <Image
+                  src="/logoHautoMLNotext.png"
+                  alt="HAutoML"
+                  width={30}
+                  height={30}
+                  className="h-8 w-8 object-contain"
+                />
+              </div>
+              <div>
+                <p className="text-xl font-black">HAutoML</p>
+                <p className="text-sm font-semibold text-slate-400">
+                  Open AutoML Studio
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-6 max-w-xl text-sm font-semibold leading-6 text-slate-300">
+              {t("footerDescription")}
+            </p>
+
+            <div className="mt-7 space-y-3 text-sm font-semibold text-slate-300">
+              <div className="flex items-start gap-3">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                 <span>
-                  Đại Học Công Nghiệp Hà Nội, Số 298 đường Cầu Diễn, phường Minh
-                  Khai, quận Bắc Từ Liêm, Hà Nội
+                  {t("address")}
                 </span>
               </div>
-              <div className="flex items-start text-sm text-orange-500 mb-4">
-                <Mail className="w-4 h-4 mt-0.5 mr-2" />
-                <a
-                  href="mailto:optivision.work@gmail.com"
-                  className="hover:underline"
-                >
+              <div className="flex items-center gap-3">
+                <Mail className="h-4 w-4 text-cyan-300" />
+                <a href="mailto:optivision.work@gmail.com" className="hover:text-white">
                   optivision.work@gmail.com
                 </a>
               </div>
             </div>
 
-            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-              <span>© 2025 OptivisionLab</span>
-              <div className="flex items-center space-x-4 ml-5">
-                <Link
-                  href="https://www.facebook.com/meoluoiai"
-                  className="text-blue-600"
-                  aria-label="Facebook"
-                >
-                  <FaFacebook className="w-5 h-5" />
-                </Link>
-                <Link
-                  href="https://www.youtube.com/@meoluoiai"
-                  className="text-red-600"
-                  aria-label="YouTube"
-                >
-                  <FaYoutube className="w-5 h-5" />
-                </Link>
-                {/* <Link href="#" className="text-blue-800" aria-label="LinkedIn">
-                  <FaLinkedin className="w-5 h-5" />
-                </Link> */}
-              </div>
+            <div className="mt-8 flex items-center gap-4 text-slate-400">
+              <span className="text-xs">© 2026 OptivisionLab</span>
+              <Link
+                href="https://www.facebook.com/meoluoiai"
+                className="text-blue-300 hover:text-blue-200"
+                aria-label="Facebook"
+              >
+                <FaFacebook className="h-5 w-5" />
+              </Link>
+              <Link
+                href="https://www.youtube.com/@meoluoiai"
+                className="text-red-300 hover:text-red-200"
+                aria-label="YouTube"
+              >
+                <FaYoutube className="h-5 w-5" />
+              </Link>
             </div>
           </div>
 
-          {/* Right column: Google Map */}
-          <div>
-            <iframe
-              title="OptivisionLab Location"
-              width="100%"
-              height="250"
-              className="rounded-lg shadow"
-              style={{ border: 0 }}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3723.47378845151!2d105.73253187503212!3d21.05373098060188!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x31345457e292d5bf%3A0x20ac91c94d74439a!2zVHLGsOG7nW5nIMSQ4bqhaSBo4buNYyBDw7RuZyBuZ2hp4buHcCBIw6AgTuG7mWk!5e0!3m2!1svi!2s!4v1749670895769!5m2!1svi!2s"
-            ></iframe>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {footerGroups.map(([title, ...links]) => (
+              <div key={title} className="rounded-lg border border-white/10 p-5">
+                <p className="font-black">{t(title)}</p>
+                <div className="mt-4 space-y-2">
+                  {links.map((item) => (
+                    <p key={item} className="text-sm font-semibold text-slate-400">
+                      {t(item)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </footer>
-    </>
+    </main>
   );
 }

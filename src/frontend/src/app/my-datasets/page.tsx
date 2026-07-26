@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import RowActionMenu from "@/components/common/RowActionMenu";
+import AppLoading from "@/components/common/AppLoading";
+import {
+  DataWorkspaceControls,
+  DataWorkspaceHeader,
+  DataWorkspaceMetrics,
+  workspaceInputClass,
+} from "@/components/common/DataWorkspace";
+import React, { useMemo, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -26,32 +34,41 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import AddDatasetDialog from "@/components/crudDataset/AddDatasetDialog";
-import { CirclePlus } from "lucide-react";
-import { useApi } from "@/hooks/useApi";
+import ConnectDatabaseDialog from "@/components/crudDataset/ConnectDatabaseDialog";
+import { CalendarClock, CirclePlus, Database, DatabaseZap, Layers3, Search, Sparkles } from "lucide-react";
+import {
+  Dataset,
+  useDeleteDatasetMutation,
+  useGetDatasetsByUserIdQuery,
+} from "@/redux/api/datasetApi";
+import { getApiErrorMessage } from "@/redux/api/baseApi";
+import { useLocale, useTranslations } from "next-intl";
 
-type Dataset = {
-  _id: string;
-  dataName: string;
-  dataType: string;
-  createDate: number;
-  latestUpdate?: number;
-  lastestUpdate?: number;
-  userId: string;
-};
-
-const formatDate = (timestamp?: number): string => {
-  if (!timestamp) return "Không có dữ liệu";
-  return new Date(timestamp * 1000).toLocaleDateString("vi-VN");
+const formatDate = (
+  timestamp: number | undefined,
+  locale: string,
+  fallback: string,
+): string => {
+  if (!timestamp) return fallback;
+  return new Date(timestamp * 1000).toLocaleDateString(locale);
 };
 
 const Page = () => {
-  const { post, remove } = useApi();
-
+  const locale = useLocale();
+  const t = useTranslations("Datasets");
+  const common = useTranslations("Common");
   const { data: session } = useSession();
   const router = useRouter();
+  const userId = session?.user?.id;
+  const {
+    data: datasets = [],
+    isLoading,
+    refetch,
+  } = useGetDatasetsByUserIdQuery(userId ?? "", {
+    skip: !userId,
+  });
+  const [deleteDataset] = useDeleteDatasetMutation();
 
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [loading, setLoading] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
 
@@ -60,27 +77,54 @@ const Page = () => {
     null,
   );
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [connectDatabaseOpen, setConnectDatabaseOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"updated" | "name" | "type">("updated");
 
   const { toast } = useToast();
+  const dateLocale = locale === "vi" ? "vi-VN" : "en-US";
+  const compareLocale = locale === "vi" ? "vi" : "en";
 
-  const fetchDatasets = async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
+  const filteredDatasets = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
 
-    try {
-      const data = await post(`/get-list-data-by-userid?id=${session.user.id}`);
-      setDatasets(data || []);
-    } catch (err) {
-      console.error("Lỗi khi lấy dữ liệu:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return [...datasets]
+      .filter((dataset) => {
+        const searchable = [
+          dataset.dataName,
+          dataset.dataType,
+          dataset.username,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-  useEffect(() => {
-    fetchDatasets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+        return !keyword || searchable.includes(keyword);
+      })
+      .sort((a, b) => {
+        if (sortBy === "name") {
+          return (a.dataName || "").localeCompare(b.dataName || "", compareLocale);
+        }
+
+        if (sortBy === "type") {
+          return (a.dataType || "").localeCompare(b.dataType || "", compareLocale);
+        }
+
+        return (
+          (b.latestUpdate || b.lastestUpdate || b.createDate || 0) -
+          (a.latestUpdate || a.lastestUpdate || a.createDate || 0)
+        );
+      });
+  }, [compareLocale, datasets, search, sortBy]);
+
+  const typeCount = new Set(datasets.map((dataset) => dataset.dataType).filter(Boolean)).size;
+  const recentCount = datasets.filter((dataset) => {
+    const timestamp = dataset.latestUpdate || dataset.lastestUpdate || dataset.createDate;
+    if (!timestamp) return false;
+
+    const daysAgo = (Date.now() - timestamp * 1000) / (1000 * 60 * 60 * 24);
+    return daysAgo <= 30;
+  }).length;
 
   const handleOpenEdit = (dataset: Dataset) => {
     setSelectedDataset(dataset);
@@ -91,19 +135,22 @@ const Page = () => {
     if (!datasetIdToDelete) return;
 
     try {
-      await remove(`/delete-dataset/${datasetIdToDelete}`);
+      await deleteDataset(datasetIdToDelete).unwrap();
 
       toast({
-        title: "Xóa thành công",
+        title: t("toast.deleteSuccess"),
         className: "bg-green-100 text-green-800 border border-green-300",
         duration: 3000,
       });
-      fetchDatasets();
+      refetch();
     } catch (err) {
       console.error("Lỗi xoá:", err);
       toast({
-        title: "Xóa thất bại",
-        description: "Có lỗi xảy ra khi xoá bộ dữ liệu.",
+        title: t("toast.deleteFailed"),
+        description: getApiErrorMessage(
+          err,
+          t("toast.deleteFailedDescription"),
+        ),
         variant: "destructive",
         duration: 3000,
       });
@@ -115,112 +162,193 @@ const Page = () => {
 
   return (
     <>
-      <Card className="max-w-6xl mx-auto mt-8 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-[#3b6cf5] text-center w-full">
-            Bộ dữ liệu của tôi
-          </CardTitle>
-
-          <div className="flex justify-end mt-4">
+      <div className="space-y-6">
+        <DataWorkspaceHeader
+          eyebrow={t("my.eyebrow")}
+          title={t("my.title")}
+          subtitle={t("my.subtitle")}
+        >
             <Button
-              className="bg-[#1e8449] text-white hover:bg-[#196f3d] px-6 py-2 rounded-md"
+              variant="outline"
+              className="gap-2 rounded-2xl border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] px-4 font-bold text-[var(--automl-data-text)] shadow-none hover:bg-[var(--automl-table-header-bg)]"
+              onClick={() => setConnectDatabaseOpen(true)}
+            >
+              <Database className="h-4 w-4" /> {t("connectDatabase")}
+            </Button>
+            <Button
+              className="automl-action-primary gap-2 px-4"
               onClick={() => setAddDialogOpen(true)}
             >
-              <CirclePlus className="w-8 h-8" /> Thêm bộ dữ liệu
+              <CirclePlus className="h-4 w-4" /> {t("addDataset")}
             </Button>
-          </div>
-        </CardHeader>
+        </DataWorkspaceHeader>
 
-        <CardContent>
-          {loading ? (
-            <div>Đang tải dữ liệu...</div>
+        <DataWorkspaceMetrics
+          metrics={[
+            {
+              label: t("metrics.myDatasets"),
+              value: `${datasets.length}`,
+              detail: t("metrics.managedSources"),
+              icon: DatabaseZap,
+              tone: "from-blue-100 to-sky-100 text-blue-600",
+            },
+            {
+              label: t("metrics.dataTypes"),
+              value: `${typeCount}`,
+              detail: t("metrics.dataTypeGroups"),
+              icon: Layers3,
+              tone: "from-emerald-100 to-teal-100 text-emerald-600",
+            },
+            {
+              label: t("metrics.recentlyUpdated"),
+              value: `${recentCount}`,
+              detail: t("metrics.last30Days"),
+              icon: CalendarClock,
+              tone: "from-amber-100 to-orange-100 text-amber-600",
+            },
+            {
+              label: t("metrics.trainable"),
+              value: `${datasets.length}`,
+              detail: t("metrics.readyForPipeline"),
+              icon: Sparkles,
+              tone: "from-violet-100 to-indigo-100 text-violet-600",
+            },
+          ]}
+        />
+
+        <DataWorkspaceControls
+          summary={t("summary", {
+            shown: filteredDatasets.length,
+            total: datasets.length,
+          })}
+        >
+          <label className="relative min-w-0 sm:w-72">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("searchPlaceholder")}
+              className={`${workspaceInputClass} w-full pl-11`}
+            />
+          </label>
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              setSortBy(event.target.value as "updated" | "name" | "type")
+            }
+            className={`${workspaceInputClass} sm:w-56`}
+          >
+            <option value="updated">{t("sort.updated")}</option>
+            <option value="name">{t("sort.name")}</option>
+            <option value="type">{t("sort.type")}</option>
+          </select>
+        </DataWorkspaceControls>
+
+        <Card className="automl-data-card w-full">
+          <CardContent className="automl-table-wrap pt-5">
+          {isLoading ? (
+            <AppLoading label={common("loadingData")} />
+          ) : filteredDatasets.length === 0 ? (
+            <div className="automl-state-panel">{t("empty")}</div>
           ) : (
-            <Table>
+            <Table className="automl-data-table">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tên bộ dữ liệu</TableHead>
-                  <TableHead>Kiểu dữ liệu</TableHead>
-                  <TableHead>Ngày tạo</TableHead>
-                  <TableHead>Lần cập nhật mới nhất</TableHead>
-                  <TableHead className="text-center">Chức năng</TableHead>
+                  <TableHead>{t("table.name")}</TableHead>
+                  <TableHead>{t("table.type")}</TableHead>
+                  <TableHead>{t("table.createdAt")}</TableHead>
+                  <TableHead>{t("table.updatedAt")}</TableHead>
+                  <TableHead className="text-center">{common("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {datasets.map((dataset) => (
+                {filteredDatasets.map((dataset) => (
                   <TableRow key={dataset._id}>
-                    <TableCell>{dataset.dataName || "Không có tên"}</TableCell>
-                    <TableCell>{dataset.dataType || "Chưa rõ"}</TableCell>
-                    <TableCell>{formatDate(dataset.createDate)}</TableCell>
+                    <TableCell className="font-bold text-[var(--automl-data-text)]">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-automl-blue-soft text-xs font-black text-automl-blue">
+                          {(dataset.dataName || "DS").slice(0, 2).toUpperCase()}
+                        </span>
+                        <span className="min-w-0 truncate">
+                          {dataset.dataName || common("unnamed")}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="automl-data-chip automl-data-chip-secondary">
+                        {dataset.dataType || common("unknown")}
+                      </span>
+                    </TableCell>
+                    <TableCell>{formatDate(dataset.createDate, dateLocale, common("noData"))}</TableCell>
                     <TableCell>
                       {formatDate(
                         dataset.latestUpdate || dataset.lastestUpdate,
+                        dateLocale,
+                        common("noData"),
                       )}
                     </TableCell>
-                    <TableCell className="text-center space-x-2">
-                      <Button
-                        className="bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
-                        onClick={() =>
-                          router.push(`/my-datasets/${dataset._id}/train`)
-                        }
-                      >
-                        Huấn luyện
-                      </Button>
-                      <Button
-                        className="bg-yellow-500 text-white hover:bg-yellow-600"
-                        onClick={() => handleOpenEdit(dataset)}
-                      >
-                        Sửa
-                      </Button>
-                      <Button
-                        className="bg-red-500 text-white hover:bg-red-600"
-                        onClick={() => {
-                          setDatasetIdToDelete(dataset._id);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        Xoá
-                      </Button>
+                    <TableCell className="text-center">
+                      <div className="flex justify-center">
+                        <RowActionMenu
+                          label={t("openActions", { name: dataset.dataName || common("unnamed") })}
+                          items={[
+                            {
+                              label: common("train"),
+                              onClick: () => router.push(`/my-datasets/${dataset._id}/train`),
+                            },
+                            { label: common("edit"), onClick: () => handleOpenEdit(dataset) },
+                            {
+                              label: common("delete"),
+                              destructive: true,
+                              onClick: () => {
+                                setDatasetIdToDelete(dataset._id);
+                                setDeleteDialogOpen(true);
+                              },
+                            },
+                          ]}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {selectedDataset && (
         <EditDatasetDialog
           open={editDialogOpen}
           onOpenChange={(open) => {
             setEditDialogOpen(open);
-            if (!open) fetchDatasets();
+            if (!open) refetch();
           }}
           dataset={selectedDataset}
         />
       )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-white dark:bg-[#171717] text-gray-900 dark:text-gray-100 shadow-xl p-6 rounded-xl w-full max-w-md">
-          <AlertDialogHeader className="space-y-2">
-            <AlertDialogTitle className="text-lg font-semibold">
-              Bạn có chắc chắn muốn xoá?
+        <AlertDialogContent className="automl-dialog-content max-w-md">
+          <AlertDialogHeader className="automl-dialog-header">
+            <AlertDialogTitle className="automl-dialog-title">
+              {t("deleteDialog.title")}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600 dark:text-gray-300">
-              Thao tác này không thể hoàn tác. Dữ liệu sẽ bị xoá vĩnh viễn khỏi
-              hệ thống.
+            <AlertDialogDescription className="automl-dialog-description">
+              {t("deleteDialog.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <AlertDialogFooter className="flex justify-center gap-4 mt-4">
-            <AlertDialogCancel className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800">
-              Hủy
+          <AlertDialogFooter className="automl-dialog-footer">
+            <AlertDialogCancel className="automl-dialog-button-muted mt-0">
+              {common("cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-md"
+              className="automl-action-danger"
             >
-              Xoá
+              {common("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -231,9 +359,14 @@ const Page = () => {
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}
           userId={session.user.id}
-          onSuccess={fetchDatasets}
+          onSuccess={refetch}
         />
       )}
+
+      <ConnectDatabaseDialog
+        open={connectDatabaseOpen}
+        onOpenChange={setConnectDatabaseOpen}
+      />
     </>
   );
 };
