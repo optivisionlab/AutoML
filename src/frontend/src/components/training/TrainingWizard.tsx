@@ -11,7 +11,6 @@ import {
   Database,
   FileSpreadsheet,
   Gauge,
-  Info,
   Layers3,
   Lightbulb,
   PanelRightClose,
@@ -236,13 +235,6 @@ export default function TrainingWizard({
     },
   ];
 
-  const stepTitle = useMemo(() => {
-    if (step === 1) return "Chọn kiểu huấn luyện";
-    if (step === 2) return "Chọn chiến lược AutoML";
-    if (step === 3) return "Chọn loại bài toán";
-    return "Thiết lập tham số huấn luyện";
-  }, [step]);
-
   const stepDescription = useMemo(() => {
     if (step === 1) {
       return "Bắt đầu một mô hình mới hoặc tạo phiên bản mới khi hệ thống hỗ trợ.";
@@ -324,32 +316,26 @@ export default function TrainingWizard({
   };
 
   return (
-    <div className="h-[calc(100svh-7rem)] overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-white to-blue-50/70 p-4 shadow-sm ring-1 ring-slate-200 dark:from-white/5 dark:via-white/5 dark:to-blue-950/20 dark:ring-white/10 lg:p-5">
+    <div className="h-full overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-white to-blue-50/70 p-3 shadow-sm ring-1 ring-slate-200 dark:from-white/5 dark:via-white/5 dark:to-blue-950/20 dark:ring-white/10 lg:p-4">
       <div
         className={cn(
-          "grid h-full min-h-0 gap-5 transition-[grid-template-columns] duration-300",
-          summaryCollapsed ? "xl:grid-cols-[1fr_96px]" : "xl:grid-cols-[1fr_360px]",
+          "grid h-full min-h-0 gap-4 transition-[grid-template-columns] duration-300",
+          summaryCollapsed ? "xl:grid-cols-[1fr_88px]" : "xl:grid-cols-[1fr_340px]",
         )}
       >
-        <main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/10 lg:p-8">
+        <main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/10 lg:p-5">
           <div className="pointer-events-none absolute -left-16 top-16 h-44 w-44 rounded-full bg-blue-100/70 blur-3xl dark:bg-blue-500/10" />
           <div className="pointer-events-none absolute bottom-10 right-10 h-32 w-32 rounded-full bg-cyan-100/70 blur-3xl dark:bg-cyan-500/10" />
 
-          <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-3xl font-black tracking-tight text-automl-ink dark:text-white">
-                  {step}. {stepTitle}
-                </h1>
-                <Info className="h-5 w-5 text-slate-400" />
-              </div>
-              <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-automl-muted dark:text-white/60">
+          <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="max-w-3xl text-sm font-semibold leading-6 text-automl-muted dark:text-white/60">
                 {stepDescription}
               </p>
             </div>
             <Button
               variant="outline"
-              className="h-11 rounded-2xl border-slate-200 bg-white px-4 font-bold shadow-none dark:border-white/10 dark:bg-white/10"
+              className="h-10 rounded-2xl border-slate-200 bg-white px-4 font-bold shadow-none dark:border-white/10 dark:bg-white/10"
               type="button"
             >
               <Lightbulb className="mr-2 h-4 w-4 text-automl-blue" />
@@ -357,11 +343,11 @@ export default function TrainingWizard({
             </Button>
           </div>
 
-          <div className="relative z-10 mt-8 min-h-0 flex-1 overflow-hidden pr-1 pt-14">
+          <div className="relative z-10 mt-4 min-h-0 flex-1 overflow-hidden pr-1 pt-16">
             <StepBubbleDeck currentStep={displayedStep} />
             <div
               key={step}
-              className="relative z-20 h-full overflow-hidden rounded-[2rem] border border-white/80 bg-white/95 p-4 shadow-2xl shadow-blue-950/10 ring-1 ring-blue-100/80 backdrop-blur transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 dark:border-white/10 dark:bg-slate-950/70 dark:ring-white/10 lg:p-5"
+              className="relative z-20 h-full overflow-hidden rounded-[1.4rem] border border-white/80 bg-white/95 p-3 shadow-2xl shadow-blue-950/10 ring-1 ring-blue-100/80 backdrop-blur transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 dark:border-white/10 dark:bg-slate-950/70 dark:ring-white/10"
             >
             {step === 1 && (
               <RadioGroup
@@ -370,7 +356,7 @@ export default function TrainingWizard({
                   setSelectedOption(value);
                   setStorage("choose", value);
                 }}
-                className="grid gap-4 md:grid-cols-2"
+                className="grid gap-3 md:grid-cols-2"
               >
                 {modeOptions.map((option) => (
                   <ChoiceCard
@@ -389,14 +375,14 @@ export default function TrainingWizard({
             )}
 
             {step === 2 && (
-              <div className="h-full min-h-0 space-y-5 overflow-hidden">
+              <div className="h-full min-h-0 space-y-3 overflow-hidden">
                 <RadioGroup
                   value={method}
                   onValueChange={(value) => {
                     setMethod(value);
                     setStorage("method", value);
                   }}
-                  className="grid gap-4 md:grid-cols-2"
+                  className="grid gap-3 md:grid-cols-2"
                 >
                   {strategyOptions.map((option) => (
                     <ChoiceCard
@@ -410,7 +396,7 @@ export default function TrainingWizard({
                       badge={option.badge}
                       tone={option.tone}
                     >
-                      <div className="mt-4 space-y-3">
+                      <div className="mt-3 space-y-2.5">
                         <ProgressLine label="Thời gian thiết lập" value={option.value === "auto" ? 92 : 42} />
                         <ProgressLine label="Mức tự động hóa" value={option.value === "auto" ? 96 : 35} />
                       </div>
@@ -418,16 +404,16 @@ export default function TrainingWizard({
                   ))}
                 </RadioGroup>
 
-                <div className="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/5">
-                  <div className="flex gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/5">
+                  <div className="flex gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
                       <Sparkles className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-black text-automl-ink dark:text-white">
+                      <p className="text-sm font-black text-automl-ink dark:text-white">
                         Để HAutoML tự động tối ưu pipeline
                       </p>
-                      <p className="mt-1 text-sm font-semibold text-automl-muted dark:text-white/60">
+                      <p className="mt-1 text-xs font-semibold leading-5 text-automl-muted dark:text-white/60">
                         Hệ thống sẽ thử nhiều cấu hình và chọn mô hình tốt nhất theo metric đã chọn.
                       </p>
                     </div>
@@ -451,7 +437,7 @@ export default function TrainingWizard({
                   setProblemType(value);
                   setStorage("problem_type", value);
                 }}
-                className="grid gap-4 md:grid-cols-2"
+                className="grid gap-3 md:grid-cols-2"
               >
                 {problemOptions.map((option) => (
                   <ChoiceCard
@@ -605,13 +591,13 @@ export default function TrainingWizard({
             </div>
           </div>
 
-          <div className="relative z-20 mt-auto border-t border-slate-100 bg-white/70 pt-5 backdrop-blur dark:border-white/10 dark:bg-slate-950/30">
-            <div className="grid gap-4 lg:grid-cols-[180px_1fr_180px] lg:items-end">
+          <div className="relative z-20 mt-3 shrink-0 border-t border-slate-100 bg-white/70 pt-3 backdrop-blur dark:border-white/10 dark:bg-slate-950/30">
+            <div className="grid gap-3 lg:grid-cols-[160px_1fr_160px] lg:items-end">
               <div className="flex justify-start">
               <Button
                 variant="outline"
                 onClick={handleBack}
-                className="h-12 rounded-2xl border-slate-200 bg-white px-5 font-bold shadow-sm dark:border-white/10 dark:bg-white/10"
+                className="h-11 rounded-2xl border-slate-200 bg-white px-5 font-bold shadow-sm dark:border-white/10 dark:bg-white/10"
                 type="button"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
@@ -628,7 +614,7 @@ export default function TrainingWizard({
                     (step === 2 && !method) ||
                     (step === 3 && !problemType)
                   }
-                  className="h-12 rounded-2xl bg-automl-blue px-5 font-black text-white shadow-sm disabled:opacity-50"
+                  className="h-11 rounded-2xl bg-automl-blue px-5 font-black text-white shadow-sm disabled:opacity-50"
                   type="button"
                 >
                   Tiếp tục
@@ -640,7 +626,7 @@ export default function TrainingWizard({
                     <AlertDialogTrigger asChild>
                       <Button
                         disabled={!canStart}
-                        className="h-12 rounded-2xl bg-automl-blue px-5 font-black text-white shadow-sm disabled:opacity-50"
+                        className="h-11 rounded-2xl bg-automl-blue px-5 font-black text-white shadow-sm disabled:opacity-50"
                         type="button"
                       >
                         Xác nhận & bắt đầu
@@ -674,8 +660,8 @@ export default function TrainingWizard({
 
         <aside
           className={cn(
-            "min-h-0 overflow-y-auto rounded-[1.75rem] border border-slate-200 bg-white shadow-sm transition-all duration-300 dark:border-white/10 dark:bg-white/10",
-            summaryCollapsed ? "p-3" : "p-5",
+            "min-h-0 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm transition-all duration-300 dark:border-white/10 dark:bg-white/10",
+            summaryCollapsed ? "p-3" : "p-4",
           )}
         >
           <div
@@ -717,7 +703,7 @@ export default function TrainingWizard({
             <CollapsedSummary items={summaryItems} currentStep={displayedStep} />
           ) : (
             <>
-              <div className="mt-6 grid grid-cols-2 rounded-2xl bg-slate-50 p-1 text-sm font-black dark:bg-white/5">
+              <div className="mt-4 grid grid-cols-2 rounded-2xl bg-slate-50 p-1 text-sm font-black dark:bg-white/5">
                 <span className="rounded-xl bg-white px-3 py-2 text-center text-automl-blue shadow-sm dark:bg-white/10">
                   Tóm tắt
                 </span>
@@ -726,7 +712,7 @@ export default function TrainingWizard({
                 </span>
               </div>
 
-              <div className="mt-6 space-y-5">
+              <div className="mt-4 space-y-4">
                 {summaryItems.map((item) => (
                   <SummaryItem
                     key={item.title}
@@ -759,7 +745,7 @@ const ChoiceCard = ({
   <label
     htmlFor={id}
     className={cn(
-      "relative flex min-h-56 cursor-pointer flex-col rounded-3xl border bg-white p-5 transition dark:bg-white/5",
+      "relative flex min-h-0 cursor-pointer flex-col rounded-2xl border bg-white p-3 transition dark:bg-white/5",
       selected
         ? "border-automl-blue shadow-lg shadow-blue-500/10 ring-4 ring-automl-blue/10"
         : "border-slate-200 hover:border-automl-blue/40 hover:shadow-md dark:border-white/10",
@@ -768,16 +754,16 @@ const ChoiceCard = ({
   >
     <RadioGroupItem id={id} value={id} disabled={disabled} className="sr-only" />
     {selected && (
-      <span className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-automl-blue text-white">
+      <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-automl-blue text-white">
         <Check className="h-4 w-4" />
       </span>
     )}
-    <div className={cn("flex h-20 w-20 items-center justify-center rounded-full", tone)}>
-      <Icon className="h-9 w-9" />
+    <div className={cn("flex h-12 w-12 items-center justify-center rounded-full", tone)}>
+      <Icon className="h-6 w-6" />
     </div>
-    <div className="mt-5">
+    <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xl font-black text-automl-ink dark:text-white">
+        <h3 className="text-base font-black text-automl-ink dark:text-white">
           {title}
         </h3>
         {badge && (
@@ -786,7 +772,7 @@ const ChoiceCard = ({
           </span>
         )}
       </div>
-      <p className="mt-3 text-sm font-semibold leading-6 text-automl-muted dark:text-white/60">
+      <p className="mt-1.5 text-xs font-semibold leading-5 text-automl-muted dark:text-white/60">
         {description}
       </p>
     </div>
@@ -796,13 +782,13 @@ const ChoiceCard = ({
 
 const ProgressLine = ({ label, value }: { label: string; value: number }) => (
   <div>
-    <div className="mb-2 flex justify-between text-xs font-black text-slate-500 dark:text-white/55">
+    <div className="mb-1.5 flex justify-between text-xs font-black text-slate-500 dark:text-white/55">
       <span>{label}</span>
       <span>{value}%</span>
     </div>
-    <div className="h-2 rounded-full bg-slate-100 dark:bg-white/10">
+    <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/10">
       <div
-        className="h-2 rounded-full bg-automl-blue"
+        className="h-1.5 rounded-full bg-automl-blue"
         style={{ width: `${value}%` }}
       />
     </div>
@@ -810,21 +796,21 @@ const ProgressLine = ({ label, value }: { label: string; value: number }) => (
 );
 
 const StepBubbleDeck = ({ currentStep }: { currentStep: number }) => (
-  <div className="pointer-events-none absolute inset-x-4 top-0 z-0 hidden h-28 overflow-visible md:block">
+  <div className="pointer-events-none absolute inset-x-4 top-1 z-0 hidden h-14 overflow-visible md:block">
     {steps.map((stepItem) => {
       const Icon = stepItem.icon;
       const distance = stepItem.id - currentStep;
       const isCurrent = stepItem.id === currentStep;
       const isPast = stepItem.id < currentStep;
-      const translateX = distance * 210;
-      const translateY = Math.abs(distance) * 7 - 18;
+      const translateX = distance * 172;
+      const translateY = Math.abs(distance) * 4;
       const scale = isCurrent ? 1 : Math.max(0.78, 0.94 - Math.abs(distance) * 0.05);
 
       return (
         <div
           key={stepItem.id}
           className={cn(
-            "absolute left-1/2 top-0 flex h-20 w-56 items-center gap-3 rounded-[1.35rem] border px-4 shadow-xl backdrop-blur transition-all duration-500",
+            "absolute left-1/2 top-0 flex h-12 w-44 items-center gap-2.5 rounded-2xl border px-3 shadow-xl backdrop-blur transition-all duration-500",
             isCurrent
               ? "border-automl-blue/40 bg-white/90 text-automl-blue shadow-blue-500/15"
               : isPast
@@ -839,7 +825,7 @@ const StepBubbleDeck = ({ currentStep }: { currentStep: number }) => (
         >
           <span
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black",
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black",
               isCurrent
                 ? "bg-automl-blue text-white"
                 : isPast
@@ -850,7 +836,7 @@ const StepBubbleDeck = ({ currentStep }: { currentStep: number }) => (
             {isPast ? <Check className="h-4 w-4" /> : stepItem.id}
           </span>
           <div className="min-w-0">
-            <Icon className="mb-1 h-4 w-4" />
+            <Icon className="mb-0.5 h-3.5 w-3.5" />
             <p className="truncate text-xs font-black">{stepItem.label}</p>
           </div>
         </div>
@@ -892,19 +878,19 @@ const SummaryItem = ({
   value: string;
   detail: string;
 }) => (
-  <div className="border-b border-slate-100 pb-5 last:border-0 last:pb-0 dark:border-white/10">
-    <div className="flex gap-4">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-automl-blue dark:bg-white/5">
+  <div className="border-b border-slate-100 pb-4 last:border-0 last:pb-0 dark:border-white/10">
+    <div className="flex gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-automl-blue dark:bg-white/5">
         <Icon className="h-5 w-5" />
       </div>
       <div className="min-w-0">
         <p className="text-xs font-black uppercase tracking-wide text-automl-blue">
           {title}
         </p>
-        <p className="mt-2 truncate font-black text-automl-ink dark:text-white">
+        <p className="mt-1 truncate font-black text-automl-ink dark:text-white">
           {value}
         </p>
-        <p className="mt-1 text-sm font-semibold text-automl-muted dark:text-white/60">
+        <p className="mt-0.5 text-sm font-semibold text-automl-muted dark:text-white/60">
           {detail}
         </p>
       </div>
@@ -919,7 +905,7 @@ const CollapsedSummary = ({
   items: SummaryConfig[];
   currentStep: number;
 }) => (
-  <div className="mt-6 flex flex-col items-center gap-3">
+  <div className="mt-5 flex flex-col items-center gap-3">
     {items.map((item, index) => {
       const Icon = item.icon;
       const active = index + 1 <= currentStep;
@@ -946,17 +932,17 @@ const CollapsedSummary = ({
 );
 
 const StepProgress = ({ currentStep }: { currentStep: number }) => (
-  <div className="flex min-w-0 flex-1 items-end justify-center overflow-x-auto px-2 pb-1">
+  <div className="flex h-16 min-w-0 flex-1 items-center justify-center overflow-hidden px-2 pb-1">
     {steps.map((stepItem, index) => {
       const done = stepItem.id < currentStep;
       const active = stepItem.id === currentStep;
 
       return (
         <div key={stepItem.id} className="flex items-center">
-          <div className="relative flex min-w-[76px] flex-col items-center">
+          <div className="relative flex min-w-[68px] flex-col items-center">
             <span
               className={cn(
-                "flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-black shadow-sm transition",
+                "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-black shadow-sm transition",
                 done
                   ? "border-emerald-300 bg-emerald-50 text-emerald-600"
                   : active
@@ -968,7 +954,7 @@ const StepProgress = ({ currentStep }: { currentStep: number }) => (
             </span>
             <p
               className={cn(
-                "mt-2 whitespace-nowrap text-xs font-black",
+                "mt-1 whitespace-nowrap text-[11px] font-black leading-none",
                 active
                   ? "text-automl-blue"
                   : done
@@ -982,7 +968,7 @@ const StepProgress = ({ currentStep }: { currentStep: number }) => (
           {index < steps.length - 1 && (
             <span
               className={cn(
-                "mb-7 h-0.5 w-12 rounded-full",
+                "mb-5 h-0.5 w-10 rounded-full",
                 done ? "bg-emerald-300" : "bg-slate-200 dark:bg-white/10",
               )}
             />

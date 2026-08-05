@@ -179,6 +179,26 @@
     }
   },
   "Home": {
+    "hero": {
+      "badge": "Distributed AutoML Platform",
+      "titleLine1": "HAutoML -",
+      "titleLine2": "Distributed AutoML",
+      "titleLine3": "Made Simple",
+      "description": "Train, optimize, and deploy machine learning models through an intuitive no-code platform.",
+      "primaryAction": "Get Started",
+      "secondaryAction": "Explore Demo",
+      "chips": {
+        "chip1": "No-code",
+        "chip2": "Distributed",
+        "chip3": "Auto Optimization",
+        "chip4": "AI-powered"
+      },
+      "metrics": {
+        "accuracy": "Accuracy",
+        "trainingTime": "Training time",
+        "modelsTested": "Models tested"
+      }
+    },
     "badge": "Low-code AutoML workflow platform",
     "heroTitle": "Build machine learning models with a visual workflow",
     "heroSubtitle": "HAutoML helps users configure data, train, compare, and deploy models in an automation-canvas experience.",

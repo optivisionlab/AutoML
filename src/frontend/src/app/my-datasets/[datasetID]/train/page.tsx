@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import TrainMyDataCard from "@/components/myDatasetUser/TrainMyDataCard";
 import { useGetDatasetInfoQuery } from "@/redux/api/datasetApi";
-import BackButton from "@/components/common/BackButton";
 
 export default function Page() {
   const params = useParams();
@@ -23,13 +22,11 @@ export default function Page() {
   }, []);
 
   return datasetID ? (
-    <div className="space-y-4">
-      <BackButton fallbackHref="/my-datasets" />
+    <div className="h-[calc(100svh-8rem)] overflow-hidden">
       <TrainMyDataCard datasetID={datasetID} datasetName={dataName} />
     </div>
   ) : (
-    <div className="space-y-4">
-      <BackButton fallbackHref="/my-datasets" />
+    <div className="h-[calc(100svh-8rem)] overflow-hidden">
       <div>Không tìm thấy ID dataset</div>
     </div>
   );

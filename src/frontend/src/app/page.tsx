@@ -3,19 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  ArrowRight,
   BrainCircuit,
   Database,
   GitBranch,
   Mail,
   MapPin,
   Rocket,
-  Sparkles,
   Workflow,
 } from "lucide-react";
 import { FaFacebook, FaYoutube } from "react-icons/fa";
 
-import HAutoMLHeroScene from "@/components/home/HAutoMLHeroScene";
+import HeroSection from "@/components/home/hero/HeroSection";
 import MemberLab from "@/components/memberLab/MemberLab";
 import { useTranslations } from "next-intl";
 
@@ -76,54 +74,9 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-automl-canvas text-automl-ink">
-      <section id="home" className="relative px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.88fr_1.12fr]">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-automl-line bg-automl-surface">
-                <Image
-                  src="/logoHautoMLNotext.png"
-                  alt="HAutoML"
-                  width={34}
-                  height={34}
-                  className="h-8 w-8 object-contain"
-                  priority
-                />
-              </div>
-              <div>
-                <p className="text-xl font-black text-automl-ink">HAutoML</p>
-                <p className="text-sm font-bold text-automl-muted">
-                  Hyper-processor Automated Machine Learning
-                </p>
-              </div>
-            </div>
+      <HeroSection />
 
-            <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-automl-line bg-automl-surface px-4 py-2 text-sm font-bold text-automl-muted">
-              <Sparkles className="h-4 w-4 text-automl-orange" />
-              {t("badge")}
-            </div>
-
-            <h1 className="mt-6 max-w-2xl text-5xl font-black leading-none text-automl-ink sm:text-6xl lg:text-7xl">
-              {t("heroTitle")}
-            </h1>
-            <p className="mt-6 max-w-xl text-lg font-semibold leading-8 text-automl-muted">
-              {t("heroSubtitle")}
-            </p>
-
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="automl-button-primary h-12">
-                {t("startFree")}
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-              <Link href="/public-datasets" className="automl-button-dark h-12">
-                {t("viewSamples")}
-              </Link>
-            </div>
-          </div>
-
-          <HAutoMLHeroScene />
-        </div>
-
+      <section className="px-4 sm:px-6 lg:px-8">
         <div className="mx-auto mt-10 grid max-w-6xl gap-4 border-y border-automl-line py-5 md:grid-cols-[1.55fr_repeat(3,1fr)]">
           <p className="text-base font-black leading-6 text-automl-ink">
             {t("statsIntro")}
@@ -160,7 +113,7 @@ export default function Home() {
 
               return (
                 <article
-                  key={card.title}
+                  key={card.titleKey}
                   className="rounded-lg border border-automl-line bg-automl-surface p-6"
                 >
                   <div className={`flex h-11 w-11 items-center justify-center rounded-lg ${card.tone}`}>

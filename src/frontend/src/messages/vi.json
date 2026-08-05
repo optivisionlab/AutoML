@@ -179,6 +179,26 @@
     }
   },
   "Home": {
+    "hero": {
+      "badge": "Nền tảng AutoML phân tán",
+      "titleLine1": "HAutoML -",
+      "titleLine2": "AutoML phân tán",
+      "titleLine3": "đơn giản hóa",
+      "description": "Huấn luyện, tối ưu và triển khai mô hình học máy thông qua một nền tảng no-code trực quan.",
+      "primaryAction": "Bắt đầu",
+      "secondaryAction": "Xem demo",
+      "chips": {
+        "chip1": "No-code",
+        "chip2": "Phân tán",
+        "chip3": "Tự động tối ưu",
+        "chip4": "AI-powered"
+      },
+      "metrics": {
+        "accuracy": "Độ chính xác",
+        "trainingTime": "Thời gian train",
+        "modelsTested": "Mô hình đã thử"
+      }
+    },
     "badge": "Nền tảng workflow AutoML low-code",
     "heroTitle": "Xây mô hình học máy bằng workflow trực quan",
     "heroSubtitle": "HAutoML giúp người dùng cấu hình dữ liệu, huấn luyện, so sánh và triển khai mô hình trong một trải nghiệm giống automation canvas.",
