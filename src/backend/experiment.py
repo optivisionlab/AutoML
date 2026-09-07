@@ -16,7 +16,7 @@ import pickle
 import joblib
 
 # Local Modules
-from database.get_dataset import MongoDataLoader
+from database.get_dataset import MongoDataLoader, MongoNotification
 from database.database import get_db
 from automl.v2.schemas import InputRequest
 from automl.v2.minio import minIOStorage
@@ -320,3 +320,55 @@ async def create_batch_prediction(
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
+
+
+@exp.get("notifications")
+async def fetch_notifications(
+    user_id: str,
+    offset: int = Query(0, ge=0, description="Starting position (0, 10, 20...)"),
+    limit: int = Query(10, gt=0, le=50, description="Quantity taken per roll"),
+    db: AsyncDatabase = Depends(get_db)
+):
+    notif_repo = MongoNotification(db)
+    notifs, unread_count = await notif_repo.get_notifications(user_id, offset, limit)
+
+    return {
+        "data": notifs,
+        "unread_count": unread_count,
+        "has_more": len(notifs) == limit
+    }
+
+
+@exp.get("notifications/unread")
+async def fetch_unread_notifications(
+    user_id: str,
+    offset: int = Query(0, ge=0, description="Starting position (0, 10, 20...)"),
+    limit: int = Query(10, gt=0, le=50, description="Quantity taken per roll"),
+    db: AsyncDatabase = Depends(get_db)
+):
+    notif_repo = MongoNotification(db)
+    notifs, unread_count = await notif_repo.get_unread_notifications(user_id, offset, limit)
+
+    return {
+        "data": notifs,
+        "unread_count": unread_count,
+        "has_more": len(notifs) == limit
+    }
+
+
+@exp.put("notifications/{notification_id}/read")
+async def read_notification(
+    notification_id: str,
+    user_id: str,
+    db: AsyncDatabase = Depends(get_db)
+):
+    notif_repo = MongoNotification(db)
+    success = await notif_repo.mark_as_read(user_id, notification_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found or already read"
+        )
+        
+    return {"status": "success"}
