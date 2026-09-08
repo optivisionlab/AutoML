@@ -146,7 +146,7 @@ async def handle_change_password(user, current_password: str, new_password: str,
 
     
 import base64, io
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 async def handle_update_avatar(username, avatar, db: AsyncDatabase):
     users_collection = db.tbl_User
     user = await users_collection.find_one({"username": username})
@@ -180,17 +180,24 @@ async def handle_get_avatar(username, db: AsyncDatabase):
         )
     
     avatar_base64 = user.get('avatar')
+    if not avatar_base64 or not isinstance(avatar_base64, str):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    avatar_base64 = avatar_base64.strip()
     if not avatar_base64:
-        return None
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    if avatar_base64.startswith(("http://", "https://")):
+        return RedirectResponse(avatar_base64)
+
+    if avatar_base64.startswith("data:image"):
+        avatar_base64 = avatar_base64.split(",", 1)[-1]
     
     try:
-        avatar_data = base64.b64decode(avatar_base64)
+        avatar_data = base64.b64decode(avatar_base64, validate=True)
         return StreamingResponse(io.BytesIO(avatar_data), media_type="image/png")
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Image data on database is corrupted {str(e)}"
-        )
+    except Exception:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 async def handle_delete_user(username, db: AsyncDatabase) -> dict:
