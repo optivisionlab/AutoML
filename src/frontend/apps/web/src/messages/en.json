@@ -1,0 +1,1029 @@
+{
+  "Common": {
+    "checkingSession": "Checking your session...",
+    "loadingData": "Loading data...",
+    "noData": "No data",
+    "unknown": "Unknown",
+    "unnamed": "Untitled",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "save": "Save",
+    "confirm": "Confirm",
+    "back": "Back",
+    "backToPrevious": "Back to previous page",
+    "backToModelStore": "Back to model store",
+    "backToTrainingHistory": "Back to training history",
+    "train": "Train",
+    "actions": "Actions",
+    "openActionMenu": "Open action menu",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode",
+    "home": "Home"
+  },
+  "Header": {
+    "brandSubtitle": "Open AutoML",
+    "product": "Product",
+    "products": "Products",
+    "solutions": "Solutions",
+    "resources": "Resources",
+    "workflow": "Workflow",
+    "marketplace": "Marketplace",
+    "docs": "Docs",
+    "team": "Team & Community",
+    "community": "Community",
+    "dashboard": "Dashboard",
+    "login": "Log in",
+    "trial": "Start free",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "language": "Language",
+    "switchToEnglish": "Switch to English",
+    "switchToVietnamese": "Switch to Vietnamese",
+    "workflowTitle": "Workflow Canvas",
+    "workflowDesc": "Visual drag-and-drop builder for data processing and ML pipelines",
+    "autoTrainTitle": "AutoTrain Studio",
+    "autoTrainDesc": "Automated model selection and hyperparameter optimization",
+    "deployTitle": "1-Click Deployment",
+    "deployDesc": "Instant model serving as production-ready REST APIs",
+    "preprocessTitle": "Smart Preprocessing",
+    "preprocessDesc": "Automatic data cleaning, encoding, imputation and normalization",
+    "calloutProductTitle": "Explore HAutoML",
+    "calloutProductDesc": "Train your first high-accuracy machine learning model in minutes without code.",
+    "calloutProductBtn": "Try AutoML now",
+    "cvTitle": "Computer Vision",
+    "cvDesc": "Image classification, object detection and visual feature extraction",
+    "tabularTitle": "Tabular Data",
+    "tabularDesc": "Predictive analytics, classification and regression for enterprise tables",
+    "marketplaceTitle": "Model Marketplace",
+    "marketplaceDesc": "Discover and deploy pre-trained community models effortlessly",
+    "publicDataTitle": "Public Datasets",
+    "publicDataDesc": "Curated collection of benchmark datasets ready for training",
+    "calloutSolutionTitle": "Research & Academy",
+    "calloutSolutionDesc": "Built with passion by OptivisionLab at Faculty of IT, Hanoi University of Industry.",
+    "calloutSolutionBtn": "Explore the Lab",
+    "docsTitle": "Documentation",
+    "docsDesc": "System architecture, API specifications and step-by-step guides",
+    "historyTitle": "Training History",
+    "historyDesc": "Monitor, compare and analyze performance benchmarks across runs",
+    "communityTitle": "Community & GitHub",
+    "communityDesc": "Join open-source discussions, report issues and contribute",
+    "aboutUsTitle": "About Us",
+    "aboutUsDesc": "Meet the OptivisionLab team and discover our open AI vision",
+    "calloutResourceTitle": "100% Open Source",
+    "calloutResourceDesc": "Explore the entire codebase and star our official GitHub repository.",
+    "calloutResourceBtn": "View on GitHub"
+  },
+  "Footer": {
+    "brandSubtitle": "Open AutoML Studio",
+    "description": "An open-source AutoML platform streamlining Low-Code & No-Code workflows from preprocessing and automated model tuning to 1-click API deployment.",
+    "institution": "School of ICT – Hanoi University of Industry (HaUI)",
+    "labName": "OptiVisionLab Research",
+    "address": "298 Cau Dien Street, Minh Khai Ward, Bac Tu Liem District, Hanoi, Vietnam",
+    "email": "optivision.work@gmail.com",
+    "systemOperational": "All systems operational",
+    "starGitHub": "Star on GitHub",
+    "exploreDocs": "Docs",
+    "ctaTitle": "Automate your machine learning workflows with HAutoML",
+    "ctaSubtitle": "Experience an intuitive visual pipeline from tabular data to computer vision in minutes.",
+    "ctaButton": "Get Started Free",
+    "productsTitle": "Product",
+    "workflowCanvas": "Workflow Canvas",
+    "autoTrain": "AutoTrain Studio",
+    "deployTest": "1-Click Deployment",
+    "smartPreprocess": "Smart Preprocessing",
+    "solutionsTitle": "Solutions & Data",
+    "computerVision": "Computer Vision",
+    "tabularData": "Tabular Data",
+    "marketplace": "Model Marketplace",
+    "publicDatasets": "Public Datasets",
+    "resourcesTitle": "Resources",
+    "docs": "Documentation",
+    "trainingHistory": "Experiment History",
+    "quickstart": "Quickstart Guide",
+    "architecture": "Architecture",
+    "researchTitle": "Research & Lab",
+    "optivisionLab": "OptiVisionLab",
+    "haui": "Hanoi University of Industry",
+    "githubRepo": "GitHub Repository",
+    "community": "Team & Community",
+    "copyright": "© 2026 HAutoML by OptiVisionLab — SICT, Hanoi University of Industry (HaUI).",
+    "license": "Licensed under the open-source MIT License.",
+    "backToTop": "Back to top",
+    "privacy": "Privacy",
+    "terms": "Terms",
+    "version": "v3.0.0 Open-Source"
+  },
+  "Sidebar": {
+    "subtitle": "Open AutoML platform",
+    "dashboard": "Dashboard",
+    "publicDatasets": "Public datasets",
+    "myDatasets": "My datasets",
+    "trainingHistory": "Training history",
+    "deployModel": "Model deployment",
+    "modelStore": "Model store",
+    "accountManagement": "Account management",
+    "userDatasets": "User datasets",
+    "openSidebar": "Open sidebar",
+    "closeSidebar": "Close sidebar",
+    "docs": "User guide",
+    "centerTitle": "AutoML Center",
+    "centerBody": "Track datasets, training runs, best models, and deployments in one management flow.",
+    "readyWorkflow": "Workflow ready"
+  },
+  "Topbar": {
+    "adminRole": "Administrator",
+    "userRole": "User",
+    "openSidebar": "Open sidebar",
+    "collapseSidebar": "Collapse sidebar",
+    "searchPlaceholder": "Search datasets, models, training runs...",
+    "profile": "View account",
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "logout": "Log out"
+  },
+  "Dashboard": {
+    "loading": "Summarizing your dashboard...",
+    "title": "Dashboard",
+    "subtitle": "Overview of datasets, training, and deployment from your real account data.",
+    "last30Days": "Last 30 days",
+    "currentYear": "Current year",
+    "trainingOverview": "Training overview",
+    "modelGroups": "Model groups",
+    "total": "Total",
+    "deploymentHealth": "Deployment health",
+    "recentTrainingRuns": "Recent training runs",
+    "recentActivity": "Recent activity",
+    "viewAll": "View all",
+    "data": "Data",
+    "model": "Model",
+    "processing": "Processing",
+    "uncategorized": "Uncategorized",
+    "emptyGroups": "No data available for grouping.",
+    "emptyDeployments": "No completed model is ready for deployment yet.",
+    "emptyTrainingRuns": "No training runs yet.",
+    "emptyActivity": "No activity from Redux data yet.",
+    "metrics": {
+      "totalDatasets": "Total datasets",
+      "newCount": "{count} new",
+      "last30Days": "in the last 30 days",
+      "trainingRuns": "Training runs",
+      "runningCount": "{count} running",
+      "accountPipelines": "account pipelines",
+      "bestAccuracy": "Best accuracy",
+      "noModel": "No model yet",
+      "waitingForTraining": "waiting for a completed training run",
+      "awaitingDeployment": "Awaiting deployment",
+      "completedCount": "{count} completed",
+      "activatableModels": "models ready to activate"
+    },
+    "activity": {
+      "datasetUpdated": "Dataset updated",
+      "trainingCompleted": "Training run completed",
+      "pipelineRunning": "Pipeline running",
+      "trainingNeedsReview": "Training run needs review"
+    },
+    "table": {
+      "runId": "Run ID",
+      "dataset": "Dataset",
+      "model": "Model",
+      "date": "Date",
+      "status": "Status"
+    },
+    "status": {
+      "completed": "Completed",
+      "running": "Running",
+      "failed": "Failed"
+    },
+    "time": {
+      "unknown": "Unknown time",
+      "justNow": "Just now",
+      "minutesAgo": "{count} minutes ago",
+      "hoursAgo": "{count} hours ago",
+      "daysAgo": "{count} days ago"
+    }
+  },
+  "Datasets": {
+    "connectDatabase": "Connect database",
+    "addDataset": "Add dataset",
+    "searchPlaceholder": "Search name or data type...",
+    "summary": "Showing {shown} / {total} datasets",
+    "empty": "No datasets yet.",
+    "openActions": "Open actions for {name}",
+    "my": {
+      "eyebrow": "Personal data assets",
+      "title": "My datasets",
+      "subtitle": "Manage personal datasets, update metadata, and start training pipelines from one place."
+    },
+    "public": {
+      "eyebrow": "Sample data sources",
+      "title": "Public datasets",
+      "subtitle": "Choose standardized public datasets to quickly run AutoML training workflows.",
+      "empty": "No public datasets yet."
+    },
+    "metrics": {
+      "totalDatasets": "Total datasets",
+      "myDatasets": "My datasets",
+      "managedSources": "managed sources",
+      "publicReady": "public sources ready",
+      "dataTypes": "Data types",
+      "dataTypeGroups": "different data groups",
+      "recentlyUpdated": "Recently updated",
+      "last30Days": "in the last 30 days",
+      "trainable": "Trainable",
+      "readyForPipeline": "ready to open pipeline",
+      "readyToTrain": "Ready to train",
+      "canOpenActions": "can open actions now"
+    },
+    "sort": {
+      "updated": "Sort: recently updated",
+      "name": "Sort: name A-Z",
+      "type": "Sort: data type"
+    },
+    "allTypes": "All types",
+    "viewTable": "Table",
+    "viewGrid": "Grid",
+    "table": {
+      "name": "Dataset name",
+      "type": "Data type",
+      "createdAt": "Created date",
+      "updatedAt": "Latest update"
+    },
+    "toast": {
+      "deleteSuccess": "Deleted successfully",
+      "deleteFailed": "Delete failed",
+      "deleteFailedDescription": "An error occurred while deleting the dataset."
+    },
+    "deleteDialog": {
+      "title": "Are you sure you want to delete?",
+      "description": "This action cannot be undone. The data will be permanently deleted from the system."
+    }
+  },
+  "Home": {
+    "hero": {
+      "badge": "Distributed AutoML Platform",
+      "titleLine1": "HAutoML -",
+      "titleLine2": "Distributed AutoML",
+      "titleLine3": "Made Simple",
+      "description": "Train, optimize, and deploy machine learning models through an intuitive no-code platform.",
+      "primaryAction": "Get Started",
+      "secondaryAction": "Explore Demo",
+      "chips": {
+        "chip1": "No-code",
+        "chip2": "Distributed",
+        "chip3": "Auto Optimization",
+        "chip4": "AI-powered"
+      },
+      "metrics": {
+        "accuracy": "Accuracy",
+        "trainingTime": "Training time",
+        "modelsTested": "Models tested"
+      }
+    },
+    "pipeline": {
+      "badge": "Distributed AutoML Simplified",
+      "title": "Realize the Distributed AutoML Pipeline",
+      "subtitle": "From raw dataset to production-deployed models on an end-to-end distributed architecture.",
+      "step1Title": "Upload Dataset",
+      "step1Desc": "Navigate to My Datasets, upload the tabular dataset file (ENB2012_data.xlsx), and confirm save.",
+      "step2Title": "Select Target & Features",
+      "step2Desc": "Choose Regression task, configure the Target variable (Y1) and input Features (X1 to X8), then start training.",
+      "step3Title": "Automated Distributed Training",
+      "step3Desc": "The system automatically executes pipelines, tunes hyperparameters, and benchmarks algorithms on visual leaderboards.",
+      "step4Title": "Deploy & Activate Model",
+      "step4Desc": "Select the best champion model to deploy and click Activate to obtain your production API endpoint and code snippet.",
+      "liveSimulation": "Live Pipeline Execution",
+      "timeElapsed": "Elapsed",
+      "pause": "Pause",
+      "play": "Play",
+      "restart": "Restart"
+    },
+    "industryShowcase": {
+      "badge": "Awards & Industry Scale",
+      "headingPrefix": "Thousands of",
+      "headingHighlight": "AI engineers & researchers",
+      "headingSuffix": "rely on HAutoML in their domain.",
+      "description": "Proud winner of prestigious awards in Student Scientific Research and National Innovative Startup Competitions (SV.STARTUP). Empowering students, researchers, and AI engineers to accelerate end-to-end machine learning workflows.",
+      "exploreUseCases": "Explore Industry Use Cases"
+    },
+    "badge": "Low-code AutoML workflow platform",
+    "heroTitle": "Build machine learning models with a visual workflow",
+    "heroSubtitle": "HAutoML helps users configure data, train, compare, and deploy models in an automation-canvas experience.",
+    "startFree": "Start free",
+    "viewSamples": "View sample data",
+    "statsIntro": "An AutoML platform for research, learning, and fast model deployment experiments.",
+    "stats": {
+      "algorithms": "algorithms",
+      "sampleSources": "sample data sources",
+      "deployTest": "test/deploy"
+    },
+    "workflowBadge": "Processing workflow",
+    "workflowTitle": "From dataset to deployed model in one flow",
+    "workflowBody": "The new homepage highlights what HAutoML does best: turning machine learning pipelines into observable, stateful, and adjustable steps.",
+    "cards": {
+      "realData": {
+        "title": "Start with real data",
+        "body": "Upload CSV or Excel files, inspect schema, choose the prediction column, and normalize data in one workflow."
+      },
+      "pipeline": {
+        "title": "Track pipelines visually",
+        "body": "The progress map shows data reading, preprocessing, hyperparameter optimization, feature generation, and model evaluation."
+      },
+      "deploy": {
+        "title": "Deploy the winning model",
+        "body": "Leaderboard, insight panel, and test upload help you pick the champion model and use it faster."
+      }
+    },
+    "marketplaceBadge": "Workflow templates",
+    "marketplaceTitle": "Choose a template, tune parameters, run the pipeline",
+    "marketplaceBody": "Marketplace is the starting point for common tasks: classification, regression, churn prediction, and model testing.",
+    "exploreMarketplace": "Explore marketplace",
+    "productTitle": "An automation platform built for machine learning",
+    "productBody": "Users can quickly understand model state: reading data, optimizing parameters, which pipeline performs best, and how to test it.",
+    "tryFree": "Try free",
+    "viewTrainingHistory": "View training history",
+    "introBadge": "Introduction",
+    "introTitle": "HAutoML System",
+    "introBodyPrefix": "HAutoML stands for",
+    "introBodySuffix": "An open platform researched and developed by OptiVisionLab, delivering high-performance end-to-end distributed AutoML capabilities.",
+    "introLowCode": "The system focuses on low-code and no-code workflows, helping users easily build, evaluate, and deploy machine learning models.",
+    "aboutTitle": "Team & OptiVisionLab Research",
+    "aboutBody": "Bringing together faculty advisors, researchers, software engineers, and talented students from OptiVisionLab to build open-source HAutoML with community contributors.",
+    "footerDescription": "An open-source AutoML platform for research, learning, and faster machine learning workflows.",
+    "address": "Hanoi University of Industry, 298 Cau Dien Street, Minh Khai Ward, Bac Tu Liem District, Hanoi",
+    "footer": {
+      "product": "Product",
+      "workflowCanvas": "Workflow canvas",
+      "autoTrain": "Auto train",
+      "deployTest": "Deploy/Test",
+      "resources": "Resources",
+      "publicDatasets": "Public datasets",
+      "marketplace": "Marketplace",
+      "trainingHistory": "Training history",
+      "research": "Research",
+      "optivisionLab": "OptivisionLab",
+      "haui": "HAUI",
+      "openSource": "Open source",
+      "links": "Links",
+      "github": "GitHub",
+      "community": "Community",
+      "docs": "Docs"
+    },
+    "introInstitution": "OptiVisionLab Research Laboratory",
+    "introChipLowCode": "⚡ Low-code & No-code",
+    "introChipResearch": "🔬 OptiVisionLab Research",
+    "introChipAutoML": "🤖 Distributed AutoML Automation"
+  },
+  "Auth": {
+    "login": {
+      "title": "Log in to HAutoML",
+      "subtitle": "Continue building, training, and tracking your AutoML workflows.",
+      "username": "Username",
+      "password": "Password",
+      "forgotPassword": "Forgot password?",
+      "passwordPlaceholder": "Enter password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Log in",
+      "submitting": "Logging in...",
+      "continueWith": "or continue with",
+      "google": "Log in with Google",
+      "noAccount": "Don't have an account?",
+      "register": "Register",
+      "toast": {
+        "success": "Logged in successfully",
+        "failed": "Login failed",
+        "failedDescription": "Username or password is incorrect."
+      },
+      "validation": {
+        "usernameMin": "Username must be at least 3 characters",
+        "passwordMin": "Password must be at least 5 characters"
+      }
+    },
+    "register": {
+      "title": "Create a HAutoML account",
+      "subtitle": "Fill in your information to create a workspace and receive a verification email.",
+      "fullName": "Full name",
+      "fullNamePlaceholder": "John Doe",
+      "username": "Username",
+      "email": "Email",
+      "gender": "Gender",
+      "male": "Male",
+      "female": "Female",
+      "birthDate": "Date of birth",
+      "phone": "Phone number",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "confirmPassword": "Confirm password",
+      "confirmPasswordPlaceholder": "Re-enter password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "showConfirmPassword": "Show confirmation password",
+      "hideConfirmPassword": "Hide confirmation password",
+      "submit": "Create account",
+      "submitting": "Registering...",
+      "or": "or",
+      "google": "Register with Google",
+      "hasAccount": "Already have an account?",
+      "login": "Log in",
+      "toast": {
+        "failed": "Registration failed",
+        "unknownError": "Unknown error"
+      },
+      "validation": {
+        "fullNameMin": "Full name must be at least 5 characters",
+        "usernameMin": "Username must be at least 5 characters",
+        "usernameNoSpaces": "Username cannot contain spaces",
+        "email": "Enter a valid email address",
+        "phone": "Phone number is invalid",
+        "passwordMin": "Password must be at least 8 characters",
+        "passwordComplex": "Password must include uppercase, lowercase, number, and special character",
+        "passwordConfirm": "Passwords do not match, please try again"
+      }
+    },
+    "loginPage": {
+      "loading": "Opening login page...",
+      "visual": {
+        "eyebrow": "HAutoML workflow",
+        "title": "Train, evaluate, and deploy in one canvas",
+        "badge": "Training run #42",
+        "dataset": "Dataset",
+        "preprocess": "Preprocess",
+        "preprocessBody": "Scale + encode",
+        "autoTrain": "Auto train",
+        "autoTrainBody": "8 algorithms running",
+        "evaluate": "Evaluate",
+        "evaluateBody": "Accuracy leaderboard",
+        "bestModel": "Best model"
+      }
+    },
+    "registerPage": {
+      "loading": "Opening registration page...",
+      "badge": "New workspace",
+      "title": "From dataset to model in a few clear steps",
+      "body": "After email verification, you can upload data, choose a target column, and run an AutoML pipeline directly in the canvas.",
+      "steps": {
+        "create": {
+          "title": "Create account",
+          "body": "Save user information using the existing schema."
+        },
+        "verify": {
+          "title": "Verify email",
+          "body": "Go to verify-email after successful registration."
+        },
+        "workflow": {
+          "title": "Start workflow",
+          "body": "Create a training run and track the model leaderboard."
+        }
+      }
+    }
+  },
+  "Marketplace": {
+    "header": {
+      "eyebrow": "AutoML workflow catalog",
+      "title": "Model store",
+      "subtitle": "Choose standardized templates to train, evaluate, and deploy quickly in HAutoML. Each template includes inputs, metrics, and a clear checklist.",
+      "totalTemplates": "Total templates",
+      "readyToUse": "Ready to use",
+      "searchPlaceholder": "Search by name, use case, tag..."
+    },
+    "filters": {
+      "title": "Filters",
+      "category": "Category",
+      "status": "Status"
+    },
+    "categories": {
+      "all": "All",
+      "classification": "Classification",
+      "regression": "Regression",
+      "vision": "Computer vision",
+      "forecast": "Forecasting"
+    },
+    "status": {
+      "ready": "Ready",
+      "beta": "Beta",
+      "internal": "Internal"
+    },
+    "statusFilters": {
+      "all": "All statuses",
+      "ready": "Ready",
+      "beta": "Beta",
+      "internal": "Internal"
+    },
+    "summary": "Showing {shown} / {total} templates",
+    "sortUpdated": "Sort: recently updated",
+    "empty": {
+      "title": "No matching template found",
+      "body": "Try changing the search keyword or removing filters to see more AutoML workflows."
+    },
+    "card": {
+      "metric": "Metric",
+      "latency": "Latency",
+      "runs": "Runs",
+      "updated": "Updated {date}",
+      "viewDetails": "View details"
+    },
+    "devNotice": {
+      "badge": "Model Store Notice",
+      "title": "This feature is currently under development",
+      "description": "The Model Store system is currently being integrated with automated training pipelines. You can explore the preview interface and upcoming model templates below.",
+      "dismissButton": "Got it & Explore Preview Interface",
+      "bannerPrefix": "This feature is currently under development:",
+      "bannerText": "The interface below is a simulated preview.",
+      "viewNotice": "View Notice",
+      "detailBannerText": "The model template detail view is a simulated preview.",
+      "toastTitle": "Feature Under Development",
+      "toastDescription": "Automatic pipeline creation from templates is being integrated. You can explore the template architecture below."
+    },
+    "detail": {
+      "notFound": "Template not found",
+      "notFoundDesc": "This template may have been hidden or the link was changed.",
+      "backToStore": "Back to Model Store",
+      "useTemplate": "Use Template",
+      "primaryMetric": "Primary Metric",
+      "latency": "Latency",
+      "runs": "Runs",
+      "owner": "Owner",
+      "updated": "Updated {date}",
+      "tabs": {
+        "overview": "Overview",
+        "io": "Input / Output",
+        "test": "Testing",
+        "api": "API"
+      },
+      "useCase": "Use Case",
+      "keyFeatures": "Key Features",
+      "inputs": "Inputs",
+      "outputs": "Outputs",
+      "internalApi": "Internal API",
+      "checklistTitle": "Pre-run Checklist",
+      "readyTitle": "Ready for Pipeline Integration",
+      "readyDesc": "Run directly with sample data, or plug your own dataset in with identical columns.",
+      "startTrain": "Start AutoML with this Template"
+    }
+  },
+  "TrainingHistory": {
+    "eyebrow": "Training pipeline",
+    "title": "Training history",
+    "subtitle": "Track the best model, accuracy, pipeline status, and test upload for each run.",
+    "summary": "Showing {shown} / {total} training runs",
+    "searchPlaceholder": "Search dataset, model, job id...",
+    "sortByDate": "Training date {order}",
+    "oldest": "oldest",
+    "newest": "newest",
+    "empty": "No training history yet.",
+    "processing": "Processing",
+    "openActions": "Open actions for {name}",
+    "metrics": {
+      "totalRuns": "Total runs",
+      "createdPipelines": "created pipelines",
+      "completed": "Completed",
+      "canViewResults": "results available",
+      "running": "Running",
+      "processingData": "processing data",
+      "bestScore": "Best score",
+      "needsReview": "{count} runs need review"
+    },
+    "filters": {
+      "all": "All statuses",
+      "done": "Completed",
+      "running": "Training",
+      "error": "Error"
+    },
+    "table": {
+      "dataset": "Dataset name",
+      "bestModel": "Best model",
+      "accuracy": "Accuracy",
+      "trainingDate": "Training date",
+      "status": "Status"
+    },
+    "status": {
+      "completed": "Completed",
+      "training": "Training",
+      "error": "An error occurred"
+    },
+    "actions": {
+      "viewDetails": "View details",
+      "uploadTest": "Upload Test",
+      "closeUpload": "Close upload"
+    }
+  },
+  "Deploy": {
+    "eyebrow": "Activate endpoint",
+    "title": "Model deployment",
+    "subtitle": "Choose a completed model, check readiness, and activate the prediction endpoint.",
+    "summary": "Showing {shown} / {total} models",
+    "searchPlaceholder": "Search dataset, model, job id...",
+    "sortByDate": "Training date {order}",
+    "oldest": "oldest",
+    "newest": "newest",
+    "empty": "No trained models yet.",
+    "processing": "Processing",
+    "activateFailed": "Unable to deploy model. Please try again.",
+    "openActions": "Open actions for {name}",
+    "metrics": {
+      "totalModels": "Total models",
+      "fromHistory": "from training history",
+      "eligible": "Eligible",
+      "deployable": "deployable",
+      "processing": "Processing",
+      "noEndpoint": "endpoint not opened yet",
+      "bestAccuracy": "Best accuracy",
+      "deploymentCandidate": "deployment candidate"
+    },
+    "filters": {
+      "all": "All statuses",
+      "ready": "Eligible",
+      "training": "Training"
+    },
+    "table": {
+      "dataset": "Dataset name",
+      "bestModel": "Best model",
+      "accuracy": "Accuracy",
+      "trainingDate": "Training date",
+      "status": "Status"
+    },
+    "status": {
+      "ready": "Eligible",
+      "training": "Training"
+    },
+    "actions": {
+      "deploy": "Deploy model",
+      "viewHistory": "View history"
+    },
+    "confirm": {
+      "title": "Are you sure you want to deploy this model?",
+      "description": "This action will activate the selected model. Please confirm to continue."
+    }
+  },
+  "DatasetDialogs": {
+    "add": {
+      "title": "Add dataset",
+      "description": "Enter information and choose a file to upload.",
+      "datasetName": "Dataset name",
+      "dataType": "Data type",
+      "chooseFile": "Choose file",
+      "upload": "Upload",
+      "uploading": "Uploading...",
+      "missingInfo": "Please enter all required information",
+      "uploadSuccess": "Uploaded successfully!",
+      "errorTitle": "An error occurred",
+      "uploadFailed": "Unable to upload data.",
+      "confirmDescription": "Are you sure you want to upload this dataset?",
+      "types": {
+        "table": "Table",
+        "image": "Image",
+        "text": "Text"
+      }
+    },
+    "edit": {
+      "title": "Edit dataset",
+      "datasetName": "Dataset name",
+      "dataType": "Data type",
+      "chooseType": "Choose type",
+      "chooseFile": "Choose data file (.csv)",
+      "keepCurrentFile": "If you do not choose a new file, the current data will be kept.",
+      "confirmTitle": "Confirm edit",
+      "confirmDescription": "Are you sure you want to edit this dataset?",
+      "updateSuccess": "Updated successfully",
+      "updateFailed": "Update failed",
+      "errorDescription": "An error occurred",
+      "types": {
+        "table": "Table",
+        "image": "Image"
+      }
+    },
+    "database": {
+      "title": "Connect database",
+      "description": "Enter database access information. This step only logs the payload to the console before connecting backend processing.",
+      "databaseType": "Database type",
+      "queryLabels": {
+        "sqlPreview": "SQL preview",
+        "filterPreview": "Filter preview"
+      },
+      "passwordPlaceholder": "Password is not logged to console",
+      "securityNote": "Use a read-only account. In production, passwords should not be stored in Redux/localStorage and should only be sent over HTTPS to the backend.",
+      "clearForm": "Clear form",
+      "submit": "Get connection info",
+      "missingTitle": "Missing connection information",
+      "missingDescription": "Please enter host, database, and username.",
+      "successTitle": "Connection information captured",
+      "successDescription": "Open DevTools Console to view the {database} connection payload.",
+      "consoleInfo": "Frontend only collects access information. Backend should receive this payload, keep the password in a secret vault/env, and use the proper driver to query data."
+    }
+  },
+  "UploadPredict": {
+    "apiNoFile": "API did not return a file",
+    "runFailed": "Unable to run model test",
+    "errorWithMessage": "Error: {message}",
+    "invalidFile": "Only .csv, .xls, .xlsx files are accepted",
+    "cancelConfirm": "The process is running. Leaving will cancel it. Are you sure?",
+    "processing": "Processing, please do not leave this page...",
+    "title": "Test your model now",
+    "dropHint": "Drag and drop or click to choose a file",
+    "acceptedFiles": "Accepted files: .csv, .xls, .xlsx"
+  },
+  "ProgressMap": {
+    "title": "Progress map",
+    "predictionColumn": "Prediction column: {column}",
+    "rankBy": "Rank by: {metric}",
+    "scoreMode": "Score mode: {mode}",
+    "openFullscreen": "Open fullscreen",
+    "exitFullscreen": "Exit fullscreen",
+    "zoomOut": "Zoom out map",
+    "zoomIn": "Zoom in map",
+    "resetView": "Center map",
+    "panHint": "Drag to move, pinch/ctrl + scroll to zoom",
+    "relationshipMap": "Relationship map",
+    "swapView": "Swap view",
+    "pipelineStage": "Pipeline stage",
+    "params": "Processing parameters",
+    "result": "Result",
+    "latestLog": "Latest log",
+    "emptyData": "No data yet.",
+    "status": {
+      "done": "Completed",
+      "running": "Running",
+      "pending": "Pending",
+      "failed": "Failed"
+    }
+  },
+  "Profile": {
+    "loading": "Loading account information...",
+    "fallbackUser": "HAutoML user",
+    "openedFromMenu": "Profile opened from account menu",
+    "editProfile": "Edit profile",
+    "title": "Account center",
+    "subtitle": "Personal information, security, API keys, and work preferences are grouped in the avatar menu on the top bar.",
+    "recentActivity": "Recent AutoML activity",
+    "notUpdated": "Not updated",
+    "saveChanges": "Save changes",
+    "roles": {
+      "admin": "Administrator",
+      "user": "User"
+    },
+    "stats": {
+      "datasets": "Datasets",
+      "runs": "Runs",
+      "deployments": "Deployments"
+    },
+    "activities": {
+      "uploaded": "Uploaded medical.csv",
+      "training": "Training Glass Dataset",
+      "deployed": "Deployed KNN endpoint",
+      "viewedModelStore": "Viewed workflow in model store",
+      "twoMinutesAgo": "2 minutes ago",
+      "twelveMinutesAgo": "12 minutes ago",
+      "oneHourAgo": "1 hour ago",
+      "yesterday": "Yesterday"
+    },
+    "tabs": {
+      "profile": "Profile",
+      "security": "Security",
+      "apiKey": "API key",
+      "preferences": "Preferences"
+    },
+    "fields": {
+      "username": "Username",
+      "fullName": "Full name",
+      "email": "Email",
+      "phone": "Phone number",
+      "birthDate": "Date of birth",
+      "gender": "Gender"
+    },
+    "gender": {
+      "male": "Male",
+      "female": "Female"
+    },
+    "validation": {
+      "fullNameMin": "Full name must be at least 5 characters",
+      "email": "Email is invalid",
+      "date": "Date of birth is invalid",
+      "gender": "Gender is invalid",
+      "phone": "Phone number is invalid"
+    },
+    "toast": {
+      "invalidImage": "Invalid image format",
+      "invalidImageDescription": "Only PNG or JPEG images are accepted.",
+      "updateSuccess": "Updated successfully!",
+      "updateSuccessDescription": "User information has been updated.",
+      "updateFailed": "Update failed",
+      "updateFailedDescription": "An error occurred while updating."
+    },
+    "confirm": {
+      "title": "Confirm update",
+      "description": "Are you sure you want to save these changes?"
+    }
+  },
+  "Settings": {
+    "eyebrow": "Workspace settings",
+    "title": "Settings",
+    "subtitle": "Manage appearance, notifications, and workspace options. The top bar keeps quick light/dark switching, while system mode is configured here.",
+    "appearanceTitle": "Appearance",
+    "appearanceDescription": "Choose how HAutoML applies theme across the app.",
+    "defaultsTitle": "Workspace defaults",
+    "defaultsDescription": "Sample settings to keep the structure ready for upcoming features.",
+    "theme": {
+      "light": {
+        "label": "Light",
+        "description": "Bright background, suitable for daytime work."
+      },
+      "dark": {
+        "label": "Dark",
+        "description": "Dark background, reducing glare during long training sessions."
+      },
+      "system": {
+        "label": "System",
+        "description": "Automatically follows macOS/Windows/browser settings."
+      }
+    },
+    "groups": {
+      "trainingNotifications": {
+        "title": "Training notifications",
+        "description": "Receive notifications when a training run completes or fails."
+      },
+      "datasetDraft": {
+        "title": "Auto-save dataset draft",
+        "description": "Keep metadata you are entering when leaving the dataset upload form."
+      },
+      "deployConfirm": {
+        "title": "Confirm before deploy",
+        "description": "Show a confirmation step before publishing an endpoint/model."
+      },
+      "experimental": {
+        "title": "Experimental mode",
+        "description": "Enable workflow features that are still experimental in the workspace."
+      }
+    }
+  },
+  "TrainingWizard": {
+    "steps": {
+      "data": "Data",
+      "mode": "Mode",
+      "problem": "Task",
+      "parameters": "Parameters",
+      "confirm": "Confirm"
+    },
+    "stepDescriptions": {
+      "data": "Select and confirm the input dataset for your AutoML pipeline.",
+      "mode": "Choose to create a completely new model or train a subsequent version.",
+      "problem": "Specify the machine learning task type: classification or regression.",
+      "parameters": "Select the target attribute, input features, and evaluation metric.",
+      "confirm": "Review configuration before initiating distributed training."
+    },
+    "suggestConfig": "Suggest Config",
+    "modeOptions": {
+      "newModel": {
+        "title": "New Model",
+        "description": "Create an independent training pipeline for this dataset.",
+        "badge": "Recommended"
+      },
+      "newVersion": {
+        "title": "New Version",
+        "description": "Continue training from an existing model checkpoint.",
+        "badge": "Coming Soon"
+      }
+    },
+    "strategyOptions": {
+      "auto": {
+        "title": "Automated AutoML",
+        "description": "HAutoML automatically selects pipelines, tests configurations, and optimizes metrics.",
+        "badge": "Recommended",
+        "setupTime": "Setup time",
+        "automationLevel": "Automation level"
+      },
+      "custom": {
+        "title": "Manual Tuning",
+        "description": "Manually select algorithms and detailed hyperparameters.",
+        "badge": "Coming Soon"
+      },
+      "autoSwitchTitle": "Let HAutoML automatically optimize the pipeline",
+      "autoSwitchDesc": "The system will try multiple configurations and select the best model according to the chosen metric."
+    },
+    "problemOptions": {
+      "classification": {
+        "title": "Classification",
+        "description": "Predict categorical labels such as churn, fraud, approved/rejected.",
+        "badge": "Classification"
+      },
+      "regression": {
+        "title": "Regression",
+        "description": "Predict continuous numeric values such as sales, cost, score.",
+        "badge": "Regression"
+      }
+    },
+    "step4": {
+      "loading": "Loading training configuration...",
+      "targetTitle": "Target Attribute (Target)",
+      "targetDesc": "Select the column you want the machine learning model to predict.",
+      "selectedTarget": "Selected:",
+      "recommended": "Recommended",
+      "featuresTitle": "Training Features (Features)",
+      "featuresDesc": "{count} / {total} columns selected.",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "metricTitle": "Evaluation Metric (Metric)",
+      "metricDesc": "This metric will be used to automatically select the best performing model."
+    },
+    "summary": {
+      "title": "Configuration Summary",
+      "open": "Expand summary",
+      "close": "Collapse summary",
+      "tabSummary": "Summary",
+      "tabParams": "Parameter Tips",
+      "dataset": "Dataset",
+      "mode": "Training Mode",
+      "problem": "Task Type",
+      "params": "Key Parameters",
+      "target": "Target",
+      "featuresCount": "{count} features",
+      "autoMetric": "Auto / {metric}"
+    },
+    "actions": {
+      "back": "Back",
+      "continue": "Continue",
+      "confirmStart": "Confirm & Start"
+    },
+    "confirmDialog": {
+      "title": "Confirm Training",
+      "description": "HAutoML will initiate distributed training with the selected target, features, and metric.",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    }
+  },
+  "Team": {
+    "breadcrumb": "Team & Community",
+    "badge": "OptiVisionLab • SICT – Hanoi University of Industry",
+    "title": "HAutoML Research Team & Community",
+    "description": "The collaborative space connecting the OptiVisionLab research lab (School of Information and Communications Technology – Hanoi University of Industry), Springer Nature authors, core software engineers, and open-source contributors.",
+    "labWebsite": "Lab Website",
+    "githubRepo": "GitHub Repository",
+    "readDocs": "Read Technical Docs"
+  },
+  "Docs": {
+    "title": "Documentation",
+    "subtitle": "Open AutoML",
+    "breadcrumb": "Docs",
+    "searchPlaceholder": "Search HAutoML documentation...",
+    "searchModalTitle": "Search HAutoML documentation",
+    "searchEmpty": "No search query",
+    "searchEmptySub": "Type any keyword for instant lookup",
+    "searchNoResults": "No matching results found",
+    "searchNoResultsSub": "Try searching for Docker, Kafka, FastAPI, F1 Score...",
+    "popularSuggestions": "Popular suggestions:",
+    "pressEscToClose": "Press ESC to close",
+    "copyMarkdown": "Copy Markdown",
+    "copiedMarkdown": "Markdown Copied",
+    "copyCode": "Copy",
+    "copiedCode": "Copied",
+    "copyCodeSnippet": "Copy code snippet",
+    "mkdocsOnline": "MkDocs Online",
+    "github": "GitHub",
+    "officialMirror": "Official documentation mirrored 100% from OptiVisionLab HAutoML (MkDocs Material).",
+    "officialMirrorIndex": "Full Home documentation (index.md) mirrored 100% from https://optivisionlab.github.io/AutoML/docs/.",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "interactiveView": "Overview",
+    "markdownView": "MkDocs Docs",
+    "readFullMarkdownPrompt": "Want to read the verbatim Markdown documentation as on MkDocs?",
+    "readFullMarkdownAction": "Read full Markdown",
+    "tableOfContents": "Documentation index",
+    "tabs": {
+      "overview": "Home",
+      "gettingStarted": "Getting Started",
+      "architecture": "Architecture",
+      "scientificApproach": "Scientific Approach",
+      "backendApi": "API Docs",
+      "releases": "Releases",
+      "citationLicense": "Citation & License"
+    },
+    "categories": {
+      "gettingStarted": "GETTING STARTED",
+      "architecture": "SYSTEM ARCHITECTURE",
+      "scientificApproach": "SCIENTIFIC APPROACH",
+      "apiReference": "API REFERENCE",
+      "resources": "RESOURCES & RELEASES"
+    },
+    "overview": {
+      "welcome": "Welcome to HAutoML",
+      "labName": "OptiVisionLab • HaUI",
+      "visionTitle": "HAutoML Vision",
+      "keyFeatures": "Key Features",
+      "scientificApproach": "Scientific Approach",
+      "exploreDetails": "Explore details",
+      "viewDetails": "View details",
+      "quickstart": "Quickstart Guide",
+      "viewFullGuide": "View full guide",
+      "architecture": "Microservices Architecture",
+      "releases": "Recent Release History",
+      "viewAllReleases": "View all releases",
+      "contributors": "Contributors",
+      "githubContributors": "GitHub Contributors",
+      "citation": "Citation & License",
+      "intlPaper": "International Publication (ISINC 2026)",
+      "paperTitle": "HAutoML: Open-Source for Automated Machine Learning",
+      "paperDesc": "Research published in Springer Nature ISINC 2026 by OptiVisionLab, School of ICT - Hanoi University of Industry.",
+      "contributorsDesc": "We sincerely thank all contributors to the HAutoML project at OptiVisionLab:"
+    }
+  }
+}

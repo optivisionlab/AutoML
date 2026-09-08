@@ -2,11 +2,18 @@
   "name": "automl",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "next dev apps/web",
+    "build": "next build apps/web",
+    "start": "next start apps/web",
+    "lint": "next lint apps/web",
+    "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
+    "typecheck:packages": "tsc -p packages/domain/tsconfig.json --noEmit && tsc -p packages/api/tsconfig.json --noEmit",
+    "typecheck:all": "npm run typecheck:packages && npm run typecheck"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -38,6 +45,7 @@
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.515.0",
     "motion": "^12.23.24",
+    "mqtt": "^5.15.2",
     "next": "^15.3.3",
     "next-auth": "^4.24.11",
     "next-intl": "^4.13.2",
@@ -47,9 +55,11 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
     "react-icons": "^5.5.0",
+    "react-markdown": "^10.1.0",
     "react-redux": "^9.2.0",
     "recharts": "^2.15.2",
     "redux": "^5.0.1",
+    "remark-gfm": "^4.0.1",
     "sass": "^1.83.1",
     "sonner": "^2.0.3",
     "tailwind-merge": "^2.6.0",
