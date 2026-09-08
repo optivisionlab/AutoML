@@ -103,11 +103,11 @@ const LAB_MEMBERS: LabMember[] = [
     isAuthor: true,
   },
   {
-    name: "Lê Văn Anh",
-    position: "Distributed Systems & Frontend Lead tại OptiVisionLab",
-    image: "/lab-members/LeVanAnh.jpg",
-    category: ["all", "systems", "frontend"],
-    company: "OptiVisionLab",
+    name: "Hoàng Việt Anh",
+    position: "Fullstack Developer / Làm việc tại Tập đoàn công nghệ BKAV",
+    image: "/lab-members/HoangVietAnh.jpg",
+    category: ["all", "students", "systems", "frontend"],
+    company: "Tập đoàn công nghệ BKAV",
   },
   {
     name: "Vũ Xuân Đông",

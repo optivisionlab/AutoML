@@ -162,7 +162,7 @@ export const TOP_NAV_TABS = [
 export const LAB_INFO = {
   name: "OptiVisionLab",
   institution:
-    "Trường Công nghệ Thông tin và Truyền thông, Trường Đại học Công nghiệp Hà Nội (HaUI)",
+    "Trường Công nghệ Thông tin và Truyền thông, Đại học Công nghiệp Hà Nội (HaUI)",
   address: "Số 298 đường Cầu Diễn, Quận Bắc Từ Liêm, Hà Nội",
   website: "https://optivisionlab.fit-haui.edu.vn/",
   github: "https://github.com/optivisionlab/AutoML",
