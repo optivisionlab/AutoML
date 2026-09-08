@@ -2,6 +2,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import { baseApi } from "@/core/api/baseApi";
 import { listenerMiddleware } from "./listeners";
 import trainWizardReducer from "@/features/training/store/trainWizardSlice";
+import notificationReducer from "@/features/notifications/store/notificationSlice";
 
 export const store = configureStore({
   // tổng hợp các ruducer
@@ -9,6 +10,7 @@ export const store = configureStore({
     // nơi RTK Query lưu cache API,
     [baseApi.reducerPath]: baseApi.reducer,
     trainWizard: trainWizardReducer,
+    notifications: notificationReducer,
   },
 
   // Chạy middleware

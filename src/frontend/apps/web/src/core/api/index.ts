@@ -5,3 +5,4 @@ export * from "./datasetApi";
 export * from "./inferenceApi";
 export * from "./jobApi";
 export * from "./userApi";
+export * from "./notificationApi";
