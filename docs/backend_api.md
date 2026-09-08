@@ -122,3 +122,22 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
 - **Mô tả**: Kích hoạt hoặc vô hiệu hóa một mô hình đã được huấn luyện để suy luận.
 - **Tham số truy vấn (Query Parameters)**: `job_id` (string), `activate` (integer, 0 hoặc 1).
 - **Response**: Một thông báo xác nhận.
+
+### `POST /connect-database`
+- **Mô tả**: Kiểm tra kết nối tới cơ sở dữ liệu quan hệ từ xa (PostgreSQL, MySQL...) và lấy danh sách các bảng có sẵn.
+- **Request Body**: Đối tượng JSON chứa:
+    - `db_type` (string): Loại CSDL (`"postgres"` hoặc `"mysql"`).
+    - `host` (string): Địa chỉ IP hoặc tên miền máy chủ CSDL.
+    - `port` (int): Cổng mạng (5432 đối với Postgres, 3306 đối với MySQL).
+    - `user` (string): Tên đăng nhập CSDL.
+    - `password` (string): Mật khẩu truy cập CSDL.
+    - `database` (string): Tên cơ sở dữ liệu cụ thể cần kết nối.
+- **Response**: Đối tượng JSON chứa trạng thái kết nối và danh sách tên các bảng (`tables: [...]`).
+
+### `POST /import-database-table`
+- **Mô tả**: Trích xuất dữ liệu của một bảng từ CSDL đã kết nối, đóng gói thành định dạng Parquet và nạp vào hệ sinh thái AutoML (lưu trữ MinIO và đăng ký vào MongoDB).
+- **Request Body**: Đối tượng JSON chứa:
+    - Các trường kết nối: `db_type`, `host`, `port`, `user`, `password`, `database`.
+    - `table_name` (string): Tên bảng người dùng chọn để trích xuất dữ liệu.
+    - `data_name` (string): Tên đặt cho bộ dữ liệu trên hệ thống AutoML.
+- **Response**: Đối tượng JSON chứa siêu dữ liệu của tập dữ liệu mới được tạo trong hệ thống.
