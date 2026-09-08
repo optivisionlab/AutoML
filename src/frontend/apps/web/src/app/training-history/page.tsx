@@ -57,14 +57,35 @@ const TrainingHistory = () => {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const highlightParam = searchParams?.get("highlight") || searchParams?.get("job_id");
+  const [effectiveHighlight, setEffectiveHighlight] = useState<string | null>(null);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [flashJobId, setFlashJobId] = useState<string | null>(null);
   const userId = session?.user?.id;
-  const { data: jobs = [], isLoading } = useGetLegacyJobsByUserIdQuery(
+  const { data: jobs = [], isLoading, refetch } = useGetLegacyJobsByUserIdQuery(
     userId ?? "",
     { skip: !userId },
   );
+
+  // Đọc target highlight từ URL hoặc sessionStorage
+  useEffect(() => {
+    const fromUrl = searchParams?.get("highlight") || searchParams?.get("job_id");
+    const fromSession =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("latest_training_job_id")
+        : null;
+
+    const target = fromUrl || fromSession;
+    if (target) {
+      setEffectiveHighlight(target);
+    }
+  }, [searchParams]);
+
+  // Luôn refetch khi có target highlight hoặc khi vào trang để lấy job mới nhất từ backend
+  useEffect(() => {
+    if (userId) {
+      refetch();
+    }
+  }, [userId, effectiveHighlight, refetch]);
 
   const { settings } = useAppSettings();
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -120,23 +141,28 @@ const TrainingHistory = () => {
 
   // Cuộn và focus vào đúng dòng của Job được chỉ định
   useEffect(() => {
-    if (!highlightParam || filteredJobs.length === 0) return;
+    if (!effectiveHighlight || filteredJobs.length === 0) return;
 
     const matchedIndex = filteredJobs.findIndex(
       (j) =>
-        j.job_id === highlightParam ||
-        j._id === highlightParam ||
-        String(j.job_id).toLowerCase().includes(highlightParam.toLowerCase()),
+        j.job_id === effectiveHighlight ||
+        j._id === effectiveHighlight ||
+        String(j.job_id).toLowerCase().includes(effectiveHighlight.toLowerCase()),
     );
 
-    const targetJob = matchedIndex !== -1 ? filteredJobs[matchedIndex] : filteredJobs[0];
-    if (!targetJob) return;
+    // Nếu không tìm thấy trong danh sách đã filter, có thể do đang bị lọc status hoặc search -> reset filter
+    if (matchedIndex === -1) {
+      if (statusFilter !== "all" || search !== "") {
+        setStatusFilter("all");
+        setSearch("");
+      }
+      return;
+    }
 
-    const targetPage = Math.floor(
-      (matchedIndex !== -1 ? matchedIndex : 0) / itemsPerPage,
-    ) + 1;
+    const targetJob = filteredJobs[matchedIndex];
+    const targetPage = Math.floor(matchedIndex / itemsPerPage) + 1;
 
-    if (safeCurrentPage !== targetPage) {
+    if (currentPage !== targetPage) {
       setCurrentPage(targetPage);
     }
 
@@ -149,17 +175,27 @@ const TrainingHistory = () => {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.focus();
       }
-    }, 180);
+    }, 220);
 
     const flashTimer = setTimeout(() => {
       setFlashJobId(null);
-    }, 2500);
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("latest_training_job_id");
+      }
+    }, 3500);
 
     return () => {
       clearTimeout(timer);
       clearTimeout(flashTimer);
     };
-  }, [highlightParam, filteredJobs, itemsPerPage, safeCurrentPage]);
+  }, [
+    effectiveHighlight,
+    filteredJobs,
+    itemsPerPage,
+    currentPage,
+    statusFilter,
+    search,
+  ]);
 
   return (
     <div className="space-y-6">

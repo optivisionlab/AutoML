@@ -2,12 +2,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import React from "react";
 import { useStartTrainingJobMutation } from "@/core/api/automlApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
 import AppLoading from "@/shared/components/common/AppLoading";
 import BackButton from "@/shared/components/common/BackButton";
+import { Button } from "@/shared/components/ui/button";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useTranslations } from "next-intl";
 
 type Props = {
@@ -17,11 +20,14 @@ type Props = {
 };
 
 const ResultPage = ({ params }: Props) => {
+  const router = useRouter();
+  const { toast } = useToast();
   const common = useTranslations("Common");
   const [startTrainingJob, { isLoading }] = useStartTrainingJobMutation();
   const hasSubmittedRef = useRef(false);
 
   const [datasetID, setDatasetID] = useState<string | null>(null);
+  const [createdJobId, setCreatedJobId] = useState<string | null>(null);
   const [config, setConfig] = useState<any>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +113,31 @@ const ResultPage = ({ params }: Props) => {
       try {
         console.log(JSON.stringify(requestBody));
 
-        await startTrainingJob(requestBody).unwrap();
+        const res = await startTrainingJob(requestBody).unwrap();
+        const jobId = res?.job_id;
+        if (jobId) {
+          setCreatedJobId(jobId);
+          sessionStorage.setItem("latest_training_job_id", jobId);
+        }
+
+        // Dọn dẹp cache cấu hình tạm trong sessionStorage
+        sessionStorage.removeItem("choose");
+        sessionStorage.removeItem("metric_sort");
+        sessionStorage.removeItem("target");
+        sessionStorage.removeItem("method");
+        sessionStorage.removeItem("list_feature");
+        sessionStorage.removeItem("problem_type");
+
+        toast({
+          title: "🚀 Bắt đầu huấn luyện!",
+          description: "Tác vụ đã được tạo thành công. Đang chuyển tới lịch sử huấn luyện...",
+        });
+
+        const targetUrl = jobId
+          ? `/training-history?highlight=${encodeURIComponent(jobId)}`
+          : "/training-history";
+
+        router.push(targetUrl);
       } catch (err: any) {
         console.log("Lỗi khi gọi API train:", err);
         setError(
@@ -122,7 +152,7 @@ const ResultPage = ({ params }: Props) => {
     };
 
     trainModel();
-  }, [config, datasetID, session?.user?.id, startTrainingJob]);
+  }, [config, datasetID, session?.user?.id, startTrainingJob, router, toast]);
 
   if (error) {
     return (
@@ -164,12 +194,24 @@ const ResultPage = ({ params }: Props) => {
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 Tác vụ huấn luyện đang được tiến hành phân tán. Bạn có thể theo dõi trực tiếp tại trang lịch sử.
               </p>
-              <BackButton
-                fallbackHref="/training-history"
-                label={common("backToTrainingHistory")}
-                variant="primary"
-                className="w-full justify-center"
-              />
+              <Button
+                variant="default"
+                className="w-full justify-center bg-blue-600 hover:bg-blue-500 text-white font-bold h-11 rounded-xl shadow-md transition-all active:scale-98"
+                onClick={() => {
+                  const targetId =
+                    createdJobId ||
+                    (typeof window !== "undefined"
+                      ? sessionStorage.getItem("latest_training_job_id")
+                      : null);
+                  router.push(
+                    targetId
+                      ? `/training-history?highlight=${encodeURIComponent(targetId)}`
+                      : "/training-history",
+                  );
+                }}
+              >
+                {common("backToTrainingHistory")}
+              </Button>
             </CardContent>
           </Card>
         </div>
