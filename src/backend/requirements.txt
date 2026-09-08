@@ -32,3 +32,10 @@ passlib[argon2]==1.7.4
 psutil>=7.2.1
 fastapi-mail
 qrcode[pil]
+
+# Database Drivers & Connectors
+psycopg2-binary==2.9.9
+pymysql==1.1.1
+cryptography==42.0.5
+sqlalchemy==2.0.30
+
