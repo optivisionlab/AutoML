@@ -56,7 +56,8 @@ from automl.v2.master import master
 from users.schema import ResetPasswordRequest
 
 from pydantic import BaseModel
-from database.db_adapter import DatabaseAdapter
+from database.adapters import DatabaseConfig
+from database.services import DatabaseManager
 import io, uuid
 from datetime import datetime, timezone
 from automl.v2.minio import minIOStorage
@@ -484,7 +485,7 @@ async def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get
 @app.post("/connect-database")
 async def api_connect_database(payload: ConnectDBRequest, current_user = Depends(get_current_user)):
     try:
-        adapter = DatabaseAdapter(
+        config = DatabaseConfig(
             db_type=payload.db_type,
             host=payload.host,
             port=payload.port,
@@ -492,7 +493,7 @@ async def api_connect_database(payload: ConnectDBRequest, current_user = Depends
             password=payload.password,
             database=payload.database
         )
-        tables = adapter.test_connection_and_get_tables()
+        tables = DatabaseManager.test_connection_and_get_tables(config)
         return {
             "success": True,
             "message": "Kết nối cơ sở dữ liệu thành công!",
@@ -513,8 +514,7 @@ async def api_import_database_table(
     current_user = Depends(get_current_user)
 ):
     try:
-        # 1. Dùng Adapter kéo dữ liệu từ CSDL về DataFrame
-        adapter = DatabaseAdapter(
+        config = DatabaseConfig(
             db_type=payload.db_type,
             host=payload.host,
             port=payload.port,
@@ -522,57 +522,23 @@ async def api_import_database_table(
             password=payload.password,
             database=payload.database
         )
-        df = adapter.fetch_table_to_dataframe(table_name=payload.table_name)
-        
-        if df.empty:
-            raise HTTPException(status_code=400, detail="Bảng dữ liệu được chọn đang rỗng.")
-
-        # 2. Chuẩn hóa tên cột & chuyển DataFrame thành file Parquet trong bộ nhớ
-        df.columns = df.columns.str.strip()
-        parquet_buffer = io.BytesIO()
-        df.to_parquet(parquet_buffer, index=False)
-        parquet_buffer.seek(0)
-
-        # 3. Đẩy file Parquet vào MinIO
-        user_id = str(current_user["_id"])
-        role = current_user.get("role", "user")
-        storage_user_id = "0" if role == "admin" else user_id
-        storage_id = str(uuid.uuid4())
-        object_name = f"{storage_user_id}/{storage_id}.parquet"
-
-        minIOStorage.uploaded_dataset(
-            bucket_name="dataset",
-            object_name=object_name,
-            parquet_buffer=parquet_buffer
+        dataset_meta = await DatabaseManager.import_table_to_dataset(
+            config=config,
+            table_name=payload.table_name,
+            data_name=payload.data_name,
+            user_id=str(current_user["_id"]),
+            username=current_user.get("username", ""),
+            role=current_user.get("role", "user"),
+            minio_storage=minIOStorage,
+            db_mongo=db
         )
-
-        # 4. Lưu thông tin Dataset vào MongoDB của hệ thống
-        now = datetime.now(timezone.utc).timestamp()
-        data_to_insert = {
-            "dataName": payload.data_name,
-            "dataType": "table",
-            "data_link": {
-                "bucket_name": "dataset",
-                "object_name": object_name
-            },
-            "latestUpdate": now,
-            "createDate": now,
-            "userId": user_id,
-            "username": current_user.get("username"),
-            "role": role,
-            "activate": 1
-        }
-        await db.tbl_Data.insert_one(data_to_insert)
-        data_to_insert["_id"] = str(data_to_insert["_id"])
-
         return {
             "success": True,
             "message": f"Đã nhập thành công bảng '{payload.table_name}' vào AutoML!",
-            "dataset": data_to_insert
+            "dataset": dataset_meta
         }
-
-    except HTTPException:
-        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(
             status_code=500,
