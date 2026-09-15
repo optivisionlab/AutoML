@@ -36,7 +36,7 @@ class DatabaseManager:
             raise ValueError(f"Bảng dữ liệu '{table_name}' đang rỗng.")
 
         # 2. Chuẩn hóa tên cột & ghi vào buffer Parquet in-memory
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.astype(str).str.strip()
         parquet_buffer = io.BytesIO()
         df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
