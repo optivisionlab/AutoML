@@ -3,14 +3,16 @@ import logging
 from contextlib import asynccontextmanager
 
 # Third-party Libraries
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from fastapi import FastAPI
 
 # Local Libraries
 from src.config.settings import settings
-from src.config.database import DatabaseManager
 from src.config.logging import setup_logging
+from src.config.database import DatabaseManager
+from src.core.middlewares import setup_middlewares
+from src.core.exceptions import setup_exception_handlers
+from src.modules.auth.router import router as auth
 
 
 # Activate Logging
@@ -46,13 +48,13 @@ app = FastAPI(
 
 
 # Cross-Origin Resource Sharing
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+setup_middlewares(app=app)
+
+# Enable error normalization
+setup_exception_handlers(app=app)
+
+# APIs
+app.include_router(auth, prefix="/api/v1")
 
 
 @app.get("/", tags=["Health Check"])

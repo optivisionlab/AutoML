@@ -21,12 +21,30 @@ class ProjectInfo(BaseModel):
     ENVIRONMENT: str = "development"
 
 
+class JWTSettings(BaseModel):
+    SECRET_KEY: str = "secret-key"
+    ALGORITHM: str = "HS256"
+    ACCESS_EXPIRE: int = 15
+    REFRESH_EXPIRE: int = 7
+
+
+class MailSettings(BaseModel):
+    USERNAME: str = "username"
+    PASSWORD: str = "password"
+
+
+class GoogleSettings(BaseModel):
+    CLIENT_ID: str = "client_id"
+    CLIENT_SECRET: str = "client_secret"
+
+
 class Settings(BaseSettings):
     """
     Centralized configuration management for project
     """
     # System Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    LOGO: str = "https://"
 
     # Project Info
     PROJECT: ProjectInfo = ProjectInfo()
@@ -35,11 +53,30 @@ class Settings(BaseSettings):
     HOST_BACK_END: str = "0.0.0.0"
     PORT_BACK_END: int = 9999
 
+    # Domain
+    FRONTEND_URL: str = "http://localhost:3000"
+    REDIRECT_URI: str = "http://localhost:9999"
+
     # Database Settings
     MONGODB: MongoDB = MongoDB()
 
     # Minio Settings
     MINIO: MinIOSettings = MinIOSettings()
+
+    # JWT Settings
+    JWT: JWTSettings = JWTSettings()
+
+    # Mail Settings
+    MAIL: MailSettings = MailSettings()
+
+    # Google Settings
+    GOOGLE: GoogleSettings = GoogleSettings()
+
+    # List of allowed API sources
+    BACKEND_CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",      # React/Next.js local
+        "http://localhost:5173",      # Vite local
+    ]
 
     model_config = SettingsConfigDict(
         env_file=".env", 
