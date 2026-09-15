@@ -55,9 +55,9 @@ from experiment import exp
 from automl.v2.master import master
 from users.schema import ResetPasswordRequest
 
-from pydantic import BaseModel
 from database.adapters import DatabaseConfig
 from database.services import DatabaseManager
+from database.schemas import ConnectDBRequest, ImportTableRequest
 import io, uuid
 from datetime import datetime, timezone
 from automl.v2.minio import minIOStorage
@@ -65,23 +65,7 @@ from automl.v2.minio import minIOStorage
 # Load file .env
 load_dotenv()
 
-class ConnectDBRequest(BaseModel):
-    db_type: str       # "postgres" hoặc "mysql"
-    host: str          # "localhost" hoặc IP
-    port: int          # 5432 hoặc 3306
-    user: str
-    password: str
-    database: str
 
-class ImportTableRequest(BaseModel):
-    db_type: str
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
-    table_name: str    # Tên bảng người dùng chọn (ví dụ: "don_hang")
-    data_name: str     # Tên bộ dữ liệu người dùng muốn đặt trên AutoML
 
 
 # Lifespan Context Manager 
@@ -491,7 +475,9 @@ async def api_connect_database(payload: ConnectDBRequest, current_user = Depends
             port=payload.port,
             user=payload.user,
             password=payload.password,
-            database=payload.database
+            database=payload.database,
+            schema_name=payload.schema_name,
+            extra_params=payload.extra_params or {},
         )
         tables = DatabaseManager.test_connection_and_get_tables(config)
         return {
@@ -520,7 +506,9 @@ async def api_import_database_table(
             port=payload.port,
             user=payload.user,
             password=payload.password,
-            database=payload.database
+            database=payload.database,
+            schema_name=payload.schema_name,
+            extra_params=payload.extra_params or {},
         )
         dataset_meta = await DatabaseManager.import_table_to_dataset(
             config=config,

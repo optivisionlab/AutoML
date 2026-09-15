@@ -5,19 +5,28 @@ from .adapters import DatabaseAdapterFactory, DatabaseConfig
 
 class DatabaseAdapter:
     """Wrapper tương thích ngược (Deprecated) chuyển tiếp sang DatabaseAdapterFactory"""
-    def __init__(self, db_type: str, host: str, port: int, user: str, password: str, database: str):
+    def __init__(
+        self,
+        db_type: str,
+        host: str = "localhost",
+        port: int = None,
+        user: str = None,
+        password: str = None,
+        database: str = "",
+    ):
         warnings.warn(
             "DatabaseAdapter trực tiếp đã bị deprecated. Hãy chuyển sang sử dụng DatabaseManager hoặc DatabaseAdapterFactory.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
+        self.db_type = db_type
         self.config = DatabaseConfig(
             db_type=db_type,
             host=host,
             port=port,
             user=user,
             password=password,
-            database=database
+            database=database,
         )
 
     def test_connection_and_get_tables(self) -> List[str]:

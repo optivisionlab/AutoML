@@ -1,7 +1,17 @@
-from typing import Dict, Type, List
+from typing import Dict, Type
 from .base import BaseDatabaseAdapter, DatabaseConfig
 from .postgres import PostgresAdapter
 from .mysql import MySQLAdapter
+from .sqlite import SQLiteAdapter
+from .mssql import MSSQLAdapter
+from .snowflake import SnowflakeAdapter
+from .bigquery import BigQueryAdapter
+from .duckdb import DuckDBAdapter
+from .clickhouse import ClickHouseAdapter
+from .oracle import OracleAdapter
+from .trino import TrinoAdapter
+from .hive import HiveAdapter
+from .redshift import RedshiftAdapter
 
 class DatabaseAdapterFactory:
     _registry: Dict[str, Type[BaseDatabaseAdapter]] = {}
@@ -23,3 +33,18 @@ class DatabaseAdapterFactory:
 DatabaseAdapterFactory.register("postgres", PostgresAdapter)
 DatabaseAdapterFactory.register("postgresql", PostgresAdapter)
 DatabaseAdapterFactory.register("mysql", MySQLAdapter)
+DatabaseAdapterFactory.register("sqlite", SQLiteAdapter)
+DatabaseAdapterFactory.register("sqlite3", SQLiteAdapter)
+DatabaseAdapterFactory.register("mssql", MSSQLAdapter)
+DatabaseAdapterFactory.register("sqlserver", MSSQLAdapter)
+DatabaseAdapterFactory.register("snowflake", SnowflakeAdapter)
+DatabaseAdapterFactory.register("bigquery", BigQueryAdapter)
+DatabaseAdapterFactory.register("duckdb", DuckDBAdapter)
+DatabaseAdapterFactory.register("clickhouse", ClickHouseAdapter)
+DatabaseAdapterFactory.register("oracle", OracleAdapter)
+DatabaseAdapterFactory.register("trino", TrinoAdapter)
+DatabaseAdapterFactory.register("presto", TrinoAdapter)
+DatabaseAdapterFactory.register("hive", HiveAdapter)
+DatabaseAdapterFactory.register("redshift", RedshiftAdapter)
+DatabaseAdapterFactory.register("amazon_redshift", RedshiftAdapter)
+
