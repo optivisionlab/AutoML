@@ -1,0 +1,25 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt_broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "1884:1884"
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME:-admin}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-password123}
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    command: >
+      sh -c "
+      mosquitto_passwd -c -b /mosquitto/config/passwd $$MQTT_USERNAME $$MQTT_PASSWORD && 
+      chown mosquitto:mosquitto /mosquitto/config/passwd && 
+      exec mosquitto -c /mosquitto/config/mosquitto.conf
+      "
+
+volumes:
+  mqtt_data:
+  mqtt_log:

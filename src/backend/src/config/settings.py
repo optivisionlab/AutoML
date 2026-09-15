@@ -38,6 +38,13 @@ class GoogleSettings(BaseModel):
     CLIENT_SECRET: str = "client_secret"
 
 
+class MQTTSettings(BaseModel):
+    HOSTNAME: str = "localhost"
+    PORT: int = 1883
+    USERNAME: str = "admin"
+    PASSWORD: str = "password"
+
+
 class Settings(BaseSettings):
     """
     Centralized configuration management for project
@@ -71,6 +78,9 @@ class Settings(BaseSettings):
 
     # Google Settings
     GOOGLE: GoogleSettings = GoogleSettings()
+
+    # MQTT Settings
+    MQTT: MQTTSettings = MQTTSettings()
 
     # List of allowed API sources
     BACKEND_CORS_ORIGINS: list[str] = [

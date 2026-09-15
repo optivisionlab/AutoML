@@ -3,7 +3,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 # Third-party Libraries
-from fastapi import Depends, status
+from fastapi import Depends, status, Path
 from fastapi.security import OAuth2PasswordBearer
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -50,3 +50,33 @@ async def get_current_user(
     # Standardize IDs
     user['_id'] = str(user['_id'])
     return user
+
+
+async def require_admin(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    if current_user.get("role") != "admin":
+        raise CustomException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required.",
+            error_code=ErrorCode.FORBIDDEN 
+        )
+
+    return current_user
+
+
+async def require_owner_or_admin(
+    id: str = Path(..., description="The user ID was affected"),
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    is_owner = current_user.get("_id") == id
+    is_admin = current_user.get("role") == "admin"
+
+    if not (is_owner or is_admin):
+        raise CustomException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access or modify this account.",
+            error_code=ErrorCode.FORBIDDEN
+        )
+
+    return current_user

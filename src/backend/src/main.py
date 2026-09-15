@@ -10,9 +10,12 @@ from fastapi import FastAPI
 from src.config.settings import settings
 from src.config.logging import setup_logging
 from src.config.database import DatabaseManager
+from src.shared.mqtt_client import mqtt_service
 from src.core.middlewares import setup_middlewares
 from src.core.exceptions import setup_exception_handlers
 from src.modules.auth.router import router as auth
+from src.modules.users.router import router as users
+from src.modules.notifications.router import router as notifications
 
 
 # Activate Logging
@@ -32,10 +35,14 @@ async def lifespan(app: FastAPI):
     # Bring the database instance into the FastAPI state.
     app.state.db = DatabaseManager.db
 
+    # MQTT connection
+    await mqtt_service.connect()
+
     yield
 
     # Application shutdown process
     await DatabaseManager.close_connection()
+    await mqtt_service.disconnect()
 
 
 # Initialize Application
@@ -55,6 +62,8 @@ setup_exception_handlers(app=app)
 
 # APIs
 app.include_router(auth, prefix="/api/v1")
+app.include_router(users, prefix="/api/v1")
+app.include_router(notifications, prefix="/api/v1")
 
 
 @app.get("/", tags=["Health Check"])

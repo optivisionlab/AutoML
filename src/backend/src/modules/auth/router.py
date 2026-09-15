@@ -80,10 +80,9 @@ async def me(
     )
 
 
-@router.post("/logout", response_model=BaseResponse[None])
+@router.post("/logout", dependencies=[Depends(get_current_user)], response_model=BaseResponse[None])
 async def logout(
     response: Response, 
-    current_user: dict = Depends(get_current_user)
 ):
     refresh_token_cookie.delete_token(response)
 
@@ -110,8 +109,8 @@ async def google_login(request: Request):
 
 @router.get('/google/callback')
 async def google_callback(
-    request: Request, 
-    response: Response, 
+    request: Request,
+    response: Response,
     service: AuthService = Depends(get_auth_service)
 ):
     token = await oauth.google.authorize_access_token(request)
