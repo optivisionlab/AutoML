@@ -82,7 +82,7 @@ async def get_avatar(
     id: str = Path(..., description="User ID"),
     service: UserService = Depends(get_user_service)
 ):
-    avatar_bytes = await service.get_user_avatar_bytes(id)
+    avatar_bytes = await service.get_user_avatar(id)
 
     return StreamingResponse(
         io.BytesIO(avatar_bytes), 

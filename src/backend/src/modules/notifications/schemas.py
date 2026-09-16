@@ -14,5 +14,7 @@ class NotificationResponse(BaseModel):
     is_read: bool
     created_at: float
 
-    class Config:
-        populate_by_name = True
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": True
+    }

@@ -19,7 +19,7 @@ PyJWT==2.10.1
 python-dotenv==1.1.1
 httpx==0.28.1
 aiokafka==0.12.0
-minio==7.2.18
+miniopy-async==1.23.5
 pyarrow==21.0.0
 fastparquet==2024.11.0
 scikit-optimize==0.10.2

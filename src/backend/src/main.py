@@ -15,6 +15,7 @@ from src.core.middlewares import setup_middlewares
 from src.core.exceptions import setup_exception_handlers
 from src.modules.auth.router import router as auth
 from src.modules.users.router import router as users
+from src.modules.datasets.router import router as datasets
 from src.modules.notifications.router import router as notifications
 
 
@@ -64,6 +65,7 @@ setup_exception_handlers(app=app)
 app.include_router(auth, prefix="/api/v1")
 app.include_router(users, prefix="/api/v1")
 app.include_router(notifications, prefix="/api/v1")
+app.include_router(datasets, prefix="/api/v1")
 
 
 @app.get("/", tags=["Health Check"])

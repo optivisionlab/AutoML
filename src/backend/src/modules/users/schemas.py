@@ -11,8 +11,10 @@ class UserResponse(BaseModel):
     avatar: str | None = None
     is_verified: bool
 
-    class Config:
-        populate_by_name = True
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": True
+    }
 
 
 class UserDetailResponse(UserResponse):

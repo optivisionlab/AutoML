@@ -15,11 +15,27 @@ services:
       - mqtt_log:/mosquitto/log
     command: >
       sh -c "
+      rm -f /mosquitto/config/passwd &&
       mosquitto_passwd -c -b /mosquitto/config/passwd $$MQTT_USERNAME $$MQTT_PASSWORD && 
       chown mosquitto:mosquitto /mosquitto/config/passwd && 
       exec mosquitto -c /mosquitto/config/mosquitto.conf
       "
 
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-password123456}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
 volumes:
   mqtt_data:
   mqtt_log:
+  minio_data:
