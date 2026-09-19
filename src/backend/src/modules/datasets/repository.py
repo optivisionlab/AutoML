@@ -90,6 +90,18 @@ class DatasetRepository:
 
         return dataset
 
+    async def get_data_link_by_id(self, dataset_id: ObjectId, user_id: str) -> dict | None:
+        """
+        Retrieve data_link of dataset
+        """
+        filter_query = {
+            "_id": dataset_id,
+            "userId": user_id,
+            "activate": 1
+        }
+        dataset = await self.__collection.find_one(filter_query, projection={"data_link": 1})
+        return dataset.get("data_link") if dataset else None
+
     async def create_dataset(self, dataset_doc: dict[str, Any]) -> dict[str, Any]:
         """
         Save metadata

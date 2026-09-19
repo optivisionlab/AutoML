@@ -195,3 +195,44 @@ async def delete_dataset(
         message="Dataset deleted successfully",
         data=None
     )
+
+
+@router.get("/{id}/features", response_model=BaseResponse[dict])
+async def get_dataset_features(
+    id: str = Path(..., description="Dataset ID"),
+    problem_type: str = Query(..., description="Type of problem (classification, regression)"),
+    current_user: dict = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    features = await service.get_dataset_features(
+        user_id=current_user["_id"],
+        dataset_id=id,
+        problem_type=problem_type
+    )
+
+    return BaseResponse(
+        message="Features retrieved successfully",
+        data={"features": features}
+    )
+
+
+@router.get("/{id}/data", response_model=BaseResponse[dict])
+async def get_dataset_data(
+    id: str = Path(..., description="Dataset ID"),
+    num_rows: int = Query(50, description="Number of rows to preview"),
+    current_user: dict = Depends(get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    data, total_rows = await service.get_data_preview(
+        user_id=current_user["_id"],
+        dataset_id=id,
+        num_rows=num_rows
+    )
+
+    return BaseResponse(
+        message="Data retrieved successfully",
+        data={
+            "rows": total_rows,
+            "data": data
+        }
+    )

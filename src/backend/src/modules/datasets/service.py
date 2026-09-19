@@ -1,5 +1,6 @@
 # Standard Libraries
 import io
+import re
 import csv
 import uuid
 import math
@@ -11,6 +12,8 @@ from bson.errors import InvalidId
 from datetime import datetime, timezone
 
 # Third-party Libraries
+import numpy as np
+import pyarrow.parquet as pq
 from fastapi import status, UploadFile
 
 # Local Libraries
@@ -324,4 +327,154 @@ class DatasetService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
                 error_code=ErrorCode.NOT_FOUND
+            )
+
+    @staticmethod
+    def analyze_column_for_target(series: pd.Series, threshold_unique=50) -> str:
+        try:
+            clean_series = series.dropna()
+            if clean_series.empty: return "none"
+
+            if pd.api.types.is_datetime64_any_dtype(clean_series) or pd.api.types.is_timedelta64_dtype(clean_series):
+                return "none"
+
+            series_numeric = pd.to_numeric(clean_series, errors='coerce').dropna()
+            is_numeric_column = len(series_numeric) >= 0.5 * len(clean_series)
+
+            if not is_numeric_column:
+                return "classification"
+            else:
+                clean_series = series_numeric
+
+            if clean_series.nunique() <= 2:
+                return "classification"
+
+            is_float = not np.all(np.isclose(clean_series % 1, 0))
+            if is_float:
+                return "regression"
+
+            num_unique = clean_series.nunique()
+
+            if num_unique > 0.9 * len(clean_series):
+                return "regression"
+
+            if num_unique <= threshold_unique:
+                return "both"
+
+            return "regression"
+        except Exception as e:
+            return "none"
+
+    """
+    Get Dataset Features
+    """
+    async def get_dataset_features(self, user_id: str, dataset_id: str, problem_type: str, num_row: int = 1000) -> dict:
+        try:
+            oid = ObjectId(dataset_id)
+        except InvalidId:
+            raise CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dataset ID format",
+                error_code=ErrorCode.BAD_REQUEST,
+            )
+
+        data_link = await self.repo.get_data_link_by_id(oid, user_id)
+        if not data_link:
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found, access denied, or data link missing",
+                error_code=ErrorCode.NOT_FOUND
+            )
+            
+        bucket_name = data_link.get("bucket_name")
+        object_name = data_link.get("object_name")
+
+        pattern = r"^(?i:id|stt|no|key|code|uuid|guid)$|(?i:.*_id)$|^ID_.*$"
+        features = {}
+
+        try:
+            response_buffer = await minio_client.get_object(bucket_name, object_name)
+            
+            parquet_file = pq.ParquetFile(response_buffer)
+            schema_names = parquet_file.schema.names
+
+            table = parquet_file.read_row_group(0)
+            df_preview = table.to_pandas().head(num_row)
+
+            for col_name in schema_names:
+                if re.match(pattern, col_name):
+                    features[col_name] = False
+                    continue
+
+                series = df_preview[col_name]
+    
+                if series.isnull().all() or series.nunique() <= 1:
+                    features[col_name] = False
+                    continue
+
+                suggested_type = self.analyze_column_for_target(series)
+
+                if problem_type == "classification":
+                    if suggested_type in ["classification", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+                elif problem_type == "regression":
+                    if suggested_type in ["regression", "both"]:
+                        features[col_name] = True
+                    else:
+                        features[col_name] = False
+                else:
+                    features[col_name] = False
+
+            return features
+        except Exception as e:
+            print(f"Exception when getting dataset features: {str(e)}")
+            raise CustomException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to process features: {str(e)}",
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+            )
+
+    """
+    Get Data Preview
+    """
+    async def get_data_preview(self, user_id: str, dataset_id: str, num_rows: int = 50) -> tuple[list[dict], int]:
+        try:
+            oid = ObjectId(dataset_id)
+        except InvalidId:
+            raise CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dataset ID format",
+                error_code=ErrorCode.BAD_REQUEST,
+            )
+
+        data_link = await self.repo.get_data_link_by_id(oid, user_id)
+        if not data_link:
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found, access denied, or data link missing",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        bucket_name = data_link.get("bucket_name")
+        object_name = data_link.get("object_name")
+
+        try:
+            response_buffer = await minio_client.get_object(bucket_name, object_name)
+            df_retrieved = pd.read_parquet(response_buffer)
+
+            total_rows = len(df_retrieved)
+            df_preview = df_retrieved.head(num_rows)
+
+            # replace NaN with None for JSON serialization
+            df_preview = df_preview.replace({np.nan: None})
+
+            return df_preview.to_dict(orient='records'), total_rows
+        except Exception as e:
+            print(f"Exception when getting dataset preview: {str(e)}")
+            raise CustomException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to read dataset: {str(e)}",
+                error_code=ErrorCode.INTERNAL_SERVER_ERROR
             )
