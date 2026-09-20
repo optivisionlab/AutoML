@@ -57,6 +57,26 @@ def setup_logging() -> None:
                 "handlers": ["console"],
                 "propagate": False,
             },
+            "aiokafka": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "kafka": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "miniopy_async": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "aiomqtt": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
         },
     }
 

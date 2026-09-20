@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Yêu cầu đặt lại mật khẩu</title>
+  </head>
+
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #f4f6f8;
+      font-family: Arial, sans-serif;
+    "
+  >
+    <table
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="background-color: #f4f6f8; padding: 20px 0"
+    >
+      <tr>
+        <td align="center">
+          <!-- Container -->
+          <table
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              max-width: 500px;
+              background: #ffffff;
+              border-radius: 8px;
+              padding: 30px;
+            "
+          >
+            <!-- Header -->
+            <!-- Header nền xám -->
+            <tr>
+              <td bgcolor="#eff6ff" style="padding: 15px 0; border-top-left-radius: 8px; border-top-right-radius: 8px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" style="padding: 35px 0 30px;">
+                      <table cellpadding="0" cellspacing="0" style="border: none;">
+                        <tr>
+                          <td style="vertical-align: middle; padding-right: 10px;">
+                            <img
+                              src="{{logo_link}}"
+                              alt="HAutoML"
+                              width="44"
+                              style="display: block; border: none; image-rendering: -webkit-optimize-contrast;"
+                            />
+                          </td>
+                          <td style="vertical-align: middle;">
+                            <span
+                              style="
+                                font-size: 26px;
+                                font-weight: 900;
+                                letter-spacing: -0.7px;
+                                line-height: 1;
+                                color: #2563eb;
+                                font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                              "
+                            >
+                              HAutoML
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Content -->
+            <tr>
+              <td style="color: #555; font-size: 15px; line-height: 1.6">
+                <p style="margin: 20px 0 10px">Chào bạn,</p>
+
+                <p style="margin: 0 0 10px">
+                  Chúng tôi đã nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn tại HAutoML.
+                  Vui lòng sử dụng mã xác minh (OTP) dưới đây để tiếp tục quá trình.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Button (chuẩn email) -->
+            <tr>
+              <td align="center" style="padding: 25px 0">
+                <table cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="vertical-align: middle; padding-right: 10px;">
+                        <span
+                            style="
+                            font-size: 20px;
+                            font-weight: 200;
+                            letter-spacing: -0.7px;
+                            line-height: 1;
+                            color: #000000;
+                            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                            "
+                        >
+                            Mã OTP của bạn là: 
+                        </span>
+                    </td>
+                    <td style="vertical-align: middle;">
+                        <span
+                            style="
+                            font-size: 24px;
+                            font-weight: 900;
+                            letter-spacing: -0.7px;
+                            line-height: 1;
+                            color: #000000;
+                            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                            "
+                        >
+                            {{otpCode}}
+                        </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Note -->
+            <tr>
+              <td style="color: #777; font-size: 14px; line-height: 1.6">
+                <span style="font-weight: bold;">Lưu ý:</span>
+                <ul>
+                    <li >Mã này có hiệu lực trong vòng 1 phút.</li>
+                    <li >
+                        Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này
+                        hoặc liên hệ với bộ phận.
+                    </li>
+                    <li>
+                        Tuyệt đối không chia sẻ mã này với bất kỳ ai.
+                    </li>
+                </ul>
+              </td>
+            </tr>
+
+            <!-- Divider -->
+            <tr>
+              <td style="padding: 20px 0">
+                <hr style="border: none; border-top: 1px solid #eee" />
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="color: #999; font-size: 13px; text-align: center">
+                <p style="margin: 0">Trân trọng,</p>
+                <p style="margin: 5px 0 0"><b>HAutoML Team</b></p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

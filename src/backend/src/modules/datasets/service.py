@@ -21,17 +21,44 @@ from src.core.exceptions import CustomException
 from src.shared.constants import ErrorCode
 from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate
 from src.modules.datasets.repository import DatasetRepository
-from src.shared.minio_client import minio_client
+from src.shared.minio_client import minio_service
 
 
 class DatasetService:
     def __init__(self, repo: DatasetRepository):
         self.repo = repo
 
+    @staticmethod
+    def _is_dataset_public(dataset: dict) -> bool:
+        """
+        Check if dataset is public (public is True or legacy dataset with userId '0')
+        """
+        return dataset.get("public") is True or dataset.get("userId") == "0"
+
+    def _has_read_permission(self, dataset: dict, current_user: dict) -> bool:
+        """
+        Check if user has permission to read/view/preview/train dataset
+        """
+        if current_user.get("role") == "admin":
+            return True
+        if dataset.get("userId") == current_user.get("_id"):
+            return True
+        return self._is_dataset_public(dataset)
+
+    def _has_write_permission(self, dataset: dict, current_user: dict) -> bool:
+        """
+        Check if user has permission to update/delete dataset.
+        Only dataset creator has permission.
+        For legacy dataset (userId '0'), only admin has permission.
+        """
+        if current_user.get("role") == "admin":
+            return True
+        return dataset.get("userId") == current_user.get("_id") and dataset.get("userId") != "0"
+
     """
     Get All Datasets For A User
     """
-    async def get_user_datasets(self, user_id: str, current_page: int, page_size: int, data_type: str | None = None, sort_name: str | None = None, sort_time: str | None = None) -> tuple[list[DatasetResponse], dict]:
+    async def get_user_datasets(self, user_id: str, current_page: int, page_size: int, public: bool = False, data_type: str | None = None, sort_name: str | None = None, sort_time: str | None = None) -> tuple[list[DatasetResponse], dict]:
         skip = (current_page - 1) * page_size
 
         db_sort = []
@@ -48,9 +75,14 @@ class DatasetService:
             user_id=user_id,
             skip=skip,
             limit=page_size,
+            public=public,
             data_type=data_type,
             sort_params=db_sort
         )
+
+        for doc in raw_datasets:
+            if doc.get("userId") == "0":
+                doc["public"] = True
 
         formatted_datasets = [DatasetResponse(**doc) for doc in raw_datasets]
 
@@ -87,6 +119,10 @@ class DatasetService:
             sort_params=db_sort
         )
 
+        for doc in raw_datasets:
+            if doc.get("userId") == "0":
+                doc["public"] = True
+
         formatted_datasets = [DatasetAdminResponse(**doc) for doc in raw_datasets]
 
         total_pages = math.ceil(total_items / page_size) if total_items > 0 else 0
@@ -102,9 +138,9 @@ class DatasetService:
     """
     Retrieve Detail Dataset
     """
-    async def get_dataset_detail(self, user_id: str, dataset_id: str) -> DatasetResponse:
+    async def get_dataset_detail(self, current_user: dict, dataset_id: str) -> DatasetResponse:
         try:
-            dataset_id = ObjectId(dataset_id)
+            oid = ObjectId(dataset_id)
         except InvalidId:
             raise CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -112,14 +148,17 @@ class DatasetService:
                 error_code=ErrorCode.BAD_REQUEST,
             )
 
-        dataset = await self.repo.get_dataset_by_id(dataset_id=dataset_id, user_id=user_id)
+        dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
 
-        if not dataset:
+        if not dataset or not self._has_read_permission(dataset, current_user):
             raise CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
                 error_code=ErrorCode.NOT_FOUND
             )
+
+        if dataset.get("userId") == "0":
+            dataset["public"] = True
 
         dataset['_id'] = str(dataset['_id'])
 
@@ -171,7 +210,7 @@ class DatasetService:
     async def upload_and_process_dataset(self, current_user: dict, payload: DatasetCreate, file: UploadFile, thumbnail_file: UploadFile | None = None) -> DatasetResponse:
         username = current_user.get("username", "unknown")
         role = current_user.get("role", "user")
-        user_id = "0" if role == "admin" else str(current_user["_id"])
+        user_id = str(current_user["_id"])
 
         try:
             file_content_bytes = await file.read()
@@ -203,7 +242,7 @@ class DatasetService:
 
         storage_place = uuid.uuid4()
         bucket_name = "dataset"
-        
+
         if payload.dataType == DataTypeEnum.TABLE:
             try:
                 parquet_buffer = await asyncio.to_thread(
@@ -220,19 +259,20 @@ class DatasetService:
 
             # Upload MinIO
             object_name = f"{user_id}/{storage_place}.parquet"
-            await minio_client.upload_dataset(bucket_name, object_name, parquet_buffer)
+            await minio_service.upload_dataset(bucket_name, object_name, parquet_buffer)
         else:
             # Handle IMAGE or TEXT types
             file_extension = file.filename.split(".")[-1] if "." in file.filename else "bin"
             object_name = f"{user_id}/{storage_place}.{file_extension}"
-            
-            await minio_client.upload_object(bucket_name, object_name, file_content_bytes)
+
+            await minio_service.upload_object(bucket_name, object_name, file_content_bytes)
 
         # Save Database
         now = datetime.now(timezone.utc).timestamp()
         data_doc = {
             "dataName": payload.dataName,
             "dataType": payload.dataType.value,
+            "public": payload.public,
             "data_link": {
                 "bucket_name": bucket_name,
                 "object_name": object_name
@@ -255,7 +295,7 @@ class DatasetService:
     """
     Update Dataset Info
     """
-    async def update_dataset_info(self, user_id: str, dataset_id: str, payload: DatasetUpdate, thumbnail_file: UploadFile | None = None) -> DatasetResponse:
+    async def update_dataset_info(self, current_user: dict, dataset_id: str, payload: DatasetUpdate, thumbnail_file: UploadFile | None = None) -> DatasetResponse:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
@@ -263,6 +303,21 @@ class DatasetService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
                 error_code=ErrorCode.BAD_REQUEST,
+            )
+
+        dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
+        if not dataset:
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        if not self._has_write_permission(dataset, current_user):
+            raise CustomException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update this dataset",
+                error_code=ErrorCode.FORBIDDEN
             )
 
         update_data = payload.model_dump(exclude_none=True)
@@ -293,7 +348,7 @@ class DatasetService:
 
         update_data["latestUpdate"] = datetime.now(timezone.utc).timestamp()
 
-        is_updated = await self.repo.update_dataset(oid, user_id, update_data)
+        is_updated = await self.repo.update_dataset(oid, update_data)
 
         if not is_updated:
             raise CustomException(
@@ -302,15 +357,12 @@ class DatasetService:
                 error_code=ErrorCode.NOT_FOUND
             )
 
-        return await self.get_dataset_detail(user_id, dataset_id)
+        return await self.get_dataset_detail(current_user, dataset_id)
 
     """
     Soft Delete Dataset
     """
     async def delete_dataset(self, current_user: dict, dataset_id: str) -> None:
-        role = current_user.get("role", "user")
-        user_id = "0" if role == "admin" else str(current_user["_id"])
-
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
@@ -320,7 +372,22 @@ class DatasetService:
                 error_code=ErrorCode.BAD_REQUEST,
             )
 
-        is_deleted = await self.repo.delete_dataset(oid, user_id)
+        dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
+        if not dataset:
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        if not self._has_write_permission(dataset, current_user):
+            raise CustomException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this dataset",
+                error_code=ErrorCode.FORBIDDEN
+            )
+
+        is_deleted = await self.repo.delete_dataset(oid)
 
         if not is_deleted:
             raise CustomException(
@@ -368,7 +435,7 @@ class DatasetService:
     """
     Get Dataset Features
     """
-    async def get_dataset_features(self, user_id: str, dataset_id: str, problem_type: str, num_row: int = 1000) -> dict:
+    async def get_dataset_features(self, current_user: dict, dataset_id: str, problem_type: str, num_row: int = 1000) -> dict:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
@@ -378,7 +445,15 @@ class DatasetService:
                 error_code=ErrorCode.BAD_REQUEST,
             )
 
-        data_link = await self.repo.get_data_link_by_id(oid, user_id)
+        dataset = await self.repo.get_dataset_by_id(oid, include_data_link=True)
+        if not dataset or not self._has_read_permission(dataset, current_user):
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or access denied",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        data_link = dataset.get("data_link")
         if not data_link:
             raise CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -393,7 +468,7 @@ class DatasetService:
         features = {}
 
         try:
-            response_buffer = await minio_client.get_object(bucket_name, object_name)
+            response_buffer = await minio_service.get_object(bucket_name, object_name)
             
             parquet_file = pq.ParquetFile(response_buffer)
             schema_names = parquet_file.schema.names
@@ -437,9 +512,9 @@ class DatasetService:
             )
 
     """
-    Get Data Preview
+    Get Data To Preview
     """
-    async def get_data_preview(self, user_id: str, dataset_id: str, num_rows: int = 50) -> tuple[list[dict], int]:
+    async def get_data_preview(self, current_user: dict, dataset_id: str, num_rows: int = 50) -> tuple[list[dict], int]:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
@@ -449,7 +524,15 @@ class DatasetService:
                 error_code=ErrorCode.BAD_REQUEST,
             )
 
-        data_link = await self.repo.get_data_link_by_id(oid, user_id)
+        dataset = await self.repo.get_dataset_by_id(oid, include_data_link=True)
+        if not dataset or not self._has_read_permission(dataset, current_user):
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or access denied",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        data_link = dataset.get("data_link")
         if not data_link:
             raise CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -461,7 +544,7 @@ class DatasetService:
         object_name = data_link.get("object_name")
 
         try:
-            response_buffer = await minio_client.get_object(bucket_name, object_name)
+            response_buffer = await minio_service.get_object(bucket_name, object_name)
             df_retrieved = pd.read_parquet(response_buffer)
 
             total_rows = len(df_retrieved)
@@ -478,3 +561,46 @@ class DatasetService:
                 detail=f"Failed to read dataset: {str(e)}",
                 error_code=ErrorCode.INTERNAL_SERVER_ERROR
             )
+
+    """
+    Create Metadata Of Job
+    """
+    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
+        try:
+            oid = ObjectId(dataset_id)
+        except InvalidId:
+            raise CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dataset ID format",
+                error_code=ErrorCode.BAD_REQUEST,
+            )
+
+        data_doc = await self.repo.get_dataset_by_id(oid)
+        if not data_doc or not self._has_read_permission(data_doc, current_user):
+            raise CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or access denied",
+                error_code=ErrorCode.NOT_FOUND
+            )
+
+        # Save Job
+        now = datetime.now(timezone.utc).timestamp()
+        job_doc = {
+            "config": config,
+            "data": {
+                "id": dataset_id,
+                "name": data_doc.get("dataName")
+            },
+            "user": {
+                "id": str(current_user.get("_id")),
+                "name": current_user.get("username")
+            },
+            "status": 0,
+            "activate": 0,
+            "create_at": now
+        }
+
+        inserted_doc = await self.repo.create_job(job_doc)
+        inserted_doc["_id"] = str(inserted_doc["_id"])
+
+        return inserted_doc["_id"]

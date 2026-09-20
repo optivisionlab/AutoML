@@ -1,5 +1,4 @@
 # Standard Libraries
-import os
 import logging
 import smtplib
 import base64

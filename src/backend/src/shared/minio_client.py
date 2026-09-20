@@ -238,4 +238,4 @@ class MinIOStorage:
 
 
 # Instantiate MinIO
-minio_client = MinIOStorage()
+minio_service = MinIOStorage()

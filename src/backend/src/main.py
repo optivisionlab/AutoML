@@ -11,6 +11,7 @@ from src.config.settings import settings
 from src.config.logging import setup_logging
 from src.config.database import DatabaseManager
 from src.shared.mqtt_client import mqtt_service
+from src.shared.kafka_client import kafka_service
 from src.core.middlewares import setup_middlewares
 from src.core.exceptions import setup_exception_handlers
 from src.modules.auth.router import router as auth
@@ -39,11 +40,15 @@ async def lifespan(app: FastAPI):
     # MQTT connection
     await mqtt_service.connect()
 
+    # Kafka connection
+    await kafka_service.connect()
+
     yield
 
     # Application shutdown process
     await DatabaseManager.close_connection()
     await mqtt_service.disconnect()
+    await kafka_service.disconnect()
 
 
 # Initialize Application

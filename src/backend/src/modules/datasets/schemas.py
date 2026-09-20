@@ -31,6 +31,7 @@ class DatasetResponse(BaseModel):
 
     thumbnail: str | None = None
     description: str | None = None
+    public: bool = False
 
     model_config = {
         "populate_by_name": True,
@@ -54,8 +55,10 @@ class DatasetCreate(BaseModel):
     dataName: str
     dataType: DataTypeEnum
     description: str | None = None
+    public: bool = False
 
 
 class DatasetUpdate(BaseModel):
     dataName: str | None = None
     description: str | None = None
+    public: bool | None = None

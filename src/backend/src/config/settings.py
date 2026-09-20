@@ -45,6 +45,11 @@ class MQTTSettings(BaseModel):
     PASSWORD: str = "password"
 
 
+class KafkaSettings(BaseModel):
+    SERVER: str = "localhost:9092"
+    TOPIC: str = "train-job-topic"
+
+
 class Settings(BaseSettings):
     """
     Centralized configuration management for project
@@ -81,6 +86,9 @@ class Settings(BaseSettings):
 
     # MQTT Settings
     MQTT: MQTTSettings = MQTTSettings()
+
+    # Kafka Settings
+    KAFKA: KafkaSettings = KafkaSettings()
 
     # List of allowed API sources
     BACKEND_CORS_ORIGINS: list[str] = [
