@@ -257,7 +257,8 @@ async def create_training_job(
     # Publish training job to Kafka
     payload: dict = {
         "config": config,
-        "user_id": current_user["_id"]
+        "user_id": current_user["_id"],
+        "dataset_id": id
     }
 
     await kafka_service.send_message(
