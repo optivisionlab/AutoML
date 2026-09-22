@@ -19,7 +19,7 @@ from fastapi import status, UploadFile
 # Local Libraries
 from src.core import exceptions
 from src.shared import constants, minio_service
-from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate, TrainingConfig
+from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate
 from src.modules.datasets.repository import DatasetRepository
 
 
@@ -564,7 +564,7 @@ class DatasetService:
     """
     Create Metadata Of Job
     """
-    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: TrainingConfig) -> str:
+    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:

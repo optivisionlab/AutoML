@@ -1,15 +1,34 @@
 # Requirements
-# Use to pre-installed machine learning libraries for cluster
+# Use to pre-install machine learning and schema dependencies for cluster workers
+# python 3.12.10
+fastapi[standard]==0.141.1
+fastapi-mail==1.6.3
+
 numpy==1.26.2
 pandas==2.2.2
 scikit-learn==1.5.1
 scikit-optimize==0.10.2
 xgboost==3.1.2
 
+openpyxl==3.1.5
+xlrd==2.0.2
 pyarrow==21.0.0
 fastparquet==2024.11.0
 pyyaml==6.0.2
 aiofiles==24.1.0
 
-opencv-python==4.10.0.84
+itsdangerous==2.2.0
+authlib==1.5.2
+PyJWT==2.10.1
+argon2-cffi==23.1.0
+passlib==1.7.4
+psutil==7.2.1
+
+pymongo==4.10.1
+httpx==0.28.1
+aiokafka==0.12.0
+miniopy-async==1.23.5
+qrcode==8.2
+aiomqtt==2.5.1
+
 pymapreduce-core==0.1.9

@@ -1,11 +1,11 @@
-#Standard Libraries
+# Standard Libraries
 import logging
 import logging.config
 import sys
 from typing import Any
 
 # Local Libraries
-from src.config import settings
+from src.config.settings import settings
 
 
 def setup_logging() -> None:

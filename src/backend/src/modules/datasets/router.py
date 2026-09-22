@@ -249,11 +249,12 @@ async def create_training_job(
     current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
-    job_id = await service.create_metadata_job(current_user, id, config)
+    config_dict = config.model_dump()
+    job_id = await service.create_metadata_job(current_user, id, config_dict)
 
     # Publish training job to Kafka
     payload: dict = {
-        "config": config,
+        "config": config_dict,
         "user_id": str(current_user["_id"]),
         "dataset_id": str(id)
     }

@@ -58,7 +58,7 @@ class MapReduceMode(str):
 
 class MapReduceSettings(BaseModel):
     MODE: str = Field(default=MapReduceMode.CLUSTER, validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="127.0.0.1:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    HEAD_ADDRESS: str = Field(default="10.100.200.119:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
 
 
 class Settings(BaseSettings):
