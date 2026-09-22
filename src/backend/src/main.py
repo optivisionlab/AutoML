@@ -7,17 +7,13 @@ import uvicorn
 from fastapi import FastAPI
 
 # Local Libraries
-from src.config.settings import settings
-from src.config.logging import setup_logging
-from src.config.database import DatabaseManager
-from src.shared.mqtt_client import mqtt_service
-from src.shared.kafka_client import kafka_service
-from src.core.middlewares import setup_middlewares
-from src.core.exceptions import setup_exception_handlers
-from src.modules.auth.router import router as auth
-from src.modules.users.router import router as users
-from src.modules.datasets.router import router as datasets
-from src.modules.notifications.router import router as notifications
+from src.core import middlewares, exceptions
+from src.config import settings, setup_logging, databases
+from src.shared import mqtt_service, kafka_service, minio_service
+from src.modules.auth import auth
+from src.modules.users import users
+from src.modules.datasets import datasets
+from src.modules.notifications import notifications
 
 
 # Activate Logging
@@ -32,10 +28,10 @@ async def lifespan(app: FastAPI):
     Lifespan events
     """
     # Initialize the connection pool to MongoDB.
-    await DatabaseManager.connection()
+    await databases.DatabaseManager.connection()
     
     # Bring the database instance into the FastAPI state.
-    app.state.db = DatabaseManager.db
+    app.state.db = databases.DatabaseManager.db
 
     # MQTT connection
     await mqtt_service.connect()
@@ -46,9 +42,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Application shutdown process
-    await DatabaseManager.close_connection()
+    await databases.DatabaseManager.close_connection()
     await mqtt_service.disconnect()
     await kafka_service.disconnect()
+    await minio_service.close()
 
 
 # Initialize Application
@@ -61,10 +58,10 @@ app = FastAPI(
 
 
 # Cross-Origin Resource Sharing
-setup_middlewares(app=app)
+middlewares.setup_middlewares(app=app)
 
 # Enable error normalization
-setup_exception_handlers(app=app)
+exceptions.setup_exception_handlers(app=app)
 
 # APIs
 app.include_router(auth, prefix="/api/v1")

@@ -1,34 +1,31 @@
-# Standard Libraries
-
 # Third-party Libraries
 from fastapi import APIRouter, UploadFile, Depends, Query, Path, File, Form, Body
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.config.database import get_db
-from src.core.dependencies import get_current_user, require_admin
-from src.core.responses import BaseResponse, PaginatedResponse, PaginationMeta
-from src.modules.datasets.schemas import DatasetResponse, DataTypeEnum, SortNameEnum, SortTimeEnum, DatasetAdminResponse, DatasetCreate, DatasetUpdate
-from src.modules.datasets.repository import DatasetRepository
+from src.config import databases
+from src.core import dependencies, responses
+from src.shared import kafka_service
+from src.modules.datasets.schemas import DatasetResponse, DataTypeEnum, SortNameEnum, SortTimeEnum, DatasetAdminResponse, DatasetCreate, DatasetUpdate, TrainingConfig
 from src.modules.datasets.service import DatasetService
-from src.shared.kafka_client import kafka_service
+from src.modules.datasets.repository import DatasetRepository
 
 
 # Router
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
 
-def get_dataset_service(db: AsyncDatabase = Depends(get_db)) -> DatasetService:
+def get_dataset_service(db: AsyncDatabase = Depends(databases.get_db)) -> DatasetService:
     return DatasetService(DatasetRepository(db))
 
 
-@router.get("", response_model=PaginatedResponse[DatasetResponse])
+@router.get("", response_model=responses.PaginatedResponse[DatasetResponse])
 async def get_list_datasets(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     data_type: DataTypeEnum | None = Query(None, description="Filter by data format"),
     sort_name: SortNameEnum | None = Query(None, description="Sort by name (A-Z/Z-A)"),
     sort_time: SortTimeEnum | None = Query(SortTimeEnum.NEWEST, description="Schedule (Last updated)"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     data_type_value = data_type.value if data_type else None
@@ -44,21 +41,21 @@ async def get_list_datasets(
         sort_time=sort_time_value
     )
 
-    return PaginatedResponse(
+    return responses.PaginatedResponse(
         message="Successfully retrieved the data list",
         data=datasets,
-        meta=PaginationMeta(**meta)
+        meta=responses.PaginationMeta(**meta)
     )
 
 
-@router.get("/default", response_model=PaginatedResponse[DatasetResponse])
+@router.get("/default", response_model=responses.PaginatedResponse[DatasetResponse])
 async def get_list_public_datasets(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     data_type: DataTypeEnum | None = Query(None, description="Filter by data format"),
     sort_name: SortNameEnum | None = Query(None, description="Sort by name (A-Z/Z-A)"),
     sort_time: SortTimeEnum | None = Query(SortTimeEnum.NEWEST, description="Schedule (Last updated)"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     data_type_value = data_type.value if data_type else None
@@ -75,14 +72,14 @@ async def get_list_public_datasets(
         sort_time=sort_time_value
     )
 
-    return PaginatedResponse(
+    return responses.PaginatedResponse(
         message="Successfully retrieved the data list",
         data=datasets,
-        meta=PaginationMeta(**meta)
+        meta=responses.PaginationMeta(**meta)
     )
 
 
-@router.get("/all", dependencies=[Depends(require_admin)], response_model=PaginatedResponse[DatasetAdminResponse])
+@router.get("/all", dependencies=[Depends(dependencies.require_admin)], response_model=responses.PaginatedResponse[DatasetAdminResponse])
 async def get_all_datasets_for_admin(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -103,17 +100,17 @@ async def get_all_datasets_for_admin(
         sort_time=sort_time_value
     )
 
-    return PaginatedResponse(
+    return responses.PaginatedResponse(
         message="Successfully retrieved all datasets for administration",
         data=datasets,
-        meta=PaginationMeta(**meta)
+        meta=responses.PaginationMeta(**meta)
     )
 
 
-@router.get("/{id}", response_model=BaseResponse[DatasetResponse])
+@router.get("/{id}", response_model=responses.BaseResponse[DatasetResponse])
 async def get_dataset_by_id(
     id: str = Path(..., description="Dataset ID"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     dataset = await service.get_dataset_detail(
@@ -121,13 +118,13 @@ async def get_dataset_by_id(
         dataset_id=id
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Successfully retrieved dataset details",
         data=dataset
     )
 
 
-@router.post("", response_model=BaseResponse[DatasetResponse])
+@router.post("", response_model=responses.BaseResponse[DatasetResponse])
 async def upload_new_dataset(
     file: UploadFile = File(...),
     thumbnail_file: UploadFile | None = File(None, description="Image"),
@@ -135,7 +132,7 @@ async def upload_new_dataset(
     dataType: DataTypeEnum = Form(...),
     description: str | None = Form(None),
     public: bool = Form(False, description="True if you want to share it publicly with the entire system"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     payload = DatasetCreate(
@@ -152,20 +149,20 @@ async def upload_new_dataset(
         thumbnail_file=thumbnail_file
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Data upload and processing successful",
         data=dataset
     )
 
 
-@router.put("/{id}", response_model=BaseResponse[DatasetResponse])
+@router.put("/{id}", response_model=responses.BaseResponse[DatasetResponse])
 async def update_dataset(
     id: str = Path(..., description="Dataset ID"),
     dataName: str | None = Form(None),
     description: str | None = Form(None),
     public: bool | None = Form(None),
     thumbnail_file: UploadFile | None = File(None),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     payload = DatasetUpdate(
@@ -181,16 +178,16 @@ async def update_dataset(
         thumbnail_file=thumbnail_file
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Dataset information updated successfully",
         data=dataset
     )
 
 
-@router.delete("/{id}", response_model=BaseResponse[None])
+@router.delete("/{id}", response_model=responses.BaseResponse[None])
 async def delete_dataset(
     id: str = Path(..., description="Dataset ID"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     await service.delete_dataset(
@@ -198,17 +195,17 @@ async def delete_dataset(
         dataset_id=id
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Dataset deleted successfully",
         data=None
     )
 
 
-@router.get("/{id}/features", response_model=BaseResponse[dict])
+@router.get("/{id}/features", response_model=responses.BaseResponse[dict])
 async def get_dataset_features(
     id: str = Path(..., description="Dataset ID"),
     problem_type: str = Query(..., description="Type of problem (classification, regression)"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     features = await service.get_dataset_features(
@@ -217,17 +214,17 @@ async def get_dataset_features(
         problem_type=problem_type
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Features retrieved successfully",
         data={"features": features}
     )
 
 
-@router.get("/{id}/data", response_model=BaseResponse[dict])
+@router.get("/{id}/data", response_model=responses.BaseResponse[dict])
 async def get_dataset_data(
     id: str = Path(..., description="Dataset ID"),
     num_rows: int = Query(50, description="Number of rows to preview"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     data, total_rows = await service.get_data_preview(
@@ -236,7 +233,7 @@ async def get_dataset_data(
         num_rows=num_rows
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Data retrieved successfully",
         data={
             "rows": total_rows,
@@ -245,11 +242,11 @@ async def get_dataset_data(
     )
 
 
-@router.post("/{id}/training", response_model=BaseResponse[dict])
+@router.post("/{id}/training", response_model=responses.BaseResponse[dict])
 async def create_training_job(
     id: str = Path(..., description="Dataset ID"),
-    config: dict = Body(..., description="Config Training"),
-    current_user: dict = Depends(get_current_user),
+    config: TrainingConfig = Body(..., description="Config Training"),
+    current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
     job_id = await service.create_metadata_job(current_user, id, config)
@@ -257,16 +254,16 @@ async def create_training_job(
     # Publish training job to Kafka
     payload: dict = {
         "config": config,
-        "user_id": current_user["_id"],
-        "dataset_id": id
+        "user_id": str(current_user["_id"]),
+        "dataset_id": str(id)
     }
 
     await kafka_service.send_message(
         value=payload,
-        key=job_id,
+        key=str(job_id),
     )
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Send job successfully",
-        data={"job_id": job_id}
+        data={"job_id": str(job_id)}
     )

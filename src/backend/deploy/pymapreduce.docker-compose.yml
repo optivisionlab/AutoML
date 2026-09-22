@@ -1,0 +1,56 @@
+services:
+  # PyMapReduce Head Node (Runs on Master / Head Node host)
+  headnode:
+    image: python:3.10-slim
+    container_name: pymapreduce_headnode
+    restart: unless-stopped
+    ports:
+      - "${HEAD_PORT:-7777}:7777"
+    environment:
+      - HEAD_PORT=${HEAD_PORT:-7777}
+      - SCHEDULER=${SCHEDULER:-Adaptive}
+    volumes:
+      - pymapreduce_wal:/tmp
+    command: >
+      sh -c "
+      pip install --no-cache-dir pymapreduce-core==0.1.9 &&
+      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive}
+      "
+    networks:
+      - pymapreduce_net
+
+  # PyMapReduce Worker Node (Can run on same host or remote physical worker machines)
+  workernode:
+    image: python:3.10-slim
+    container_name: pymapreduce_worker
+    restart: unless-stopped
+    shm_size: '2gb'
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEAD_ADDR=${HEAD_ADDR:-headnode:7777}
+      - WORKER_CPUS=${WORKER_CPUS:-}
+    volumes:
+      - ./requirements.txt:/app/requirements. txt:ro
+    command: >
+      sh -c "
+      apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/* &&
+      pip install --no-cache-dir -r /app/requirements.txt &&
+      if [ -n \"\$$WORKER_CPUS\" ]; then
+        mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS
+      else
+        mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777}
+      fi
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    networks:
+      - pymapreduce_net
+
+networks:
+  pymapreduce_net:
+    driver: bridge
+
+volumes:
+  pymapreduce_wal:

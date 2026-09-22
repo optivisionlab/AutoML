@@ -7,13 +7,10 @@ from datetime import datetime, timezone, timedelta
 from fastapi import BackgroundTasks, status
 
 # Local Libraries
-from src.core.security import jwt_service
-from src.core.exceptions import CustomException
-from src.shared.utils import generate_otp
-from src.shared.email import email_service
-from src.shared.constants import ErrorCode
-from src.modules.auth.repository import AuthRepository
+from src.core import security, exceptions
+from src.shared import utils, constants, email_service
 from src.modules.auth.schemas import UserRegisterRequest, UserResponse, UserLoginRequest, TokenResponse, ResetPasswordRequest
+from src.modules.auth.repository import AuthRepository
 
 
 class AuthService:
@@ -21,19 +18,19 @@ class AuthService:
         self.repo = repo
 
     def _generate_tokens(self, user_id: str | ObjectId, role: str, email: str) -> TokenResponse:
-        access_token = jwt_service.create_access_token({
+        access_token = security.jwt_service.create_access_token({
             'sub': str(user_id),
             'role': role,
             'email': email
         })
-        refresh_token = jwt_service.create_refresh_token({
+        refresh_token = security.jwt_service.create_refresh_token({
             'sub': str(user_id)
         })
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
     def _generate_token_and_qr_code(self, user_id: str | ObjectId, email: str, background_tasks: BackgroundTasks):
         # Generate Token & QR Code
-        verification_token = jwt_service.create_verification_token({
+        verification_token = security.jwt_service.create_verification_token({
             'sub': str(user_id),
             'email': email
         })
@@ -54,10 +51,10 @@ class AuthService:
     async def register(self, user_data: UserRegisterRequest, background_tasks: BackgroundTasks) -> UserResponse:
         # Existence check
         if await self.repo.check_user_exists(user_data.email, user_data.username):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Username or Email already registered",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         now_timestamp = datetime.now(timezone.utc).timestamp()
@@ -102,18 +99,18 @@ class AuthService:
         # Find users
         user = await self.repo.get_user_by_login_identifier(data.username)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect account or password",
-                error_code=ErrorCode.UNAUTHORIZED
+                error_code=constants.ErrorCode.UNAUTHORIZED
             )
 
         # Email verification
         if not user.get('is_verified', True):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Your account has not been verified. Please check your email",
-                error_code=ErrorCode.FORBIDDEN
+                error_code=constants.ErrorCode.FORBIDDEN
             )
 
         # Check password
@@ -127,10 +124,10 @@ class AuthService:
                 is_valid_password = True
 
         if not is_valid_password:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect account or password",
-                error_code=ErrorCode.UNAUTHORIZED
+                error_code=constants.ErrorCode.UNAUTHORIZED
             )
 
         # Generate token
@@ -145,29 +142,29 @@ class AuthService:
     """
     async def refresh_token(self, refresh_token: str) -> TokenResponse:
         # Verify the validity of the token
-        payload = jwt_service.verify_token(refresh_token)
+        payload = security.jwt_service.verify_token(refresh_token)
         if not payload or payload.get('type') != 'refresh':
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
-                error_code=ErrorCode.UNAUTHORIZED,
+                error_code=constants.ErrorCode.UNAUTHORIZED,
             )
 
         try:
             user_id = ObjectId(payload['sub'])
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token format",
-                error_code=ErrorCode.UNAUTHORIZED,
+                error_code=constants.ErrorCode.UNAUTHORIZED,
             )
 
         user = await self.repo.get_user_by_id(user_id)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="The account no longer exists",
-                error_code=ErrorCode.UNAUTHORIZED,
+                error_code=constants.ErrorCode.UNAUTHORIZED,
             )
 
         # Generate new token
@@ -259,37 +256,37 @@ class AuthService:
     Verify User Accounts Via Email
     """
     async def verify_email_and_login(self, token: str) -> TokenResponse:
-        payload = jwt_service.verify_token(token)
+        payload = security.jwt_service.verify_token(token)
         if not payload or payload.get('type') != 'verification':
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="The verification code is invalid or has expired",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         try:
             user_id = ObjectId(payload['sub'])
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid authentication code format",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         # Get user information
         user = await self.repo.get_user_by_id(user_id)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND, 
                 detail="Account not found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if user.get('is_verified'):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="Your account has been previously verified. Please log in",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         await self.repo.update_user(user_id, {'is_verified': True})
@@ -306,17 +303,17 @@ class AuthService:
     async def resend_verification_email(self, email: str, background_tasks: BackgroundTasks) -> None:
         user = await self.repo.get_user_by_email(email)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No account found with this email address",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if user.get('is_verified', True):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This account has been previously verified",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         self._generate_token_and_qr_code(user['_id'], email, background_tasks)
@@ -327,20 +324,20 @@ class AuthService:
     async def request_new_otp_verification(self, email: str, background_tasks: BackgroundTasks) -> None:
         user = await self.repo.get_user_by_email(email)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No account found with this email address",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if user.get('is_verified', True):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This account has been previously verified",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
-        otp_code = generate_otp(6)
+        otp_code = utils.generate_otp(6)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         await self.repo.update_user_otp(user['_id'], otp_code, expires_at.timestamp())
@@ -361,13 +358,13 @@ class AuthService:
             return
 
         if not user.get('is_verified', True):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_403_FORBIDDEN, 
                 detail="Your account has not been verified. Please verify your email first",
-                error_code=ErrorCode.FORBIDDEN
+                error_code=constants.ErrorCode.FORBIDDEN
             )
 
-        otp_code = generate_otp(6)
+        otp_code = utils.generate_otp(6)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         await self.repo.update_user_otp(user['_id'], otp_code, expires_at.timestamp())
@@ -384,33 +381,33 @@ class AuthService:
     async def verify_otp_for_password_reset(self, email: str, otp: str) -> str:
         user = await self.repo.get_user_by_email(email)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No account found with this email address",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         stored_otp = user.get("otp")
         otp_expiry = user.get("createAtOTP")
 
         if not stored_otp or stored_otp != otp:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="Invalid OTP code",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         now = datetime.now(timezone.utc).timestamp()
         if now > otp_expiry:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="The OTP code has expired. Please request a new code",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         await self.repo.clear_user_otp(user['_id'])
 
-        reset_token = jwt_service.create_reset_token({
+        reset_token = security.jwt_service.create_reset_token({
             'sub': str(user['_id']),
             'email': email
         })
@@ -422,28 +419,28 @@ class AuthService:
     """
     async def reset_password_with_token(self, payload: ResetPasswordRequest) -> None:
         if payload.new_password != payload.confirm_password:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The verification password does not match. Please try again",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
-        decoded = jwt_service.verify_token(payload.token)
+        decoded = security.jwt_service.verify_token(payload.token)
 
         if not decoded or decoded.get('type') != 'reset':
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="The verification code is invalid or has expired",
-                error_code=ErrorCode.UNAUTHORIZED
+                error_code=constants.ErrorCode.UNAUTHORIZED
             )
 
         try:
             user_id = ObjectId(decoded['sub'])
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect authentication code format",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         await self.repo.update_password(user_id, payload.new_password)

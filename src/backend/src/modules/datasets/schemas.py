@@ -62,3 +62,12 @@ class DatasetUpdate(BaseModel):
     dataName: str | None = None
     description: str | None = None
     public: bool | None = None
+
+
+class TrainingConfig(BaseModel):
+    choose: str | None = None
+    metric_sort: str
+    list_feature: list
+    problem_type: str
+    search_algorithm: str
+    target: str

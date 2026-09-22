@@ -7,9 +7,8 @@ from datetime import datetime, timezone
 from fastapi import status
 
 # Local Libraries
-from src.shared.constants import ErrorCode
-from src.shared.mqtt_client import mqtt_service
-from src.core.exceptions import CustomException
+from src.core import exceptions
+from src.shared import constants, mqtt_service
 from src.modules.notifications.schemas import NotificationResponse
 from src.modules.notifications.repository import NotificationRepository
 
@@ -76,8 +75,8 @@ class NotificationService:
         success = await self.repo.mark_as_read(user_id, notification_id)
 
         if not success:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Notification not found or already read",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )

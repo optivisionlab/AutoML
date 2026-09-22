@@ -1,3 +1,2 @@
 gradio==6.27.0
 ucimlrepo==0.0.7
-pywebview==6.2.1

@@ -58,7 +58,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
-    
+
   mongo:
     image: mongo:latest
     restart: unless-stopped

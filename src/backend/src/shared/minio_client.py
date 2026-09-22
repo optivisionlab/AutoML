@@ -4,14 +4,15 @@ import logging
 import os
 
 # Third-party libraries
+from fastapi import status
 from miniopy_async import Minio
 from miniopy_async.error import S3Error
 from miniopy_async.commonconfig import CopySource
-from fastapi import status
 
 # Local libraries
-from src.config.settings import settings
-from src.core.exceptions import CustomException, ErrorCode
+from src.core import exceptions
+from src.config import settings
+from src.shared import constants
 
 
 # Logging
@@ -48,10 +49,10 @@ class MinIOStorage:
                 pass
             else:
                 logger.error(f"Failed to create Minio bucket {bucket_name}: {e}")
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Storage error: {e.message}",
-                    error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                    error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
                 )
 
     async def upload_object(self, bucket_name: str, object_name: str, object_bytes: bytes):
@@ -69,18 +70,18 @@ class MinIOStorage:
                 logger.info(f"Model uploaded to MinIO: s3://{bucket_name}/{object_name}")
             except Exception as e:
                 logger.error(f"MinIO upload error for {object_name}: {e}")
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to upload file to storage.",
-                    error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                    error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
                 )
 
     async def move_model(self, source_bucket: str, source_model: str, dest_bucket: str, dest_model: str):
         if not await self.client.bucket_exists(source_bucket):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Source bucket {source_bucket} not found.",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         await self._ensure_bucket_exists(dest_bucket)
@@ -94,18 +95,18 @@ class MinIOStorage:
             await self.client.remove_object(source_bucket, source_model)
         except Exception as e:
             logger.error(f"Minio move error for {source_model}: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to move object in storage.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def copy_object(self, source_bucket: str, source_key: str, dest_bucket: str, dest_key: str):
         if not await self.client.bucket_exists(source_bucket):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Source bucket {source_bucket} not found.",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         await self._ensure_bucket_exists(dest_bucket)
@@ -118,10 +119,10 @@ class MinIOStorage:
             )
         except Exception as e:
             logger.error(f"Minio copy error for {source_key}: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to copy object in storage.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def upload_dataset(self, bucket_name: str, object_name: str, parquet_buffer: io.BytesIO):
@@ -138,10 +139,10 @@ class MinIOStorage:
             logger.info(f"Dataset uploaded to MinIO: s3://{bucket_name}/{object_name}")
         except Exception as e:
             logger.error(f"MinIO upload error for {object_name}: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to upload dataset to storage.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def check_object_exists(self, bucket_name: str, object_name: str) -> bool:
@@ -166,17 +167,17 @@ class MinIOStorage:
             buffer.seek(0)
             return buffer
         except S3Error as e:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Object not found: {e.message}",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
         except Exception as e:
             logger.error(f"Get object error: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error retrieving object from storage.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
         finally:
             if response:
@@ -196,10 +197,10 @@ class MinIOStorage:
                 logger.info(f"Object doesn't exist, skip removing: {object_name}")
                 return True
             logger.error(f"Error removing object {object_name}: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to remove object from storage.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def get_url(self, bucket_name: str, object_name: str) -> str:
@@ -209,10 +210,10 @@ class MinIOStorage:
             return url
         except Exception as e:
             logger.error(f"Presigned URL error: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to generate download URL.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def download_model(self, bucket_name: str, object_name: str, local_temp_path: str) -> str:
@@ -223,10 +224,10 @@ class MinIOStorage:
             return local_temp_path
         except Exception as e:
             logger.error(f"MinIO download error: {e}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to download model to local system.",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     async def list_objects(self, bucket_name: str):
@@ -235,6 +236,16 @@ class MinIOStorage:
                 logger.info(obj.object_name)
         except Exception as e:
             logger.error(f"List objects error: {e}")
+
+    async def close(self) -> None:
+        """
+        Gracefully close the underlying aiohttp session
+        """
+        try:
+            await self.client.close_session()
+            logger.info("MinIO client session closed successfully.")
+        except Exception as e:
+            logger.debug(f"Error closing MinIO session: {e}")
 
 
 # Instantiate MinIO

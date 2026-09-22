@@ -5,7 +5,7 @@ import sys
 from typing import Any
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 def setup_logging() -> None:

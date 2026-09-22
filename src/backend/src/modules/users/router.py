@@ -7,22 +7,21 @@ from fastapi.responses import StreamingResponse
 from fastapi import Depends, Path, Query, Body, APIRouter, UploadFile, File
 
 # Local Libraries
-from src.config.database import get_db
-from src.core.dependencies import require_admin, require_owner_or_admin
-from src.core.responses import BaseResponse, PaginatedResponse, PaginationMeta
+from src.core import dependencies, responses
+from src.config import databases
+from src.modules.users.schemas import UserResponse, UserDetailResponse, UpdateUserRequest, ChangePasswordRequest
 from src.modules.users.service import UserService
 from src.modules.users.repository import UserRepository
-from src.modules.users.schemas import UserResponse, UserDetailResponse, UpdateUserRequest, ChangePasswordRequest
 
 
 # Router
 router = APIRouter(prefix="/users", tags=["Users"])
 
-def get_user_service(db: AsyncDatabase = Depends(get_db)) -> UserService:
+def get_user_service(db: AsyncDatabase = Depends(databases.get_db)) -> UserService:
     return UserService(UserRepository(db))
 
 
-@router.get("", dependencies=[Depends(require_admin)], response_model=PaginatedResponse[UserResponse])
+@router.get("", dependencies=[Depends(dependencies.require_admin)], response_model=responses.PaginatedResponse[UserResponse])
 async def get_all_users(
     page: int = Query(1, ge=1, description="Current page (starting from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of records per page"),
@@ -30,27 +29,27 @@ async def get_all_users(
 ):
     users_data, meta_data = await service.get_paginated_users(page, page_size)
 
-    return PaginatedResponse(
+    return responses.PaginatedResponse(
         message="Get a list of successful users",
         data=users_data,
-        meta=PaginationMeta(**meta_data)
+        meta=responses.PaginationMeta(**meta_data)
     )
 
 
-@router.get("/{id}", dependencies=[Depends(require_owner_or_admin)], response_model=BaseResponse[UserDetailResponse])
+@router.get("/{id}", dependencies=[Depends(dependencies.require_owner_or_admin)], response_model=responses.BaseResponse[UserDetailResponse])
 async def get_user_by_id(
     id: str = Path(..., description="The user ID code needs to be viewed in detail"),
     service: UserService = Depends(get_user_service)
 ):
     user_data = await service.get_user_details(id)
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="User details successfully retrieved",
         data=user_data
     )
 
 
-@router.put("/{id}", dependencies=[Depends(require_owner_or_admin)], response_model=BaseResponse[UserDetailResponse])
+@router.put("/{id}", dependencies=[Depends(dependencies.require_owner_or_admin)], response_model=responses.BaseResponse[UserDetailResponse])
 async def update_user(
     id: str = Path(..., description="The user ID needs to be updated"),
     payload: UpdateUserRequest = Body(...),
@@ -58,26 +57,26 @@ async def update_user(
 ):
     updated_user = await service.update_user_info(id, payload)
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="User information updated successfully",
         data=updated_user
     )
 
 
-@router.delete("/{id}", dependencies=[Depends(require_admin)], response_model=BaseResponse[None])
+@router.delete("/{id}", dependencies=[Depends(dependencies.require_admin)], response_model=responses.BaseResponse[None])
 async def delete_user(
     id: str = Path(..., description="The user ID to be deleted"),
     service: UserService = Depends(get_user_service)
 ):
     await service.delete_user(id)
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="The user and associated data have been deleted",
         data=None
     )
 
 
-@router.get("/{id}/avatar", dependencies=[Depends(require_owner_or_admin)], response_class=StreamingResponse)
+@router.get("/{id}/avatar", dependencies=[Depends(dependencies.require_owner_or_admin)], response_class=StreamingResponse)
 async def get_avatar(
     id: str = Path(..., description="User ID"),
     service: UserService = Depends(get_user_service)
@@ -90,7 +89,7 @@ async def get_avatar(
     )
 
 
-@router.post("/{id}/avatar", dependencies=[Depends(require_owner_or_admin)], response_model=BaseResponse[dict])
+@router.post("/{id}/avatar", dependencies=[Depends(dependencies.require_owner_or_admin)], response_model=responses.BaseResponse[dict])
 async def update_avatar(
     id: str = Path(..., description="User ID"),
     file: UploadFile = File(..., description="Uploaded image file"),
@@ -98,13 +97,13 @@ async def update_avatar(
 ):
     avatar_base64 = await service.update_user_avatar(id, file)
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Profile picture updated successfully",
         data={"avatar": avatar_base64}
     )
 
 
-@router.post("/{id}/password", dependencies=[Depends(require_owner_or_admin)], response_model=BaseResponse[None])
+@router.post("/{id}/password", dependencies=[Depends(dependencies.require_owner_or_admin)], response_model=responses.BaseResponse[None])
 async def change_password(
     id: str = Path(..., description="User ID"),
     payload: ChangePasswordRequest = Body(...),
@@ -112,7 +111,7 @@ async def change_password(
 ):
     await service.change_password(id, payload)
 
-    return BaseResponse(
+    return responses.BaseResponse(
         message="Password changed successfully. Please log in again",
         data=None
     )

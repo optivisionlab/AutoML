@@ -6,7 +6,7 @@ from typing import Any
 import yaml
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 logger = logging.getLogger(__name__)
 

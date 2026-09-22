@@ -2,17 +2,18 @@
 from pathlib import Path
 
 # Third-party Libraries
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MinIOSettings(BaseModel):
-    ENDPOINT: str = "localhost:9000"
-    ACCESS_KEY: str = "admin"
-    SECRET_KEY: str = "password"
+    ENDPOINT: str = Field(default="localhost:9000", validation_alias="MINIO_ENDPOINT")
+    ACCESS_KEY: str = Field(default="admin", validation_alias="MINIO_ACCESS_KEY")
+    SECRET_KEY: str = Field(default="password123", validation_alias="MINIO_SECRET_KEY")
+
 
 class MongoDB(BaseModel):
-    CONNECT: str = "localhost:27017"
+    CONNECT: str = Field(default="localhost:27017", validation_alias="MONGODB_CONNECT")
     NAME: str = "AutoML"
 
 class ProjectInfo(BaseModel):
@@ -22,32 +23,42 @@ class ProjectInfo(BaseModel):
 
 
 class JWTSettings(BaseModel):
-    SECRET_KEY: str = "secret-key"
-    ALGORITHM: str = "HS256"
-    ACCESS_EXPIRE: int = 15
-    REFRESH_EXPIRE: int = 7
+    SECRET_KEY: str = Field(default="secret-key", validation_alias="SECRET_KEY")
+    ALGORITHM: str = Field(default="HS256", validation_alias="ALGORITHM")
+    ACCESS_EXPIRE: int = Field(default=15, validation_alias="ACCESS_EXPIRE")
+    REFRESH_EXPIRE: int = Field(default=7, validation_alias="REFRESH_EXPIRE")
 
 
 class MailSettings(BaseModel):
-    USERNAME: str = "username"
-    PASSWORD: str = "password"
+    USERNAME: str = Field(default="username", validation_alias="MAIL_USERNAME")
+    PASSWORD: str = Field(default="password", validation_alias="MAIL_PASSWORD")
 
 
 class GoogleSettings(BaseModel):
-    CLIENT_ID: str = "client_id"
-    CLIENT_SECRET: str = "client_secret"
+    CLIENT_ID: str = Field(default="client_id", validation_alias="GOOGLE_CLIENT_ID")
+    CLIENT_SECRET: str = Field(default="client_secret", validation_alias="GOOGLE_CLIENT_SECRET")
 
 
 class MQTTSettings(BaseModel):
-    HOSTNAME: str = "localhost"
-    PORT: int = 1883
-    USERNAME: str = "admin"
-    PASSWORD: str = "password"
+    HOSTNAME: str = Field(default="localhost", validation_alias="MQTT_HOSTNAME")
+    PORT: int = Field(default=1883, validation_alias="MQTT_PORT")
+    USERNAME: str = Field(default="admin", validation_alias="MQTT_USERNAME")
+    PASSWORD: str = Field(default="Admin@123", validation_alias="MQTT_PASSWORD")
 
 
 class KafkaSettings(BaseModel):
-    SERVER: str = "localhost:9092"
-    TOPIC: str = "train-job-topic"
+    SERVER: str = Field(default="localhost:9092", validation_alias="KAFKA_SERVER")
+    TOPIC: str = Field(default="train-job-topic", validation_alias="KAFKA_TOPIC")
+
+
+class MapReduceMode(str):
+    LOCAL = "local"
+    CLUSTER = "cluster"
+
+
+class MapReduceSettings(BaseModel):
+    MODE: str = Field(default=MapReduceMode.CLUSTER, validation_alias="MAPREDUCE_MODE")
+    HEAD_ADDRESS: str = Field(default="127.0.0.1:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
 
 
 class Settings(BaseSettings):
@@ -90,6 +101,9 @@ class Settings(BaseSettings):
     # Kafka Settings
     KAFKA: KafkaSettings = KafkaSettings()
 
+    # PyMapReduce Settings
+    PYMAPREDUCE: MapReduceSettings = MapReduceSettings()
+
     # List of allowed API sources
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",      # React/Next.js local
@@ -98,9 +112,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env", 
-        env_file_encoding="utf-8", 
+        env_file_encoding="utf-8",
         case_sensitive=True,
-        env_nested_delimiter="_",
         extra="ignore"
     )
 

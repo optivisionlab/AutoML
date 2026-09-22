@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 class ProcessTimeMiddleware(BaseHTTPMiddleware):

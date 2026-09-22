@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 # Local Libraries
-from src.shared.constants import ErrorCode
+from src.shared import constants
 
 
 class CustomException(Exception):
@@ -18,7 +18,7 @@ class CustomException(Exception):
         self,
         status_code: int,
         detail: str,
-        error_code: str = ErrorCode.BAD_REQUEST.value,
+        error_code: str = constants.ErrorCode.BAD_REQUEST.value,
         extra: dict[str, Any] | None = None,
     ):
         self.status_code = status_code
@@ -58,10 +58,10 @@ def setup_exception_handlers(app: FastAPI) -> None:
             })
 
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "success": False,
-                "error_code": ErrorCode.VALIDATION_ERROR.value,
+                "error_code": constants.ErrorCode.VALIDATION_ERROR.value,
                 "detail": "Invalid input data",
                 "extra": {"errors": formatted_errors},
             },
@@ -76,7 +76,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "success": False,
-                "error_code": ErrorCode.INTERNAL_SERVER_ERROR.value,
+                "error_code": constants.ErrorCode.INTERNAL_SERVER_ERROR.value,
                 "detail": "The system is experiencing issues, please try again later.",
             },
         )

@@ -17,11 +17,10 @@ import pyarrow.parquet as pq
 from fastapi import status, UploadFile
 
 # Local Libraries
-from src.core.exceptions import CustomException
-from src.shared.constants import ErrorCode
-from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate
+from src.core import exceptions
+from src.shared import constants, minio_service
+from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate, TrainingConfig
 from src.modules.datasets.repository import DatasetRepository
-from src.shared.minio_client import minio_service
 
 
 class DatasetService:
@@ -142,19 +141,19 @@ class DatasetService:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
 
         if not dataset or not self._has_read_permission(dataset, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if dataset.get("userId") == "0":
@@ -215,29 +214,29 @@ class DatasetService:
         try:
             file_content_bytes = await file.read()
         except Exception as e:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Error when downloading file",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         # Handle thumbnail
         thumbnail_base64 = None
         if thumbnail_file:
             if not thumbnail_file.content_type.startswith("image/"):
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only image file uploads are supported for thumbnail",
-                    error_code=ErrorCode.BAD_REQUEST
+                    error_code=constants.ErrorCode.BAD_REQUEST
                 )
             try:
                 thumbnail_data = await thumbnail_file.read()
                 thumbnail_base64 = base64.b64encode(thumbnail_data).decode('utf-8')
             except Exception as e:
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Error reading thumbnail file",
-                    error_code=ErrorCode.BAD_REQUEST
+                    error_code=constants.ErrorCode.BAD_REQUEST
                 )
 
         storage_place = uuid.uuid4()
@@ -251,10 +250,10 @@ class DatasetService:
                     filename=file.filename
                 )
             except ValueError as e:
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST, 
                     detail=str(e),
-                    error_code=ErrorCode.BAD_REQUEST
+                    error_code=constants.ErrorCode.BAD_REQUEST
                 )
 
             # Upload MinIO
@@ -299,51 +298,51 @@ class DatasetService:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
         if not dataset:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if not self._has_write_permission(dataset, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to update this dataset",
-                error_code=ErrorCode.FORBIDDEN
+                error_code=constants.ErrorCode.FORBIDDEN
             )
 
         update_data = payload.model_dump(exclude_none=True)
 
         if thumbnail_file:
             if not thumbnail_file.content_type.startswith("image/"):
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only image file uploads are supported for thumbnail",
-                    error_code=ErrorCode.BAD_REQUEST
+                    error_code=constants.ErrorCode.BAD_REQUEST
                 )
             try:
                 thumbnail_data = await thumbnail_file.read()
                 update_data["thumbnail"] = base64.b64encode(thumbnail_data).decode('utf-8')
             except Exception as e:
-                raise CustomException(
+                raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Error reading thumbnail file",
-                    error_code=ErrorCode.BAD_REQUEST
+                    error_code=constants.ErrorCode.BAD_REQUEST
                 )
 
         if not update_data:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No data is provided for updating",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         update_data["latestUpdate"] = datetime.now(timezone.utc).timestamp()
@@ -351,10 +350,10 @@ class DatasetService:
         is_updated = await self.repo.update_dataset(oid, update_data)
 
         if not is_updated:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         return await self.get_dataset_detail(current_user, dataset_id)
@@ -366,34 +365,34 @@ class DatasetService:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         dataset = await self.repo.get_dataset_by_id(dataset_id=oid)
         if not dataset:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if not self._has_write_permission(dataset, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to delete this dataset",
-                error_code=ErrorCode.FORBIDDEN
+                error_code=constants.ErrorCode.FORBIDDEN
             )
 
         is_deleted = await self.repo.delete_dataset(oid)
 
         if not is_deleted:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
     @staticmethod
@@ -439,26 +438,26 @@ class DatasetService:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         dataset = await self.repo.get_dataset_by_id(oid, include_data_link=True)
         if not dataset or not self._has_read_permission(dataset, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         data_link = dataset.get("data_link")
         if not data_link:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found, access denied, or data link missing",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
             
         bucket_name = data_link.get("bucket_name")
@@ -505,10 +504,10 @@ class DatasetService:
             return features
         except Exception as e:
             print(f"Exception when getting dataset features: {str(e)}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to process features: {str(e)}",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     """
@@ -518,26 +517,26 @@ class DatasetService:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         dataset = await self.repo.get_dataset_by_id(oid, include_data_link=True)
         if not dataset or not self._has_read_permission(dataset, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         data_link = dataset.get("data_link")
         if not data_link:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found, access denied, or data link missing",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         bucket_name = data_link.get("bucket_name")
@@ -556,31 +555,31 @@ class DatasetService:
             return df_preview.to_dict(orient='records'), total_rows
         except Exception as e:
             print(f"Exception when getting dataset preview: {str(e)}")
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to read dataset: {str(e)}",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     """
     Create Metadata Of Job
     """
-    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
+    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: TrainingConfig) -> str:
         try:
             oid = ObjectId(dataset_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dataset ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         data_doc = await self.repo.get_dataset_by_id(oid)
         if not data_doc or not self._has_read_permission(data_doc, current_user):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Dataset not found or access denied",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         # Save Job
@@ -604,4 +603,3 @@ class DatasetService:
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return inserted_doc["_id"]
- 

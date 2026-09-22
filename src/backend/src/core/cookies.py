@@ -2,7 +2,7 @@
 from fastapi import Response
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 class CookieManager:

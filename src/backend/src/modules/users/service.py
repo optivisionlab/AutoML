@@ -8,10 +8,10 @@ from bson.errors import InvalidId
 from fastapi import UploadFile, status
 
 # Local Libraries
-from src.core.exceptions import CustomException
-from src.shared.constants import ErrorCode
-from src.modules.users.repository import UserRepository
+from src.core import exceptions
+from src.shared import constants
 from src.modules.users.schemas import UserResponse, UserDetailResponse, UpdateUserRequest, ChangePasswordRequest
+from src.modules.users.repository import UserRepository
 
 
 class UserService:
@@ -25,19 +25,19 @@ class UserService:
         try:
             user_id = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         user = await self.repo.get_user_by_id(user_id)
 
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User information not found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         user['_id'] = str(user['_id'])
@@ -77,19 +77,19 @@ class UserService:
         try:
             oid = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         update_data = payload.model_dump(exclude_unset=True)
 
         if not update_data:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No data is provided for updating",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         is_updated = await self.repo.update_user(oid, update_data)
@@ -99,10 +99,10 @@ class UserService:
 
         user_exists = await self.repo.get_user_by_id(oid)
         if not user_exists:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No user found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         return await self.get_user_details(user_id)
@@ -114,19 +114,19 @@ class UserService:
         try:
             oid = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         is_deleted = await self.repo.delete_user_completely(oid)
 
         if not is_deleted:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No user found to delete",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
     """
@@ -136,26 +136,26 @@ class UserService:
         try:
             oid = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         user = await self.repo.get_user_by_id(oid)
         if not user:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No user found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         avatar_base64 = user.get('avatar')
         if not avatar_base64:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="This user has not updated their profile picture",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         try:
@@ -164,10 +164,10 @@ class UserService:
 
             return base64.b64decode(avatar_base64)
         except Exception as e:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"The image data is corrupted: {str(e)}",
-                error_code=ErrorCode.INTERNAL_SERVER_ERROR
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
     """
@@ -177,25 +177,25 @@ class UserService:
         try:
             oid = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         user_exists = await self.repo.get_user_by_id(oid)
         if not user_exists:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No user found",
-                error_code=ErrorCode.NOT_FOUND
+                error_code=constants.ErrorCode.NOT_FOUND
             )
 
         if not file.content_type.startswith("image/"):
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only image file uploads are supported",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         avatar_data = await file.read()
@@ -212,32 +212,32 @@ class UserService:
         try:
             oid = ObjectId(user_id)
         except InvalidId:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid user ID format",
-                error_code=ErrorCode.BAD_REQUEST,
+                error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
         hashed_old_password = await self.repo.get_local_password(oid)
         if not hashed_old_password:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This account does not have a password set",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         if payload.old_password != hashed_old_password:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="The current password is incorrect",
-                error_code=ErrorCode.UNAUTHORIZED
+                error_code=constants.ErrorCode.UNAUTHORIZED
             )
 
         if payload.old_password == payload.new_password:
-            raise CustomException(
+            raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The new password must not be the same as the current password",
-                error_code=ErrorCode.BAD_REQUEST
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
         await self.repo.update_password(oid, payload.new_password)

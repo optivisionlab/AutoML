@@ -11,7 +11,7 @@ from aiokafka.admin import AIOKafkaAdminClient, NewTopic
 from aiokafka.errors import KafkaError
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 # Logging
@@ -44,7 +44,7 @@ class KafkaClient:
         if isinstance(value, str):
             return value.encode("utf-8")
         if isinstance(value, (dict, list, int, float, bool)):
-            return json.dumps(value, ensure_ascii=False).encode("utf-8")
+            return json.dumps(value, default=str, ensure_ascii=False).encode("utf-8")
         return str(value).encode("utf-8")
 
     @staticmethod

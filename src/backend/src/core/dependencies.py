@@ -8,10 +8,9 @@ from fastapi.security import OAuth2PasswordBearer
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.config.database import get_db
-from src.core.security import jwt_service
-from src.core.exceptions import CustomException
-from src.shared.constants import ErrorCode
+from src.config import databases
+from src.core import security, exceptions
+from src.shared import constants
 
 
 # Define the OAuth2 scheme.
@@ -19,32 +18,32 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: AsyncDatabase = Depends(get_db)
+    db: AsyncDatabase = Depends(databases.get_db)
 ):
-    payload = jwt_service.verify_token(token)
+    payload = security.jwt_service.verify_token(token)
 
     if not payload:
-        raise CustomException(
+        raise exceptions.CustomException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-            error_code=ErrorCode.UNAUTHORIZED.value,
+            error_code=constants.ErrorCode.UNAUTHORIZED.value,
         )
 
     try:
         user_id = ObjectId(payload['sub'])
     except InvalidId:
-        raise CustomException(
+        raise exceptions.CustomException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication data format",
-            error_code=ErrorCode.UNAUTHORIZED,
+            error_code=constants.ErrorCode.UNAUTHORIZED,
         )
 
     user = await db.tbl_User.find_one({'_id': user_id})
     if not user:
-        raise CustomException(
+        raise exceptions.CustomException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="The account does not exist or has been locked",
-            error_code=ErrorCode.UNAUTHORIZED,
+            error_code=constants.ErrorCode.UNAUTHORIZED,
         )
 
     # Standardize IDs
@@ -56,10 +55,10 @@ async def require_admin(
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     if current_user.get("role") != "admin":
-        raise CustomException(
+        raise exceptions.CustomException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin privileges required.",
-            error_code=ErrorCode.FORBIDDEN 
+            error_code=constants.ErrorCode.FORBIDDEN 
         )
 
     return current_user
@@ -73,10 +72,10 @@ async def require_owner_or_admin(
     is_admin = current_user.get("role") == "admin"
 
     if not (is_owner or is_admin):
-        raise CustomException(
+        raise exceptions.CustomException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access or modify this account.",
-            error_code=ErrorCode.FORBIDDEN
+            error_code=constants.ErrorCode.FORBIDDEN
         )
 
     return current_user

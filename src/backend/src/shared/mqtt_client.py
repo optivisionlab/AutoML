@@ -4,7 +4,7 @@ import aiomqtt
 import logging
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 # Logging

@@ -13,7 +13,7 @@ from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 # Logging

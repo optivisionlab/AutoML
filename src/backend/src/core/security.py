@@ -6,7 +6,7 @@ from jwt import encode, decode, PyJWTError
 from passlib.context import CryptContext
 
 # Local Libraries
-from src.config.settings import settings
+from src.config import settings
 
 
 # Initialize the password hashing context
