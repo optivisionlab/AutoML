@@ -1,0 +1,91 @@
+{
+    "job_id": "f3e1c8b0-4d2a-4f5b-9c3e-1a2b3c4d5e6f",
+    "version": "1.0.0",
+    "mode": "automl",
+    "problem_type": "regression",
+    "feature": {},
+    "target": {
+        "name": "target_variable",
+        "type": "numeric"
+    },
+    "data": "url_to_your_dataset",
+    "metric": "mean_squared_error",
+    "split": {
+        "train_size": 0.8,
+        "random_state": 42
+    },
+    "results": {
+        "preprocess":{
+            "0": {
+                "process_step": {
+                    "1":{
+                        "step": "missing_value_imputation",
+                        "strategy": "mean"
+                    },
+                    "2": {
+                        "step": "scaling",
+                        "method": "standardization"
+                    }
+                },
+                "leaderboard": {
+                    "model_1": {
+                        "algorithm": "linear_regression",
+                        "hyperparameters": {
+                            "fit_intercept": true,
+                            "normalize": false
+                        },
+                        "performance": {
+                            "mean_squared_error": 0.025,
+                            "r2_score": 0.85
+                        }
+                    },
+                    "model_2": {
+                        "algorithm": "linear_regression",
+                        "hyperparameters": {
+                            "fit_intercept": false,
+                            "normalize": false
+                        },
+                        "performance": {
+                            "mean_squared_error": 0.025,
+                            "r2_score": 0.85
+                        }
+                    },
+                    "model_3": {
+                        "algorithm": "random_forest",
+                        "hyperparameters": {
+                            "n_estimators": 100,
+                            "max_depth": 10
+                        },
+                        "performance": {
+                            "mean_squared_error": 0.015,
+                            "r2_score": 0.90
+                        }
+                    },
+                    "model_4": {
+                        "algorithm": "random_forest",
+                        "hyperparameters": {
+                            "n_estimators": 100,
+                            "max_depth": 100
+                        },
+                        "performance": {
+                            "mean_squared_error": 0,
+                            "r2_score": 0
+                        }
+                    }
+                }
+            },
+            "1": {
+                "process_step": [
+                    {
+                        "step": "missing_value_imputation",
+                        "strategy": "median"
+                    },
+                    {
+                        "step": "scaling",
+                        "method": "minmaxscale"
+                    }
+                ]
+            }
+        }
+    }
+}
