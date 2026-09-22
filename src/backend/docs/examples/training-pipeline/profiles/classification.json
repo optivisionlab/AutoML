@@ -1,0 +1,28 @@
+{
+  "schema_version": "2.0.0",
+  "profile_id": "classification",
+  "profile_version": "1.0.0",
+  "problem_type": "classification",
+  "template_ref": {"template_id": "tabular-training", "template_version": "1.0.0"},
+  "support": {"engine_available": true, "profile_runtime_implemented": false},
+  "target": {"required": true, "used_for_fit": true, "role": "class_label"},
+  "evaluation_defaults": {"method": "cross_validation", "parameters": {"cv": 5}, "splitter": null, "primary_metric": "accuracy"},
+  "metric_catalog": [
+    {"id": "accuracy", "label": "Accuracy", "direction": "maximize", "display_format": "ratio_as_percent"},
+    {"id": "balanced_accuracy", "label": "Balanced accuracy", "direction": "maximize", "display_format": "ratio_as_percent"},
+    {"id": "f1_macro", "label": "F1 (macro)", "direction": "maximize", "display_format": "decimal"},
+    {"id": "f1_weighted", "label": "F1 (weighted)", "direction": "maximize", "display_format": "decimal"},
+    {"id": "precision_macro", "label": "Precision (macro)", "direction": "maximize", "display_format": "ratio_as_percent"},
+    {"id": "precision_weighted", "label": "Precision (weighted)", "direction": "maximize", "display_format": "ratio_as_percent"},
+    {"id": "recall_macro", "label": "Recall (macro)", "direction": "maximize", "display_format": "ratio_as_percent"},
+    {"id": "recall_weighted", "label": "Recall (weighted)", "direction": "maximize", "display_format": "ratio_as_percent"}
+  ],
+  "node_policies": {
+    "preprocess": {"target_handling": "encode_labels"},
+    "search": {"evaluation_method": "cross_validation"},
+    "refit": {"mode": "fit_with_selected_parameters"},
+    "select_best": {"metric_source": "resolved_job_evaluation"}
+  },
+  "optional_details": ["class_labels", "class_distribution", "averaging", "positive_label"],
+  "optional_outputs": ["model", "preprocessor", "target_encoder", "confusion_matrix"]
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "2.0.0",
+  "job_id": "job-example-001",
+  "node_id": "gbr_refit",
+  "stage_id": "refit",
+  "kind": "refit",
+  "name": "Refit GradientBoostingRegressor",
+  "model_run_id": "run-gbr-001",
+  "depends_on": ["gbr_search"],
+  "dependency_policy": "all_succeeded",
+  "attempt": 1,
+  "revision": 2,
+  "status": "running",
+  "activity": {"code": "fitting_best_estimator", "message": "Đang fit GradientBoostingRegressor với bộ tham số tốt nhất trên 766 dòng dữ liệu đã tiền xử lý."},
+  "progress": {"unit": null, "completed": null, "total": null, "percent": null},
+  "started_at": "2026-09-20T03:00:56Z",
+  "updated_at": "2026-09-20T03:00:56Z",
+  "finished_at": null,
+  "last_heartbeat_at": "2026-09-20T03:00:56Z",
+  "parameters": {"n_estimators": 100, "learning_rate": 0.05, "max_depth": 3},
+  "inputs": {
+    "features": {"artifact_id": "artifact-features-001", "shape": [766, 2]},
+    "target": {"artifact_id": "artifact-target-001", "shape": [766]},
+    "search_result": {"node_id": "gbr_search", "revision": 20}
+  },
+  "outputs": null,
+  "metrics": [],
+  "details": {"estimator": {"key": "3", "class_name": "GradientBoostingRegressor"}, "fit_scope": "full_training_data"},
+  "error": null,
+  "termination": {"reason": null, "time_limit_reached": null}
+}

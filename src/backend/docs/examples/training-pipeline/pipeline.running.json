@@ -1,0 +1,60 @@
+{
+  "schema_version": "2.0.0",
+  "job_id": "job-example-001",
+  "profile_ref": {"profile_id": "regression", "profile_version": "1.0.0", "template_id": "tabular-training", "template_version": "1.0.0"},
+  "status": "running",
+  "created_at": "2026-09-20T03:00:00Z",
+  "started_at": "2026-09-20T03:00:01Z",
+  "finished_at": null,
+  "updated_at": "2026-09-20T03:01:00Z",
+  "cursor": 120,
+  "dataset": {
+    "id": "dataset-example-001",
+    "name": "diabetes.csv",
+    "version": "example-v1"
+  },
+  "task": {
+    "problem_type": "regression",
+    "target": "DiabetesPedigreeFunction",
+    "features": ["Pregnancies", "Glucose"]
+  },
+  "search": {
+    "algorithm": "grid_search",
+    "parameters": {},
+    "budget": {"max_time_seconds": 900, "scope": "job"}
+  },
+  "evaluation": {
+    "method": "cross_validation",
+    "parameters": {"cv": 5},
+    "splitter": {"class_name": "KFold", "n_splits": 5, "shuffle": true, "random_state": 42},
+    "preprocessing_fit_scope": "full_dataset_before_cv",
+    "primary_metric": "mse",
+    "metrics": [{"id": "mse", "direction": "minimize", "source": "cross_validation", "aggregation": "mean"}]
+  },
+  "model_runs": [
+    {
+      "id": "run-xgb-001",
+      "estimator": {"key": "4", "class_name": "XGBRegressor"},
+      "status": "running",
+      "node_ids": ["xgb_search", "xgb_refit"]
+    },
+    {
+      "id": "run-gbr-001",
+      "estimator": {"key": "3", "class_name": "GradientBoostingRegressor"},
+      "status": "running",
+      "node_ids": ["gbr_search", "gbr_refit"]
+    }
+  ],
+  "nodes": [
+    {"node_id": "load_data", "stage_id": "load_data", "kind": "data_loading", "name": "Đọc dữ liệu", "model_run_id": null, "depends_on": [], "dependency_policy": "all_succeeded", "revision": 3, "status": "succeeded"},
+    {"node_id": "preprocess", "stage_id": "preprocess", "kind": "preprocessing", "name": "Tiền xử lý", "model_run_id": null, "depends_on": ["load_data"], "dependency_policy": "all_succeeded", "revision": 4, "status": "succeeded"},
+    {"node_id": "xgb_search", "stage_id": "search", "kind": "hyperparameter_search", "name": "Tìm tham số XGBRegressor", "model_run_id": "run-xgb-001", "depends_on": ["preprocess"], "dependency_policy": "all_succeeded", "revision": 8, "status": "running"},
+    {"node_id": "xgb_refit", "stage_id": "refit", "kind": "refit", "name": "Refit XGBRegressor", "model_run_id": "run-xgb-001", "depends_on": ["xgb_search"], "dependency_policy": "all_succeeded", "revision": 1, "status": "queued"},
+    {"node_id": "gbr_search", "stage_id": "search", "kind": "hyperparameter_search", "name": "Tìm tham số GradientBoostingRegressor", "model_run_id": "run-gbr-001", "depends_on": ["preprocess"], "dependency_policy": "all_succeeded", "revision": 20, "status": "succeeded"},
+    {"node_id": "gbr_refit", "stage_id": "refit", "kind": "refit", "name": "Refit GradientBoostingRegressor", "model_run_id": "run-gbr-001", "depends_on": ["gbr_search"], "dependency_policy": "all_succeeded", "revision": 2, "status": "running"},
+    {"node_id": "select_best", "stage_id": "select_best", "kind": "model_selection", "name": "Chọn mô hình tốt nhất", "model_run_id": null, "depends_on": ["xgb_refit", "gbr_refit"], "dependency_policy": "all_terminal", "revision": 1, "status": "queued"},
+    {"node_id": "save_result", "stage_id": "save_result", "kind": "persistence", "name": "Lưu kết quả", "model_run_id": null, "depends_on": ["select_best"], "dependency_policy": "all_succeeded", "revision": 1, "status": "queued"}
+  ],
+  "result": null,
+  "termination": {"reason": null, "time_limit_reached": null}
+}

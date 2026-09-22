@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0.0",
+  "job_id": "job-example-001",
+  "node_id": "gbr_search",
+  "stage_id": "search",
+  "kind": "hyperparameter_search",
+  "name": "Tìm tham số GradientBoostingRegressor",
+  "model_run_id": "run-gbr-001",
+  "depends_on": ["preprocess"],
+  "dependency_policy": "all_succeeded",
+  "attempt": 1,
+  "revision": 20,
+  "status": "succeeded",
+  "activity": {"code": "search_completed", "message": "Đã đánh giá đủ 18 bộ tham số và chọn bộ có MSE trung bình thấp nhất."},
+  "progress": {"unit": "candidate", "completed": 18, "total": 18, "percent": 100},
+  "started_at": "2026-09-20T03:00:08Z",
+  "updated_at": "2026-09-20T03:00:55Z",
+  "finished_at": "2026-09-20T03:00:55Z",
+  "last_heartbeat_at": "2026-09-20T03:00:55Z",
+  "parameters": {
+    "algorithm": "grid_search",
+    "param_grid": [{"n_estimators": [100, 200], "learning_rate": [0.01, 0.05, 0.1], "max_depth": [3, 5, 10]}],
+    "evaluation": {"metric": "mse", "direction": "minimize", "splitter": {"class_name": "KFold", "n_splits": 5, "shuffle": true, "random_state": 42}, "preprocessing_fit_scope": "full_dataset_before_cv"}
+  },
+  "inputs": {"features": {"artifact_id": "artifact-features-001", "shape": [766, 2]}, "target": {"artifact_id": "artifact-target-001", "shape": [766]}},
+  "outputs": {
+    "best_parameters": {"n_estimators": 100, "learning_rate": 0.05, "max_depth": 3},
+    "cv_results": {"artifact_id": "artifact-gbr-cv-results-001", "candidate_count": 18}
+  },
+  "metrics": [{"id": "mse", "value": 0.1086, "direction": "minimize", "source": "cross_validation", "aggregation": "mean"}],
+  "details": {"estimator": {"key": "3", "class_name": "GradientBoostingRegressor"}},
+  "error": null,
+  "termination": {"reason": "completed", "time_limit_reached": false}
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": "2.0.0",
+  "job_id": "job-example-001",
+  "node_id": "xgb_search",
+  "stage_id": "search",
+  "kind": "hyperparameter_search",
+  "name": "Tìm tham số XGBRegressor",
+  "model_run_id": "run-xgb-001",
+  "depends_on": ["preprocess"],
+  "dependency_policy": "all_succeeded",
+  "attempt": 1,
+  "revision": 8,
+  "status": "running",
+  "activity": {"code": "evaluating_candidates", "message": "Đã đánh giá đầy đủ 6/16 bộ tham số bằng cross-validation; đang đánh giá các bộ còn lại."},
+  "progress": {"unit": "candidate", "completed": 6, "total": 16, "percent": 37.5},
+  "started_at": "2026-09-20T03:00:08Z",
+  "updated_at": "2026-09-20T03:01:00Z",
+  "finished_at": null,
+  "last_heartbeat_at": "2026-09-20T03:01:00Z",
+  "parameters": {
+    "algorithm": "grid_search",
+    "param_grid": [{"n_estimators": [100, 200], "learning_rate": [0.05, 0.1], "max_depth": [3, 5], "colsample_bytree": [0.7, 0.9]}],
+    "evaluation": {"metric": "mse", "direction": "minimize", "splitter": {"class_name": "KFold", "n_splits": 5, "shuffle": true, "random_state": 42}, "preprocessing_fit_scope": "full_dataset_before_cv"}
+  },
+  "inputs": {"features": {"artifact_id": "artifact-features-001", "shape": [766, 2]}, "target": {"artifact_id": "artifact-target-001", "shape": [766]}},
+  "outputs": null,
+  "metrics": [],
+  "details": {
+    "estimator": {"key": "4", "class_name": "XGBRegressor"},
+    "best_so_far": {
+      "parameters": {"n_estimators": 100, "learning_rate": 0.05, "max_depth": 3, "colsample_bytree": 0.9},
+      "metrics": [{"id": "mse", "value": 0.1124, "direction": "minimize", "source": "cross_validation", "aggregation": "mean"}]
+    }
+  },
+  "error": null,
+  "termination": {"reason": null, "time_limit_reached": null}
+}

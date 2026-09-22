@@ -1,0 +1,47 @@
+{
+  "schema_version": "2.0.0",
+  "job_id": "job-example-001",
+  "node_id": "preprocess",
+  "stage_id": "preprocess",
+  "kind": "preprocessing",
+  "name": "Tiền xử lý",
+  "model_run_id": null,
+  "depends_on": ["load_data"],
+  "dependency_policy": "all_succeeded",
+  "attempt": 1,
+  "revision": 4,
+  "status": "succeeded",
+  "activity": {"code": "preprocessing_completed", "message": "Đã chuẩn hóa 2 cột số; giữ lại 766 dòng có target hợp lệ."},
+  "progress": {"unit": "step", "completed": 3, "total": 3, "percent": 100},
+  "started_at": "2026-09-20T03:00:03Z",
+  "updated_at": "2026-09-20T03:00:07Z",
+  "finished_at": "2026-09-20T03:00:07Z",
+  "last_heartbeat_at": "2026-09-20T03:00:07Z",
+  "parameters": {
+    "features": ["Pregnancies", "Glucose"],
+    "target": "DiabetesPedigreeFunction",
+    "text_cardinality_threshold": 50,
+    "preprocessing_fit_scope": "full_dataset_before_cv",
+    "column_transformer": {"remainder": "passthrough", "sparse_threshold": 0.3},
+    "target_conversion": {"function": "pandas.to_numeric", "errors": "coerce", "drop_invalid_rows": true}
+  },
+  "inputs": {"dataset": {"artifact_id": "artifact-loaded-data-001", "row_count": 768}},
+  "outputs": {
+    "features": {"artifact_id": "artifact-features-001", "shape": [766, 2], "format": "dense_array"},
+    "target": {"artifact_id": "artifact-target-001", "shape": [766]},
+    "preprocessor": {"artifact_id": "artifact-preprocessor-001", "class_name": "ColumnTransformer"}
+  },
+  "metrics": [],
+  "details": {
+    "steps_completed": ["coerce_target", "detect_column_types", "fit_transform_features"],
+    "row_count_before": 768,
+    "row_count_after": 766,
+    "dropped_invalid_target_rows": 2,
+    "target_encoder": null,
+    "transformer_branches": [
+      {"name": "numeric", "columns": ["Pregnancies", "Glucose"], "applied": true, "steps": [{"class_name": "SimpleImputer", "parameters": {"strategy": "median"}}, {"class_name": "StandardScaler", "parameters": {"with_mean": true, "with_std": true}}]}
+    ]
+  },
+  "error": null,
+  "termination": {"reason": "completed", "time_limit_reached": false}
+}

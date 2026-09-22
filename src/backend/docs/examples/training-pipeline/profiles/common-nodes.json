@@ -1,0 +1,14 @@
+{
+  "schema_version": "2.0.0",
+  "template_id": "tabular-training",
+  "template_version": "1.0.0",
+  "stages": [
+    {"stage_id": "load_data", "kind": "data_loading", "name": "Đọc dữ liệu", "scope": "job", "depends_on": [], "dependency_policy": "all_succeeded"},
+    {"stage_id": "preprocess", "kind": "preprocessing", "name": "Tiền xử lý", "scope": "job", "depends_on": ["load_data"], "dependency_policy": "all_succeeded"},
+    {"stage_id": "search", "kind": "hyperparameter_search", "name": "Tìm tham số và đánh giá", "scope": "model_run", "depends_on": ["preprocess"], "dependency_policy": "all_succeeded"},
+    {"stage_id": "refit", "kind": "refit", "name": "Hoàn thiện mô hình", "scope": "model_run", "depends_on": ["search"], "dependency_policy": "all_succeeded"},
+    {"stage_id": "select_best", "kind": "model_selection", "name": "Chọn mô hình tốt nhất", "scope": "job", "depends_on": ["refit"], "dependency_policy": "all_terminal"},
+    {"stage_id": "save_result", "kind": "persistence", "name": "Lưu kết quả", "scope": "job", "depends_on": ["select_best"], "dependency_policy": "all_succeeded"}
+  ],
+  "node_sections": ["activity", "progress", "parameters", "inputs", "outputs", "metrics", "details", "error"]
+}

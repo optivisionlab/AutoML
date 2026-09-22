@@ -1,0 +1,24 @@
+{
+  "schema_version": "2.0.0",
+  "profile_id": "regression",
+  "profile_version": "1.0.0",
+  "problem_type": "regression",
+  "template_ref": {"template_id": "tabular-training", "template_version": "1.0.0"},
+  "support": {"engine_available": true, "profile_runtime_implemented": false},
+  "target": {"required": true, "used_for_fit": true, "role": "numeric_value"},
+  "evaluation_defaults": {"method": "cross_validation", "parameters": {"cv": 5}, "splitter": {"class_name": "KFold", "n_splits": 5, "shuffle": true, "random_state": 42}, "primary_metric": "mse"},
+  "metric_catalog": [
+    {"id": "mse", "label": "MSE", "direction": "minimize", "display_format": "decimal"},
+    {"id": "mae", "label": "MAE", "direction": "minimize", "display_format": "decimal"},
+    {"id": "mape", "label": "MAPE", "direction": "minimize", "display_format": "percent_value"},
+    {"id": "r2", "label": "R2", "direction": "maximize", "display_format": "decimal"}
+  ],
+  "node_policies": {
+    "preprocess": {"target_handling": "coerce_numeric_drop_invalid"},
+    "search": {"evaluation_method": "cross_validation"},
+    "refit": {"mode": "fit_with_selected_parameters"},
+    "select_best": {"metric_source": "resolved_job_evaluation"}
+  },
+  "optional_details": ["dropped_invalid_target_rows", "target_summary"],
+  "optional_outputs": ["model", "preprocessor", "residual_summary"]
+}
