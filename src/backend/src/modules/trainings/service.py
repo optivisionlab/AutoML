@@ -11,7 +11,7 @@ import pandas as pd
 # Local Libraries
 from src.shared import minio_service, search_space, MapReduceManager
 from src.modules.notifications import NotificationService
-from src.modules.preprocessing import TabularPreprocessor, CVStrategyConfig
+from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
 from src.modules.trainings.tasks import train_single_model_task
 from src.modules.trainings.schemas import AutoMLPipelineResult, ModelScoreItem, JobSuccessPayload, ModelStorageInfo
 from src.modules.trainings.repository import TrainingRepository
@@ -29,17 +29,13 @@ class TrainingService:
         self.repo = repo
         self.notif_service = notif_service
 
-    # Distributed AutoML Pipeline Helpers
     @staticmethod
     def _prepare_pipeline_inputs(
         df: pd.DataFrame,
         target_col: str,
         feature_cols: list[str] | None
-    ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str]]:
-        """
-        Preprocess tabular dataset in RAM and serialize data partitions for distributed workers.
-        """
-        (X_train, y_train), test_data, cv_config, feature_names = TabularPreprocessor.prepare_data(
+    ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
+        (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
@@ -49,7 +45,7 @@ class TrainingService:
         train_bytes = pickle.dumps((X_train, y_train))
         test_bytes = pickle.dumps(test_data) if test_data is not None else None
 
-        return train_bytes, test_bytes, cv_config, feature_names
+        return train_bytes, test_bytes, cv_config, feature_names, preprocessor
 
     @staticmethod
     async def _dispatch_and_collect_tasks(
@@ -163,7 +159,7 @@ class TrainingService:
         custom_params = custom_params or {}
 
         # Preprocess and serialize partitions
-        train_bytes, test_bytes, cv_config, feature_names = cls._prepare_pipeline_inputs(
+        train_bytes, test_bytes, cv_config, feature_names, preprocessor = cls._prepare_pipeline_inputs(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
@@ -187,13 +183,24 @@ class TrainingService:
             metric_sort=metric_sort,
         )
 
+        # Bundle self-contained model artifact with preprocessor
+        best_estimator = pickle.loads(best_raw["model_bytes"])
+        artifact = {
+            "model": best_estimator,
+            "preprocessor": preprocessor,
+            "feature_names": feature_names,
+            "target_name": target_col,
+            "problem_type": "classification",
+        }
+        artifact_bytes = pickle.dumps(artifact)
+
         return AutoMLPipelineResult(
             best_model_id=best_entry.model_id,
             best_model=best_entry.model_name,
             best_params=best_entry.best_params,
             best_score=best_score,
             model_scores=model_scores,
-            best_model_bytes=best_raw["model_bytes"],
+            best_model_bytes=artifact_bytes,
             cv_strategy=cv_config,
             feature_names=feature_names,
             time_limit_reached=False,

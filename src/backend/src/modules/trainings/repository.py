@@ -102,3 +102,49 @@ class TrainingRepository:
             }
         }
         await self.__job_collection.update_one(query, update_data)
+
+    async def update_activation(self, job_id: str, activate: int) -> bool:
+        """
+        Update job model deployment activation status (1 for active, 0 for inactive)
+        """
+        try:
+            query = {"_id": ObjectId(job_id)}
+        except (InvalidId, TypeError):
+            query = {"_id": job_id}
+
+        result = await self.__job_collection.update_one(query, {"$set": {"activate": activate}})
+        return result.modified_count > 0
+
+    async def get_jobs_with_count(
+        self,
+        user_id: str,
+        skip: int,
+        limit: int,
+        activate: int | None = None,
+        data_name: str | None = None,
+        sort_params: list[tuple] | None = None,
+        is_admin: bool = False,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Retrieve paginated list of jobs with optional activation, data name filter, and sorting.
+        """
+        filter_query: dict[str, Any] = {}
+        if not is_admin:
+            filter_query["user.id"] = user_id
+
+        if activate is not None:
+            filter_query["activate"] = activate
+
+        if data_name:
+            filter_query["data.name"] = {"$regex": data_name, "$options": "i"}
+
+        total_items = await self.__job_collection.count_documents(filter_query)
+
+        cursor = self.__job_collection.find(filter_query)
+        if sort_params:
+            cursor = cursor.sort(sort_params)
+
+        cursor = cursor.skip(skip).limit(limit)
+        jobs = await cursor.to_list(length=limit)
+
+        return jobs, total_items

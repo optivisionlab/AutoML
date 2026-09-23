@@ -13,8 +13,8 @@ services:
       - pymapreduce_wal:/tmp
     command: >
       sh -c "
-      pip install --no-cache-dir pymapreduce-core==0.1.9 &&
-      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive}
+      pip install --no-cache-dir pymapreduce-core==0.1.9 > /dev/null 2>&1 &&
+      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v 'Disaster Recovery'
       "
     networks:
       - pymapreduce_net
@@ -33,12 +33,14 @@ services:
       - ./requirements.txt:/app/requirements.txt:ro
     command: >
       sh -c "
-      apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/* &&
-      pip install --no-cache-dir -r /app/requirements.txt &&
+      apt-get update -qq > /dev/null 2>&1 &&
+      apt-get install -y -qq --no-install-recommends libgomp1 > /dev/null 2>&1 &&
+      rm -rf /var/lib/apt/lists/* &&
+      pip install --no-cache-dir -r /app/requirements.txt > /dev/null 2>&1 &&
       if [ -n \"\$$WORKER_CPUS\" ]; then
-        mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS
       else
-        mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777}
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777}
       fi
       "
     deploy:
