@@ -10,21 +10,24 @@ import pandas as pd
 
 # Local Libraries
 from src.shared import minio_service, search_space, MapReduceManager
+from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
 from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
 from src.modules.trainings.tasks import train_single_model_task
-from src.modules.trainings.schemas import AutoMLPipelineResult, ModelScoreItem, JobSuccessPayload, ModelStorageInfo
+from src.modules.trainings.schemas import (
+    AutoMLPipelineResult,
+    ModelScoreItem,
+    JobSuccessPayload,
+    ModelStorageInfo,
+)
 from src.modules.trainings.repository import TrainingRepository
 
 
-# Logging
+# Loggng
 logger = logging.getLogger(__name__)
 
 
 class TrainingService:
-    """
-    Service handling AutoML distributed training pipeline, model persistence and background training job lifecycle.
-    """
     def __init__(self, repo: TrainingRepository, notif_service: NotificationService):
         self.repo = repo
         self.notif_service = notif_service
@@ -33,12 +36,14 @@ class TrainingService:
     def _prepare_pipeline_inputs(
         df: pd.DataFrame,
         target_col: str,
-        feature_cols: list[str] | None
+        feature_cols: list[str] | None,
+        problem_type: str = "classification",
     ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
         (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
+            problem_type=problem_type,
         )
         logger.info(f"Dataset preprocessed. Applied CV Strategy: {cv_config.description}")
 
@@ -57,14 +62,18 @@ class TrainingService:
         cv_config: CVStrategyConfig,
         metric_list: list[str],
         metric_sort: str,
+        problem_type: str = "classification",
     ) -> list[dict[str, Any]]:
-        """
-        Dispatch parallel training tasks to PyMapReduce cluster and collect results.
-        """
+        space_models = (
+            search_space.REGRESSION_MODELS
+            if problem_type == "regression"
+            else search_space.CLASSIFICATION_MODELS
+        )
+
         tasks = []
         for model_name in models_to_train:
-            if model_name in search_space.CLASSIFICATION_MODELS:
-                param_grid = custom_params.get(model_name) or search_space.CLASSIFICATION_MODELS[model_name]
+            if model_name in space_models:
+                param_grid = custom_params.get(model_name) or space_models[model_name]
             else:
                 logger.warning(f"Model '{model_name}' not in predefined search space, using default.")
                 param_grid = [{}]
@@ -77,10 +86,11 @@ class TrainingService:
                 cv_config,
                 metric_list,
                 metric_sort,
+                problem_type,
             )
             tasks.append(task_coro)
 
-        logger.info(f"Dispatched {len(tasks)} parallel model training tasks to PyMapReduce...")
+        logger.info(f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce...")
         raw_outputs = await asyncio.gather(*tasks)
 
         valid_results: list[dict[str, Any]] = []
@@ -101,10 +111,8 @@ class TrainingService:
     def _evaluate_and_select_best_model(
         valid_results: list[dict[str, Any]],
         metric_sort: str,
+        problem_type: str = "classification",
     ) -> tuple[ModelScoreItem, dict[str, Any], float, list[ModelScoreItem]]:
-        """
-        Extract model scores, rank models according to metric_sort, and identify the best candidate.
-        """
         model_scores = [
             ModelScoreItem(
                 model_id=idx,
@@ -116,10 +124,18 @@ class TrainingService:
         ]
 
         normalized_metric = metric_sort.strip().lower().replace(" ", "_")
-        best_model_entry = max(
-            model_scores,
-            key=lambda x: x.scores.get(normalized_metric, -float("inf")),
-        )
+
+        # Select best model: Minimize error metrics, Maximize accuracy/R2
+        if normalized_metric in LOWER_IS_BETTER_METRICS:
+            best_model_entry = min(
+                model_scores,
+                key=lambda x: x.scores.get(normalized_metric, float("inf")),
+            )
+        else:
+            best_model_entry = max(
+                model_scores,
+                key=lambda x: x.scores.get(normalized_metric, -float("inf")),
+            )
 
         best_raw_result = next(
             r for r in valid_results if r.get("model_name") == best_model_entry.model_name
@@ -132,7 +148,6 @@ class TrainingService:
 
         return best_model_entry, best_raw_result, best_score, model_scores
 
-    # Main AutoML Pipeline Entrypoint
     @classmethod
     async def train_automl_pipeline(
         cls,
@@ -140,32 +155,35 @@ class TrainingService:
         target_col: str | None = None,
         feature_cols: list[str] | None = None,
         metric_list: list[str] | None = None,
-        metric_sort: str = "accuracy",
+        metric_sort: str | None = None,
         models_to_train: list[str] | None = None,
-        custom_params: dict[str, Any] | None = None
+        custom_params: dict[str, Any] | None = None,
+        problem_type: str = "classification",
     ) -> AutoMLPipelineResult:
-        """
-        Pure in-memory AutoML training pipeline using PyMapReduce distributed tasks.
-        """
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
 
         driver = await MapReduceManager.get_driver()
 
-        # Resolve defaults
         target_col = target_col or str(df.columns[-1])
-        metric_list = metric_list or search_space.METRIC_LIST
-        models_to_train = models_to_train or list(search_space.CLASSIFICATION_MODELS.keys())
+        if problem_type == "regression":
+            metric_list = metric_list or search_space.REGRESSION_METRIC_LIST
+            metric_sort = metric_sort or "r2"
+            models_to_train = models_to_train or list(search_space.REGRESSION_MODELS.keys())
+        else:
+            metric_list = metric_list or search_space.CLASSIFICATION_METRIC_LIST
+            metric_sort = metric_sort or "accuracy"
+            models_to_train = models_to_train or list(search_space.CLASSIFICATION_MODELS.keys())
+
         custom_params = custom_params or {}
 
-        # Preprocess and serialize partitions
         train_bytes, test_bytes, cv_config, feature_names, preprocessor = cls._prepare_pipeline_inputs(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
+            problem_type=problem_type,
         )
 
-        # Dispatch parallel tasks to cluster
         valid_results = await cls._dispatch_and_collect_tasks(
             driver=driver,
             models_to_train=models_to_train,
@@ -175,22 +193,22 @@ class TrainingService:
             cv_config=cv_config,
             metric_list=metric_list,
             metric_sort=metric_sort,
+            problem_type=problem_type,
         )
 
-        # Rank scores and pick best model
         best_entry, best_raw, best_score, model_scores = cls._evaluate_and_select_best_model(
             valid_results=valid_results,
             metric_sort=metric_sort,
+            problem_type=problem_type,
         )
 
-        # Bundle self-contained model artifact with preprocessor
         best_estimator = pickle.loads(best_raw["model_bytes"])
         artifact = {
             "model": best_estimator,
             "preprocessor": preprocessor,
             "feature_names": feature_names,
             "target_name": target_col,
-            "problem_type": "classification",
+            "problem_type": problem_type,
         }
         artifact_bytes = pickle.dumps(artifact)
 
@@ -208,11 +226,7 @@ class TrainingService:
             total_models=len(models_to_train),
         )
 
-    # Storage & Notification Lifecycle Helpers
     async def _load_dataset_df(self, dataset_id: str) -> tuple[pd.DataFrame, str]:
-        """
-        Fetch dataset metadata from DB and load Parquet file from MinIO into pandas DataFrame.
-        """
         dataset_doc = await self.repo.get_dataset_info(dataset_id)
         if not dataset_doc or not dataset_doc.get("data_link"):
             raise ValueError(f"Dataset '{dataset_id}' not found or missing storage link.")
@@ -237,9 +251,6 @@ class TrainingService:
         model_bytes: bytes,
         version: int = 1,
     ) -> tuple[str, ModelStorageInfo]:
-        """
-        Upload serialized Best Model binary to MinIO models bucket.
-        """
         dest_model_path = f"{user_id}/{job_id}/{best_model_name}_{version}.pkl"
         await minio_service.upload_object(
             bucket_name="models",
@@ -257,9 +268,6 @@ class TrainingService:
         pipeline_result: AutoMLPipelineResult,
         storage_info: ModelStorageInfo,
     ) -> dict[str, Any]:
-        """
-        Persist training success to database and send push notification.
-        """
         final_result_payload = JobSuccessPayload(
             best_model_id=pipeline_result.best_model_id,
             best_model=pipeline_result.best_model,
@@ -296,9 +304,6 @@ class TrainingService:
         dataset_name: str,
         error_msg: str,
     ) -> None:
-        """
-        Persist training failure to database and send push notification.
-        """
         await self.repo.update_failure(job_id, error_msg)
 
         asyncio.create_task(
@@ -311,7 +316,6 @@ class TrainingService:
             )
         )
 
-    # Background Training Job Orchestrator
     async def process_training_job(
         self,
         job_id: str,
@@ -319,32 +323,23 @@ class TrainingService:
         user_id: str,
         config: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        End-to-end handler for a Kafka training job:
-        1. Fetch data from MinIO
-        2. Run distributed AutoML pipeline
-        3. Save best model to MinIO
-        4. Update DB and send notification
-        """
         dataset_name = "Unknown"
         try:
             logger.info(f"Processing AutoML Job: ID={job_id}, Dataset={dataset_id}, User={user_id}")
 
-            # Load dataset
             df, dataset_name = await self._load_dataset_df(dataset_id)
 
-            # Extract configuration
             if "config" in config and isinstance(config["config"], dict):
                 config = config["config"]
 
+            problem_type = config.get("problem_type") or "classification"
             target_col = config.get("target")
             feature_cols = config.get("features") or config.get("list_feature")
             metric_list = config.get("metrics")
-            metric_sort = config.get("metric_sort") or "accuracy"
+            metric_sort = config.get("metric_sort") or ("r2" if problem_type == "regression" else "accuracy")
             models_to_train = config.get("models")
             custom_params = config.get("custom_params")
 
-            # Execute AutoML pipeline
             pipeline_result = await self.train_automl_pipeline(
                 df=df,
                 target_col=target_col,
@@ -353,9 +348,9 @@ class TrainingService:
                 metric_sort=metric_sort,
                 models_to_train=models_to_train,
                 custom_params=custom_params,
+                problem_type=problem_type,
             )
 
-            # Save best model artifact to MinIO
             _, storage_info = await self._save_best_model_artifact(
                 user_id=user_id,
                 job_id=job_id,
@@ -363,7 +358,6 @@ class TrainingService:
                 model_bytes=pipeline_result.best_model_bytes,
             )
 
-            # Record success & notify user
             return await self._on_job_success(
                 job_id=job_id,
                 user_id=user_id,

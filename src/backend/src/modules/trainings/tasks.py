@@ -19,8 +19,6 @@ from src.modules.trainings.executor import (
     package_task_result,
 )
 
-
-# Suppress sklearn convergence & fit warnings on worker nodes
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -38,26 +36,18 @@ def train_single_model_task(
     cv_config: CVStrategyConfig | dict[str, Any],
     metric_list: list[str],
     metric_sort: str,
+    problem_type: str = "classification",
 ) -> dict[str, Any]:
-    """
-    Distributed Task executed on PyMapReduce Worker Node.
-    Orchestrates the 4-stage pipeline for training, tuning, and evaluating a single model.
-    """
     start_time = time.time()
 
-    # Unpack data & resolve Estimator Class
     X_train, y_train = pickle.loads(train_data_bytes)
     model_cls = MODEL_CLASS_MAP.get(model_name)
     if not model_cls:
         raise ValueError(f"Model '{model_name}' is not in MODEL_CLASS_MAP.")
 
-    # Stage 1: Build Cross-Validation Splitter
-    cv = build_cv_splitter(cv_config)
+    cv = build_cv_splitter(cv_config, problem_type=problem_type)
+    scoring = ModelService.build_scoring_dict(metric_list, problem_type=problem_type)
 
-    # Build Scorers
-    scoring = ModelService.build_scoring_dict(metric_list)
-
-    # Stage 2: Tune and Fit Model
     best_estimator, best_params, grid_search = tune_and_fit_model(
         model_cls=model_cls,
         param_grid=param_grid,
@@ -66,18 +56,18 @@ def train_single_model_task(
         metric_sort=metric_sort,
         X_train=X_train,
         y_train=y_train,
+        problem_type=problem_type,
     )
 
-    # Stage 3: Evaluate Model
     scores, primary_score = evaluate_trained_model(
         best_estimator=best_estimator,
         grid_search=grid_search,
         test_data_bytes=test_data_bytes,
         metric_list=metric_list,
         metric_sort=metric_sort,
+        problem_type=problem_type,
     )
 
-    # Stage 4: Package Result & Serialize
     task_result = package_task_result(
         model_name=model_name,
         best_estimator=best_estimator,

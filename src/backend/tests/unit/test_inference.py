@@ -169,6 +169,52 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertIn(res.predictions[1], ["ClassA", "ClassB"])
         self.assertGreaterEqual(res.latency_ms, 0.0)
 
+    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
+    async def test_predict_regression_success(self, mock_get_object):
+        from sklearn.linear_model import LinearRegression
+
+        reg_df = pd.DataFrame({
+            "feature_x": [1.0, 2.0, 3.0, 4.0],
+            "feature_y": [10.0, 20.0, 30.0, 40.0],
+            "target_col": [11.0, 22.0, 33.0, 44.0],
+        })
+        (X_tr, y_tr), _, _, reg_features, reg_preprocessor = TabularPreprocessor.prepare_data(
+            df=reg_df,
+            target_col="target_col",
+            problem_type="regression",
+        )
+        reg_model = LinearRegression()
+        reg_model.fit(X_tr, y_tr)
+
+        reg_artifact = {
+            "model": reg_model,
+            "preprocessor": reg_preprocessor,
+            "feature_names": reg_features,
+            "target_name": "target_col",
+            "problem_type": "regression",
+        }
+        mock_get_object.return_value = pickle.dumps(reg_artifact)
+
+        reg_job_doc = dict(self.mock_job_doc)
+        reg_job_doc["best_model"] = "LinearRegression"
+        reg_job_doc["config"] = {"list_feature": reg_features, "target": "target_col", "problem_type": "regression"}
+        self.mock_jobs.find_one.return_value = reg_job_doc
+
+        req = PredictRequest(
+            data=[
+                {"feature_x": 5.0, "feature_y": 50.0},
+            ]
+        )
+        res = await self.service.predict(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            request=req,
+        )
+        self.assertEqual(res.total_samples, 1)
+        self.assertEqual(len(res.predictions), 1)
+        self.assertIsInstance(res.predictions[0], (float, int))
+        self.assertAlmostEqual(res.predictions[0], 55.0, delta=1.0)
+
     async def test_predict_when_inactive_raises_forbidden(self):
         inactive_job = dict(self.mock_job_doc)
         inactive_job["activate"] = 0

@@ -1,4 +1,5 @@
 # Standard Libraries
+import gc
 import sys
 import time
 import logging
@@ -12,16 +13,20 @@ import gradio as gr
 import pandas as pd
 
 # Local Libraries
-from demo.config import AVAILABLE_DATASETS
+from demo.config import (
+    CLASSIFICATION_DATASETS,
+    REGRESSION_DATASETS
+)
 from demo.data_fetcher import fetch_uci_dataset
 from demo.ui_components import (
     EMPTY_DATASET_HTML,
     EMPTY_RESULTS_HTML,
     render_training_in_progress_html,
     render_dataset_overview_html,
-    render_champion_card_html
+    render_champion_card_html,
 )
-from src.shared.search_space import METRIC_LIST
+from src.shared import search_space
+from src.modules.models.service import LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing.service import TabularPreprocessor
 from src.modules.trainings.service import TrainingService
 
@@ -35,11 +40,71 @@ CSS_PATH = Path(__file__).resolve().parent / "style.css"
 CUSTOM_CSS = CSS_PATH.read_text(encoding="utf-8") if CSS_PATH.exists() else ""
 
 
-def on_dataset_select(dataset_choice: str, progress: gr.Progress = gr.Progress()):
+def on_problem_type_change(problem_type: str):
     """
-    Handle event when user selects and loads a dataset from the UCI Repository
+    Handle event when user switches between Classification and Regression.
+    Updates available datasets, primary metric options, and resets state to free memory.
     """
-    progress(0.3, desc="Fetching dataset from UCI Repository...")
+    is_regression = (problem_type.lower() == "regression")
+    datasets = REGRESSION_DATASETS if is_regression else CLASSIFICATION_DATASETS
+    metrics = search_space.REGRESSION_METRIC_LIST if is_regression else search_space.CLASSIFICATION_METRIC_LIST
+    default_metric = "r2" if is_regression else "accuracy"
+    default_dataset = datasets[0] if datasets else None
+
+    # Free memory from previous dataset / model artifacts
+    gc.collect()
+
+    return (
+        gr.update(choices=datasets, value=default_dataset),
+        gr.update(choices=metrics, value=default_metric),
+        None,  # Reset dataset_state
+        gr.update(interactive=False),  # Disable train button
+        f"Switched to {problem_type}. Please click 'Load Dataset' to fetch data from UCI Repository.",
+        EMPTY_DATASET_HTML,
+        pd.DataFrame(),
+        EMPTY_RESULTS_HTML,
+        gr.update(visible=False),
+        {},
+    )
+
+
+def on_dataset_change(dataset_choice: str):
+    """
+    Handle event when user changes dataset in dropdown.
+    """
+    # Free memory from previously held dataframes
+    gc.collect()
+
+    clean_title = dataset_choice.split(" - ")[0] if dataset_choice and " - " in dataset_choice else (dataset_choice or "Dataset")
+    return (
+        None,  # Reset dataset_state so user cannot train stale data
+        gr.update(interactive=False),  # Disable train button
+        f"Selected '{clean_title}'. Please click 'Load Dataset' to fetch data from UCI Repository.",
+        EMPTY_DATASET_HTML,
+        pd.DataFrame(),
+        EMPTY_RESULTS_HTML,
+        gr.update(visible=False),
+        {},
+    )
+
+
+def on_dataset_select(dataset_choice: str, problem_type: str, progress: gr.Progress = gr.Progress()):
+    """
+    Handle event when user clicks 'Load Dataset' to download and process data from UCI Repository.
+    """
+    if not dataset_choice:
+        return (
+            EMPTY_DATASET_HTML,
+            pd.DataFrame(),
+            None,
+            gr.update(interactive=False),
+            "Please select a dataset to load.",
+            EMPTY_RESULTS_HTML,
+            gr.update(visible=False),
+            {},
+        )
+
+    progress(0.2, desc="Downloading dataset from UCI Machine Learning Repository...")
     title, desc, df_preview, df_full = fetch_uci_dataset(dataset_choice)
     if df_full is None or df_full.empty:
         return (
@@ -47,18 +112,19 @@ def on_dataset_select(dataset_choice: str, progress: gr.Progress = gr.Progress()
             pd.DataFrame(),
             None,
             gr.update(interactive=False),
-            "Failed to load dataset from UCI repository.",
+            f"Failed to load dataset '{dataset_choice}' from UCI repository. Please check your network connection.",
             EMPTY_RESULTS_HTML,
             gr.update(visible=False),
-            {}
+            {},
         )
 
-    progress(0.8, desc="Calculating summary statistics & CV tier...")
+    progress(0.7, desc="Calculating summary statistics and evaluation tier...")
     n_rows, n_cols = df_full.shape
     target_col = df_full.columns[-1]
 
-    # Automatically determine CV strategy according to dataset size
-    cv_config = TabularPreprocessor.determine_cv_tier(n_rows)
+    # Automatically determine CV strategy according to dataset size and problem type
+    prob_type_clean = problem_type.lower()
+    cv_config = TabularPreprocessor.determine_cv_tier(n_rows, problem_type=prob_type_clean)
 
     # Render rich HTML dataset card
     dataset_overview_html = render_dataset_overview_html(
@@ -68,10 +134,12 @@ def on_dataset_select(dataset_choice: str, progress: gr.Progress = gr.Progress()
         n_cols=n_cols,
         target_col=target_col,
         cv_tier=cv_config.tier,
-        cv_desc=cv_config.description
+        cv_desc=cv_config.description,
+        problem_type=prob_type_clean,
     )
 
-    status_text = f"Loaded '{title.replace('### Dataset: ', '')}' ({n_rows:,} rows, {n_cols - 1} features). Ready for training."
+    clean_title = title.replace("### Dataset: ", "").strip()
+    status_text = f"Loaded '{clean_title}' ({n_rows:,} rows, {n_cols - 1} features) for {problem_type}. Ready for training."
     progress(1.0, desc="Dataset ready.")
 
     return (
@@ -82,28 +150,16 @@ def on_dataset_select(dataset_choice: str, progress: gr.Progress = gr.Progress()
         status_text,
         EMPTY_RESULTS_HTML,
         gr.update(visible=False),
-        {}
+        {},
     )
 
 
-def on_dataset_change(dataset_choice: str):
-    """
-    Handle event when user changes dataset in dropdown.
-    """
-    clean_title = dataset_choice.split(" - ")[0] if dataset_choice and " - " in dataset_choice else (dataset_choice or "Dataset")
-    return (
-        None,  # Reset dataset_state to None so user cannot train stale data
-        gr.update(interactive=False),  # Disable train button
-        f"Selected '{clean_title}'. Please click 'Load Dataset' to load data before training.",  # Status instruction
-        EMPTY_DATASET_HTML,
-        pd.DataFrame(),
-        EMPTY_RESULTS_HTML,
-        gr.update(visible=False),
-        {}
-    )
-
-
-async def execute_demo_training(df_full: pd.DataFrame, metric_sort: str, progress: gr.Progress = gr.Progress()):
+async def execute_demo_training(
+    df_full: pd.DataFrame,
+    metric_sort: str,
+    problem_type: str,
+    progress: gr.Progress = gr.Progress(),
+):
     """
     Execute distributed AutoML training pipeline using PyMapReduce via TrainingService.
     """
@@ -117,48 +173,60 @@ async def execute_demo_training(df_full: pd.DataFrame, metric_sort: str, progres
         )
         return
 
+    prob_type_clean = problem_type.lower()
+
     try:
         # Immediate UI Yield: Visual feedback confirming training started
         yield (
-            render_training_in_progress_html(metric_sort),
+            render_training_in_progress_html(metric_sort, problem_type=prob_type_clean),
             pd.DataFrame(),
             gr.update(visible=False),
-            {"status": "IN_PROGRESS", "metric": metric_sort},
-            f"Training started... Preprocessing data and dispatching parallel PyMapReduce tasks for {metric_sort.upper()} optimization."
+            {"status": "IN_PROGRESS", "metric": metric_sort, "problem_type": prob_type_clean},
+            f"Training started... Preprocessing data and dispatching parallel PyMapReduce tasks for {metric_sort.upper()} optimization ({problem_type})."
         )
 
-        progress(0.15, desc="Preprocessing tabular features & encoding data...")
+        progress(0.15, desc="Preprocessing tabular features and encoding data...")
         start_time = time.time()
-        logger.info("Starting distributed AutoML pipeline on PyMapReduce...")
+        logger.info(f"Starting distributed AutoML pipeline on PyMapReduce for {problem_type}...")
 
         progress(0.40, desc="Training candidate models in parallel on PyMapReduce...")
         target_col = str(df_full.columns[-1])
         pipeline_result = await TrainingService.train_automl_pipeline(
             df=df_full,
             target_col=target_col,
-            metric_sort=metric_sort
+            metric_sort=metric_sort,
+            problem_type=prob_type_clean,
         )
 
-        progress(0.85, desc="Evaluating cross-validation metrics & ranking models...")
+        progress(0.85, desc="Evaluating cross-validation metrics and ranking models...")
         total_elapsed = time.time() - start_time
 
-        # Sort model scores descending by the selected primary metric
+        # Sort model scores based on whether lower or higher is better
         normalized_metric = metric_sort.strip().lower().replace(" ", "_")
+        is_lower_better = normalized_metric in LOWER_IS_BETTER_METRICS
+
         sorted_scores = sorted(
             pipeline_result.model_scores,
-            key=lambda x: x.scores.get(normalized_metric, 0.0),
-            reverse=True
+            key=lambda x: x.scores.get(normalized_metric, float("inf") if is_lower_better else -float("inf")),
+            reverse=not is_lower_better,
         )
 
         # Format Wide Leaderboard DataFrame
+        metric_pool = (
+            search_space.REGRESSION_METRIC_LIST
+            if prob_type_clean == "regression"
+            else search_space.CLASSIFICATION_METRIC_LIST
+        )
+
         leaderboard_rows = []
         for idx, r in enumerate(sorted_scores):
+            primary_val = r.scores.get(normalized_metric, 0.0)
             row = {
                 "Rank": f"#{idx + 1}",
                 "Model Name": r.model_name,
-                f"{metric_sort.upper()} (Primary)": f"{r.scores.get(normalized_metric, 0.0):.4f}",
+                f"{metric_sort.upper()} (Primary)": f"{primary_val:.4f}",
             }
-            for m in METRIC_LIST:
+            for m in metric_pool:
                 m_key = m.strip().lower().replace(" ", "_")
                 if m_key != normalized_metric and m_key in r.scores:
                     row[m.upper()] = f"{r.scores[m_key]:.4f}"
@@ -182,12 +250,14 @@ async def execute_demo_training(df_full: pd.DataFrame, metric_sort: str, progres
             best_params=best_params,
             cv_strategy_desc=pipeline_result.cv_strategy.description,
             total_elapsed=total_elapsed,
-            n_models=len(sorted_scores)
+            n_models=len(sorted_scores),
+            problem_type=prob_type_clean,
         )
 
         # Prepare raw JSON summary for inspection tab
         raw_json_summary = {
             "status": "COMPLETED",
+            "problem_type": prob_type_clean,
             "best_model": best_model_name,
             "primary_metric": f"{metric_sort.upper()} = {best_score:.4f}",
             "all_metrics": {k: round(v, 4) for k, v in all_scores.items()},
@@ -197,8 +267,8 @@ async def execute_demo_training(df_full: pd.DataFrame, metric_sort: str, progres
             "total_latency_seconds": round(total_elapsed, 2)
         }
 
-        progress(1.0, desc="AutoML training finished!")
-        status_msg = f"Distributed training completed in {total_elapsed:.2f}s across {len(sorted_scores)} models."
+        progress(1.0, desc="AutoML training finished.")
+        status_msg = f"Distributed {problem_type} training completed in {total_elapsed:.2f}s across {len(sorted_scores)} models."
 
         # Final UI Yield: Completed champion card and wide leaderboard
         yield champion_html, leaderboard_df, gr.update(visible=True), raw_json_summary, status_msg
@@ -218,6 +288,9 @@ async def execute_demo_training(df_full: pd.DataFrame, metric_sort: str, progres
             {"error": str(e)},
             f"Training failed or was interrupted: {str(e)}"
         )
+    finally:
+        # Explicitly release references and free memory
+        gc.collect()
 
 
 # GRADIO UI DEFINITION
@@ -229,11 +302,11 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
                 """
                 <div style="text-align: center;">
                     <div class="brand-title">HAutoML ToolKit</div>
-                    <div class="brand-subtitle">Distributed AutoML Pipeline for Tabular Data & Parallel Hyperparameter Tuning</div>
+                    <div class="brand-subtitle">Distributed AutoML Pipeline for Tabular Data and Parallel Hyperparameter Tuning</div>
                     <div class="badge-row">
                         <span class="tech-badge badge-purple">PyMapReduce Engine</span>
-                        <span class="tech-badge badge-blue">Task Parallelism</span>
-                        <span class="tech-badge badge-emerald">3-Tier Dynamic CV</span>
+                        <span class="tech-badge badge-blue">Classification and Regression</span>
+                        <span class="tech-badge badge-emerald">Continuous Stratified CV</span>
                     </div>
                 </div>
                 """
@@ -242,33 +315,47 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
     # Full DataFrame State Storage
     dataset_state = gr.State(None)
 
-    # Main 2-Column Dashboard Layout (Wider Control Sidebar + Balanced Workspace)
+    # Main 2-Column Dashboard Layout
     with gr.Row(elem_classes=["main-dashboard-row"]):
         with gr.Column(scale=4, min_width=380, elem_classes=["glass-card"]):
-            gr.HTML('<div class="section-title"><span class="step-num">1</span> Data Source</div>')
+            gr.HTML('<div class="section-title"><span class="step-num">1</span> Problem Objective</div>')
+            problem_type_selector = gr.Radio(
+                choices=["Classification", "Regression"],
+                value="Classification",
+                label="Machine Learning Problem Type",
+                elem_classes=["problem-type-radio"]
+            )
+
+            gr.HTML('<div class="section-title" style="margin-top: 16px;"><span class="step-num">2</span> Benchmark Data Source</div>')
             dataset_dropdown = gr.Dropdown(
-                choices=AVAILABLE_DATASETS,
+                choices=CLASSIFICATION_DATASETS,
                 label="Select benchmark dataset from UCI Repository",
-                value=AVAILABLE_DATASETS[0]
+                value=CLASSIFICATION_DATASETS[0]
             )
             load_btn = gr.Button("Load Dataset", variant="secondary", elem_classes=["btn-secondary-action"])
 
-            gr.HTML('<div class="section-title" style="margin-top: 20px;"><span class="step-num">2</span> Training Settings</div>')
+            gr.HTML('<div class="section-title" style="margin-top: 20px;"><span class="step-num">3</span> Training Settings</div>')
             metric_selector = gr.Dropdown(
-                choices=METRIC_LIST,
+                choices=search_space.CLASSIFICATION_METRIC_LIST,
                 label="Primary Optimization Metric",
                 value="accuracy"
             )
 
             train_btn = gr.Button("Start Distributed Training", variant="primary", interactive=False, elem_classes=["btn-primary-action"])
-            status_output = gr.Textbox(label="System Status", value="Select a dataset and click 'Load Dataset'...", interactive=False, lines=1, elem_classes=["status-box"])
+            status_output = gr.Textbox(
+                label="System Status",
+                value="Select a dataset and click 'Load Dataset' to fetch data from UCI Repository...",
+                interactive=False,
+                lines=1,
+                elem_classes=["status-box"]
+            )
 
             # Dataset Overview Rich Card
             dataset_overview_html = gr.HTML(value=EMPTY_DATASET_HTML)
 
         with gr.Column(scale=7, elem_classes=["glass-card"]):
             with gr.Tabs():
-                with gr.TabItem("AutoML Leaderboard & Champion Model"):
+                with gr.TabItem("AutoML Leaderboard and Champion Model"):
                     champion_model_html = gr.HTML(value=EMPTY_RESULTS_HTML)
 
                     # Hidden initially until training finishes
@@ -281,7 +368,7 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
                             elem_classes=["custom-dataframe"]
                         )
 
-                with gr.TabItem("Data Exploration & Preview"):
+                with gr.TabItem("Data Exploration and Preview"):
                     gr.HTML('<div class="section-title" style="margin-top: 14px; margin-bottom: 14px;">First 15 Rows Preview</div>')
                     data_preview_table = gr.Dataframe(
                         show_label=False,
@@ -290,10 +377,27 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
                         elem_classes=["custom-dataframe"]
                     )
 
-                with gr.TabItem("Pipeline Metadata & Raw JSON"):
-                    raw_json_output = gr.JSON(label="Pipeline Execution Metadata & Hyperparameters")
+                with gr.TabItem("Pipeline Metadata and Raw JSON"):
+                    raw_json_output = gr.JSON(label="Pipeline Execution Metadata and Hyperparameters")
 
     # EVENT HANDLERS
+    problem_type_selector.change(
+        fn=on_problem_type_change,
+        inputs=[problem_type_selector],
+        outputs=[
+            dataset_dropdown,
+            metric_selector,
+            dataset_state,
+            train_btn,
+            status_output,
+            dataset_overview_html,
+            data_preview_table,
+            champion_model_html,
+            leaderboard_section,
+            raw_json_output,
+        ]
+    )
+
     dataset_dropdown.change(
         fn=on_dataset_change,
         inputs=[dataset_dropdown],
@@ -311,7 +415,7 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
 
     load_btn.click(
         fn=on_dataset_select,
-        inputs=[dataset_dropdown],
+        inputs=[dataset_dropdown, problem_type_selector],
         outputs=[
             dataset_overview_html,
             data_preview_table,
@@ -326,7 +430,7 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
 
     train_btn.click(
         fn=execute_demo_training,
-        inputs=[dataset_state, metric_selector],
+        inputs=[dataset_state, metric_selector, problem_type_selector],
         outputs=[
             champion_model_html,
             leaderboard_table,
@@ -340,7 +444,7 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
 # APPLICATION LAUNCHER
 def cleanup_demo_session():
     """
-    Clean up temporary demo WAL session logs upon launch and exit
+    Clean up temporary demo WAL session logs and free RAM upon launch and exit
     """
     import os
     for p in ["/tmp/wal.log", "/tmp/pymapreduce/snapshot.bin", "/tmp/pymapreduce/snapshot.bin.tmp"]:
@@ -349,6 +453,7 @@ def cleanup_demo_session():
                 os.remove(p)
         except Exception:
             pass
+    gc.collect()
 
 
 if __name__ == "__main__":

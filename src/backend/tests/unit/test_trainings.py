@@ -1,13 +1,12 @@
-# Standard Libraries
+import io
+import pickle
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from bson import ObjectId
 
-# Third-party Libraries
 import pandas as pd
-from sklearn.datasets import load_iris
+from sklearn.datasets import load_iris, load_diabetes
 
-# Local Libraries
 from src.modules.trainings.repository import TrainingRepository
 from src.modules.trainings.service import TrainingService
 
@@ -59,7 +58,32 @@ class TestTrainingRepository(unittest.IsolatedAsyncioTestCase):
 
 
 class TestTrainingService(unittest.IsolatedAsyncioTestCase):
-    async def test_train_automl_pipeline_in_memory(self):
+    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
+    async def test_train_automl_pipeline_classification(self, mock_dispatch, mock_driver):
+        mock_driver.return_value = AsyncMock()
+        from src.modules.models.service import ModelService
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.naive_bayes import GaussianNB
+
+        clf1 = DecisionTreeClassifier().fit([[0], [1]], [0, 1])
+        clf2 = GaussianNB().fit([[0], [1]], [0, 1])
+
+        mock_dispatch.return_value = [
+            {
+                "model_name": "DecisionTreeClassifier",
+                "scores": {"accuracy": 0.95, "f1": 0.94},
+                "best_params": {},
+                "model_bytes": ModelService.serialize_model(clf1),
+            },
+            {
+                "model_name": "GaussianNB",
+                "scores": {"accuracy": 0.88, "f1": 0.87},
+                "best_params": {},
+                "model_bytes": ModelService.serialize_model(clf2),
+            },
+        ]
+
         iris = load_iris(as_frame=True)
         df = iris.frame
 
@@ -67,19 +91,90 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             df=df,
             target_col="target",
             metric_sort="accuracy",
-            models_to_train=["DecisionTreeClassifier", "GaussianNB"]
+            models_to_train=["DecisionTreeClassifier", "GaussianNB"],
+            problem_type="classification",
         )
 
         self.assertIsNotNone(result.best_model)
-        self.assertIsNotNone(result.best_score)
+        self.assertEqual(result.best_model, "DecisionTreeClassifier")
+        self.assertEqual(result.best_score, 0.95)
         self.assertIsNotNone(result.best_model_bytes)
         self.assertEqual(len(result.model_scores), 2)
-        self.assertTrue(result.best_score > 0.8)
         self.assertEqual(result.cv_strategy.tier, 1)
 
-    async def test_process_training_job_pipeline_flow(self):
-        import io
-        from unittest.mock import patch
+        artifact = pickle.loads(result.best_model_bytes)
+        self.assertEqual(artifact["problem_type"], "classification")
+        self.assertIsNotNone(artifact["preprocessor"])
+
+    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
+    async def test_train_automl_pipeline_regression(self, mock_dispatch, mock_driver):
+        mock_driver.return_value = AsyncMock()
+        from src.modules.models.service import ModelService
+        from sklearn.linear_model import LinearRegression
+        from sklearn.tree import DecisionTreeRegressor
+
+        reg1 = LinearRegression().fit([[0], [1]], [0.0, 1.0])
+        reg2 = DecisionTreeRegressor().fit([[0], [1]], [0.0, 1.0])
+
+        mock_dispatch.return_value = [
+            {
+                "model_name": "LinearRegression",
+                "scores": {"r2": 0.85, "mse": 12.5},
+                "best_params": {},
+                "model_bytes": ModelService.serialize_model(reg1),
+            },
+            {
+                "model_name": "DecisionTreeRegressor",
+                "scores": {"r2": 0.72, "mse": 25.0},
+                "best_params": {},
+                "model_bytes": ModelService.serialize_model(reg2),
+            },
+        ]
+
+        diabetes = load_diabetes(as_frame=True)
+        df = diabetes.frame
+
+        result = await TrainingService.train_automl_pipeline(
+            df=df,
+            target_col="target",
+            metric_sort="r2",
+            models_to_train=["LinearRegression", "DecisionTreeRegressor"],
+            problem_type="regression",
+        )
+
+        self.assertIsNotNone(result.best_model)
+        self.assertEqual(result.best_model, "LinearRegression")
+        self.assertEqual(result.best_score, 0.85)
+        self.assertIsNotNone(result.best_model_bytes)
+        self.assertEqual(len(result.model_scores), 2)
+        self.assertEqual(result.cv_strategy.name, "ContinuousRepeatedStratifiedKFold")
+
+        artifact = pickle.loads(result.best_model_bytes)
+        self.assertEqual(artifact["problem_type"], "regression")
+        self.assertIsNotNone(artifact["preprocessor"])
+
+    @patch("src.modules.trainings.service.TrainingService.train_automl_pipeline")
+    async def test_process_training_job_pipeline_flow(self, mock_pipeline):
+        from src.modules.trainings.schemas import AutoMLPipelineResult
+        from src.modules.preprocessing.schemas import CVStrategyConfig
+        from src.modules.trainings.schemas import ModelScoreItem
+
+        mock_pipeline.return_value = AutoMLPipelineResult(
+            best_model_id=0,
+            best_model="DecisionTreeClassifier",
+            best_score=0.95,
+            best_params={},
+            best_model_bytes=b"fake_model_bytes",
+            feature_names=["f1", "f2"],
+            model_scores=[
+                ModelScoreItem(model_id=0, model_name="DecisionTreeClassifier", scores={"accuracy": 0.95}, best_params={})
+            ],
+            cv_strategy=CVStrategyConfig(tier=1, name="StratifiedKFold", n_splits=5, description="5-fold CV"),
+            total_models=1,
+            completed_models=1,
+            time_limit_reached=False,
+        )
 
         iris = load_iris(as_frame=True)
         df = iris.frame
@@ -104,6 +199,7 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
                 dataset_id="test_ds_123",
                 user_id="test_user_123",
                 config={
+                    "problem_type": "classification",
                     "target": "target",
                     "metric_sort": "accuracy",
                     "models": ["DecisionTreeClassifier", "GaussianNB"]
@@ -120,4 +216,3 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

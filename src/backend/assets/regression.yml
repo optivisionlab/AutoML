@@ -1,0 +1,43 @@
+metric_list:
+  - mse
+  - mae
+  - mape
+  - r2
+Regression_models:
+  0:
+    model: LinearRegression
+    params:
+      - fit_intercept: [true, false]
+  1:
+    model: DecisionTreeRegressor
+    params:
+      - max_depth: [5, 10, 15]
+        min_samples_split: [2, 5, 10]
+  2:
+    model: RandomForestRegressor
+    params:
+      - n_estimators: [50, 100]
+        max_features: ["sqrt", "log2"]
+  3:
+    model: GradientBoostingRegressor
+    params:
+      - n_estimators: [50, 100]
+        learning_rate: [0.05, 0.1]
+  4:
+    model: KNeighborsRegressor
+    params:
+      - n_neighbors: [3, 5, 7, 9]
+        weights: ["uniform", "distance"]
+  5:
+    model: Ridge
+    params:
+      - alpha: [0.1, 1.0, 10.0]
+  6:
+    model: Lasso
+    params:
+      - alpha: [0.1, 1.0, 10.0]
+  7:
+    model: SVR
+    params:
+      - kernel: ["rbf"]
+        C: [0.1, 1, 10]

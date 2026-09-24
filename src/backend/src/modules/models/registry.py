@@ -3,25 +3,45 @@ import logging
 from typing import Type
 
 # Third-party Libraries
-from sklearn.svm import SVC
 from sklearn.base import BaseEstimator
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC, SVR
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    RandomForestRegressor,
+    GradientBoostingRegressor,
+    GradientBoostingClassifier,
+)
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.naive_bayes import GaussianNB
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso
+from xgboost import XGBRegressor, XGBClassifier
 
 
 # Logging
 logger = logging.getLogger(__name__)
 
 
-# Registry mapping model name to Scikit-Learn Estimator class
 MODEL_CLASS_MAP: dict[str, Type[BaseEstimator]] = {
+    # Classification
     "DecisionTreeClassifier": DecisionTreeClassifier,
     "RandomForestClassifier": RandomForestClassifier,
+    "GradientBoostingClassifier": GradientBoostingClassifier,
     "KNeighborsClassifier": KNeighborsClassifier,
     "SVC": SVC,
     "LogisticRegression": LogisticRegression,
     "GaussianNB": GaussianNB,
+    "XGBClassifier": XGBClassifier,
+
+    # Regression
+    "LinearRegression": LinearRegression,
+    "DecisionTreeRegressor": DecisionTreeRegressor,
+    "RandomForestRegressor": RandomForestRegressor,
+    "GradientBoostingRegressor": GradientBoostingRegressor,
+    "Ridge": Ridge,
+    "Lasso": Lasso,
+    "SVR": SVR,
+    "KNeighborsRegressor": KNeighborsRegressor,
+    "XGBRegressor": XGBRegressor,
+
 }

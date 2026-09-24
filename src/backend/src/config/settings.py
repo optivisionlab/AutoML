@@ -57,8 +57,14 @@ class MapReduceMode(str):
 
 
 class MapReduceSettings(BaseModel):
-    MODE: str = Field(default=MapReduceMode.CLUSTER, validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="10.100.200.119:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    MODE: str = Field(default=MapReduceMode.LOCAL, validation_alias="MAPREDUCE_MODE")
+    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+
+
+class ProblemType(str):
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    TIME_SERIES = "time_series"
 
 
 class Settings(BaseSettings):

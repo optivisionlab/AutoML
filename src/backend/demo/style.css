@@ -248,12 +248,22 @@ select, .gr-dropdown, .gr-button, button, input[type="text"] {
 
 .dataset-type-badge {
     padding: 2px 8px;
-    background: #e0f2fe;
-    color: #0369a1;
+    background: #ede9fe;
+    color: #5b21b6;
     font-size: 0.72rem;
     font-weight: 700;
     border-radius: 9999px;
-    border: 1px solid #bae6fd;
+    border: 1px solid #ddd6fe;
+}
+
+.dataset-type-regression {
+    padding: 2px 8px;
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border-radius: 9999px;
+    border: 1px solid #bbf7d0;
 }
 
 .stat-grid {

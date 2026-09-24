@@ -47,7 +47,7 @@ async def get_list_jobs(
         activate=None,
         sort_name=sort_name_value,
         sort_time=sort_time_value,
-        is_admin=(current_user.get("role") == "admin"),
+        is_admin=(current_user.get("role") == "admin")
     )
 
     return responses.PaginatedResponse(
@@ -79,7 +79,7 @@ async def get_list_active_models(
         activate=1,
         sort_name=sort_name_value,
         sort_time=sort_time_value,
-        is_admin=(current_user.get("role") == "admin"),
+        is_admin=(current_user.get("role") == "admin")
     )
 
     return responses.PaginatedResponse(

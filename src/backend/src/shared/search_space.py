@@ -1,21 +1,23 @@
-# Standard Libraries
 import logging
 from typing import Any
-
-# Third-party Libraries
 import yaml
 
-# Local Libraries
-from src.config import settings
+from src.config import settings, ProblemType
 
 logger = logging.getLogger(__name__)
 
 
-def _load_classification_config() -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
-    """
-    Read model configuration from YAML file
-    """
-    target_path = settings.BASE_DIR / "assets" / "classification.yml"
+def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
+    match problem_type:
+        case ProblemType.CLASSIFICATION | "classification":
+            target_path = settings.BASE_DIR / "assets" / "classification.yml"
+        case ProblemType.REGRESSION | "regression":
+            target_path = settings.BASE_DIR / "assets" / "regression.yml"
+        case ProblemType.TIME_SERIES | "time_series":
+            target_path = settings.BASE_DIR / "assets" / "time_series.yml"
+        case _:
+            logger.error(f"Invalid problem type: {problem_type}")
+            raise ValueError(f"Invalid problem type: {problem_type}")
 
     if not target_path.exists():
         logger.error(f"Configuration file not found at: {target_path}")
@@ -24,17 +26,17 @@ def _load_classification_config() -> tuple[dict[str, list[dict[str, Any]]], list
     with open(target_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file) or {}
 
-    classification_models_raw = data.get("Classification_models", {})
+    models_raw = data.get("Classification_models") or data.get("Regression_models") or data.get("models") or {}
     metrics = data.get("metric_list", [])
 
     models: dict[str, list[dict[str, Any]]] = {
         model_info["model"]: model_info.get("params", [])
-        for model_info in classification_models_raw.values()
+        for model_info in models_raw.values()
         if isinstance(model_info, dict) and "model" in model_info
     }
 
     return models, metrics
 
 
-# Automatically load into RAM
-CLASSIFICATION_MODELS, METRIC_LIST = _load_classification_config()
+CLASSIFICATION_MODELS, CLASSIFICATION_METRIC_LIST = _load_model_config("classification")
+REGRESSION_MODELS, REGRESSION_METRIC_LIST = _load_model_config("regression")
