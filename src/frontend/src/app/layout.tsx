@@ -8,6 +8,7 @@ import SideNav from "@/components/sideNav/SideNav";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import TopLoader from "@/components/top-loader";
+import AgentChat from "@/components/agentChat/AgentChat";
 
 export const metadata: Metadata = {
   title: "HAutoML",
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: IProps) {
                   </div>
                 </div>
               </div>
+              <AgentChat />
             </Providers>
           </ClientSessionProvider>
         </ThemeProvider>
