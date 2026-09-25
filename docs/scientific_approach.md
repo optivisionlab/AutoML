@@ -240,6 +240,47 @@ Hỗ trợ các mô hình hồi quy:
 - Support Vector Regression
 - v.v.
 
+
+### 5.3 Dự báo chuỗi thời gian Forecasting
+
+HAutoML hỗ trợ forecasting một bước tiếp theo bằng các mô hình regression của scikit-learn. Bài toán được triển khai theo hướng **reduction to tabular regression**: chuỗi thời gian được chuyển thành bảng đặc trưng `X` và target `y` trước khi huấn luyện.
+
+**a) Tạo đặc trưng theo thời gian**
+
+Từ giá trị target trong quá khứ, hệ thống tạo các lag feature như `lag_1`, `lag_7`, `lag_14`; rolling mean và rolling standard deviation trên các cửa sổ lịch sử; cùng calendar feature như thứ trong tuần, tháng và cờ cuối tuần. Khi dự đoán tại thời điểm *t*, các lag và rolling feature chỉ sử dụng target trước *t*. Target tại *t* và dữ liệu sau *t* không được dùng, nhằm tránh data leakage.
+
+Lag feature được tạo trong `automl/process_forecasting.py`, trước Pipeline. Pipeline nhận bảng feature đã có lag để preprocessing và dự đoán; Pipeline không tự có lịch sử target để tạo `lag_1` hoặc `lag_7` tại thời điểm predict.
+
+**b) Pipeline forecasting**
+
+Sau khi tạo bảng feature, HAutoML xây dựng một `sklearn.pipeline.Pipeline` gồm:
+
+```text
+Bảng lag và calendar feature → ColumnTransformer → estimator
+```
+
+`ColumnTransformer` xử lý cột số bằng `SimpleImputer` và `StandardScaler`, xử lý cột dạng chữ bằng `SimpleImputer` và `OneHotEncoder`. Bước cuối là model sklearn như Ridge, RandomForestRegressor hoặc GradientBoostingRegressor. Pipeline được fit và đánh giá nguyên vẹn trong mỗi fold, vì vậy preprocessing chỉ học từ train fold và dùng lại quy tắc đó cho test fold.
+
+**c) Đánh giá theo thời gian**
+
+Forecasting dùng `TimeSeriesSplit` thay cho K-Fold. Với mỗi split, model học từ phần dữ liệu quá khứ và được kiểm tra trên phần dữ liệu xảy ra sau đó. `n_splits`, `test_size`, `gap` và `max_train_size` được cấu hình trong hàm `make_cv(...)`. Cách chia này mô phỏng đúng tình huống dự báo thực tế và ngăn việc học tương lai để dự đoán quá khứ.
+
+**d) Tìm siêu tham số**
+
+`GridSearchCV` là baseline, thử toàn bộ các tổ hợp tham số trong `assets/system_models/forecasting.yml`. Vì model nằm ở bước cuối của Pipeline, tham số được truyền theo cú pháp `model__parameter`, ví dụ `model__alpha` hoặc `model__max_depth`.
+
+GA và BO được tái sử dụng từ các strategy có sẵn của HAutoML. Không cần viết lại hai thuật toán này: Pipeline forecasting, param grid và `TimeSeriesSplit` được truyền vào strategy. Do đó cả GridSearchCV, GA và BO đều đánh giá cấu hình bằng quy tắc học ở quá khứ và kiểm tra ở tương lai.
+
+**e) Kiểm thử**
+
+Bộ test forecasting kiểm tra lag/rolling feature không dùng dữ liệu tương lai; dữ liệu thời gian không hợp lệ bị từ chối; Pipeline chỉ fit trên train fold; và GridSearchCV, GA, BO cùng hoạt động với `TimeSeriesSplit`. Lệnh chạy test là:
+
+```bash
+PYTHONPATH=. pytest automl/tests/test_forecasting.py -q
+```
+
+Phiên bản hiện tại hỗ trợ một chuỗi có mốc thời gian đều, không trùng lặp và dự báo một bước tiếp theo (`horizon = 1`). Multi-step forecasting, nhiều chuỗi độc lập và resampling nằm ngoài phạm vi hiện tại.
+
 ## 6. Xử lý dữ liệu mất cân bằng
 
 Để xử lý các tập dữ liệu bị mất cân bằng (imbalanced datasets):
@@ -276,14 +317,14 @@ Hệ thống đảm bảo:
 ### 8.2 Giới hạn hiện tại
 
 - 🔸 Chưa hỗ trợ deep learning trực tiếp (chỉ scikit-learn)
-- 🔸 Khiếm khuyết trong xử lý chuỗi thời gian (time series)
+- 🔸 Forecasting hiện hỗ trợ một bước tiếp theo, một chuỗi và mốc thời gian đều; chưa hỗ trợ multi-step forecasting hoặc nhiều chuỗi độc lập
 - 🔸 Chưa hỗ trợ ensemble methods nâng cao
 - 🔸 Thời gian tìm kiếm siêu tham số có thể lâu với không gian tham số lớn
 
 ### 8.3 Hướng phát triển tương lai
 
 - Tích hợp TensorFlow/PyTorch cho neural networks
-- Thêm hỗ trợ time series forecasting
+- Mở rộng forecasting sang nhiều bước dự báo, nhiều chuỗi và resampling
 - Ensemble methods và stacking
 - Auto feature engineering
 - Explainability tools (SHAP, LIME)
@@ -291,6 +332,8 @@ Hệ thống đảm bảo:
 ## Tài liệu tham khảo
 
 - **Scikit-learn Documentation**: https://scikit-learn.org/
+- **Scikit-learn Pipeline**: https://scikit-learn.org/stable/modules/generated/sklearn.pipeline.Pipeline.html
+- **Scikit-learn TimeSeriesSplit**: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html
 - **FastAPI Documentation**: https://fastapi.tiangolo.com/
 - **Apache Kafka**: https://kafka.apache.org/
 - **MongoDB Documentation**: https://docs.mongodb.com/

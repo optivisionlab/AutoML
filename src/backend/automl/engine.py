@@ -6,6 +6,8 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd  # type: ignore
@@ -14,16 +16,135 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, balanced_accuracy_score
 from sklearn.metrics import make_scorer
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, GridSearchCV, TimeSeriesSplit, cross_validate
 from sklearn.metrics import (mean_squared_error, mean_absolute_error, r2_score)
 from sklearn.base import clone
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import Ridge
 from pymongo.asynchronous.database import AsyncDatabase
+
+from automl.process_forecasting import build_pipeline, preprocess_data as preprocess_forecasting
 
 from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
-from automl.search.strategy.base import SearchStrategy
+from automl.search.strategy.base import SearchStrategy, normalize_param_grid
 from automl.v2.minio import minIOStorage
 from automl.process_classification import preprocess_data
+
+SCORING = {"mse": "neg_mean_squared_error", "mae": "neg_mean_absolute_error",
+           "rmse": "neg_root_mean_squared_error", "r2": "r2"}
+MODEL_CLASSES = {cls.__name__: cls for cls in (Ridge, RandomForestRegressor, GradientBoostingRegressor)}
+
+
+def get_forecasting_models():
+    path = Path(__file__).resolve().parents[1] / "assets/system_models/forecasting.yml"
+    with path.open(encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+    models = {key: {"model": MODEL_CLASSES[info["model"]](), "params": info["params"]}
+              for key, info in config["Forecasting_models"].items()}
+    return models, config["metric_list"]
+
+
+def make_cv(options=None):
+    options = options or {}
+    if options.get("horizon", 1) != 1:
+        raise ValueError("Only horizon=1 with observed history is supported")
+    return TimeSeriesSplit(n_splits=options.get("n_splits", 5),
+                           test_size=options.get("test_size"),
+                           gap=options.get("gap", 0),
+                           max_train_size=options.get("max_train_size"))
+
+
+def training_forecasting(models, metric_list, metric_sort, X_train, y_train,
+                         search_algorithm="grid_search", max_time=None,
+                         forecasting_config=None):
+    """Return the same six fields as engine.training_regression.
+
+    Scores exposed to callers are positive errors; optimizers maximize negative
+    errors internally. CV scores are selection scores, not unbiased test scores.
+    GridSearchCV is exhaustive: max_time is a soft between-model budget locally.
+    """
+    options = forecasting_config or {}
+    metric_sort = metric_sort.strip().lower().replace(" ", "_")
+    if metric_sort not in SCORING or any(m not in SCORING for m in metric_list):
+        raise ValueError("Forecasting metrics must be mse, mae, rmse or r2")
+    if not isinstance(X_train, pd.DataFrame) or not isinstance(X_train.index, pd.DatetimeIndex):
+        raise ValueError("Forecasting requires a time-indexed DataFrame from preprocess_data")
+    if not X_train.index.is_monotonic_increasing or not X_train.index.is_unique:
+        raise ValueError("Forecasting rows must be chronological with unique timestamps")
+    if max_time is not None and max_time <= 0:
+        raise ValueError("max_time must be positive")
+    cv = make_cv(options)
+    folds = list(cv.split(X_train))  # Fail early on insufficient samples/config.
+    scoring = {m: SCORING[m] for m in dict.fromkeys([*metric_list, metric_sort])}
+    algorithm = search_algorithm.strip().lower()
+    if algorithm not in {"grid_search", "grid_search_cv", "genetic_algorithm", "bayesian_search"}:
+        raise ValueError(f"Unsupported forecasting search_algorithm: {search_algorithm}")
+    seed = options.get("random_state", 42)
+    n_jobs = options.get("n_jobs", 1)
+    start = perf_counter()
+    best_id, best_model, best_params, best_raw = None, None, {}, -np.inf
+    results, limited = [], False
+    for model_id, info in models.items():
+        remaining = None if max_time is None else max_time - (perf_counter() - start)
+        if remaining is not None and remaining <= 0:
+            limited = True
+            break
+        estimator = clone(info["model"])
+        if "random_state" in estimator.get_params():
+            estimator.set_params(random_state=seed)
+        pipeline = build_pipeline(estimator)
+        param_grid = [{k if "__" in k else f"model__{k}": v for k, v in grid.items()}
+                      for grid in normalize_param_grid(info.get("params"))]
+        model_start = perf_counter()
+        if algorithm in {"grid_search", "grid_search_cv"}:
+            search = GridSearchCV(pipeline, param_grid, scoring=scoring, refit=metric_sort,
+                                  cv=cv, n_jobs=n_jobs, error_score="raise")
+            search.fit(X_train, y_train)
+            params, raw_score = search.best_params_, search.best_score_
+            fitted, cv_results = search.best_estimator_, search.cv_results_
+            search_limited = False
+        else:
+            strategy_config = dict(options.get("search_options", {}))
+            # Scientific invariants cannot be overridden by search_options.
+            strategy_config.update(cv=cv, scoring=scoring, metric_sort=metric_sort,
+                                   error_score="raise", n_jobs=n_jobs, random_state=seed,
+                                   return_train_score=False, save_log=False,
+                                   warm_start_enabled=False, save_optimizer_state=False,
+                                   max_time=remaining)
+            strategy = SearchStrategyFactory.create_strategy(algorithm, strategy_config)
+            params, raw_score, _, cv_results, search_limited = strategy.search(
+                model=pipeline, param_grid=param_grid, X=X_train, y=np.asarray(y_train))
+            if not np.isfinite(raw_score):
+                raise ValueError(f"{algorithm} did not produce a finite CV score")
+            fitted = clone(pipeline).set_params(**params).fit(X_train, y_train)
+        search_seconds = perf_counter() - model_start
+        # Re-evaluate the selected configuration to report real per-fold std for
+        # all strategies (legacy GA does not retain per-fold standard deviations).
+        selected = cross_validate(clone(fitted), X_train, y_train, cv=cv,
+                                  scoring=scoring, n_jobs=n_jobs, error_score="raise")
+        scores, std, fold_scores = {}, {}, {}
+        for metric in scoring:
+            values = selected[f"test_{metric}"] * (1 if metric == "r2" else -1)
+            if not np.isfinite(values).all():
+                raise ValueError(f"Non-finite {metric} score; check sample count and data")
+            fold_scores[metric] = values.tolist()
+            scores[metric], std[metric] = float(values.mean()), float(values.std())
+        raw_score = scores[metric_sort] * (1 if metric_sort == "r2" else -1)
+        results.append(dict(model_id=model_id, model_name=estimator.__class__.__name__,
+                            best_params=params, scores=scores, score_std=std,
+                            fold_scores=fold_scores, cv_results=cv_results,
+                            search_seconds=search_seconds, n_splits=len(folds)))
+        limited |= search_limited
+        if raw_score > best_raw:
+            best_id, best_model, best_params, best_raw = model_id, fitted, params, raw_score
+    if best_model is None:
+        raise ValueError("No forecasting model completed successfully")
+    limited |= max_time is not None and perf_counter() - start >= max_time
+    score = best_raw if metric_sort == "r2" else -best_raw
+    return (best_id, best_model, float(score), SearchStrategy.convert_numpy_types(best_params),
+            SearchStrategy.convert_numpy_types(results), bool(limited))
+
 
 np.random.seed(42)
 random.seed(42)
@@ -111,7 +232,7 @@ def get_config(file):
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
     max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
-    models, metric_list = get_model()
+    models, metric_list = (get_forecasting_models() if config.get("problem_type") == "forecasting" else get_model())
     return choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
@@ -589,7 +710,7 @@ def training_regression(models, metric_list, metric_sort, X_train, y_train, sear
     return best_model_id, best_model, global_best_score, best_params, model_results, any_time_limit_reached
 
 
-def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None):
+def train_process(X_train, y_train, metric_list, metric_sort, models, problem_type, search_algorithm='grid_search', max_time=None, forecasting_config=None):
     """
     Điều phối quá trình huấn luyện dựa trên loại bài toán.
 
@@ -610,6 +731,10 @@ def train_process(X_train, y_train, metric_list, metric_sort, models, problem_ty
               time_limit_reached (bool): True nếu bất kỳ model nào bị dừng do hết thời gian
     """
     best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = None, None, None, None, None, False
+
+    if problem_type == 'forecasting':
+        return training_forecasting(models, metric_list, metric_sort, X_train, y_train,
+                                    search_algorithm, max_time, forecasting_config)
 
     if problem_type == 'classification':
         best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = training(models, metric_list, metric_sort,
@@ -647,10 +772,14 @@ def app_train_local(file_data, file_config):
     config_raw = yaml.safe_load(data_file_config)
     problem_type = config_raw.get('problem_type', 'classification')
 
-    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+    if problem_type == "forecasting":
+        X_processed, y_processed, preprocessor, le_target = preprocess_forecasting(list_feature, target, data, config_raw)
+    else:
+        X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
 
     best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time
+        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time,
+        config_raw.get("forecasting")
     )
 
     return best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached
