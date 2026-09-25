@@ -24,7 +24,9 @@ class ProcessTimeMiddleware(BaseHTTPMiddleware):
 
 
 def setup_middlewares(app: FastAPI) -> None:
-    """Register all global middlewares to the FastAPI app"""
+    """
+    Register all global middlewares to the FastAPI app
+    """
 
     # Set all CORS enabled origins
     app.add_middleware(

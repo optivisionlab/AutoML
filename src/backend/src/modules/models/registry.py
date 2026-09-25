@@ -3,6 +3,7 @@ import logging
 from typing import Type
 
 # Third-party Libraries
+from xgboost import XGBRegressor, XGBClassifier
 from sklearn.base import BaseEstimator
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -15,7 +16,6 @@ from sklearn.ensemble import (
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge, Lasso
-from xgboost import XGBRegressor, XGBClassifier
 
 
 # Logging
@@ -43,5 +43,4 @@ MODEL_CLASS_MAP: dict[str, Type[BaseEstimator]] = {
     "SVR": SVR,
     "KNeighborsRegressor": KNeighborsRegressor,
     "XGBRegressor": XGBRegressor,
-
 }

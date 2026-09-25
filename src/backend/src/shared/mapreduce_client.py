@@ -13,7 +13,8 @@ if "PYTHON_EXECUTABLE" not in os.environ:
 import pymapreduce
 
 # Local Libraries
-from src.config import settings, MapReduceMode
+from src.config import settings
+from src.shared import constants
 
 
 # Logging
@@ -49,7 +50,7 @@ class MapReduceManager:
                 "excludes": ["deploy", "tests", "demo", "docs", "MapReduce", "dataset"],
             }
 
-            if mode == MapReduceMode.LOCAL:
+            if mode == constants.MapReduceMode.LOCAL:
                 logger.info(f"Initializing PyMapReduce in LOCAL EMBEDDED mode at {head_addr}...")
                 # Initialize local HeadNode with retry in case of WAL recovery
                 last_err = None
@@ -107,7 +108,7 @@ class MapReduceManager:
             if cls._driver and cls._is_initialized:
                 try:
                     mode = settings.PYMAPREDUCE.MODE
-                    if mode == MapReduceMode.LOCAL:
+                    if mode == constants.MapReduceMode.LOCAL:
                         await cls._driver.shutdown()
                     logger.info("PyMapReduce Driver shutdown completed")
                 except Exception as e:

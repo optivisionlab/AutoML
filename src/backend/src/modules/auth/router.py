@@ -1,8 +1,8 @@
 # Third-party Libraries
+from fastapi import Depends, BackgroundTasks, APIRouter, Response, Request, status
 from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
 from pymongo.asynchronous.database import AsyncDatabase
-from fastapi import Depends, BackgroundTasks, APIRouter, Response, Request, status
 
 # Local Libraries
 from src.core import responses, exceptions, cookies, dependencies

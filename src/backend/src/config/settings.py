@@ -5,6 +5,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Local Libraries
+from src.shared import constants
+
 
 class MinIOSettings(BaseModel):
     ENDPOINT: str = Field(default="localhost:9000", validation_alias="MINIO_ENDPOINT")
@@ -15,6 +18,7 @@ class MinIOSettings(BaseModel):
 class MongoDB(BaseModel):
     CONNECT: str = Field(default="localhost:27017", validation_alias="MONGODB_CONNECT")
     NAME: str = "AutoML"
+
 
 class ProjectInfo(BaseModel):
     NAME: str = "HAutoML"
@@ -51,20 +55,9 @@ class KafkaSettings(BaseModel):
     TOPIC: str = Field(default="train-job-topic", validation_alias="KAFKA_TOPIC")
 
 
-class MapReduceMode(str):
-    LOCAL = "local"
-    CLUSTER = "cluster"
-
-
 class MapReduceSettings(BaseModel):
-    MODE: str = Field(default=MapReduceMode.LOCAL, validation_alias="MAPREDUCE_MODE")
+    MODE: str = Field(default=constants.MapReduceMode.LOCAL, validation_alias="MAPREDUCE_MODE")
     HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
-
-
-class ProblemType(str):
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-    TIME_SERIES = "time_series"
 
 
 class Settings(BaseSettings):

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# ==============================================================================
 # Script to stop background PyMapReduce processes (Head Node & Worker Nodes)
-# ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"

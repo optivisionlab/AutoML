@@ -8,8 +8,8 @@ from fastapi.security import OAuth2PasswordBearer
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.config import databases
 from src.core import security, exceptions
+from src.config import databases
 from src.shared import constants
 
 

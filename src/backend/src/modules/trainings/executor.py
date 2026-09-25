@@ -15,7 +15,7 @@ from sklearn.model_selection import (
 )
 
 # Local Libraries
-from src.config import ProblemType
+from src.shared import constants
 from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
 from src.modules.trainings.schemas import ModelTaskResult
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def build_cv_splitter(
     cv_config: CVStrategyConfig | dict[str, Any],
-    problem_type: str = ProblemType.CLASSIFICATION
+    problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> BaseCrossValidator:
     if isinstance(cv_config, dict):
         tier = cv_config.get("tier", 2)
@@ -40,7 +40,7 @@ def build_cv_splitter(
         n_repeats = cv_config.n_repeats or 5
         name = cv_config.name
 
-    if problem_type == ProblemType.REGRESSION:
+    if problem_type == constants.ProblemType.REGRESSION:
         if tier == 1 or "Repeated" in name:
             return ContinuousRepeatedStratifiedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=42)
         return ContinuousStratifiedKFold(n_splits=n_splits, random_state=42)
@@ -58,7 +58,7 @@ def tune_and_fit_model(
     metric_sort: str,
     X_train: np.ndarray,
     y_train: np.ndarray,
-    problem_type: str = ProblemType.CLASSIFICATION
+    problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> tuple[BaseEstimator, dict[str, Any], GridSearchCV]:
     model = model_cls()
 
@@ -70,7 +70,7 @@ def tune_and_fit_model(
     if metric_clean in scoring:
         refit_metric = metric_clean
     else:
-        refit_metric = "r2" if problem_type == ProblemType.REGRESSION else "accuracy"
+        refit_metric = "r2" if problem_type == constants.ProblemType.REGRESSION else "accuracy"
         if refit_metric not in scoring and scoring:
             refit_metric = next(iter(scoring.keys()))
 
@@ -95,7 +95,7 @@ def evaluate_trained_model(
     test_data_bytes: bytes | None,
     metric_list: list[str],
     metric_sort: str,
-    problem_type: str = ProblemType.CLASSIFICATION
+    problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> tuple[dict[str, float], float]:
     metric_clean = metric_sort.lower().strip().replace(" ", "_")
 

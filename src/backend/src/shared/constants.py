@@ -20,3 +20,14 @@ class MessageResponse(str, Enum):
     """
     SUCCESS = "Success"
     FAILED = "Failed"
+
+
+class ProblemType(str):
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    TIME_SERIES = "time_series"
+
+
+class MapReduceMode(str):
+    LOCAL = "local"
+    CLUSTER = "cluster"

@@ -1,19 +1,24 @@
+# Standard Libraries
 import logging
 from typing import Any
 import yaml
 
-from src.config import settings, ProblemType
+# Local Libraries
+from src.config import settings
+from src.shared import constants
 
+
+# Logging
 logger = logging.getLogger(__name__)
 
 
 def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
     match problem_type:
-        case ProblemType.CLASSIFICATION | "classification":
+        case constants.ProblemType.CLASSIFICATION | "classification":
             target_path = settings.BASE_DIR / "assets" / "classification.yml"
-        case ProblemType.REGRESSION | "regression":
+        case constants.ProblemType.REGRESSION | "regression":
             target_path = settings.BASE_DIR / "assets" / "regression.yml"
-        case ProblemType.TIME_SERIES | "time_series":
+        case constants.ProblemType.TIME_SERIES | "time_series":
             target_path = settings.BASE_DIR / "assets" / "time_series.yml"
         case _:
             logger.error(f"Invalid problem type: {problem_type}")

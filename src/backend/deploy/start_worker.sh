@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# ==============================================================================
 # Script to start PyMapReduce Worker Node natively on bare-metal machines
-# ==============================================================================
 
 set -e
 
