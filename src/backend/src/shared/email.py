@@ -22,14 +22,6 @@ logger = logging.getLogger(__name__)
 
 class GmailService:
     def __init__(self) -> None:
-        self._sender_email: str | None = settings.MAIL.USERNAME
-        self._app_password: str | None = settings.MAIL.PASSWORD
-        self._frontend_url: str = settings.FRONTEND_URL
-        self._logo: str = settings.LOGO
-
-        if not self._sender_email or not self._app_password:
-            logger.warning("MAIL_USERNAME or MAIL_PASSWORD is not set in environment variables")
-
         backend_dir = Path(__file__).resolve().parent.parent.parent
 
         self._template_email_for_verifications = backend_dir / "assets" / "verificationEmailForm.html"
@@ -37,6 +29,22 @@ class GmailService:
 
         self._cached_verification_html = self._load_template(self._template_email_for_verifications)
         self._cached_otp_html = self._load_template(self._template_email_for_otp)
+
+    @property
+    def _sender_email(self) -> str | None:
+        return settings.MAIL.USERNAME
+
+    @property
+    def _app_password(self) -> str | None:
+        return settings.MAIL.PASSWORD
+
+    @property
+    def _frontend_url(self) -> str:
+        return settings.FRONTEND_URL
+
+    @property
+    def _logo(self) -> str:
+        return settings.LOGO
 
     def _load_template(self, filepath: Path) -> str | None:
         try:
@@ -65,12 +73,12 @@ class GmailService:
                         Xác thực tài khoản
                     </a>
                 </div>
-                
+
                 <div style="text-align: center; margin-top: 20px;">
                     <p style="color: #666; font-size: 14px;">Hoặc quét mã QR dưới đây bằng điện thoại:</p>
                     <img src="cid:qr_code" alt="QR Code" style="width: 150px; height: 150px; border: 1px solid #ccc; border-radius: 10px;" />
                 </div>
-                
+
                 <p style="color: #999; font-size: 12px; text-align: center;">
                     Liên kết này sẽ hết hạn trong 15 phút.
                 </p>
@@ -141,7 +149,7 @@ class GmailService:
             msg.attach(image_part)
         except Exception as e:
             logger.error(f"Error attaching QR Code image: {str(e)}")
-        
+
         try:
             with smtplib.SMTP('smtp.gmail.com', 587) as server:
                 server.starttls()
@@ -169,7 +177,7 @@ class GmailService:
         msg_alternative = MIMEMultipart('alternative')
         msg.attach(msg_alternative)
         msg_alternative.attach(MIMEText(html_content, 'html'))
-        
+
         try:
             with smtplib.SMTP('smtp.gmail.com', 587) as server:
                 server.starttls()
@@ -181,7 +189,7 @@ class GmailService:
         except Exception as e:
             logger.error(f"Error sending verification email to {email_to}: {str(e)}", exc_info=True)
             return False
- 
+
     def get_verify_link(self, token: str) -> str:
         safe_token = urllib.parse.quote(token)
         return f"{self._frontend_url}/verify-email?token={safe_token}"
@@ -197,10 +205,10 @@ class GmailService:
         qr.make(fit=True)
 
         img = qr.make_image(fill_color="black", back_color="white")
-        
+
         buffered = BytesIO()
         img.save(buffered, format="PNG")
-        
+
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
         return img_str
 

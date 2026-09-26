@@ -31,3 +31,11 @@ class ProblemType(str):
 class MapReduceMode(str):
     LOCAL = "local"
     CLUSTER = "cluster"
+
+
+class SearchAlgorithm(str):
+    GRIDSEARCH = "grid_search"
+    RANDOMSEARCH = "random_search"
+    BAYESIANSEARCH = "bayesian_search"
+    GENETICALGORITHM = "genetic_algorithm"
+

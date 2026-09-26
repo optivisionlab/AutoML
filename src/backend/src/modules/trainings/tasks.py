@@ -10,6 +10,7 @@ import pymapreduce
 from sklearn.exceptions import ConvergenceWarning
 
 # Local Libraries
+from src.shared import constants
 from src.modules.models import MODEL_CLASS_MAP, ModelService
 from src.modules.preprocessing import CVStrategyConfig
 from src.modules.trainings.executor import (
@@ -36,7 +37,8 @@ def train_single_model_task(
     cv_config: CVStrategyConfig | dict[str, Any],
     metric_list: list[str],
     metric_sort: str,
-    problem_type: str = "classification",
+    problem_type: str = constants.ProblemType.CLASSIFICATION,
+    search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
 ) -> dict[str, Any]:
     start_time = time.time()
 
@@ -56,7 +58,7 @@ def train_single_model_task(
         metric_sort=metric_sort,
         X_train=X_train,
         y_train=y_train,
-        problem_type=problem_type,
+        search_algorithm=search_algorithm,
     )
 
     scores, primary_score = evaluate_trained_model(

@@ -63,6 +63,7 @@ class TrainingService:
         metric_list: list[str],
         metric_sort: str,
         problem_type: str = "classification",
+        search_algorithm: str = "grid_search",
     ) -> list[dict[str, Any]]:
         space_models = (
             search_space.REGRESSION_MODELS
@@ -87,6 +88,7 @@ class TrainingService:
                 metric_list,
                 metric_sort,
                 problem_type,
+                search_algorithm,
             )
             tasks.append(task_coro)
 
@@ -110,8 +112,7 @@ class TrainingService:
     @staticmethod
     def _evaluate_and_select_best_model(
         valid_results: list[dict[str, Any]],
-        metric_sort: str,
-        problem_type: str = "classification",
+        metric_sort: str
     ) -> tuple[ModelScoreItem, dict[str, Any], float, list[ModelScoreItem]]:
         model_scores = [
             ModelScoreItem(
@@ -159,6 +160,7 @@ class TrainingService:
         models_to_train: list[str] | None = None,
         custom_params: dict[str, Any] | None = None,
         problem_type: str = "classification",
+        search_algorithm: str = "grid_search",
     ) -> AutoMLPipelineResult:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
@@ -194,12 +196,12 @@ class TrainingService:
             metric_list=metric_list,
             metric_sort=metric_sort,
             problem_type=problem_type,
+            search_algorithm=search_algorithm,
         )
 
         best_entry, best_raw, best_score, model_scores = cls._evaluate_and_select_best_model(
             valid_results=valid_results,
-            metric_sort=metric_sort,
-            problem_type=problem_type,
+            metric_sort=metric_sort
         )
 
         best_estimator = pickle.loads(best_raw["model_bytes"])
@@ -339,6 +341,7 @@ class TrainingService:
             metric_sort = config.get("metric_sort") or ("r2" if problem_type == "regression" else "accuracy")
             models_to_train = config.get("models")
             custom_params = config.get("custom_params")
+            search_algorithm = config.get("search_algorithm") or config.get("hpo_algorithm") or "grid_search"
 
             pipeline_result = await self.train_automl_pipeline(
                 df=df,
@@ -349,6 +352,7 @@ class TrainingService:
                 models_to_train=models_to_train,
                 custom_params=custom_params,
                 problem_type=problem_type,
+                search_algorithm=search_algorithm,
             )
 
             _, storage_info = await self._save_best_model_artifact(

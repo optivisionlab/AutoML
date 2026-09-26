@@ -11,11 +11,17 @@ from sklearn.model_selection import (
     BaseCrossValidator,
     StratifiedKFold,
     RepeatedStratifiedKFold,
-    GridSearchCV,
 )
 
 # Local Libraries
 from src.shared import constants
+from src.modules.hpo import (
+    BaseSearchCV,
+    GridSearch,
+    RandomSearch,
+    BayesianSearch,
+    GeneticAlgorithmSearch,
+)
 from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
 from src.modules.trainings.schemas import ModelTaskResult
@@ -58,40 +64,56 @@ def tune_and_fit_model(
     metric_sort: str,
     X_train: np.ndarray,
     y_train: np.ndarray,
-    problem_type: str = constants.ProblemType.CLASSIFICATION
-) -> tuple[BaseEstimator, dict[str, Any], GridSearchCV]:
+    search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
+) -> tuple[BaseEstimator, dict[str, Any], BaseSearchCV]:
     model = model_cls()
 
-    # Ensure param_grid has at least 1 candidate parameter set
-    if not param_grid:
-        param_grid = [{}]
+    match search_algorithm:
+        case constants.SearchAlgorithm.RANDOMSEARCH:
+            searcher = RandomSearch(
+                estimator=model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                refit=metric_sort,
+                n_jobs=1,
+            )
+        case constants.SearchAlgorithm.BAYESIANSEARCH:
+            searcher = BayesianSearch(
+                estimator=model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                refit=metric_sort,
+                n_jobs=1,
+            )
+        case constants.SearchAlgorithm.GENETICALGORITHM:
+            searcher = GeneticAlgorithmSearch(
+                estimator=model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                refit=metric_sort,
+                n_jobs=1,
+            )
+        case _:
+            searcher = GridSearch(
+                estimator=model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                refit=metric_sort,
+                n_jobs=1,
+            )
 
-    metric_clean = metric_sort.lower().strip().replace(" ", "_")
-    if metric_clean in scoring:
-        refit_metric = metric_clean
-    else:
-        refit_metric = "r2" if problem_type == constants.ProblemType.REGRESSION else "accuracy"
-        if refit_metric not in scoring and scoring:
-            refit_metric = next(iter(scoring.keys()))
+    searcher.fit(X_train, y_train)
 
-    grid_search = GridSearchCV(
-        estimator=model,
-        param_grid=param_grid,
-        cv=cv,
-        scoring=scoring,
-        refit=refit_metric,
-        error_score=0.0,
-        n_jobs=1,
-    )
-
-    grid_search.fit(X_train, y_train)
-
-    return grid_search.best_estimator_, grid_search.best_params_, grid_search
+    return searcher.best_estimator_, searcher.best_params_, searcher
 
 
 def evaluate_trained_model(
     best_estimator: BaseEstimator,
-    grid_search: GridSearchCV,
+    grid_search: BaseSearchCV,
     test_data_bytes: bytes | None,
     metric_list: list[str],
     metric_sort: str,
