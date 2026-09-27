@@ -52,8 +52,8 @@ class KafkaSettings(BaseModel):
 
 
 class MapReduceSettings(BaseModel):
-    MODE: str = Field(default="local", validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    MODE: str = Field(default="cluster", validation_alias="MAPREDUCE_MODE")
+    HEAD_ADDRESS: str = Field(default="10.100.200.119:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
 
 
 class Settings(BaseSettings):
@@ -104,9 +104,6 @@ class Settings(BaseSettings):
         "http://localhost:3000",      # React/Next.js local
         "http://localhost:5173",      # Vite local
     ]
-
-    # Search algorithm config
-    N_JOBS = 1
 
     model_config = SettingsConfigDict(
         env_file=".env", 
