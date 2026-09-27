@@ -457,16 +457,20 @@ def cleanup_demo_session():
 
 
 if __name__ == "__main__":
+    import os
     cleanup_demo_session()
-    PORT = 7860
-    logger.info(f"Starting HAutoML ToolKit Demo at http://127.0.0.1:{PORT}...")
+    SERVER_NAME = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
+    PORT = int(os.getenv("GRADIO_SERVER_PORT", 7860))
+    IN_BROWSER = os.getenv("GRADIO_IN_BROWSER", "false").lower() in ("true", "1", "yes")
+
+    logger.info(f"Starting HAutoML ToolKit Demo at http://{SERVER_NAME}:{PORT}...")
     try:
         demo.launch(
-            server_name="127.0.0.1",
+            server_name=SERVER_NAME,
             server_port=PORT,
             theme=gr.themes.Base(),
             css=CUSTOM_CSS,
-            inbrowser=True
+            inbrowser=IN_BROWSER
         )
     finally:
         cleanup_demo_session()

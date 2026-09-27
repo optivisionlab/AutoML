@@ -1,4 +1,33 @@
 services:
+  # ==========================================
+  # 1. HAutoML Demo Application Service
+  # ==========================================
+  hautoml:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: hautoml
+    restart: unless-stopped
+    ports:
+      - "${DEMO_PORT:-7860}:7860"
+    env_file:
+      - ../.env
+    environment:
+      - MONGODB_CONNECT=mongodb://mongodb:27017
+      - MINIO_ENDPOINT=minio:9000
+      - KAFKA_SERVER=kafka:9092
+      - MQTT_HOSTNAME=mqtt_broker
+    depends_on:
+      - mongo
+      - minio
+      - kafka
+      - mqtt
+    networks:
+      - hautoml_net
+
+  # ==========================================
+  # 2. MQTT Broker (Mosquitto)
+  # ==========================================
   mqtt:
     image: eclipse-mosquitto:latest
     container_name: mqtt_broker
@@ -20,7 +49,12 @@ services:
       chown mosquitto:mosquitto /mosquitto/config/passwd && 
       exec mosquitto -c /mosquitto/config/mosquitto.conf
       "
+    networks:
+      - hautoml_net
 
+  # ==========================================
+  # 3. MinIO Object Storage (S3-compatible)
+  # ==========================================
   minio:
     image: quay.io/minio/minio:latest
     container_name: minio
@@ -34,7 +68,12 @@ services:
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
+    networks:
+      - hautoml_net
 
+  # ==========================================
+  # 4. Apache Kafka (Event Streaming)
+  # ==========================================
   kafka:
     image: apache/kafka:latest
     container_name: kafka
@@ -46,7 +85,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_ADVERTISED_HOST:-localhost}:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${KAFKA_ADVERTISED_HOST:-kafka}:9092
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -58,15 +97,26 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
+    networks:
+      - hautoml_net
 
+  # ==========================================
+  # 5. MongoDB (Metadata Database)
+  # ==========================================
   mongo:
     image: mongo:latest
-    restart: unless-stopped
     container_name: mongodb
+    restart: unless-stopped
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    networks:
+      - hautoml_net
+
+networks:
+  hautoml_net:
+    driver: bridge
 
 volumes:
   mqtt_data:

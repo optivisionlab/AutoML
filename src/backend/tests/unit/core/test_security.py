@@ -1,58 +1,37 @@
 # Standard Libraries
-import unittest
+import pytest
 
 # Local Libraries
 from src.core.security import HashHelper, jwt_service
 
 
-class TestSecurity(unittest.TestCase):
-    def test_hash_helper(self):
-        password = "my_strong_password_123!"
-        hashed = HashHelper.get_password_hash(password)
+def test_hash_helper():
+    password = "my_strong_password_123!"
+    hashed = HashHelper.get_password_hash(password)
 
-        self.assertNotEqual(password, hashed)
-        self.assertTrue(HashHelper.verify_password(password, hashed))
-        self.assertFalse(HashHelper.verify_password("wrong_password", hashed))
-
-    def test_jwt_service_access_token(self):
-        data = {"sub": "user_id_123"}
-        token = jwt_service.create_access_token(data)
-
-        self.assertIsNotNone(token)
-
-        payload = jwt_service.verify_token(token)
-        self.assertIsNotNone(payload)
-        self.assertEqual(payload["sub"], "user_id_123")
-        self.assertEqual(payload["type"], "access")
-        self.assertIn("exp", payload)
-
-    def test_jwt_service_refresh_token(self):
-        data = {"sub": "user_id_456"}
-        token = jwt_service.create_refresh_token(data)
-
-        self.assertIsNotNone(token)
-
-        payload = jwt_service.verify_token(token)
-        self.assertIsNotNone(payload)
-        self.assertEqual(payload["sub"], "user_id_456")
-        self.assertEqual(payload["type"], "refresh")
-
-    def test_jwt_service_verification_token(self):
-        data = {"sub": "user_id_789"}
-        token = jwt_service.create_verification_token(data)
-
-        self.assertIsNotNone(token)
-
-        payload = jwt_service.verify_token(token)
-        self.assertIsNotNone(payload)
-        self.assertEqual(payload["sub"], "user_id_789")
-        self.assertEqual(payload["type"], "verification")
-
-    def test_jwt_service_verify_invalid_token(self):
-        invalid_token = "this.is.invalid"
-        payload = jwt_service.verify_token(invalid_token)
-        self.assertIsNone(payload)
+    assert password != hashed
+    assert HashHelper.verify_password(password, hashed) is True
+    assert HashHelper.verify_password("wrong_password", hashed) is False
 
 
-if __name__ == '__main__':
-    unittest.main()
+@pytest.mark.parametrize("token_type,create_fn", [
+    ("access", jwt_service.create_access_token),
+    ("refresh", jwt_service.create_refresh_token),
+    ("verification", jwt_service.create_verification_token),
+])
+def test_jwt_token_lifecycle(token_type, create_fn):
+    data = {"sub": f"user_id_{token_type}"}
+    token = create_fn(data)
+    assert token is not None
+
+    payload = jwt_service.verify_token(token)
+    assert payload is not None
+    assert payload["sub"] == f"user_id_{token_type}"
+    assert payload["type"] == token_type
+    assert "exp" in payload
+
+
+def test_jwt_service_verify_invalid_token():
+    invalid_token = "this.is.invalid"
+    payload = jwt_service.verify_token(invalid_token)
+    assert payload is None

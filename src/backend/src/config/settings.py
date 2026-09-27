@@ -52,8 +52,8 @@ class KafkaSettings(BaseModel):
 
 
 class MapReduceSettings(BaseModel):
-    MODE: str = Field(default="cluster", validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="10.100.200.119:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    MODE: str = Field(default="local", validation_alias="MAPREDUCE_MODE")
+    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
 
 
 class Settings(BaseSettings):

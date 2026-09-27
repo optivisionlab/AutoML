@@ -13,26 +13,27 @@ venv/
 .venv/
 env/
 pip-log.txt
+.pytest_cache/
+.coverage
+htmlcov/
 
-# --- Docker Files ---
+# --- Docker & CI/CD Configs ---
 Dockerfile
 *.dockerfile
 docker-compose.yml
+docker-compose.yaml
 *.docker-compose.yml
 .dockerignore
 
 # --- Documentation ---
+docs/
 README.md
 LICENSE
-
 *.sh
+
+# --- Temporary & Heavy Assets ---
+assets/*.csv
 assets/end_users
 assets/online_shoppers
 assets/desc.md
 assets/assets/config-data-iris.yaml
-assets/*.csv
-
-__pycache__/
-
-*.dockerfile
-docker-compose.yaml
