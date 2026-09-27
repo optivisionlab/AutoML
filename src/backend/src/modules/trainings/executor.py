@@ -7,21 +7,12 @@ from typing import Any, Type
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import (
-    BaseCrossValidator,
-    StratifiedKFold,
-    RepeatedStratifiedKFold,
-)
+from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold
 
 # Local Libraries
+from src.config import settings
 from src.shared import constants
-from src.modules.hpo import (
-    BaseSearchCV,
-    GridSearch,
-    RandomSearch,
-    BayesianSearch,
-    GeneticAlgorithmSearch,
-)
+from src.modules.hpo import BaseSearchCV, GridSearch, RandomSearch, BayesianSearch, GeneticAlgorithmSearch
 from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
 from src.modules.trainings.schemas import ModelTaskResult
@@ -76,7 +67,7 @@ def tune_and_fit_model(
                 cv=cv,
                 scoring=scoring,
                 refit=metric_sort,
-                n_jobs=1,
+                n_jobs=settings.N_JOBS
             )
         case constants.SearchAlgorithm.BAYESIANSEARCH:
             searcher = BayesianSearch(
@@ -85,7 +76,7 @@ def tune_and_fit_model(
                 cv=cv,
                 scoring=scoring,
                 refit=metric_sort,
-                n_jobs=1,
+                n_jobs=settings.N_JOBS
             )
         case constants.SearchAlgorithm.GENETICALGORITHM:
             searcher = GeneticAlgorithmSearch(
@@ -94,7 +85,7 @@ def tune_and_fit_model(
                 cv=cv,
                 scoring=scoring,
                 refit=metric_sort,
-                n_jobs=1,
+                n_jobs=settings.N_JOBS
             )
         case _:
             searcher = GridSearch(
@@ -103,7 +94,7 @@ def tune_and_fit_model(
                 cv=cv,
                 scoring=scoring,
                 refit=metric_sort,
-                n_jobs=1,
+                n_jobs=settings.N_JOBS
             )
 
     searcher.fit(X_train, y_train)

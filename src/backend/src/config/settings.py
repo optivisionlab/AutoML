@@ -105,6 +105,9 @@ class Settings(BaseSettings):
         "http://localhost:5173",      # Vite local
     ]
 
+    # Search algorithm config
+    N_JOBS = 1
+
     model_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8",
