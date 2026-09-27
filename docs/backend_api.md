@@ -122,3 +122,30 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
 - **Mô tả**: Kích hoạt hoặc vô hiệu hóa một mô hình đã được huấn luyện để suy luận.
 - **Tham số truy vấn (Query Parameters)**: `job_id` (string), `activate` (integer, 0 hoặc 1).
 - **Response**: Một thông báo xác nhận.
+
+### `POST /connect-database`
+- **Mô tả**: Kiểm tra kết nối tới cơ sở dữ liệu (hỗ trợ 12 loại: PostgreSQL, MySQL, SQLite, DuckDB, Snowflake, BigQuery, ClickHouse, MSSQL, Oracle, Trino, Hive, Redshift) và lấy danh sách các bảng có sẵn.
+- **Request Body**: Đối tượng JSON chứa:
+    - `db_type` (string, bắt buộc): Loại CSDL (ví dụ: `"postgres"`, `"mysql"`, `"sqlite"`, `"duckdb"`, `"snowflake"`, `"mssql"`...).
+    - `database` (string, bắt buộc): Tên cơ sở dữ liệu, file path hoặc `:memory:` (đối với SQLite/DuckDB).
+    - `host` (string, tùy chọn): Địa chỉ IP hoặc tên miền máy chủ CSDL (mặc định: `"localhost"`).
+    - `port` (int, tùy chọn): Cổng mạng (mặc định tự động điền theo từng CSDL, ví dụ 5432, 3306, 1433, 1521, 8123...).
+    - `user` (string, tùy chọn): Tên đăng nhập CSDL.
+    - `password` (string, tùy chọn): Mật khẩu truy cập CSDL.
+    - `schema_name` (string, tùy chọn): Tên schema (ví dụ: `"public"`, `"analytics"`).
+    - `extra_params` (object, tùy chọn): Các tham số đặc thù của từng hệ CSDL:
+        - Snowflake: `account`, `warehouse`, `role`.
+        - MSSQL: `driver` (ODBC driver name), `trust_server_certificate`.
+        - Oracle: `service_name`, `sid`.
+        - BigQuery: `cred_file_path` (đường dẫn service account JSON).
+        - Hive: `auth`.
+- **Response**: Đối tượng JSON chứa trạng thái kết nối và danh sách tên các bảng (`tables: [...]`).
+
+### `POST /import-database-table`
+- **Mô tả**: Trích xuất dữ liệu của một bảng từ CSDL đã kết nối, đóng gói thành định dạng Parquet và nạp vào hệ sinh thái AutoML (lưu trữ MinIO và đăng ký vào MongoDB).
+- **Request Body**: Đối tượng JSON chứa:
+    - Các trường kết nối: `db_type`, `database`, `host` (tùy chọn), `port` (tùy chọn), `user` (tùy chọn), `password` (tùy chọn), `schema_name` (tùy chọn), `extra_params` (tùy chọn).
+    - `table_name` (string, bắt buộc): Tên bảng người dùng chọn để trích xuất dữ liệu.
+    - `data_name` (string, bắt buộc): Tên đặt cho bộ dữ liệu trên hệ thống AutoML.
+- **Response**: Đối tượng JSON chứa siêu dữ liệu của tập dữ liệu mới được tạo trong hệ thống.
+

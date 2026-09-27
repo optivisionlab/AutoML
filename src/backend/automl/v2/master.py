@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends
 from pymongo.asynchronous.database import AsyncDatabase
 
 from automl.v2.minio import minIOStorage
-from database.get_dataset import MongoJob
+from database.get_dataset import MongoJob, MongoNotification
 from database.database import get_db
 
 
@@ -268,7 +268,11 @@ MACRO_WEIGHTED_METRICS = {'f1', 'recall', 'precision'}
 async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
     # Aggregates final results for a job
     job_update = MongoJob(db)
+    notification = MongoNotification(db)
+
     tracker = state.job_tracker[job_id]
+
+    dataset_name = await job_update.get_dataset_name(job_id)
 
     valid_results = [r for r in tracker["results"] if r.get("success")]
     if not valid_results:
@@ -334,11 +338,36 @@ async def reduce_results_for_job(job_id: str, db: AsyncDatabase):
         }
 
         await job_update.update_success(job_id, final_result_payload)
+
+        asyncio.create_task(
+            notification.push_notification(
+                user_id=tracker['id_user'],
+                job_id=job_id,
+                status=1,
+                message=f"Bộ dữ liệu [{dataset_name}] huấn luyện thành công.",
+                metadata={
+                    "best_model": best_model_info['model_name'],
+                    "best_score": original_best_result["score"]
+                }
+            )
+        )
+
         return True
 
     except Exception as e:
         error_msg = f"Update failure: {str(e)}"
         await job_update.update_failure(job_id, error_msg)
+
+        asyncio.create_task(
+            notification.push_notification(
+                user_id=tracker['id_user'],
+                job_id=job_id,
+                status=-1,
+                message=f"Bộ dữ liệu [{dataset_name}] huấn luyện thất bại.",
+                metadata={"error_details": error_msg}
+            )
+        )
+
         raise Exception(f"{error_msg}")
 
 

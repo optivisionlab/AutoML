@@ -1,3 +1,4 @@
+
 from fastapi import (
     FastAPI,
     UploadFile,
@@ -54,9 +55,17 @@ from experiment import exp
 from automl.v2.master import master
 from users.schema import ResetPasswordRequest
 
+from database.adapters import DatabaseConfig
+from database.services import DatabaseManager
+from database.schemas import ConnectDBRequest, ImportTableRequest
+import io, uuid
+from datetime import datetime, timezone
+from automl.v2.minio import minIOStorage
 
 # Load file .env
 load_dotenv()
+
+
 
 
 # Lifespan Context Manager 
@@ -456,6 +465,75 @@ async def inference(
 async def api_activate_model(job_id, activate=0, db: AsyncDatabase = Depends(get_db), current_user = Depends(get_current_user)):
     return await update_activate_model(job_id, db, activate)
 
+# API 1: Phục vụ nút "Kết nối" (Kiểm tra và lấy danh sách bảng)
+@app.post("/connect-database")
+async def api_connect_database(payload: ConnectDBRequest, current_user = Depends(get_current_user)):
+    try:
+        config = DatabaseConfig(
+            db_type=payload.db_type,
+            host=payload.host,
+            port=payload.port,
+            user=payload.user,
+            password=payload.password,
+            database=payload.database,
+            schema_name=payload.schema_name,
+            extra_params=payload.extra_params or {},
+        )
+        tables = DatabaseManager.test_connection_and_get_tables(config)
+        return {
+            "success": True,
+            "message": "Kết nối cơ sở dữ liệu thành công!",
+            "tables": tables
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kết nối thất bại: {str(e)}"
+        )
+
+
+# API 2: Phục vụ nút "Lấy dữ liệu" (Lấy bảng đưa vào MinIO và hệ thống AutoML)
+@app.post("/import-database-table")
+async def api_import_database_table(
+    payload: ImportTableRequest, 
+    db: AsyncDatabase = Depends(get_db), 
+    current_user = Depends(get_current_user)
+):
+    try:
+        config = DatabaseConfig(
+            db_type=payload.db_type,
+            host=payload.host,
+            port=payload.port,
+            user=payload.user,
+            password=payload.password,
+            database=payload.database,
+            schema_name=payload.schema_name,
+            extra_params=payload.extra_params or {},
+        )
+        dataset_meta = await DatabaseManager.import_table_to_dataset(
+            config=config,
+            table_name=payload.table_name,
+            data_name=payload.data_name,
+            user_id=str(current_user["_id"]),
+            username=current_user.get("username", ""),
+            role=current_user.get("role", "user"),
+            minio_storage=minIOStorage,
+            db_mongo=db
+        )
+        return {
+            "success": True,
+            "message": f"Đã nhập thành công bảng '{payload.table_name}' vào AutoML!",
+            "dataset": dataset_meta
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Lỗi trong quá trình trích xuất dữ liệu: {str(e)}"
+        )
+
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host=os.getenv('HOST_BACK_END', '0.0.0.0'), port=int(os.getenv('PORT_BACK_END', 8080)), reload=True)
+

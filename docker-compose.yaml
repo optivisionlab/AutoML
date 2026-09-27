@@ -72,6 +72,8 @@ services:
       MONGODB_ROOT_PASSWORD: "password123"
     networks:
       - hautoml-network
+    volumes:
+      - mongo_data:/bitnami/mongodb
     ports:
       - "27017:27017"
     logging: *default-logging
@@ -89,6 +91,8 @@ services:
     command: server /data --console-address ":9001"
     networks:
       - hautoml-network
+    volumes:
+      - minio_data:/data
 
   hautoml_frontend:
     image: optivisionlab/hautoml-frontend:v2.2
@@ -101,6 +105,23 @@ services:
     networks:
       - hautoml-network
     logging: *default-logging
+
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883"
+      - "1884:1884"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./passwd:/mosquitto/config/passwd
+      - ./data:/mosquitto/data
+    restart: unless-stopped
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   hautoml-network:

@@ -32,3 +32,27 @@ passlib[argon2]==1.7.4
 psutil>=7.2.1
 fastapi-mail
 qrcode[pil]
+
+# Database Drivers & Connectors
+psycopg2-binary==2.9.9
+pymysql==1.1.1
+cryptography==42.0.5
+sqlalchemy==2.0.30
+pyodbc>=5.0.0
+snowflake-sqlalchemy>=1.6.0
+snowflake-connector-python>=3.10.0
+sqlalchemy-bigquery>=1.11.0
+google-cloud-bigquery>=3.25.0
+duckdb>=1.1.0
+duckdb-engine>=0.15.0
+clickhouse-connect>=0.7.0
+oracledb>=2.0.0
+trino>=0.328.0
+pyhive>=0.7.0
+thrift>=0.16.0
+thrift-sasl>=0.4.3
+sqlalchemy-redshift>=0.8.14
+
+
+
+aiomqtt

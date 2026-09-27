@@ -1,0 +1,6 @@
+# This is an example file.
+# Do NOT type your real password here!
+# Run the following command to generate the actual passwd file:
+# docker run --rm -it -v $(pwd):/workspace eclipse-mosquitto mosquitto_passwd -c -b /workspace/passwd admin password123
+# 'admin' is the username
+# 'password123' is the password
