@@ -1,6 +1,4 @@
-# ========================================================
 # 1. Base Stage: System & Python Dependencies
-# ========================================================
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,13 +16,11 @@ WORKDIR /app
 
 # Install Python production and demo dependencies
 COPY requirements.txt /app/requirements.txt
-COPY demo/requirements.txt /app/demo_requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt -r /app/demo_requirements.txt
-
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # ========================================================
+
 # 2. Test Stage: Run Unit Tests with pytest
-# ========================================================
 FROM base AS test-runner
 
 # Install testing dependencies from tests/requirements.txt
@@ -39,23 +35,27 @@ COPY tests/ /app/tests/
 # Execute tests using pytest
 RUN pytest tests/ -c tests/pytest.ini -v
 
+# ========================================================
 
-# ========================================================
-# 3. Production / Demo Stage: Clean Image
-# ========================================================
+# 3. Production
 FROM base AS production
 
-# Copy application source code, assets, and demo UI (Tests are excluded)
-COPY src/ /app/src/
-COPY assets/ /app/assets/
+# Copy application source code, assets
+COPY --from=test-runner /app/src/ /app/src/
+COPY --from=test-runner /app/assets/ /app/assets/
+
+CMD ["python", "-m", "src.main"]
+
+
+# ========================================================
+
+# 4. Toolkit
+FROM production AS toolkit
+
+# Copy demo ui
 COPY demo/ /app/demo/
+RUN pip install --no-cache-dir -r /app/demo/requirements.txt
 
-# Expose Gradio demo port
-EXPOSE 7860
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:7860/ || exit 1
-
-# Launch Demo application
 CMD ["python", "-m", "demo.app"]
+
+# ========================================================

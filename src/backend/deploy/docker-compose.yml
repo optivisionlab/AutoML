@@ -1,15 +1,35 @@
 services:
   # ==========================================
-  # 1. HAutoML Demo Application Service
+  # 1. HAutoML Toolkit Service (Standalone Demo UI)
   # ==========================================
-  hautoml:
+  toolkit:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    container_name: hautoml
+      target: toolkit
+    container_name: hautoml_toolkit
     restart: unless-stopped
     ports:
       - "${DEMO_PORT:-7860}:7860"
+    environment:
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+    networks:
+      - hautoml_net
+
+  # ==========================================
+  # 2. HAutoML Backend API Service
+  # ==========================================
+  hautoml-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: hautoml_service
+    restart: unless-stopped
+    command: ["python", "-m", "src.main"]
+    ports:
+      - "${PORT_BACK_END:-9999}:9999"
     env_file:
       - ../.env
     environment:
@@ -26,7 +46,32 @@ services:
       - hautoml_net
 
   # ==========================================
-  # 2. MQTT Broker (Mosquitto)
+  # 3. HAutoML Training Consumer (Kafka Worker)
+  # ==========================================
+  hautoml-consumer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: production
+    container_name: hautoml_consumer
+    restart: unless-stopped
+    command: ["python", "-m", "src.core.consumer"]
+    env_file:
+      - ../.env
+    environment:
+      - MONGODB_CONNECT=mongodb://mongodb:27017
+      - MINIO_ENDPOINT=minio:9000
+      - KAFKA_SERVER=kafka:9092
+      - MQTT_HOSTNAME=mqtt_broker
+    depends_on:
+      - kafka
+      - mongo
+      - minio
+    networks:
+      - hautoml_net
+
+  # ==========================================
+  # 4. MQTT Broker (Mosquitto)
   # ==========================================
   mqtt:
     image: eclipse-mosquitto:latest
@@ -53,7 +98,7 @@ services:
       - hautoml_net
 
   # ==========================================
-  # 3. MinIO Object Storage (S3-compatible)
+  # 5. MinIO Object Storage (S3-compatible)
   # ==========================================
   minio:
     image: quay.io/minio/minio:latest
@@ -72,7 +117,7 @@ services:
       - hautoml_net
 
   # ==========================================
-  # 4. Apache Kafka (Event Streaming)
+  # 6. Apache Kafka (Event Streaming)
   # ==========================================
   kafka:
     image: apache/kafka:latest
@@ -101,7 +146,7 @@ services:
       - hautoml_net
 
   # ==========================================
-  # 5. MongoDB (Metadata Database)
+  # 7. MongoDB (Metadata Database)
   # ==========================================
   mongo:
     image: mongo:latest
