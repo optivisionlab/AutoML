@@ -57,7 +57,7 @@ async def require_admin(
     if current_user.get("role") != "admin":
         raise exceptions.CustomException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Admin privileges required.",
+            detail="Access denied. Admin privileges required",
             error_code=constants.ErrorCode.FORBIDDEN 
         )
 
@@ -74,7 +74,7 @@ async def require_owner_or_admin(
     if not (is_owner or is_admin):
         raise exceptions.CustomException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access or modify this account.",
+            detail="You do not have permission to access or modify this account",
             error_code=constants.ErrorCode.FORBIDDEN
         )
 

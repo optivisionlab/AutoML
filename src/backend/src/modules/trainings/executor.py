@@ -103,7 +103,7 @@ def tune_and_fit_model(
 
 def evaluate_trained_model(
     best_estimator: BaseEstimator,
-    grid_search: BaseSearchCV,
+    search: BaseSearchCV,
     test_data_bytes: bytes | None,
     metric_list: list[str],
     metric_sort: str,
@@ -126,14 +126,14 @@ def evaluate_trained_model(
         for m in metric_list:
             m_clean = m.lower().strip().replace(" ", "_")
             key = f"mean_test_{m_clean}"
-            if key in grid_search.cv_results_:
-                val = float(grid_search.cv_results_[key][grid_search.best_index_])
+            if key in search.cv_results_:
+                val = float(search.cv_results_[key][search.best_index_])
                 if m_clean in LOWER_IS_BETTER_METRICS and val < 0:
                     val = abs(val)
                 scores[m_clean] = val
             else:
                 scores[m_clean] = 0.0
-        primary_score = scores.get(metric_clean, float(grid_search.best_score_))
+        primary_score = scores.get(metric_clean, float(search.best_score_))
 
     return scores, primary_score
 

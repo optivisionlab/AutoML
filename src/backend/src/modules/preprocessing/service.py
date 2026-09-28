@@ -9,6 +9,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import LabelEncoder
 
 # Local Libraries
+from src.shared import constants
 from src.modules.preprocessing.schemas import CVStrategyConfig
 from src.modules.preprocessing.regression import (
     prepare_regression_data,
@@ -29,7 +30,7 @@ class FittedPreprocessor:
         self,
         feature_names: list[str],
         target_name: str,
-        problem_type: str = "classification",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
         preprocessor: ColumnTransformer | None = None,
         target_encoder: LabelEncoder | None = None,
     ):
@@ -54,7 +55,7 @@ class FittedPreprocessor:
         return df_features[self.feature_names].to_numpy(dtype=np.float64)
 
     def inverse_transform_target(self, y_pred: np.ndarray | list[Any]) -> list[Any]:
-        if self.problem_type == "classification" and self.target_encoder is not None:
+        if self.problem_type == constants.ProblemType.CLASSIFICATION and self.target_encoder is not None:
             try:
                 y_arr = np.asarray(y_pred)
                 return self.target_encoder.inverse_transform(y_arr.astype(int)).tolist()
@@ -73,10 +74,10 @@ class TabularPreprocessor:
     @staticmethod
     def determine_cv_tier(
         n_rows: int,
-        problem_type: str = "classification",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
         min_class_count: int = 5,
     ) -> CVStrategyConfig:
-        if problem_type == "regression":
+        if problem_type == constants.ProblemType.REGRESSION:
             return determine_regression_cv_tier(n_rows)
         return determine_classification_cv_tier(n_rows, min_class_count)
 
@@ -86,10 +87,10 @@ class TabularPreprocessor:
         df: pd.DataFrame,
         target_col: str,
         feature_cols: list[str] | None = None,
-        problem_type: str = "classification",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
         random_state: int = 42,
     ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray] | None, CVStrategyConfig, list[str], FittedPreprocessor]:
-        if problem_type == "regression":
+        if problem_type == constants.ProblemType.REGRESSION:
             (X_train, y_train), test_data, cv_config, features, preprocessor, target_encoder = prepare_regression_data(
                 df=df,
                 target_col=target_col,

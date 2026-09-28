@@ -203,7 +203,7 @@ class AuthService:
             }
 
             user_id = await self.repo.create_user(new_user_doc)
-            
+
             await self.repo.create_linked_account({
                 'user_id': user_id,
                 'provider': 'google',

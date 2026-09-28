@@ -36,7 +36,7 @@ class DatabaseManager:
             # Initialization
             cls.client = AsyncMongoClient(
                 mongodb_address,
-                serverSelectionTimeoutMS=5000,
+                serverSelectionTimeoutMS=5000
             )
 
             # Ping to check server connection

@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 # Local Libraries
-from src.shared import minio_service, search_space, MapReduceManager
+from src.shared import minio_service, search_space, constants, MapReduceManager
 from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
 from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
@@ -37,7 +37,7 @@ class TrainingService:
         df: pd.DataFrame,
         target_col: str,
         feature_cols: list[str] | None,
-        problem_type: str = "classification",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
     ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
         (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
@@ -62,12 +62,12 @@ class TrainingService:
         cv_config: CVStrategyConfig,
         metric_list: list[str],
         metric_sort: str,
-        problem_type: str = "classification",
-        search_algorithm: str = "grid_search",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
+        search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
     ) -> list[dict[str, Any]]:
         space_models = (
             search_space.REGRESSION_MODELS
-            if problem_type == "regression"
+            if problem_type == constants.ProblemType.REGRESSION
             else search_space.CLASSIFICATION_MODELS
         )
 
@@ -159,8 +159,8 @@ class TrainingService:
         metric_sort: str | None = None,
         models_to_train: list[str] | None = None,
         custom_params: dict[str, Any] | None = None,
-        problem_type: str = "classification",
-        search_algorithm: str = "grid_search",
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
+        search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
     ) -> AutoMLPipelineResult:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
@@ -168,7 +168,7 @@ class TrainingService:
         driver = await MapReduceManager.get_driver()
 
         target_col = target_col or str(df.columns[-1])
-        if problem_type == "regression":
+        if problem_type == constants.ProblemType.REGRESSION:
             metric_list = metric_list or search_space.REGRESSION_METRIC_LIST
             metric_sort = metric_sort or "r2"
             models_to_train = models_to_train or list(search_space.REGRESSION_MODELS.keys())
@@ -338,7 +338,7 @@ class TrainingService:
             target_col = config.get("target")
             feature_cols = config.get("features") or config.get("list_feature")
             metric_list = config.get("metrics")
-            metric_sort = config.get("metric_sort") or ("r2" if problem_type == "regression" else "accuracy")
+            metric_sort = config.get("metric_sort") or ("r2" if problem_type == constants.ProblemType.REGRESSION else "accuracy")
             models_to_train = config.get("models")
             custom_params = config.get("custom_params")
             search_algorithm = config.get("search_algorithm") or config.get("hpo_algorithm") or "grid_search"

@@ -53,7 +53,7 @@ class OffsetPaginationMeta(BaseModel):
 
 class OffsetPaginatedResponse(BaseModel, Generic[T]):
     """
-    Normalized schema for APIs that return lists using offset/limit.
+    Normalized schema for APIs that return lists using offset/limit
     """
     success: bool = True
     message: str = constants.MessageResponse.SUCCESS.value

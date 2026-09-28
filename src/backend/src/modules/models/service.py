@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     precision_score,
     recall_score,
     f1_score,
@@ -19,7 +20,7 @@ from sklearn.metrics import (
 )
 
 # Local Libraries
-from src.shared import search_space
+from src.shared import search_space, constants
 
 
 # Logging
@@ -42,7 +43,7 @@ class ModelService:
     @staticmethod
     def build_scoring_dict(
         metric_list: list[str] | None = None,
-        problem_type: str = "classification"
+        problem_type: str = constants.ProblemType.CLASSIFICATION
     ) -> dict[str, Any]:
         metrics = (
             metric_list
@@ -56,12 +57,20 @@ class ModelService:
                 # Classification
                 case "accuracy":
                     scoring["accuracy"] = make_scorer(accuracy_score)
-                case "f1":
-                    scoring["f1"] = make_scorer(f1_score, average="macro", zero_division=0)
-                case "precision":
-                    scoring["precision"] = make_scorer(precision_score, average="macro", zero_division=0)
-                case "recall":
-                    scoring["recall"] = make_scorer(recall_score, average="macro", zero_division=0)
+                case "balanced_accuracy":
+                    scoring["balanced_accuracy"] = make_scorer(balanced_accuracy_score)
+                case "f1" | "f1_macro":
+                    scoring[metric_clean] = make_scorer(f1_score, average="macro", zero_division=0)
+                case "f1_weighted":
+                    scoring["f1_weighted"] = make_scorer(f1_score, average="weighted", zero_division=0)
+                case "precision" | "precision_macro":
+                    scoring[metric_clean] = make_scorer(precision_score, average="macro", zero_division=0)
+                case "precision_weighted":
+                    scoring["precision_weighted"] = make_scorer(precision_score, average="weighted", zero_division=0)
+                case "recall" | "recall_macro":
+                    scoring[metric_clean] = make_scorer(recall_score, average="macro", zero_division=0)
+                case "recall_weighted":
+                    scoring["recall_weighted"] = make_scorer(recall_score, average="weighted", zero_division=0)
 
                 # Regression
                 case "r2":
@@ -91,9 +100,9 @@ class ModelService:
         X_test: np.ndarray,
         y_test: np.ndarray,
         metric_list: list[str] | None = None,
-        problem_type: str = "classification"
+        problem_type: str = constants.ProblemType.CLASSIFICATION
     ) -> dict[str, float]:
-        if problem_type == "regression":
+        if problem_type == constants.ProblemType.REGRESSION:
             metrics = metric_list or search_space.REGRESSION_METRIC_LIST
         else:
             metrics = metric_list or search_space.CLASSIFICATION_METRIC_LIST
@@ -107,12 +116,20 @@ class ModelService:
                 # Classification metrics
                 case "accuracy":
                     results["accuracy"] = float(accuracy_score(y_test, y_pred))
-                case "f1":
-                    results["f1"] = float(f1_score(y_test, y_pred, average="macro", zero_division=0))
-                case "precision":
-                    results["precision"] = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
-                case "recall":
-                    results["recall"] = float(recall_score(y_test, y_pred, average="macro", zero_division=0))
+                case "balanced_accuracy":
+                    results["balanced_accuracy"] = float(balanced_accuracy_score(y_test, y_pred))
+                case "f1" | "f1_macro":
+                    results[metric_clean] = float(f1_score(y_test, y_pred, average="macro", zero_division=0))
+                case "f1_weighted":
+                    results["f1_weighted"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))
+                case "precision" | "precision_macro":
+                    results[metric_clean] = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
+                case "precision_weighted":
+                    results["precision_weighted"] = float(precision_score(y_test, y_pred, average="weighted", zero_division=0))
+                case "recall" | "recall_macro":
+                    results[metric_clean] = float(recall_score(y_test, y_pred, average="macro", zero_division=0))
+                case "recall_weighted":
+                    results["recall_weighted"] = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))
 
                 # Regression metrics
                 case "r2":

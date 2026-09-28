@@ -80,7 +80,7 @@ class TestPreprocessingPipeline(unittest.TestCase):
         np.testing.assert_array_almost_equal(inv, preds)
 
     def test_models_service_metrics(self):
-        from sklearn.dummy import DummyRegressor
+        from sklearn.dummy import DummyRegressor, DummyClassifier
         X = np.array([[1], [2], [3]])
         y = np.array([10.0, 20.0, 30.0])
         model = DummyRegressor(strategy="mean")
@@ -95,6 +95,34 @@ class TestPreprocessingPipeline(unittest.TestCase):
         
         for metric in ["mse", "mae", "mape", "rmse"]:
             self.assertIn(metric, LOWER_IS_BETTER_METRICS)
+
+        # Classification metrics test
+        X_cls = np.array([[1], [2], [3], [4]])
+        y_cls = np.array([0, 1, 0, 1])
+        clf = DummyClassifier(strategy="most_frequent")
+        clf.fit(X_cls, y_cls)
+
+        cls_metric_list = [
+            "accuracy",
+            "balanced_accuracy",
+            "precision_macro",
+            "precision_weighted",
+            "recall_macro",
+            "recall_weighted",
+            "f1_macro",
+            "f1_weighted",
+            "precision",
+            "recall",
+            "f1",
+        ]
+        scoring_dict = ModelService.build_scoring_dict(cls_metric_list, problem_type="classification")
+        for m in cls_metric_list:
+            self.assertIn(m, scoring_dict)
+
+        cls_results = ModelService.evaluate_holdout(clf, X_cls, y_cls, metric_list=cls_metric_list, problem_type="classification")
+        for m in cls_metric_list:
+            self.assertIn(m, cls_results)
+
 
     def test_regression_model_registry(self):
         reg_models = [

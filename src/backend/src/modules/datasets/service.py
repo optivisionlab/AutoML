@@ -488,12 +488,12 @@ class DatasetService:
 
                 suggested_type = self.analyze_column_for_target(series)
 
-                if problem_type == "classification":
+                if problem_type == constants.ProblemType.CLASSIFICATION:
                     if suggested_type in ["classification", "both"]:
                         features[col_name] = True
                     else:
                         features[col_name] = False
-                elif problem_type == "regression":
+                elif problem_type == constants.ProblemType.REGRESSION:
                     if suggested_type in ["regression", "both"]:
                         features[col_name] = True
                     else:

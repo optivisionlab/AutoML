@@ -122,21 +122,20 @@ def render_champion_card_html(
         for k, v in best_params.items()
     ]) if best_params else '<span class="param-pill">Default parameters</span>'
 
-    # Format metric cards according to problem type
-    if problem_type == "regression":
-        metrics_to_show = ["r2", "mse", "mae", "rmse", "mape"]
-    else:
-        metrics_to_show = ["accuracy", "f1", "precision", "recall"]
+    # Format metric cards dynamically from all evaluated scores
+    primary_clean = primary_metric.lower().strip().replace(" ", "_")
+    metrics_to_show = [primary_clean] + [m for m in all_scores.keys() if m != primary_clean]
 
     metric_cards_html = ""
     for m in metrics_to_show:
         if m in all_scores:
             val = all_scores.get(m, 0.0)
-            is_primary = (m == primary_metric.lower().strip())
+            is_primary = (m == primary_clean)
             primary_class = "metric-card-primary" if is_primary else ""
+            display_name = m.upper().replace("_", " ")
             metric_cards_html += f"""
             <div class="metric-card {primary_class}">
-                <div class="metric-name">{m.upper()}{' (PRIMARY)' if is_primary else ''}</div>
+                <div class="metric-name">{html.escape(display_name)}{' (PRIMARY)' if is_primary else ''}</div>
                 <div class="metric-num">{val:.4f}</div>
             </div>
             """

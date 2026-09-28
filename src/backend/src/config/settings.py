@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class MinIOSettings(BaseModel):
     ENDPOINT: str = Field(default="localhost:9000", validation_alias="MINIO_ENDPOINT")
     ACCESS_KEY: str = Field(default="admin", validation_alias="MINIO_ACCESS_KEY")
@@ -61,7 +62,7 @@ class Settings(BaseSettings):
     Centralized configuration management for project
     """
     # System Paths
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    BASE_DIR: Path = Path(__file__).resolve().parents[2]
     LOGO: str = "https://"
 
     # Project Info

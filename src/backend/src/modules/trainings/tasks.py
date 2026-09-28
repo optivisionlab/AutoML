@@ -50,7 +50,7 @@ def train_single_model_task(
     cv = build_cv_splitter(cv_config, problem_type=problem_type)
     scoring = ModelService.build_scoring_dict(metric_list, problem_type=problem_type)
 
-    best_estimator, best_params, grid_search = tune_and_fit_model(
+    best_estimator, best_params, search = tune_and_fit_model(
         model_cls=model_cls,
         param_grid=param_grid,
         cv=cv,
@@ -63,7 +63,7 @@ def train_single_model_task(
 
     scores, primary_score = evaluate_trained_model(
         best_estimator=best_estimator,
-        grid_search=grid_search,
+        search=search,
         test_data_bytes=test_data_bytes,
         metric_list=metric_list,
         metric_sort=metric_sort,
