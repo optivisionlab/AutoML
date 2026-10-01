@@ -7,15 +7,21 @@ services:
     ports:
       - "${HEAD_PORT:-7777}:7777"
     environment:
+      - PYTHONUNBUFFERED=1
       - HEAD_PORT=${HEAD_PORT:-7777}
       - SCHEDULER=${SCHEDULER:-Adaptive}
     volumes:
       - pymapreduce_wal:/tmp
     command: >
       sh -c "
-      pip install --no-cache-dir pymapreduce-core==0.1.9 > /dev/null 2>&1 &&
-      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v 'Disaster Recovery'
+      pip install --no-cache-dir pymapreduce-core==0.1.9 &&
+      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v -E 'Disaster Recovery|WAL|wal'
       "
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pymapreduce_net
 
@@ -33,10 +39,10 @@ services:
       - ./requirements.txt:/app/requirements.txt:ro
     command: >
       sh -c "
-      apt-get update -qq > /dev/null 2>&1 &&
-      apt-get install -y -qq --no-install-recommends libgomp1 > /dev/null 2>&1 &&
+      apt-get update &&
+      apt-get install -y --no-install-recommends libgomp1 &&
       rm -rf /var/lib/apt/lists/* &&
-      pip install --no-cache-dir -r /app/requirements.txt > /dev/null 2>&1 &&
+      pip install --no-cache-dir -r /app/requirements.txt &&
       if [ -n \"\$$WORKER_CPUS\" ]; then
         exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS
       else
@@ -47,6 +53,11 @@ services:
       resources:
         limits:
           memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - pymapreduce_net
 
