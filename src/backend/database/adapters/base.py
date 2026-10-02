@@ -157,11 +157,20 @@ class BaseDatabaseAdapter(ABC):
         )
         with self.engine.connect() as conn:
             inspector = inspect(conn)
-            columns = inspector.get_columns(table_name, schema=schema)
+            try:
+                columns = inspector.get_columns(table_name, schema=schema)
+                if not columns and table_name not in self.get_tables():
+                    raise TableNotFoundError(f"Bảng hoặc view '{table_name}' không tồn tại trong CSDL.")
+            except Exception as e:
+                if isinstance(e, TableNotFoundError):
+                    raise
+                raise TableNotFoundError(f"Bảng hoặc view '{table_name}' không tồn tại trong CSDL: {str(e)}") from e
+
             return {
                 "table_name": table_name,
                 "columns": [{"name": col["name"], "type": str(col["type"])} for col in columns],
             }
+
 
     def dispose(self):
         """Dọn dẹp và đóng Engine, giải phóng Connection Pool"""

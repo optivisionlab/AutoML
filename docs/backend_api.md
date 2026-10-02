@@ -141,6 +141,31 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
         - Hive: `auth`.
 - **Response**: Đối tượng JSON chứa trạng thái kết nối và danh sách tên các bảng (`tables: [...]`).
 
+### `POST /database-table-info`
+- **Mô tả**: Xem trước cấu trúc danh sách cột (tên cột & kiểu dữ liệu) và các dòng dữ liệu mẫu của một bảng trước khi import.
+- **Request Body**: Đối tượng JSON chứa:
+    - Các trường kết nối: `db_type`, `database`, `host` (tùy chọn), `port` (tùy chọn), `user` (tùy chọn), `password` (tùy chọn), `schema_name` (tùy chọn), `extra_params` (tùy chọn).
+    - `table_name` (string, bắt buộc): Tên bảng cần xem trước.
+    - `limit` (int, tùy chọn, mặc định: 10): Số lượng dòng dữ liệu mẫu muốn xem trước.
+- **Response**: Đối tượng JSON chứa thông tin:
+    ```json
+    {
+      "success": true,
+      "message": "Lấy thông tin bảng 'users' thành công!",
+      "data": {
+        "table_name": "users",
+        "columns": [
+          {"name": "id", "type": "INTEGER"},
+          {"name": "email", "type": "VARCHAR"}
+        ],
+        "preview_data": [
+          {"id": 1, "email": "test@example.com"}
+        ],
+        "preview_count": 1
+      }
+    }
+    ```
+
 ### `POST /import-database-table`
 - **Mô tả**: Trích xuất dữ liệu của một bảng từ CSDL đã kết nối, đóng gói thành định dạng Parquet và nạp vào hệ sinh thái AutoML (lưu trữ MinIO và đăng ký vào MongoDB).
 - **Request Body**: Đối tượng JSON chứa:
@@ -148,4 +173,5 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
     - `table_name` (string, bắt buộc): Tên bảng người dùng chọn để trích xuất dữ liệu.
     - `data_name` (string, bắt buộc): Tên đặt cho bộ dữ liệu trên hệ thống AutoML.
 - **Response**: Đối tượng JSON chứa siêu dữ liệu của tập dữ liệu mới được tạo trong hệ thống.
+
 

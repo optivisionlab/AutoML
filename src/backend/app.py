@@ -57,7 +57,7 @@ from users.schema import ResetPasswordRequest
 
 from database.adapters import DatabaseConfig
 from database.services import DatabaseManager
-from database.schemas import ConnectDBRequest, ImportTableRequest
+from database.schemas import ConnectDBRequest, ImportTableRequest, TableInfoRequest
 import io, uuid
 from datetime import datetime, timezone
 from automl.v2.minio import minIOStorage
@@ -531,6 +531,40 @@ async def api_import_database_table(
         raise HTTPException(
             status_code=500,
             detail=f"Lỗi trong quá trình trích xuất dữ liệu: {str(e)}"
+        )
+
+
+# API 3: Phục vụ xem trước cấu trúc bảng và dữ liệu mẫu
+@app.post("/database-table-info")
+async def api_database_table_info(
+    payload: TableInfoRequest,
+    current_user = Depends(get_current_user)
+):
+    try:
+        config = DatabaseConfig(
+            db_type=payload.db_type,
+            host=payload.host,
+            port=payload.port,
+            user=payload.user,
+            password=payload.password,
+            database=payload.database,
+            schema_name=payload.schema_name,
+            extra_params=payload.extra_params or {},
+        )
+        table_info = DatabaseManager.get_table_info_and_preview(
+            config=config,
+            table_name=payload.table_name,
+            limit=payload.limit or 10
+        )
+        return {
+            "success": True,
+            "message": f"Lấy thông tin bảng '{payload.table_name}' thành công!",
+            "data": table_info
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể lấy thông tin bảng '{payload.table_name}': {str(e)}"
         )
 
 

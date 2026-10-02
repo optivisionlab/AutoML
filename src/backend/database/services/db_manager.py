@@ -2,6 +2,7 @@ import io
 import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any
+import pandas as pd
 from ..adapters import DatabaseAdapterFactory, DatabaseConfig
 
 class DatabaseManager:
@@ -13,6 +14,33 @@ class DatabaseManager:
         with DatabaseAdapterFactory.create(config) as adapter:
             adapter.test_connection()
             return adapter.get_tables()
+
+    @staticmethod
+    def get_table_info_and_preview(
+        config: DatabaseConfig,
+        table_name: str,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """Lấy schema các cột và một số dòng dữ liệu mẫu để xem trước trên UI"""
+        with DatabaseAdapterFactory.create(config) as adapter:
+            schema_info = adapter.get_table_schema(table_name)
+            df = adapter.fetch_table_to_dataframe(table_name=table_name, limit=limit)
+
+            # Chuẩn hóa toàn bộ NaN / NaT / None an toàn cho JSON serialization
+            raw_records = df.to_dict(orient="records")
+            preview_data = [
+                {k: (None if pd.isna(v) else v) for k, v in row.items()}
+                for row in raw_records
+            ]
+
+            return {
+                "table_name": table_name,
+                "columns": schema_info.get("columns", []),
+                "preview_data": preview_data,
+                "preview_count": len(preview_data)
+            }
+
+
 
     @staticmethod
     async def import_table_to_dataset(

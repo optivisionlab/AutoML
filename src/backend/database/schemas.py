@@ -26,3 +26,18 @@ class ImportTableRequest(BaseModel):
     password: Optional[str] = None
     schema_name: Optional[str] = None
     extra_params: Optional[Dict[str, Any]] = None
+
+
+class TableInfoRequest(BaseModel):
+    """Schema dữ liệu cho API xem trước thông tin cột và dữ liệu mẫu của bảng."""
+    db_type: str
+    database: str
+    table_name: str
+    host: Optional[str] = "localhost"
+    port: Optional[int] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    schema_name: Optional[str] = None
+    extra_params: Optional[Dict[str, Any]] = None
+    limit: Optional[int] = 10
+
