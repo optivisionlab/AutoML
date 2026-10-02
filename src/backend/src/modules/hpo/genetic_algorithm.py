@@ -8,7 +8,7 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import BaseCrossValidator
 
 # Local Libraries
-from src.modules.hpo.base import BaseSearchCV
+from src.modules.hpo.base import BaseSearchCV, TrialPruned
 
 
 # Logging
@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 class GeneticAlgorithmSearch(BaseSearchCV):
     """
-    Hyperparameter optimization using Genetic Algorithm (GA).
-    Evolves a population of hyperparameter configurations over multiple generations using
-    Tournament Selection, Uniform Crossover, Mutation, and Elitism.
+    Hyperparameter optimization using Genetic Algorithm (GA)
     """
 
     def __init__(
@@ -32,6 +30,9 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         crossover_rate: float = 0.8,
         elite_size: int = 2,
         tournament_size: int = 3,
+        patience: int | None = 2,
+        min_delta: float = 1e-4,
+        enable_pruning: bool = False,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
@@ -42,9 +43,13 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         super().__init__(
             estimator=estimator,
             param_grid=param_grid,
+            patience=patience,
+            min_delta=min_delta,
+            enable_pruning=enable_pruning,
             cv=cv,
             scoring=scoring,
             refit=refit,
+            random_state=random_state,
             n_jobs=n_jobs,
             verbose=verbose,
         )
@@ -54,11 +59,10 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         self.crossover_rate = crossover_rate
         self.elite_size = min(elite_size, self.population_size - 1)
         self.tournament_size = min(tournament_size, self.population_size)
-        self.random_state = random_state
 
     def _sample_individual(self, grid: dict[str, Any], rng: np.random.Generator) -> dict[str, Any]:
         """
-        Samples a single individual (chromosome) randomly from the parameter grid.
+        Samples a single individual (hyperparameter configuration) from the search grid
         """
         return {
             k: rng.choice(v) if isinstance(v, (list, tuple, np.ndarray)) and len(v) > 0 else v
@@ -72,7 +76,7 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         rng: np.random.Generator,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """
-        Performs uniform crossover between two parent chromosomes.
+        Performs crossover between two parent individuals
         """
         if rng.random() > self.crossover_rate:
             return parent1.copy(), parent2.copy()
@@ -91,7 +95,7 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         rng: np.random.Generator,
     ) -> dict[str, Any]:
         """
-        Applies random mutation to an individual's genes with mutation_rate probability.
+        Mutates genes of an individual with mutation_rate probability
         """
         mutated = individual.copy()
         for k, v in grid.items():
@@ -107,7 +111,7 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         rng: np.random.Generator,
     ) -> dict[str, Any]:
         """
-        Selects an individual using tournament selection.
+        Selects the best individual via tournament selection
         """
         contestants = rng.choice(len(population), size=self.tournament_size, replace=False)
         winner_idx = contestants[np.argmax([fitness_scores[i] for i in contestants])]
@@ -121,11 +125,11 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         rng: np.random.Generator,
     ) -> list[dict[str, Any]]:
         """
-        Creates the next generation via elitism, selection, crossover, and mutation.
+        Evolves the population to the next generation via selection, crossover, and mutation
         """
         next_population: list[dict[str, Any]] = []
 
-        # Elitism: preserve top performers directly
+        # Elitism: preserve top performers
         if self.elite_size > 0:
             elite_indices = np.argsort(fitness_scores)[::-1][: self.elite_size]
             next_population.extend(population[i].copy() for i in elite_indices)
@@ -144,7 +148,7 @@ class GeneticAlgorithmSearch(BaseSearchCV):
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "GeneticAlgorithmSearch":
         """
-        Executes Genetic Algorithm search over generations.
+        Executes Genetic Algorithm search over generations
         """
         rng = np.random.default_rng(self.random_state)
         self._init_search(X, y)
@@ -171,26 +175,36 @@ class GeneticAlgorithmSearch(BaseSearchCV):
                         mean_scores, std_scores, fit_time, score_time = cache[param_key]
                     else:
                         trial_counter += 1
-                        mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
-                            candidate_params=individual,
-                            X=X,
-                            y=y,
-                            trial_num=trial_counter,
-                            total_trials=total_trials_estimate,
-                        )
-                        self._record_trial(individual, mean_scores, std_scores, fit_time, score_time)
-                        cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
+                        try:
+                            mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
+                                candidate_params=individual,
+                                X=X,
+                                y=y,
+                                trial_num=trial_counter,
+                                total_trials=total_trials_estimate,
+                            )
+                            self._record_trial(individual, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
+                            cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
+                        except TrialPruned:
+                            zero_scores = {m: 0.0 for m in self.scoring}
+                            self._record_trial(individual, zero_scores, zero_scores, 0.0, 0.0, is_pruned=True)
+                            cache[param_key] = (zero_scores, zero_scores, 0.0, 0.0)
+                            mean_scores = zero_scores
 
                     fitness_scores.append(float(mean_scores.get(self.refit, 0.0)))
 
+                best_fitness = max(fitness_scores)
+                mean_fitness = float(np.mean(fitness_scores))
+
                 if self.verbose > 0:
-                    best_fitness = max(fitness_scores)
-                    mean_fitness = float(np.mean(fitness_scores))
                     logger.info(
                         f"[GeneticAlgorithm] Gen {gen + 1}/{self.n_generations} | Best {self.refit}: {best_fitness:.4f} | Mean: {mean_fitness:.4f}"
                     )
 
-                # Evolve to next generation if not at the final generation
+                # Early stopping check on population best fitness
+                if self._check_early_stopping(best_fitness):
+                    break
+
                 if gen < self.n_generations - 1 and grid:
                     population = self._evolve_generation(population, fitness_scores, grid, rng)
 

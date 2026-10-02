@@ -69,6 +69,20 @@ def mock_mqtt(monkeypatch):
 
 
 @pytest.fixture
+def mock_mapreduce(monkeypatch):
+    """
+    Mock PyMapReduce Manager for cluster operations
+    """
+    mock_mgr = MagicMock()
+    mock_driver = MagicMock()
+    mock_mgr.get_driver = AsyncMock(return_value=mock_driver)
+    mock_mgr.shutdown = AsyncMock()
+    
+    monkeypatch.setattr("src.shared.MapReduceManager", mock_mgr)
+    return mock_mgr
+
+
+@pytest.fixture
 def sample_user_id():
     """
     Sample MongoDB ObjectId string
@@ -100,10 +114,30 @@ def auth_headers(sample_user_id):
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.fixture
-def test_client(mock_db, monkeypatch):
+@pytest.fixture(autouse=True)
+def mock_lifespan_services(monkeypatch):
     """
-    FastAPI TestClient with mocked database state
+    Globally mock all external services in lifespan for testing
+    """
+    monkeypatch.setattr("src.config.databases.DatabaseManager.connection", AsyncMock())
+    monkeypatch.setattr("src.config.databases.DatabaseManager.close_connection", AsyncMock())
+    monkeypatch.setattr("src.main.MapReduceManager.get_driver", AsyncMock())
+    monkeypatch.setattr("src.main.MapReduceManager.shutdown", AsyncMock())
+    monkeypatch.setattr("src.shared.MapReduceManager.get_driver", AsyncMock())
+    monkeypatch.setattr("src.shared.MapReduceManager.shutdown", AsyncMock())
+    monkeypatch.setattr("src.shared.mapreduce_client.MapReduceManager.get_driver", AsyncMock())
+    monkeypatch.setattr("src.shared.mapreduce_client.MapReduceManager.shutdown", AsyncMock())
+    monkeypatch.setattr("src.main.mqtt_service.connect", AsyncMock())
+    monkeypatch.setattr("src.main.mqtt_service.disconnect", AsyncMock())
+    monkeypatch.setattr("src.main.kafka_service.connect", AsyncMock())
+    monkeypatch.setattr("src.main.kafka_service.disconnect", AsyncMock())
+    monkeypatch.setattr("src.main.minio_service.close", AsyncMock())
+
+
+@pytest.fixture
+def test_client(mock_db, mock_minio, mock_kafka, mock_mqtt, mock_mapreduce, monkeypatch):
+    """
+    FastAPI TestClient with mocked database and shared services state
     """
     app.state.db = mock_db
     with TestClient(app) as client:

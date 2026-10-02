@@ -12,6 +12,7 @@ from src.modules.hpo import (
     RandomSearch,
     BayesianSearch,
     GeneticAlgorithmSearch,
+    TPESearch,
 )
 
 
@@ -91,6 +92,7 @@ class TestHPOAlgorithms(unittest.TestCase):
             param_grid=self.cls_param_grid,
             n_calls=6,
             n_initial_points=2,
+            patience=5,
             cv=self.cls_cv,
             scoring=self.cls_scoring,
             refit="accuracy",
@@ -111,6 +113,7 @@ class TestHPOAlgorithms(unittest.TestCase):
             param_grid=self.cls_param_grid,
             population_size=4,
             n_generations=2,
+            patience=2,
             cv=self.cls_cv,
             scoring=self.cls_scoring,
             refit="accuracy",
@@ -123,6 +126,54 @@ class TestHPOAlgorithms(unittest.TestCase):
         self.assertIsNotNone(searcher.best_estimator_)
         self.assertIn("max_depth", searcher.best_params_)
         self.assertGreater(searcher.best_score_, 0.8)
+        self.assertGreaterEqual(len(searcher.trials_history_), 1)
+
+    def test_tpe_search_classification(self):
+        searcher = TPESearch(
+            estimator=DecisionTreeClassifier(random_state=42),
+            param_grid=self.cls_param_grid,
+            n_trials=8,
+            patience=4,
+            enable_pruning=True,
+            cv=self.cls_cv,
+            scoring=self.cls_scoring,
+            refit="accuracy",
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+        )
+        searcher.fit(self.X_cls, self.y_cls)
+
+        self.assertIsNotNone(searcher.best_estimator_)
+        self.assertIn("max_depth", searcher.best_params_)
+        self.assertGreater(searcher.best_score_, 0.8)
+        self.assertGreaterEqual(len(searcher.trials_history_), 1)
+        self.assertIn("mean_test_accuracy", searcher.cv_results_)
+
+        # Test prediction
+        preds = searcher.predict(self.X_cls)
+        self.assertEqual(len(preds), len(self.y_cls))
+        proba = searcher.predict_proba(self.X_cls)
+        self.assertEqual(proba.shape[0], len(self.y_cls))
+
+    def test_tpe_search_regression(self):
+        searcher = TPESearch(
+            estimator=DecisionTreeRegressor(random_state=42),
+            param_grid=self.reg_param_grid,
+            n_trials=6,
+            patience=3,
+            enable_pruning=False,
+            cv=self.reg_cv,
+            scoring=self.reg_scoring,
+            refit="r2",
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+        )
+        searcher.fit(self.X_reg, self.y_reg)
+
+        self.assertIsNotNone(searcher.best_estimator_)
+        self.assertIn("max_depth", searcher.best_params_)
         self.assertGreaterEqual(len(searcher.trials_history_), 1)
 
     def test_empty_param_grid(self):

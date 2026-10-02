@@ -12,38 +12,40 @@ from sklearn.ensemble import RandomForestClassifier
 
 from src.core.exceptions import CustomException
 from src.modules.preprocessing import TabularPreprocessor
-from src.modules.inference.registry import InferenceModelRegistry
+from src.modules.inference.registry import InferenceActorRegistry
 from src.modules.inference.service import InferenceService
 from src.modules.inference.schemas import PredictRequest
 
 
-class TestInferenceModelRegistry(unittest.IsolatedAsyncioTestCase):
+class TestInferenceActorRegistry(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        InferenceModelRegistry.clear()
+        await InferenceActorRegistry.clear()
 
-    async def test_cache_and_eviction(self):
-        clf = RandomForestClassifier(n_estimators=10)
-        clf.fit([[1, 2], [3, 4]], [0, 1])
-        model_bytes = pickle.dumps(clf)
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
+    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    async def test_get_or_create_actor_and_eviction(self, mock_get_driver, mock_actor_remote):
+        mock_actor_handle = MagicMock()
+        mock_actor_remote.return_value = mock_actor_handle
 
         job_id = "job_123"
         storage_info = {"bucket_name": "models", "object_name": "path/model.pkl"}
 
-        with patch("src.shared.minio_service.get_object", new_callable=AsyncMock) as mock_get_object:
-            mock_get_object.return_value = model_bytes
+        actor1 = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
+        self.assertEqual(actor1, mock_actor_handle)
+        mock_actor_remote.assert_called_once()
+        mock_get_driver.assert_called_once()
 
-            model1 = await InferenceModelRegistry.get_model(job_id, storage_info)
-            self.assertIsNotNone(model1)
-            mock_get_object.assert_called_once()
+        # Calling again should return cached actor without calling remote again
+        mock_actor_remote.reset_mock()
+        actor2 = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
+        self.assertEqual(actor2, mock_actor_handle)
+        mock_actor_remote.assert_not_called()
 
-            mock_get_object.reset_mock()
-            model2 = await InferenceModelRegistry.get_model(job_id, storage_info)
-            self.assertEqual(model1, model2)
-            mock_get_object.assert_not_called()
-
-            evicted = InferenceModelRegistry.evict_model(job_id)
+        with patch("pymapreduce.kill", new_callable=AsyncMock) as mock_kill:
+            evicted = await InferenceActorRegistry.evict_actor(job_id)
             self.assertTrue(evicted)
-            self.assertNotIn(job_id, InferenceModelRegistry._cache)
+            mock_kill.assert_called_once_with(mock_actor_handle)
+            self.assertNotIn(job_id, InferenceActorRegistry._actors)
 
 
 class TestInferenceService(unittest.IsolatedAsyncioTestCase):
@@ -145,9 +147,11 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertIn("HttpClient", info.code_snippets.csharp)
         self.assertIn("curl_init", info.code_snippets.php)
 
-    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
-    async def test_predict_success_with_decoded_labels(self, mock_get_object):
-        mock_get_object.return_value = self.artifact_bytes
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_success_with_decoded_labels(self, mock_get_actor):
+        mock_actor = MagicMock()
+        mock_actor.predict.remote = AsyncMock(return_value=["ClassA", "ClassB"])
+        mock_get_actor.return_value = mock_actor
         self.mock_jobs.find_one.return_value = self.mock_job_doc
 
         req = PredictRequest(
@@ -168,36 +172,17 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertIn(res.predictions[0], ["ClassA", "ClassB"])
         self.assertIn(res.predictions[1], ["ClassA", "ClassB"])
         self.assertGreaterEqual(res.latency_ms, 0.0)
+        mock_actor.predict.remote.assert_called_once_with(req.data, self.mock_job_doc["config"]["list_feature"])
 
-    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
-    async def test_predict_regression_success(self, mock_get_object):
-        from sklearn.linear_model import LinearRegression
-
-        reg_df = pd.DataFrame({
-            "feature_x": [1.0, 2.0, 3.0, 4.0],
-            "feature_y": [10.0, 20.0, 30.0, 40.0],
-            "target_col": [11.0, 22.0, 33.0, 44.0],
-        })
-        (X_tr, y_tr), _, _, reg_features, reg_preprocessor = TabularPreprocessor.prepare_data(
-            df=reg_df,
-            target_col="target_col",
-            problem_type="regression",
-        )
-        reg_model = LinearRegression()
-        reg_model.fit(X_tr, y_tr)
-
-        reg_artifact = {
-            "model": reg_model,
-            "preprocessor": reg_preprocessor,
-            "feature_names": reg_features,
-            "target_name": "target_col",
-            "problem_type": "regression",
-        }
-        mock_get_object.return_value = pickle.dumps(reg_artifact)
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_regression_success(self, mock_get_actor):
+        mock_actor = MagicMock()
+        mock_actor.predict.remote = AsyncMock(return_value=[55.0])
+        mock_get_actor.return_value = mock_actor
 
         reg_job_doc = dict(self.mock_job_doc)
         reg_job_doc["best_model"] = "LinearRegression"
-        reg_job_doc["config"] = {"list_feature": reg_features, "target": "target_col", "problem_type": "regression"}
+        reg_job_doc["config"] = {"list_feature": ["feature_x", "feature_y"], "target": "target_col", "problem_type": "regression"}
         self.mock_jobs.find_one.return_value = reg_job_doc
 
         req = PredictRequest(
@@ -214,6 +199,7 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(res.predictions), 1)
         self.assertIsInstance(res.predictions[0], (float, int))
         self.assertAlmostEqual(res.predictions[0], 55.0, delta=1.0)
+        mock_actor.predict.remote.assert_called_once_with(req.data, ["feature_x", "feature_y"])
 
     async def test_predict_when_inactive_raises_forbidden(self):
         inactive_job = dict(self.mock_job_doc)
@@ -233,8 +219,9 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
     async def test_predict_missing_columns_raises_bad_request(self):
         self.mock_jobs.find_one.return_value = self.mock_job_doc
 
-        with patch("src.shared.minio_service.get_object", new_callable=AsyncMock) as mock_get_object:
-            mock_get_object.return_value = self.artifact_bytes
+        with patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock) as mock_get_actor:
+            mock_actor = MagicMock()
+            mock_get_actor.return_value = mock_actor
 
             req = PredictRequest(data=[{"feature_x": 1.0}])
 
@@ -246,9 +233,12 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
                 )
             self.assertEqual(ctx.exception.status_code, 400)
 
-    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
-    async def test_predict_file_csv_success(self, mock_get_object):
-        mock_get_object.return_value = self.artifact_bytes
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_file_csv_success(self, mock_get_actor):
+        csv_out = b"feature_x,feature_y,category_col,predicted_target_col\n1.5,2.5,red,ClassA\n6.5,7.5,blue,ClassB\n"
+        mock_actor = MagicMock()
+        mock_actor.predict_file.remote = AsyncMock(return_value=("predicted_test_data.csv", "text/csv", csv_out))
+        mock_get_actor.return_value = mock_actor
         self.mock_jobs.find_one.return_value = self.mock_job_doc
 
         csv_content = b"feature_x,feature_y,category_col\n1.5,2.5,red\n6.5,7.5,blue\n"
@@ -266,13 +256,29 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(media_type, "text/csv")
         df_out = pd.read_csv(buffer)
         self.assertEqual(len(df_out), 2)
-        self.assertIn("prediction", df_out.columns)
-        self.assertEqual(len(df_out["prediction"]), 2)
-        self.assertIn(df_out["prediction"].iloc[0], ["ClassA", "ClassB"])
+        self.assertIn("predicted_target_col", df_out.columns)
+        self.assertEqual(len(df_out["predicted_target_col"]), 2)
+        self.assertIn(df_out["predicted_target_col"].iloc[0], ["ClassA", "ClassB"])
 
-    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
-    async def test_predict_file_excel_success(self, mock_get_object):
-        mock_get_object.return_value = self.artifact_bytes
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_file_excel_success(self, mock_get_actor):
+        excel_out_buf = io.BytesIO()
+        df_fake = pd.DataFrame({
+            "feature_x": [1.5, 6.5],
+            "feature_y": [2.5, 7.5],
+            "category_col": ["red", "blue"],
+            "predicted_target_col": ["ClassA", "ClassB"],
+        })
+        df_fake.to_excel(excel_out_buf, index=False, engine="openpyxl")
+        excel_bytes = excel_out_buf.getvalue()
+
+        mock_actor = MagicMock()
+        mock_actor.predict_file.remote = AsyncMock(return_value=(
+            "predicted_test_data.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            excel_bytes,
+        ))
+        mock_get_actor.return_value = mock_actor
         self.mock_jobs.find_one.return_value = self.mock_job_doc
 
         df_in = pd.DataFrame({
@@ -298,7 +304,7 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertIn("spreadsheetml", media_type)
         df_out = pd.read_excel(buffer)
         self.assertEqual(len(df_out), 2)
-        self.assertIn("prediction", df_out.columns)
+        self.assertIn("predicted_target_col", df_out.columns)
 
     async def test_export_notebook(self):
         self.mock_jobs.find_one.return_value = self.mock_job_doc

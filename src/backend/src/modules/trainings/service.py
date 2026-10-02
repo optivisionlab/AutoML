@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 # Local Libraries
+from src.config import settings
 from src.shared import minio_service, search_space, constants, MapReduceManager
 from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
@@ -23,7 +24,7 @@ from src.modules.trainings.schemas import (
 from src.modules.trainings.repository import TrainingRepository
 
 
-# Loggng
+# Logging
 logger = logging.getLogger(__name__)
 
 
@@ -92,8 +93,14 @@ class TrainingService:
             )
             tasks.append(task_coro)
 
-        logger.info(f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce...")
-        raw_outputs = await asyncio.gather(*tasks)
+        task_timeout = settings.PYMAPREDUCE.TIMEOUT
+        logger.info(
+            f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={task_timeout}s)..."
+        )
+        if task_timeout and task_timeout > 0:
+            raw_outputs = await asyncio.wait_for(asyncio.gather(*tasks), timeout=float(task_timeout))
+        else:
+            raw_outputs = await asyncio.gather(*tasks)
 
         valid_results: list[dict[str, Any]] = []
         for out in raw_outputs:

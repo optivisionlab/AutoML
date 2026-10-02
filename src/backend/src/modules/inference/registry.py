@@ -1,88 +1,74 @@
 # Standard Libraries
-import io
-import time
-import pickle
 import logging
 import asyncio
 from typing import Any
 
+# Third-party Libraries
+import pymapreduce
+
 # Local Libraries
-from src.shared import minio_service
+from src.config import settings
+from src.shared import MapReduceManager, ModelInferenceActor
 
 
 # Logging
 logger = logging.getLogger(__name__)
 
 
-class InferenceModelRegistry:
-    """
-    In-memory Model Registry with LRU caching for low-latency inference serving
-    """
-    _cache: dict[str, dict[str, Any]] = {}
-    _lock = asyncio.Lock()
-    _max_cache_size: int = 50
+class InferenceActorRegistry:
+    _actors: dict[str, Any] = {}
+    _lock: asyncio.Lock = asyncio.Lock()
 
     @classmethod
-    async def get_model(cls, job_id: str, storage_info: dict[str, str]) -> Any:
-        """
-        Retrieve fitted model object from in-memory cache or download from MinIO
-        """
-        # Fast read from cache
-        if job_id in cls._cache:
-            cls._cache[job_id]["last_accessed"] = time.time()
-            return cls._cache[job_id]["model"]
+    async def get_or_create_actor(cls, job_id: str, storage_info: dict[str, str]) -> Any:
+        if job_id in cls._actors:
+            return cls._actors[job_id]
 
         async with cls._lock:
-            # Double-check after acquiring lock
-            if job_id in cls._cache:
-                cls._cache[job_id]["last_accessed"] = time.time()
-                return cls._cache[job_id]["model"]
+            if job_id in cls._actors:
+                return cls._actors[job_id]
 
             bucket_name = storage_info.get("bucket_name", "models")
             object_name = storage_info.get("object_name")
 
             if not object_name:
-                raise ValueError(f"Storage path for job '{job_id}' is empty or invalid")
+                raise ValueError(f"Storage path for job '{job_id}' is empty or invalid.")
 
-            logger.info(f"Cache miss for model job '{job_id}'. Fetching from MinIO: s3://{bucket_name}/{object_name}")
-            raw_bytes = await minio_service.get_object(bucket_name, object_name)
+            await MapReduceManager.get_driver()
 
-            if isinstance(raw_bytes, io.BytesIO):
-                raw_bytes = raw_bytes.getvalue()
+            actor_handle = await ModelInferenceActor.remote(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                minio_endpoint=settings.MINIO.ENDPOINT,
+                access_key=settings.MINIO.ACCESS_KEY,
+                secret_key=settings.MINIO.SECRET_KEY,
+                secure=(settings.PROJECT.ENVIRONMENT != "development"),
+            )
 
-            model = pickle.loads(raw_bytes)
-
-            # Evict oldest entry if cache exceeds maximum size
-            if len(cls._cache) >= cls._max_cache_size:
-                oldest_job_id = min(cls._cache.keys(), key=lambda k: cls._cache[k]["last_accessed"])
-                cls._cache.pop(oldest_job_id, None)
-                logger.info(f"Evicted oldest model '{oldest_job_id}' from memory cache")
-
-            cls._cache[job_id] = {
-                "model": model,
-                "bucket_name": bucket_name,
-                "object_name": object_name,
-                "cached_at": time.time(),
-                "last_accessed": time.time(),
-            }
-            logger.info(f"Model for job '{job_id}' successfully cached in memory")
-            return model
+            cls._actors[job_id] = actor_handle
+            return actor_handle
 
     @classmethod
-    def evict_model(cls, job_id: str) -> bool:
-        """
-        Remove a specific model from in-memory cache upon deactivation or deletion
-        """
-        if job_id in cls._cache:
-            cls._cache.pop(job_id, None)
-            logger.info(f"Model '{job_id}' evicted from memory cache")
+    async def evict_actor(cls, job_id: str) -> bool:
+        actor_handle = cls._actors.pop(job_id, None)
+        if actor_handle is not None:
+            try:
+                await pymapreduce.kill(actor_handle)
+            except Exception as e:
+                logger.warning(f"Error while killing actor for job '{job_id}': {e}")
             return True
         return False
 
     @classmethod
-    def clear(cls) -> None:
-        """
-        Clear all cached models from memory
-        """
-        cls._cache.clear()
-        logger.info("InferenceModelRegistry memory cache cleared")
+    async def clear(cls) -> None:
+        async with cls._lock:
+            for job_id, handle in list(cls._actors.items()):
+                try:
+                    await pymapreduce.kill(handle)
+                except Exception as e:
+                    logger.debug(f"Error destroying actor '{job_id}': {e}")
+            cls._actors.clear()
+
+
+# Alias for compatibility
+InferenceModelRegistry = InferenceActorRegistry

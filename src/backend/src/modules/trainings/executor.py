@@ -11,7 +11,14 @@ from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, Repeate
 
 # Local Libraries
 from src.shared import constants
-from src.modules.hpo import BaseSearchCV, GridSearch, RandomSearch, BayesianSearch, GeneticAlgorithmSearch
+from src.modules.hpo import (
+    BaseSearchCV,
+    GridSearch,
+    RandomSearch,
+    BayesianSearch,
+    GeneticAlgorithmSearch,
+    TPESearch,
+)
 from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
 from src.modules.trainings.schemas import ModelTaskResult
@@ -59,6 +66,15 @@ def tune_and_fit_model(
     model = model_cls()
 
     match search_algorithm:
+        case constants.SearchAlgorithm.TPESEARCH:
+            searcher = TPESearch(
+                estimator=model,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=scoring,
+                refit=metric_sort,
+                n_jobs=int(constants.SearchConfig.N_JOBS),
+            )
         case constants.SearchAlgorithm.RANDOMSEARCH:
             searcher = RandomSearch(
                 estimator=model,

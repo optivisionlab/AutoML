@@ -8,7 +8,7 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import BaseCrossValidator, ParameterGrid
 
 # Local Libraries
-from src.modules.hpo.base import BaseSearchCV
+from src.modules.hpo.base import BaseSearchCV, TrialPruned
 
 
 # Logging
@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 class RandomSearch(BaseSearchCV):
     """
-    Randomized search on hyperparameters.
-    Samples a fixed number of parameter settings (n_iter) from the specified parameter space
-    and evaluates each trial in real-time.
+    Randomized hyperparameter search over sampled configurations
     """
 
     def __init__(
@@ -27,6 +25,9 @@ class RandomSearch(BaseSearchCV):
         estimator: BaseEstimator,
         param_grid: list[dict[str, Any]] | dict[str, Any],
         n_iter: int = 20,
+        patience: int | None = None,
+        min_delta: float = 1e-4,
+        enable_pruning: bool = False,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
@@ -37,18 +38,21 @@ class RandomSearch(BaseSearchCV):
         super().__init__(
             estimator=estimator,
             param_grid=param_grid,
+            patience=patience,
+            min_delta=min_delta,
+            enable_pruning=enable_pruning,
             cv=cv,
             scoring=scoring,
             refit=refit,
+            random_state=random_state,
             n_jobs=n_jobs,
             verbose=verbose,
         )
-        self.n_iter = n_iter
-        self.random_state = random_state
+        self.n_iter = max(1, n_iter)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "RandomSearch":
         """
-        Executes Random Search by sampling n_iter combinations from ParameterGrid.
+        Samples n_iter random combinations from ParameterGrid and evaluates them
         """
         rng = np.random.default_rng(self.random_state)
         self._init_search(X, y)
@@ -59,19 +63,30 @@ class RandomSearch(BaseSearchCV):
         sampled_candidates = [all_candidates[i] for i in sampled_indices]
 
         if self.verbose > 0:
-            logger.info(
-                f"[RandomSearch] Sampled {n_samples} candidate configurations (out of {len(all_candidates)} total)..."
-            )
+            logger.info(f"[RandomSearch] Sampling {n_samples} random candidate configurations...")
 
         for idx, candidate in enumerate(sampled_candidates, start=1):
-            mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
-                candidate_params=candidate,
-                X=X,
-                y=y,
-                trial_num=idx,
-                total_trials=n_samples,
-            )
-            self._record_trial(candidate, mean_scores, std_scores, fit_time, score_time)
+            try:
+                mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
+                    candidate_params=candidate,
+                    X=X,
+                    y=y,
+                    trial_num=idx,
+                    total_trials=n_samples,
+                )
+                self._record_trial(candidate, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
+                score = mean_scores.get(self.refit, 0.0)
+                if self._check_early_stopping(score):
+                    break
+            except TrialPruned:
+                self._record_trial(
+                    candidate,
+                    {m: 0.0 for m in self.scoring},
+                    {m: 0.0 for m in self.scoring},
+                    0.0,
+                    0.0,
+                    is_pruned=True,
+                )
 
         self._finalize_search(X, y)
         return self

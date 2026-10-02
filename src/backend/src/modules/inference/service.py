@@ -8,14 +8,12 @@ import logging
 from typing import Any
 
 # Third-party Libraries
-import numpy as np
-import pandas as pd
 from fastapi import status, UploadFile
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
 from src.core import exceptions
-from src.shared import constants, minio_service
+from src.shared import constants, minio_service, MapReduceManager
 from src.modules.trainings import TrainingRepository
 from src.modules.inference.schemas import (
     DeploymentInfoResponse,
@@ -24,7 +22,7 @@ from src.modules.inference.schemas import (
     PredictResponse,
     JobItemResponse,
 )
-from src.modules.inference.registry import InferenceModelRegistry
+from src.modules.inference.registry import InferenceActorRegistry
 from src.modules.inference.templates import (
     CodeSnippetGenerator,
     DockerPackageTemplate,
@@ -40,6 +38,13 @@ class InferenceService:
     def __init__(self, db: AsyncDatabase):
         self.db = db
         self.repo = TrainingRepository(db)
+
+    @staticmethod
+    async def _resolve_actor_output(out: Any) -> Any:
+        if hasattr(out, "object_id"):
+            driver = await MapReduceManager.get_driver()
+            return await driver.get(out)
+        return out
 
     async def _get_validated_job(self, current_user: dict, job_id: str) -> dict[str, Any]:
         job_doc = await self.repo.get_job_by_id(job_id)
@@ -69,87 +74,6 @@ class InferenceService:
             )
 
         return job_doc
-
-    @staticmethod
-    def _parse_input_file(file_bytes: bytes, filename: str) -> tuple[pd.DataFrame, str]:
-        if not file_bytes:
-            raise exceptions.CustomException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded file is empty.",
-                error_code=constants.ErrorCode.BAD_REQUEST,
-            )
-
-        ext = filename.split(".")[-1].lower() if "." in filename else "csv"
-        try:
-            if ext in ["xlsx", "xls"]:
-                df = pd.read_excel(io.BytesIO(file_bytes))
-            else:
-                df = pd.read_csv(io.BytesIO(file_bytes))
-        except Exception as e:
-            raise exceptions.CustomException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to parse uploaded file: {str(e)}",
-                error_code=constants.ErrorCode.BAD_REQUEST,
-            )
-
-        if df.empty:
-            raise exceptions.CustomException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Uploaded dataset contains no data rows.",
-                error_code=constants.ErrorCode.BAD_REQUEST,
-            )
-
-        df.columns = df.columns.astype(str).str.strip()
-        return df, ext
-
-    @staticmethod
-    def _export_dataframe_to_buffer(df: pd.DataFrame, ext: str, original_filename: str) -> tuple[str, str, io.BytesIO]:
-        output_buffer = io.BytesIO()
-        out_filename = f"predicted_{original_filename}"
-
-        if ext in ["xlsx", "xls"]:
-            df.to_excel(output_buffer, index=False, engine="openpyxl")
-            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        else:
-            df.to_csv(output_buffer, index=False, encoding="utf-8-sig")
-            media_type = "text/csv"
-
-        output_buffer.seek(0)
-        return out_filename, media_type, output_buffer
-
-    @staticmethod
-    def _run_inference(artifact: Any, df_input: pd.DataFrame, expected_features: list[str]) -> list[Any]:
-        if isinstance(artifact, dict) and "model" in artifact:
-            model = artifact["model"]
-            preprocessor = artifact.get("preprocessor")
-        else:
-            model = artifact
-            preprocessor = None
-
-        if preprocessor is not None:
-            X = preprocessor.transform(df_input)
-            raw_predictions = model.predict(X)
-            return preprocessor.inverse_transform_target(raw_predictions)
-
-        # Fallback for raw estimators
-        df_feat = df_input[expected_features].copy() if expected_features else df_input.copy()
-        for col in df_feat.columns:
-            if df_feat[col].dtype == "object" or df_feat[col].dtype.name == "category":
-                mode_val = df_feat[col].mode()
-                fill_val = mode_val.iloc[0] if not mode_val.empty else "0"
-                df_feat[col] = pd.to_numeric(df_feat[col].fillna(fill_val), errors="coerce").fillna(0)
-            else:
-                median_val = df_feat[col].median()
-                df_feat[col] = df_feat[col].fillna(median_val if not pd.isna(median_val) else 0.0)
-
-        X = df_feat.to_numpy(dtype=np.float64)
-        raw_predictions = model.predict(X)
-        return [
-            int(p) if isinstance(p, (np.integer, int))
-            else float(p) if isinstance(p, (np.floating, float))
-            else str(p)
-            for p in raw_predictions
-        ]
 
     def _build_deployment_info_response(
         self,
@@ -211,7 +135,7 @@ class InferenceService:
         job_doc["activate"] = activate
 
         if activate == 0:
-            InferenceModelRegistry.evict_model(job_id)
+            await InferenceActorRegistry.evict_actor(job_id)
 
         return self._build_deployment_info_response(job_doc, job_id, base_url)
 
@@ -240,14 +164,14 @@ class InferenceService:
             )
 
         storage_info = job_doc.get("model", {})
-        artifact = await InferenceModelRegistry.get_model(job_id, storage_info)
+        actor = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
 
         config = job_doc.get("config", {})
         expected_features = config.get("list_feature", [])
 
-        df_input = pd.DataFrame(request.data)
-        if expected_features:
-            missing_cols = [col for col in expected_features if col not in df_input.columns]
+        if expected_features and request.data:
+            first_row = request.data[0]
+            missing_cols = [col for col in expected_features if col not in first_row]
             if missing_cols:
                 raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -256,7 +180,8 @@ class InferenceService:
                 )
 
         start_time = time.perf_counter()
-        predictions = self._run_inference(artifact, df_input, expected_features)
+        raw_preds = await actor.predict.remote(request.data, expected_features)
+        predictions = await self._resolve_actor_output(raw_preds)
         latency_ms = (time.perf_counter() - start_time) * 1000.0
 
         return PredictResponse(
@@ -283,32 +208,39 @@ class InferenceService:
             )
 
         storage_info = job_doc.get("model", {})
-        artifact = await InferenceModelRegistry.get_model(job_id, storage_info)
+        actor = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
 
         file_bytes = await file.read()
-        filename_orig = file.filename or "data.csv"
-        df, ext = self._parse_input_file(file_bytes, filename_orig)
+        if not file_bytes:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file is empty.",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
 
+        filename_orig = file.filename or "data.csv"
         config = job_doc.get("config", {})
         expected_features = config.get("list_feature", [])
         target_col = config.get("target", "target")
 
-        if expected_features:
-            missing_cols = [col for col in expected_features if col not in df.columns]
-            if missing_cols:
-                raise exceptions.CustomException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Missing required feature columns in uploaded file: {missing_cols}",
-                    error_code=constants.ErrorCode.BAD_REQUEST,
-                )
+        try:
+            raw_out = await actor.predict_file.remote(
+                file_bytes=file_bytes,
+                filename=filename_orig,
+                expected_features=expected_features,
+                target_col=target_col,
+            )
+            out_filename, media_type, out_bytes = await self._resolve_actor_output(raw_out)
+        except Exception as e:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to perform inference on uploaded file: {str(e)}",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
 
-        predictions = self._run_inference(artifact, df, expected_features)
-
-        pred_col = f"prediction_{target_col}" if target_col in df.columns else "prediction"
-        df_result = df.copy()
-        df_result[pred_col] = predictions
-
-        return self._export_dataframe_to_buffer(df_result, ext, filename_orig)
+        output_buffer = io.BytesIO(out_bytes)
+        output_buffer.seek(0)
+        return out_filename, media_type, output_buffer
 
     async def export_notebook(self, current_user: dict, job_id: str) -> tuple[str, bytes]:
         job_doc = await self._get_validated_job(current_user, job_id)

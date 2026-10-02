@@ -38,6 +38,7 @@ class SearchAlgorithm(str):
     RANDOMSEARCH = "random_search"
     BAYESIANSEARCH = "bayesian_search"
     GENETICALGORITHM = "genetic_algorithm"
+    TPESEARCH = "tpe_search"
 
 
 class SearchConfig(str):

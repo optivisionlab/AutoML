@@ -1,4 +1,5 @@
 from src.modules.hpo.base import BaseSearchCV, convert_numpy_types
+from src.modules.hpo.tpe_search import TPESearch
 from src.modules.hpo.grid_search import GridSearch
 from src.modules.hpo.random_search import RandomSearch
 from src.modules.hpo.bayesian_search import BayesianSearch
@@ -12,4 +13,5 @@ __all__ = [
     "RandomSearch",
     "BayesianSearch",
     "GeneticAlgorithmSearch",
+    "TPESearch",
 ]

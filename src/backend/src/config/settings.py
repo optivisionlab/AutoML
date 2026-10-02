@@ -53,8 +53,12 @@ class KafkaSettings(BaseModel):
 
 
 class MapReduceSettings(BaseModel):
-    MODE: str = Field(default="local", validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    MODE: str = Field(default="cluster", validation_alias="MAPREDUCE_MODE")
+    HEAD_ADDRESS: str = Field(default="10.100.200.119:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
+    TIMEOUT: int = Field(default=300, validation_alias="MAPREDUCE_TIMEOUT")
+    IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_IDLE_TIMEOUT")
+    WORKER_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_WORKER_IDLE_TIMEOUT")
+    ACTOR_IDLE_TIMEOUT: int = Field(default=300, validation_alias="MAPREDUCE_ACTOR_IDLE_TIMEOUT")
 
 
 class Settings(BaseSettings):

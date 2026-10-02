@@ -1,7 +1,7 @@
 services:
   # PyMapReduce Head Node (Runs on Master / Head Node host)
   headnode:
-    image: python:3.12-slim
+    image: python:3.10-slim
     container_name: pymapreduce_headnode
     restart: unless-stopped
     ports:
@@ -14,7 +14,7 @@ services:
       - pymapreduce_wal:/tmp
     command: >
       sh -c "
-      pip install --no-cache-dir pymapreduce-core==0.1.9 &&
+      pip install --no-cache-dir pymapreduce-core==0.1.12 &&
       mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v -E 'Disaster Recovery|WAL|wal'
       "
     logging:
@@ -27,7 +27,7 @@ services:
 
   # PyMapReduce Worker Node (Can run on same host or remote physical worker machines)
   workernode:
-    image: python:3.12-slim
+    image: python:3.10-slim
     container_name: pymapreduce_workernode
     restart: unless-stopped
     shm_size: '2gb'

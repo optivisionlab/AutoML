@@ -7,16 +7,23 @@ from typing import Any
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator, clone, is_classifier
-from sklearn.model_selection import BaseCrossValidator, check_cv, cross_validate
+from sklearn.model_selection import BaseCrossValidator, check_cv
 
 
 # Logging
 logger = logging.getLogger(__name__)
 
 
+class TrialPruned(Exception):
+    """
+    Exception raised when a hyperparameter candidate is pruned early
+    """
+    ...
+
+
 def convert_numpy_types(obj: Any) -> Any:
     """
-    Recursively converts numpy data types to native Python types for JSON/BSON serialization.
+    Recursively converts numpy types to native Python types for JSON/BSON serialization
     """
     match obj:
         case np.integer():
@@ -39,26 +46,36 @@ def convert_numpy_types(obj: Any) -> Any:
 
 class BaseSearchCV(BaseEstimator, ABC):
     """
-    Base class for custom Hyperparameter Optimization (HPO) search algorithms.
-    Provides standardized Cross-Validation evaluation, trial recording, real-time logging,
-    and best estimator refitting compatible with Scikit-learn SearchCV interface.
+    Base class for Hyperparameter Optimization (HPO) algorithms with CV, pruning, and early stopping
     """
 
     def __init__(
         self,
         estimator: BaseEstimator,
         param_grid: list[dict[str, Any]] | dict[str, Any],
+        patience: int | None = None,
+        min_delta: float = 1e-4,
+        enable_pruning: bool = False,
+        pruning_startup_trials: int = 5,
+        pruning_warmup_folds: int = 1,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
+        random_state: int | None = 42,
         n_jobs: int = 1,
         verbose: int = 1,
     ):
         self.estimator = estimator
         self.param_grid = param_grid
+        self.patience = patience
+        self.min_delta = min_delta
+        self.enable_pruning = enable_pruning
+        self.pruning_startup_trials = max(1, pruning_startup_trials)
+        self.pruning_warmup_folds = max(0, pruning_warmup_folds)
         self.cv = cv
         self.scoring = scoring or {}
         self.refit = refit
+        self.random_state = random_state
         self.n_jobs = n_jobs
         self.verbose = verbose
 
@@ -71,9 +88,15 @@ class BaseSearchCV(BaseEstimator, ABC):
         self.trials_history_: list[dict[str, Any]] = []
         self.cv_splits_: list[tuple[np.ndarray, np.ndarray]] | None = None
 
+        # Tracking state
+        self.early_stopped_: bool = False
+        self._best_tracked_score: float = float("-inf")
+        self._stagnant_trials_count: int = 0
+        self._fold_history_by_step: dict[int, list[float]] = {}
+
     def _normalize_param_grid(self) -> list[dict[str, Any]]:
         """
-        Normalizes param_grid input into a list of parameter dictionaries.
+        Normalizes param_grid into a list of dictionaries
         """
         match self.param_grid:
             case dict() as d:
@@ -85,7 +108,7 @@ class BaseSearchCV(BaseEstimator, ABC):
 
     def _init_cv_results(self) -> None:
         """
-        Initializes the structure of cv_results_ dictionary.
+        Initializes cv_results_ dictionary structure
         """
         self.cv_results_ = {
             "params": [],
@@ -99,16 +122,61 @@ class BaseSearchCV(BaseEstimator, ABC):
             **{f"rank_test_{m}": [] for m in self.scoring},
         }
         self.trials_history_ = []
+        self.early_stopped_ = False
+        self._best_tracked_score = float("-inf")
+        self._stagnant_trials_count = 0
+        self._fold_history_by_step = {}
 
     def _init_search(self, X: np.ndarray, y: np.ndarray) -> None:
         """
-        Initializes the CV results structure and precomputes CV fold splits once
-        to ensure identical, deterministic fold splits and maximum execution speed
-        across all candidate evaluations.
+        Initializes search state and precomputes CV fold splits
         """
         self._init_cv_results()
         cv_splitter = check_cv(self.cv, y, classifier=is_classifier(self.estimator))
         self.cv_splits_ = list(cv_splitter.split(X, y))
+        self._fold_history_by_step = {step: [] for step in range(len(self.cv_splits_))}
+
+    def _should_prune(self, step: int, current_mean_score: float) -> bool:
+        """
+        Determines if the candidate should be pruned at the current fold step
+        """
+        if not self.enable_pruning or not self.cv_splits_:
+            return False
+
+        n_splits = len(self.cv_splits_)
+        if step < self.pruning_warmup_folds or step >= n_splits - 1:
+            return False
+
+        history_at_step = self._fold_history_by_step.get(step, [])
+        if len(history_at_step) < self.pruning_startup_trials:
+            return False
+
+        median_score = float(np.median(history_at_step))
+        return current_mean_score < median_score
+
+    def _check_early_stopping(self, current_score: float) -> bool:
+        """
+        Checks and triggers early stopping if score improvement stagnates
+        """
+        if self.patience is None or self.patience <= 0:
+            return False
+
+        if current_score > self._best_tracked_score + self.min_delta:
+            self._best_tracked_score = current_score
+            self._stagnant_trials_count = 0
+            return False
+        else:
+            self._stagnant_trials_count += 1
+            if self._stagnant_trials_count >= self.patience:
+                self.early_stopped_ = True
+                if self.verbose > 0:
+                    logger.info(
+                        f"[{self.__class__.__name__}] Early stopping triggered: "
+                        f"No improvement for {self.patience} consecutive trials "
+                        f"(Best {self.refit}: {self._best_tracked_score:.4f})."
+                    )
+                return True
+            return False
 
     def _evaluate_candidate(
         self,
@@ -119,44 +187,78 @@ class BaseSearchCV(BaseEstimator, ABC):
         total_trials: int | None = None,
     ) -> tuple[dict[str, float], dict[str, float], float, float]:
         """
-        Evaluates a single hyperparameter configuration using Cross-Validation,
-        prints trial results in real-time, and returns computed metrics and execution times.
+        Evaluates a candidate across CV folds and prunes underperforming trials
         """
         start_time = time.time()
-        model_instance = clone(self.estimator)
-        if candidate_params:
-            model_instance.set_params(**candidate_params)
+        cv_splits = self.cv_splits_ if self.cv_splits_ is not None else []
+        n_splits = len(cv_splits)
 
-        cv_splits = self.cv_splits_ if self.cv_splits_ is not None else self.cv
-        cv_output = cross_validate(
-            estimator=model_instance,
-            X=X,
-            y=y,
-            cv=cv_splits,
-            scoring=self.scoring,
-            n_jobs=self.n_jobs,
-            error_score=0.0,
-            return_train_score=False,
-        )
+        if not n_splits:
+            model_instance = clone(self.estimator)
+            if candidate_params:
+                model_instance.set_params(**candidate_params)
+            model_instance.fit(X, y)
+            mean_scores = {m: 0.0 for m in self.scoring}
+            std_scores = {m: 0.0 for m in self.scoring}
+            return mean_scores, std_scores, 0.0, 0.0
 
-        mean_scores = {
-            metric: float(np.mean(cv_output[f"test_{metric}"])) if f"test_{metric}" in cv_output else 0.0
-            for metric in self.scoring
-        }
-        std_scores = {
-            metric: float(np.std(cv_output[f"test_{metric}"])) if f"test_{metric}" in cv_output else 0.0
-            for metric in self.scoring
-        }
+        fold_scores: dict[str, list[float]] = {m: [] for m in self.scoring}
+        step_intermediate_refit_scores: list[float] = []
+        fit_times: list[float] = []
+        score_times: list[float] = []
 
-        fit_time = float(np.mean(cv_output.get("fit_time", [0.0])))
-        score_time = float(np.mean(cv_output.get("score_time", [0.0])))
+        for step, (train_idx, val_idx) in enumerate(cv_splits):
+            fold_fit_start = time.time()
+            model_fold = clone(self.estimator)
+            if candidate_params:
+                model_fold.set_params(**candidate_params)
+
+            X_tr, y_tr = X[train_idx], y[train_idx]
+            X_val, y_val = X[val_idx], y[val_idx]
+
+            model_fold.fit(X_tr, y_tr)
+            fit_times.append(time.time() - fold_fit_start)
+
+            fold_eval_start = time.time()
+            for metric, scorer_fn in self.scoring.items():
+                try:
+                    score_val = float(scorer_fn(model_fold, X_val, y_val))
+                except Exception:
+                    score_val = 0.0
+                fold_scores[metric].append(score_val)
+            score_times.append(time.time() - fold_eval_start)
+
+            current_mean_refit = float(np.mean(fold_scores.get(self.refit, [0.0])))
+            step_intermediate_refit_scores.append(current_mean_refit)
+
+            # Fold-level median pruning check
+            if self._should_prune(step, current_mean_refit):
+                elapsed = time.time() - start_time
+                if self.verbose > 0:
+                    trial_tag = f"[{trial_num}/{total_trials}] " if trial_num and total_trials else ""
+                    logger.info(
+                        f"[{self.__class__.__name__}] {trial_tag}PRUNED at fold {step + 1}/{n_splits} | "
+                        f"Score {self.refit}: {current_mean_refit:.4f} ({elapsed:.2f}s)"
+                    )
+                raise TrialPruned(
+                    f"Candidate pruned at fold {step + 1}/{n_splits} (score: {current_mean_refit:.4f})"
+                )
+
+        # Update step history for completed trials
+        for step, score in enumerate(step_intermediate_refit_scores):
+            self._fold_history_by_step.setdefault(step, []).append(score)
+
+        mean_scores = {m: float(np.mean(vals)) if vals else 0.0 for m, vals in fold_scores.items()}
+        std_scores = {m: float(np.std(vals)) if vals else 0.0 for m, vals in fold_scores.items()}
+        fit_time = float(np.mean(fit_times)) if fit_times else 0.0
+        score_time = float(np.mean(score_times)) if score_times else 0.0
         elapsed = time.time() - start_time
 
         if self.verbose > 0:
             trial_tag = f"[{trial_num}/{total_trials}] " if trial_num and total_trials else ""
             metrics_display = ", ".join(f"{k}: {v:.4f}" for k, v in mean_scores.items())
             logger.info(
-                f"[{self.__class__.__name__}] {trial_tag}Params: {candidate_params} -> {metrics_display} (time: {elapsed:.2f}s)"
+                f"[{self.__class__.__name__}] {trial_tag}Params: {candidate_params} -> {metrics_display} ({elapsed:.2f}s)"
             )
 
         return mean_scores, std_scores, fit_time, score_time
@@ -168,9 +270,10 @@ class BaseSearchCV(BaseEstimator, ABC):
         std_scores: dict[str, float],
         fit_time: float,
         score_time: float,
+        is_pruned: bool = False,
     ) -> None:
         """
-        Records the evaluated trial metrics and parameters into trials_history_ and cv_results_.
+        Records evaluated trial metrics into trials_history_ and cv_results_
         """
         clean_params = convert_numpy_types(candidate_params)
         refit_score = mean_scores.get(self.refit, 0.0)
@@ -193,12 +296,12 @@ class BaseSearchCV(BaseEstimator, ABC):
             "refit_score": refit_score,
             "fit_time": fit_time,
             "score_time": score_time,
+            "is_pruned": is_pruned,
         })
 
     def _finalize_search(self, X: np.ndarray, y: np.ndarray) -> "BaseSearchCV":
         """
-        Computes metric ranks, identifies the best hyperparameter configuration,
-        and refits the best estimator on the entire dataset.
+        Ranks results, selects best parameters, and refits champion estimator on full dataset
         """
         if not self.cv_results_["params"]:
             self.best_params_ = {}
@@ -225,7 +328,7 @@ class BaseSearchCV(BaseEstimator, ABC):
 
         if self.verbose > 0:
             logger.info(
-                f"[{self.__class__.__name__}] Best {self.refit}: {self.best_score_:.4f} with Params: {self.best_params_}"
+                f"[{self.__class__.__name__}] Best {self.refit}: {self.best_score_:.4f} | Params: {self.best_params_}"
             )
 
         return self
@@ -233,7 +336,7 @@ class BaseSearchCV(BaseEstimator, ABC):
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray) -> "BaseSearchCV":
         """
-        Runs the search algorithm to find the optimal hyperparameters.
+        Executes the hyperparameter search
         """
         ...
 
