@@ -105,7 +105,7 @@ class TrainingService:
         valid_results: list[dict[str, Any]] = []
         for out in raw_outputs:
             if hasattr(out, "object_id"):
-                resolved_val = await driver.get(out.object_id)
+                resolved_val = await driver.get(out)
                 if isinstance(resolved_val, dict):
                     valid_results.append(resolved_val)
             elif isinstance(out, dict):

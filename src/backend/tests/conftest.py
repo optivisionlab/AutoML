@@ -121,8 +121,6 @@ def mock_lifespan_services(monkeypatch):
     """
     monkeypatch.setattr("src.config.databases.DatabaseManager.connection", AsyncMock())
     monkeypatch.setattr("src.config.databases.DatabaseManager.close_connection", AsyncMock())
-    monkeypatch.setattr("src.main.MapReduceManager.get_driver", AsyncMock())
-    monkeypatch.setattr("src.main.MapReduceManager.shutdown", AsyncMock())
     monkeypatch.setattr("src.shared.MapReduceManager.get_driver", AsyncMock())
     monkeypatch.setattr("src.shared.MapReduceManager.shutdown", AsyncMock())
     monkeypatch.setattr("src.shared.mapreduce_client.MapReduceManager.get_driver", AsyncMock())

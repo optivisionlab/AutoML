@@ -9,7 +9,7 @@ from fastapi import FastAPI
 # Local Libraries
 from src.core import middlewares, exceptions
 from src.config import settings, setup_logging, databases
-from src.shared import mqtt_service, kafka_service, minio_service, MapReduceManager
+from src.shared import mqtt_service, kafka_service, minio_service
 from src.modules.auth import auth
 from src.modules.users import users
 from src.modules.datasets import datasets
@@ -40,9 +40,6 @@ async def lifespan(app: FastAPI):
     # Kafka connection
     await kafka_service.connect()
 
-    # PyMapReduce Driver connection
-    await MapReduceManager.get_driver()
-
     yield
 
     # Application shutdown process
@@ -50,7 +47,6 @@ async def lifespan(app: FastAPI):
     await mqtt_service.disconnect()
     await kafka_service.disconnect()
     await minio_service.close()
-    await MapReduceManager.shutdown()
 
 
 # Initialize Application

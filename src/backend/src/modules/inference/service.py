@@ -75,12 +75,7 @@ class InferenceService:
 
         return job_doc
 
-    def _build_deployment_info_response(
-        self,
-        job_doc: dict[str, Any],
-        job_id: str,
-        base_url: str,
-    ) -> DeploymentInfoResponse:
+    def _build_deployment_info_response(self, job_doc: dict[str, Any], job_id: str, base_url: str) -> DeploymentInfoResponse:
         config = job_doc.get("config", {})
         features = config.get("list_feature", [])
         model_name = job_doc.get("best_model", "AutoML_Model")
@@ -146,6 +141,7 @@ class InferenceService:
         base_url: str = "http://localhost:9999",
     ) -> DeploymentInfoResponse:
         job_doc = await self._get_validated_job(current_user, job_id)
+
         return self._build_deployment_info_response(job_doc, job_id, base_url)
 
     async def predict(
@@ -164,8 +160,6 @@ class InferenceService:
             )
 
         storage_info = job_doc.get("model", {})
-        actor = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
-
         config = job_doc.get("config", {})
         expected_features = config.get("list_feature", [])
 
@@ -180,7 +174,9 @@ class InferenceService:
                 )
 
         start_time = time.perf_counter()
-        raw_preds = await actor.predict.remote(request.data, expected_features)
+        raw_preds = await InferenceActorRegistry.invoke_actor(
+            job_id, storage_info, "predict", request.data, expected_features
+        )
         predictions = await self._resolve_actor_output(raw_preds)
         latency_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -208,8 +204,6 @@ class InferenceService:
             )
 
         storage_info = job_doc.get("model", {})
-        actor = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
-
         file_bytes = await file.read()
         if not file_bytes:
             raise exceptions.CustomException(
@@ -224,7 +218,10 @@ class InferenceService:
         target_col = config.get("target", "target")
 
         try:
-            raw_out = await actor.predict_file.remote(
+            raw_out = await InferenceActorRegistry.invoke_actor(
+                job_id,
+                storage_info,
+                "predict_file",
                 file_bytes=file_bytes,
                 filename=filename_orig,
                 expected_features=expected_features,

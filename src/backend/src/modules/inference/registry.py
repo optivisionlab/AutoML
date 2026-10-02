@@ -49,6 +49,20 @@ class InferenceActorRegistry:
             return actor_handle
 
     @classmethod
+    async def invoke_actor(cls, job_id: str, storage_info: dict[str, str], method_name: str, *args: Any, **kwargs: Any) -> Any:
+        actor = await cls.get_or_create_actor(job_id, storage_info)
+        try:
+            method = getattr(actor, method_name)
+            return await method.remote(*args, **kwargs)
+        except Exception as e:
+            logger.warning(f"Actor '{job_id}' call '{method_name}' failed ({e}), refreshing instance...")
+            await cls.evict_actor(job_id)
+            actor = await cls.get_or_create_actor(job_id, storage_info)
+            method = getattr(actor, method_name)
+
+            return await method.remote(*args, **kwargs)
+
+    @classmethod
     async def evict_actor(cls, job_id: str) -> bool:
         actor_handle = cls._actors.pop(job_id, None)
         if actor_handle is not None:

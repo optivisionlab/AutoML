@@ -47,6 +47,27 @@ class TestInferenceActorRegistry(unittest.IsolatedAsyncioTestCase):
             mock_kill.assert_called_once_with(mock_actor_handle)
             self.assertNotIn(job_id, InferenceActorRegistry._actors)
 
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
+    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    async def test_invoke_actor_with_retry(self, mock_get_driver, mock_actor_remote):
+        first_handle = MagicMock()
+        first_handle.predict.remote = AsyncMock(side_effect=RuntimeError("Actor Disconnected"))
+
+        second_handle = MagicMock()
+        second_handle.predict.remote = AsyncMock(return_value=["ClassA"])
+
+        mock_actor_remote.side_effect = [first_handle, second_handle]
+
+        job_id = "job_retry_123"
+        storage_info = {"bucket_name": "models", "object_name": "path/model.pkl"}
+
+        res = await InferenceActorRegistry.invoke_actor(
+            job_id, storage_info, "predict", [{"feat": 1.0}], ["feat"]
+        )
+
+        self.assertEqual(res, ["ClassA"])
+        self.assertEqual(mock_actor_remote.call_count, 2)
+
 
 class TestInferenceService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

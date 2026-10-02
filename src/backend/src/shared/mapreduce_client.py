@@ -38,22 +38,22 @@ class ModelInferenceActor:
         self.bucket_name = bucket_name
         self.object_name = object_name
 
-        async def _fetch_artifact():
+        async def _fetch():
             client = Minio(
                 endpoint=minio_endpoint,
                 access_key=access_key,
                 secret_key=secret_key,
                 secure=secure,
             )
-            response = await client.get_object(bucket_name, object_name)
+            res = await client.get_object(bucket_name, object_name)
             try:
-                return await response.read()
+                return await res.read()
             finally:
-                response.close()
-                if hasattr(response, "release"):
-                    response.release()
+                res.close()
+                if hasattr(res, "release"):
+                    res.release()
 
-        raw_bytes = asyncio.run(_fetch_artifact())
+        raw_bytes = asyncio.run(_fetch())
         if isinstance(raw_bytes, io.BytesIO):
             raw_bytes = raw_bytes.getvalue()
 
