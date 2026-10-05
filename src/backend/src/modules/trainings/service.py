@@ -93,26 +93,50 @@ class TrainingService:
             )
             tasks.append(task_coro)
 
+        task_futures = [asyncio.create_task(task_coroutine) for task_coroutine in tasks]
+
         task_timeout = settings.PYMAPREDUCE.TIMEOUT
         logger.info(
             f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={task_timeout}s)..."
         )
         if task_timeout and task_timeout > 0:
-            raw_outputs = await asyncio.wait_for(asyncio.gather(*tasks), timeout=float(task_timeout))
+            completed_futures, pending_futures = await asyncio.wait(
+                task_futures,
+                timeout=float(task_timeout),
+                return_when=asyncio.ALL_COMPLETED,
+            )
+            # Cancel all tasks that did not finish within the timeout
+            for pending_future in pending_futures:
+                pending_future.cancel()
+
+            raw_outputs = []
+            for completed_future in completed_futures:
+                try:
+                    task_output = completed_future.result()
+                    raw_outputs.append(task_output)
+                except Exception as exc:
+                    logger.warning(f"Training task encountered an error: {exc}")
         else:
-            raw_outputs = await asyncio.gather(*tasks)
+            completed_futures, _ = await asyncio.wait(task_futures, return_when=asyncio.ALL_COMPLETED)
+            raw_outputs = []
+            for completed_future in completed_futures:
+                try:
+                    task_output = completed_future.result()
+                    raw_outputs.append(task_output)
+                except Exception as exc:
+                    logger.warning(f"Training task encountered an error: {exc}")
 
         valid_results: list[dict[str, Any]] = []
-        for out in raw_outputs:
-            if hasattr(out, "object_id"):
-                resolved_val = await driver.get(out)
+        for raw_output in raw_outputs:
+            if hasattr(raw_output, "object_id"):
+                resolved_val = await driver.get(raw_output)
                 if isinstance(resolved_val, dict):
                     valid_results.append(resolved_val)
-            elif isinstance(out, dict):
-                valid_results.append(out)
+            elif isinstance(raw_output, dict):
+                valid_results.append(raw_output)
 
         if not valid_results:
-            raise ValueError("No successful model training results received from PyMapReduce workers.")
+            raise ValueError("No successful model training results received from PyMapReduce workers within the timeout.")
 
         return valid_results
 
@@ -123,12 +147,12 @@ class TrainingService:
     ) -> tuple[ModelScoreItem, dict[str, Any], float, list[ModelScoreItem]]:
         model_scores = [
             ModelScoreItem(
-                model_id=idx,
-                model_name=res.get("model_name", ""),
-                scores=res.get("scores", {}),
-                best_params=res.get("best_params", {}),
+                model_id=model_index,
+                model_name=result_data.get("model_name", ""),
+                scores=result_data.get("scores", {}),
+                best_params=result_data.get("best_params", {}),
             )
-            for idx, res in enumerate(valid_results)
+            for model_index, result_data in enumerate(valid_results)
         ]
 
         normalized_metric = metric_sort.strip().lower().replace(" ", "_")
@@ -137,16 +161,16 @@ class TrainingService:
         if normalized_metric in LOWER_IS_BETTER_METRICS:
             best_model_entry = min(
                 model_scores,
-                key=lambda x: x.scores.get(normalized_metric, float("inf")),
+                key=lambda score_item: score_item.scores.get(normalized_metric, float("inf")),
             )
         else:
             best_model_entry = max(
                 model_scores,
-                key=lambda x: x.scores.get(normalized_metric, -float("inf")),
+                key=lambda score_item: score_item.scores.get(normalized_metric, -float("inf")),
             )
 
         best_raw_result = next(
-            r for r in valid_results if r.get("model_name") == best_model_entry.model_name
+            result_data for result_data in valid_results if result_data.get("model_name") == best_model_entry.model_name
         )
 
         best_score = best_model_entry.scores.get(
@@ -230,7 +254,7 @@ class TrainingService:
             best_model_bytes=artifact_bytes,
             cv_strategy=cv_config,
             feature_names=feature_names,
-            time_limit_reached=False,
+            time_limit_reached=(len(valid_results) < len(models_to_train)),
             completed_models=len(valid_results),
             total_models=len(models_to_train),
         )
@@ -377,6 +401,16 @@ class TrainingService:
                 storage_info=storage_info,
             )
 
+        except asyncio.CancelledError:
+            error_msg = "Training job was cancelled by user."
+            logger.info(f"AutoML Job {job_id} cancelled.")
+            await self._on_job_failure(
+                job_id=job_id,
+                user_id=user_id,
+                dataset_name=dataset_name,
+                error_msg=error_msg,
+            )
+            raise
         except Exception as e:
             error_msg = f"Training failure: {str(e)}"
             logger.error(f"AutoML Job {job_id} failed: {error_msg}", exc_info=True)

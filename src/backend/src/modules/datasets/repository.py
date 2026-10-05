@@ -150,3 +150,16 @@ class DatasetRepository:
         job_doc["_id"] = result.inserted_id
 
         return job_doc
+
+    async def get_job_by_id(self, job_id: ObjectId) -> dict[str, Any] | None:
+        """
+        Retrieve job document by ID
+        """
+        return await self.__job_collection.find_one({"_id": job_id})
+
+    async def update_job(self, job_id: ObjectId, update_data: dict[str, Any]) -> bool:
+        """
+        Update job metadata by ID
+        """
+        result = await self.__job_collection.update_one({"_id": job_id}, {"$set": update_data})
+        return result.modified_count > 0

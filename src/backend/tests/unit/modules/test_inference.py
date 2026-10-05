@@ -425,6 +425,51 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         query_arg = self.mock_jobs.count_documents.call_args[0][0]
         self.assertEqual(query_arg["activate"], 1)
 
+    @patch("src.modules.inference.service.kafka_service.send_message", new_callable=AsyncMock)
+    async def test_cancel_job_success(self, mock_send_kafka):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": str(self.user_oid), "name": "testuser"},
+            "status": 0,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+        self.mock_jobs.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+
+        res = await self.service.cancel_job(self.current_user, self.job_id)
+
+        self.assertEqual(res["job_id"], self.job_id)
+        self.assertEqual(res["status"], -1)
+        self.mock_jobs.update_one.assert_called_once()
+        mock_send_kafka.assert_called_once()
+        call_kwargs = mock_send_kafka.call_args.kwargs
+        self.assertEqual(call_kwargs["key"], self.job_id)
+        self.assertEqual(call_kwargs["value"]["action"], "cancel")
+
+    async def test_cancel_job_forbidden_for_other_user(self):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": "other_user_id", "name": "other"},
+            "status": 0,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.cancel_job(self.current_user, self.job_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_cancel_job_already_completed_raises_bad_request(self):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": str(self.user_oid), "name": "testuser"},
+            "status": 1,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.cancel_job(self.current_user, self.job_id)
+        self.assertEqual(ctx.exception.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -13,7 +13,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
 from src.core import exceptions
-from src.shared import constants, minio_service, MapReduceManager
+from src.shared import constants, minio_service, MapReduceManager, kafka_service
 from src.modules.trainings import TrainingRepository
 from src.modules.inference.schemas import (
     DeploymentInfoResponse,
@@ -352,3 +352,49 @@ class InferenceService:
         }
 
         return formatted_jobs, meta
+
+    async def cancel_job(self, current_user: dict, job_id: str) -> dict[str, Any]:
+        job_doc = await self.repo.get_job_by_id(job_id)
+        if not job_doc:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model training job '{job_id}' not found.",
+                error_code=constants.ErrorCode.NOT_FOUND,
+            )
+
+        user_id = str(current_user.get("_id", ""))
+        user_role = current_user.get("role", "user")
+        job_user_id = str(job_doc.get("user", {}).get("id", ""))
+
+        if user_role != "admin" and user_id != job_user_id:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to cancel this job.",
+                error_code=constants.ErrorCode.FORBIDDEN,
+            )
+
+        job_status = job_doc.get("status")
+        if job_status != 0:
+            status_desc = "completed" if job_status == 1 else "failed or cancelled"
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot cancel job with status {job_status} ({status_desc}). Only running or pending jobs can be cancelled",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+
+        # Update job status in DB
+        await self.repo.update_failure(job_id, "Training job was cancelled by user.")
+
+        # Notify consumer via Kafka so the worker process can be killed immediately
+        cancel_payload = {
+            "action": "cancel",
+            "job_id": str(job_id),
+            "user_id": user_id,
+        }
+
+        await kafka_service.send_message(
+            value=cancel_payload,
+            key=str(job_id),
+        )
+
+        return {"job_id": str(job_id), "status": -1}

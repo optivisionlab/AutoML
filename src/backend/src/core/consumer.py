@@ -20,7 +20,7 @@ async def start_training_consumer() -> None:
     """
     Kafka Consumer Worker that continuously listens to training jobs from Kafka topic
     """
-    active_tasks: set[asyncio.Task] = set()
+    active_training_jobs: dict[str, asyncio.Task] = {}
     try:
         logger.info("Initializing Training Consumer resources...")
         await databases.DatabaseManager.connection()
@@ -37,13 +37,22 @@ async def start_training_consumer() -> None:
         topic = settings.KAFKA.TOPIC
         logger.info(f"Training Consumer ready. Listening on Kafka topic: '{topic}'...")
 
-        async for msg in kafka_service.consume_messages(topic, group_id="automl_trainers"):
+        async for message in kafka_service.consume_messages(topic, group_id="automl_trainers"):
             try:
-                job_id = msg.get("key")
-                payload = msg.get("value") or {}
+                job_id = message.get("key")
+                payload = message.get("value") or {}
 
                 if not job_id or not isinstance(payload, dict):
-                    logger.warning(f"Received malformed Kafka message on topic '{topic}': {msg}")
+                    logger.warning(f"Received malformed Kafka message on topic '{topic}': {message}")
+                    continue
+
+                # Handle cancellation request
+                if payload.get("action") == "cancel":
+                    logger.info(f"Received cancellation command for Training Job: ID={job_id}")
+                    running_job_task = active_training_jobs.get(str(job_id))
+                    if running_job_task and not running_job_task.done():
+                        running_job_task.cancel()
+                        logger.info(f"Successfully triggered cancellation for Job Task {job_id}")
                     continue
 
                 dataset_id = payload.get("dataset_id")
@@ -52,8 +61,9 @@ async def start_training_consumer() -> None:
 
                 logger.info(f"Received Kafka Training Job: ID={job_id}, Dataset={dataset_id}, User={user_id}")
 
-                # Run job asynchronously and track task
-                task = asyncio.create_task(
+                # Run job asynchronously and track active job task
+                current_job_id = str(job_id)
+                job_task = asyncio.create_task(
                     training_service.process_training_job(
                         job_id=job_id,
                         dataset_id=dataset_id,
@@ -61,11 +71,18 @@ async def start_training_consumer() -> None:
                         config=config
                     )
                 )
-                active_tasks.add(task)
-                task.add_done_callback(active_tasks.discard)
 
-            except Exception as e:
-                logger.error(f"Error processing Kafka message: {e}", exc_info=True)
+                # Keep track of active job for potential cancellation
+                active_training_jobs[current_job_id] = job_task
+
+                # Clean up finished job from dictionary to avoid memory leak
+                def cleanup_job(_completed_task: asyncio.Task, target_id: str = current_job_id) -> None:
+                    active_training_jobs.pop(target_id, None)
+
+                job_task.add_done_callback(cleanup_job)
+
+            except Exception as exc:
+                logger.error(f"Error processing Kafka message: {exc}", exc_info=True)
 
     except (asyncio.CancelledError, KeyboardInterrupt):
         logger.info("Shutdown signal received. Stopping Training Consumer gracefully...")

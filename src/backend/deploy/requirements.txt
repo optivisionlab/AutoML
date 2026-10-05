@@ -32,4 +32,4 @@ miniopy-async==1.23.5
 qrcode==8.2
 aiomqtt==2.5.1
 
-pymapreduce-core==0.1.13
+pymapreduce-core==0.1.14

@@ -198,7 +198,7 @@ class MapReduceManager:
 
                 # Start local worker utilizing all available CPU cores automatically
                 asyncio.ensure_future(
-                    pymapreduce.start_worker(head_addr, idle_timeout=settings.PYMAPREDUCE.IDLE_TIMEOUT)
+                    pymapreduce.start_worker(head_addr, idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT)
                 )
 
                 # Allow a short moment for the local worker to register with HeadNode

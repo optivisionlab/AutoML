@@ -57,6 +57,26 @@ async def get_list_jobs(
     )
 
 
+@router.post("/jobs/{id}/cancel", response_model=responses.BaseResponse[dict])
+async def cancel_job(
+    id: str = Path(..., description="Training Job ID"),
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: InferenceService = Depends(get_inference_service),
+):
+    """
+    Cancel an ongoing training job.
+    """
+    result = await service.cancel_job(
+        current_user=current_user,
+        job_id=id,
+    )
+
+    return responses.BaseResponse(
+        message="Training job cancelled successfully",
+        data=result,
+    )
+
+
 @router.get("/models", response_model=responses.PaginatedResponse[JobItemResponse])
 async def get_list_active_models(
     current_page: int = Query(1, ge=1),

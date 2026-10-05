@@ -3,6 +3,7 @@ services:
   headnode:
     image: python:3.10-slim
     container_name: pymapreduce_headnode
+    init: true
     restart: unless-stopped
     ports:
       - "${HEAD_PORT:-7777}:7777"
@@ -29,6 +30,7 @@ services:
   workernode:
     image: python:3.10-slim
     container_name: pymapreduce_workernode
+    init: true
     restart: unless-stopped
     shm_size: '2gb'
     environment:
