@@ -1,5 +1,10 @@
 import { AxiosInstance } from "axios";
-import { GetJobsOffsetParams, TrainingJob } from "@automl/domain";
+import {
+  GetJobsOffsetParams,
+  TrainingJob,
+  GetPipelineSamplePayload,
+  PipelineSampleResponse,
+} from "@automl/domain";
 
 export const createJobService = (client: AxiosInstance) => ({
   getJobsOffset: async ({
@@ -26,4 +31,15 @@ export const createJobService = (client: AxiosInstance) => ({
     });
     return res.data;
   },
+
+  getPipelineSample: async (
+    payload: GetPipelineSamplePayload,
+  ): Promise<PipelineSampleResponse> => {
+    const res = await client.post<PipelineSampleResponse>(
+      "/get-pipeline-sample",
+      payload,
+    );
+    return res.data;
+  },
 });
+

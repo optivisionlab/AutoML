@@ -1,8 +1,22 @@
-import { type Dataset, type DatasetFormPayload } from "@automl/domain";
+import {
+  type Dataset,
+  type DatasetFormPayload,
+  type ConnectDBPayload,
+  type ConnectDBResponse,
+  type ImportDatabaseTablePayload,
+  type ImportDatabaseTableResponse,
+} from "@automl/domain";
 import { buildDatasetFormData } from "@automl/api";
 import { baseApi } from "./baseApi";
 
-export type { Dataset, DatasetFormPayload };
+export type {
+  Dataset,
+  DatasetFormPayload,
+  ConnectDBPayload,
+  ConnectDBResponse,
+  ImportDatabaseTablePayload,
+  ImportDatabaseTableResponse,
+};
 
 export const datasetApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -66,6 +80,28 @@ export const datasetApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Dataset"],
     }),
+
+    // Kết nối database và lấy danh sách bảng
+    connectDatabase: builder.mutation<ConnectDBResponse, ConnectDBPayload>({
+      query: (payload) => ({
+        url: "/connect-database",
+        method: "POST",
+        data: payload,
+      }),
+    }),
+
+    // Trích xuất bảng CSDL thành dataset trong AutoML
+    importDatabaseTable: builder.mutation<
+      ImportDatabaseTableResponse,
+      ImportDatabaseTablePayload
+    >({
+      query: (payload) => ({
+        url: "/import-database-table",
+        method: "POST",
+        data: payload,
+      }),
+      invalidatesTags: ["Dataset"],
+    }),
   }),
 });
 
@@ -77,4 +113,6 @@ export const {
   useGetDatasetsByUserIdQuery,
   useUpdateDatasetMutation,
   useUploadDatasetMutation,
+  useConnectDatabaseMutation,
+  useImportDatabaseTableMutation,
 } = datasetApi;

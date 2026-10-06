@@ -1,5 +1,12 @@
 import { AxiosInstance } from "axios";
-import { Dataset, DatasetFormPayload } from "@automl/domain";
+import {
+  Dataset,
+  DatasetFormPayload,
+  ConnectDBPayload,
+  ConnectDBResponse,
+  ImportDatabaseTablePayload,
+  ImportDatabaseTableResponse,
+} from "@automl/domain";
 import { buildDatasetFormData } from "../form-data";
 
 export const createDatasetService = (client: AxiosInstance) => ({
@@ -48,6 +55,16 @@ export const createDatasetService = (client: AxiosInstance) => ({
 
   deleteDataset: async (datasetId: string): Promise<unknown> => {
     const res = await client.delete(`/delete-dataset/${datasetId}`);
+    return res.data;
+  },
+
+  connectDatabase: async (payload: ConnectDBPayload): Promise<ConnectDBResponse> => {
+    const res = await client.post<ConnectDBResponse>("/connect-database", payload);
+    return res.data;
+  },
+
+  importDatabaseTable: async (payload: ImportDatabaseTablePayload): Promise<ImportDatabaseTableResponse> => {
+    const res = await client.post<ImportDatabaseTableResponse>("/import-database-table", payload);
     return res.data;
   },
 });

@@ -1,3 +1,5 @@
+import { PipelineData } from "./pipeline.types";
+
 export type JobConfig = {
   choose?: string;
   list_feature?: string[];
@@ -26,6 +28,7 @@ export type TrainingJob = {
   model?: unknown;
   orther_model_scores?: OtherModelScore[];
   status: number | string;
+  pipeline?: PipelineData;
 };
 
 export type GetJobsOffsetParams = {
@@ -33,3 +36,4 @@ export type GetJobsOffsetParams = {
   page?: number;
   limit?: number;
 };
+

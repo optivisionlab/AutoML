@@ -3,10 +3,19 @@ import {
   type JobConfig,
   type OtherModelScore,
   type GetJobsOffsetParams,
+  type GetPipelineSamplePayload,
+  type PipelineSampleResponse,
 } from "@automl/domain";
 import { baseApi } from "./baseApi";
 
-export type { TrainingJob, JobConfig, OtherModelScore, GetJobsOffsetParams };
+export type {
+  TrainingJob,
+  JobConfig,
+  OtherModelScore,
+  GetJobsOffsetParams,
+  GetPipelineSamplePayload,
+  PipelineSampleResponse,
+};
 
 export const jobApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -33,6 +42,19 @@ export const jobApi = baseApi.injectEndpoints({
       }),
       providesTags: ["Job"],
     }),
+    getPipelineSample: builder.query<
+      PipelineSampleResponse,
+      GetPipelineSamplePayload
+    >({
+      query: (payload) => ({
+        url: "/get-pipeline-sample",
+        method: "POST",
+        data: payload,
+      }),
+      providesTags: (_result, _error, arg) => [
+        { type: "Job", id: arg.job_id || arg.problem_type },
+      ],
+    }),
   }),
 });
 
@@ -40,4 +62,7 @@ export const {
   useGetJobInfoQuery,
   useGetJobsOffsetQuery,
   useGetLegacyJobsByUserIdQuery,
+  useGetPipelineSampleQuery,
+  useLazyGetPipelineSampleQuery,
 } = jobApi;
+

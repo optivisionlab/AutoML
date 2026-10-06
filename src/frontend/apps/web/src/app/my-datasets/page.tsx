@@ -567,6 +567,7 @@ const Page = () => {
       <ConnectDatabaseDialog
         open={connectDatabaseOpen}
         onOpenChange={setConnectDatabaseOpen}
+        onSuccess={refetch}
       />
     </>
   );

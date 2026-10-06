@@ -1,3 +1,5 @@
+import { ModelScoreDetail, PipelineData } from "@automl/domain";
+
 export type ProgressMapNodeStatus = "done" | "running" | "pending" | "failed";
 
 export type ProgressMapNode = {
@@ -10,9 +12,16 @@ export type ProgressMapNode = {
   parentIds?: string[];
   branch?: string;
   startedAt?: string;
+  finishedAt?: string;
   elapsed?: string;
+  error?: string;
+  kind?: string;
+  isBestModel?: boolean;
   params?: Record<string, string | number | boolean>;
   result?: Record<string, string | number | boolean>;
+  rawParams?: Record<string, unknown>;
+  rawOutput?: Record<string, unknown>;
+  modelsList?: Record<string, ModelScoreDetail>;
   log?: string[];
 };
 
@@ -23,7 +32,11 @@ export type ProgressMapPipeline = {
   rankBy: string;
   scoreMode: string;
   nodes: ProgressMapNode[];
+  rawPipeline?: PipelineData;
 };
+
+export type { PipelineData };
+
 
 export const progressMapSample: ProgressMapPipeline = {
   id: "hautoml-demo-progress",
