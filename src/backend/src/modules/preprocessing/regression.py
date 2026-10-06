@@ -1,6 +1,7 @@
 # Third-party Libraries
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import (
     BaseCrossValidator,
     StratifiedKFold,
@@ -9,7 +10,6 @@ from sklearn.model_selection import (
     RepeatedKFold,
     train_test_split,
 )
-from sklearn.compose import ColumnTransformer
 
 # Local Libraries
 from src.modules.preprocessing.utils import detect_column_types, build_feature_column_transformer

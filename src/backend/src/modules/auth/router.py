@@ -8,7 +8,18 @@ from pymongo.asynchronous.database import AsyncDatabase
 from src.core import responses, exceptions, cookies, dependencies
 from src.shared import constants
 from src.config import databases, settings
-from src.modules.auth.schemas import UserRegisterRequest, UserResponse, UserLoginRequest, TokenResponse, RefreshRequest, VerifyEmailRequest, ResendEmailRequest, ForgotPasswordRequest, VerifyOtpRequest, ResetPasswordRequest
+from src.modules.auth.schemas import (
+    UserRegisterRequest,
+    UserResponse,
+    UserLoginRequest,
+    TokenResponse,
+    RefreshRequest,
+    VerifyEmailRequest,
+    ResendEmailRequest,
+    ForgotPasswordRequest,
+    VerifyOtpRequest,
+    ResetPasswordRequest
+)
 from src.modules.auth.service import AuthService
 from src.modules.auth.repository import AuthRepository
 

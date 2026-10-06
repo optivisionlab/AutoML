@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 # Local Libraries
 from src.main import app
 from src.core.security import jwt_service
+from src.config import databases
 
 
 @pytest.fixture
@@ -18,6 +19,9 @@ def mock_db():
     """
     db = MagicMock()
     db.tbl_User = AsyncMock()
+    db.linked_accounts = AsyncMock()
+    db.tbl_Linked_Accounts = AsyncMock()
+    db.tbl_OTP = AsyncMock()
     db.tbl_Data = AsyncMock()
     db.tbl_Job = AsyncMock()
     db.tbl_Notification = AsyncMock()
@@ -130,6 +134,8 @@ def mock_lifespan_services(monkeypatch):
     monkeypatch.setattr("src.main.kafka_service.connect", AsyncMock())
     monkeypatch.setattr("src.main.kafka_service.disconnect", AsyncMock())
     monkeypatch.setattr("src.main.minio_service.close", AsyncMock())
+    monkeypatch.setattr("src.shared.email.email_service.send_verification_email", MagicMock(return_value=True))
+    monkeypatch.setattr("src.shared.email.email_service.send_otp", MagicMock(return_value=True))
 
 
 @pytest.fixture
@@ -137,6 +143,7 @@ def test_client(mock_db, mock_minio, mock_kafka, mock_mqtt, mock_mapreduce, monk
     """
     FastAPI TestClient with mocked database and shared services state
     """
+    databases.DatabaseManager.db = mock_db
     app.state.db = mock_db
     with TestClient(app) as client:
         yield client

@@ -21,5 +21,8 @@ class TestSettings(unittest.TestCase):
     def test_pymapreduce_settings(self):
         self.assertIn(settings.PYMAPREDUCE.MODE, ["cluster", "local"])
         self.assertIsNotNone(settings.PYMAPREDUCE.HEAD_ADDRESS)
-        self.assertGreaterEqual(settings.PYMAPREDUCE.TIMEOUT, 0)
-        self.assertGreaterEqual(settings.PYMAPREDUCE.IDLE_TIMEOUT, 0)
+        if settings.PYMAPREDUCE.TIMEOUT is not None:
+            self.assertGreaterEqual(settings.PYMAPREDUCE.TIMEOUT, 0)
+        self.assertGreaterEqual(settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT, 0)
+        if settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT is not None:
+            self.assertGreaterEqual(settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT, 0)

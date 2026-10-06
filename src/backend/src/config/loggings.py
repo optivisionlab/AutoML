@@ -1,7 +1,7 @@
 # Standard Libraries
+import sys
 import logging
 import logging.config
-import sys
 from typing import Any
 
 # Local Libraries

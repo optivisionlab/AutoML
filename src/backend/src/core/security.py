@@ -48,7 +48,7 @@ class JWTService:
         })
 
         return encode(to_encode, self.__secret_key, self.__algorithm)
-    
+
     def create_refresh_token(self, data: dict) -> str:
         """
         Create refresh token

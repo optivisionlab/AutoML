@@ -17,14 +17,20 @@ logger = logging.getLogger(__name__)
 
 class InferenceActorRegistry:
     _actors: dict[str, Any] = {}
-    _lock: asyncio.Lock = asyncio.Lock()
+    _lock: asyncio.Lock | None = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
 
     @classmethod
     async def get_or_create_actor(cls, job_id: str, storage_info: dict[str, str]) -> Any:
         if job_id in cls._actors:
             return cls._actors[job_id]
 
-        async with cls._lock:
+        async with cls._get_lock():
             if job_id in cls._actors:
                 return cls._actors[job_id]
 
@@ -75,7 +81,7 @@ class InferenceActorRegistry:
 
     @classmethod
     async def clear(cls) -> None:
-        async with cls._lock:
+        async with cls._get_lock():
             for job_id, handle in list(cls._actors.items()):
                 try:
                     await pymapreduce.kill(handle)

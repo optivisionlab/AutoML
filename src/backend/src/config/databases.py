@@ -2,9 +2,9 @@
 import logging
 
 # Third-party Libraries
+from fastapi import Request
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
-from fastapi import Request
 
 # Local Libraries
 from src.config.settings import settings

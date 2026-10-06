@@ -1,18 +1,17 @@
 # Standard Libraries
 import io
-import os
-import sys
 import pickle
 import asyncio
 import logging
+import concurrent.futures
 from pathlib import Path
-from typing import Any
+from typing import Any, Coroutine
 
 # Third-party Libraries
 import numpy as np
 import pandas as pd
-from miniopy_async import Minio
 import pymapreduce
+from miniopy_async import Minio
 
 # Local Libraries
 from src.config import settings
@@ -21,6 +20,44 @@ from src.shared import constants
 
 # Logging
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro: Coroutine[Any, Any, Any]) -> Any:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
+
+
+async def _download_minio_object(
+    endpoint: str,
+    access_key: str,
+    secret_key: str,
+    bucket_name: str,
+    object_name: str,
+    secure: bool = False,
+) -> bytes:
+    client = Minio(
+        endpoint=endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
+        secure=secure,
+    )
+    try:
+        res = await client.get_object(bucket_name, object_name)
+        try:
+            return await res.read()
+        finally:
+            res.close()
+            if hasattr(res, "release"):
+                res.release()
+    finally:
+        await client.close_session()
 
 
 @pymapreduce.remote(idle_timeout=settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT)
@@ -38,22 +75,16 @@ class ModelInferenceActor:
         self.bucket_name = bucket_name
         self.object_name = object_name
 
-        async def _fetch():
-            client = Minio(
+        raw_bytes = _run_async(
+            _download_minio_object(
                 endpoint=minio_endpoint,
                 access_key=access_key,
                 secret_key=secret_key,
+                bucket_name=bucket_name,
+                object_name=object_name,
                 secure=secure,
             )
-            res = await client.get_object(bucket_name, object_name)
-            try:
-                return await res.read()
-            finally:
-                res.close()
-                if hasattr(res, "release"):
-                    res.release()
-
-        raw_bytes = asyncio.run(_fetch())
+        )
         if isinstance(raw_bytes, io.BytesIO):
             raw_bytes = raw_bytes.getvalue()
 
@@ -71,15 +102,21 @@ class ModelInferenceActor:
             self.target_name = "target"
             self.problem_type = "classification"
 
-    def predict(
+    def cleanup(self) -> None:
+        self.model = None
+        self.preprocessor = None
+
+    def close(self) -> None:
+        self.cleanup()
+
+    def _predict_df(
         self,
-        records: list[dict[str, Any]],
+        df_input: pd.DataFrame,
         expected_features: list[str] | None = None,
     ) -> list[Any]:
-        if not records:
+        if df_input.empty:
             return []
 
-        df_input = pd.DataFrame(records)
         df_input.columns = df_input.columns.astype(str).str.strip()
 
         if self.preprocessor is not None:
@@ -88,7 +125,16 @@ class ModelInferenceActor:
             raw_preds = self.preprocessor.inverse_transform_target(raw_preds)
         else:
             feats = expected_features or self.feature_names
-            df_feat = df_input[feats].copy() if feats else df_input.copy()
+            if feats:
+                df_feat = df_input.copy()
+                for col in feats:
+                    if col not in df_feat.columns:
+                        df_feat[col] = np.nan
+                df_feat = df_feat[feats]
+            else:
+                drop_cols = [self.target_name] if self.target_name in df_input.columns else []
+                df_feat = df_input.drop(columns=drop_cols).copy() if drop_cols else df_input.copy()
+
             for col in df_feat.columns:
                 if df_feat[col].dtype == "object" or df_feat[col].dtype.name == "category":
                     mode_val = df_feat[col].mode()
@@ -107,6 +153,17 @@ class ModelInferenceActor:
             else str(p)
             for p in raw_preds
         ]
+
+    def predict(
+        self,
+        records: list[dict[str, Any]],
+        expected_features: list[str] | None = None,
+    ) -> list[Any]:
+        if not records:
+            return []
+
+        df_input = pd.DataFrame(records)
+        return self._predict_df(df_input, expected_features=expected_features)
 
     def predict_file(
         self,
@@ -127,9 +184,7 @@ class ModelInferenceActor:
         if df.empty:
             raise ValueError("Uploaded dataset contains no data rows.")
 
-        df.columns = df.columns.astype(str).str.strip()
-        records = df.to_dict(orient="records")
-        preds = self.predict(records, expected_features=expected_features)
+        preds = self._predict_df(df, expected_features=expected_features)
 
         pred_target = target_col or self.target_name or "target"
         pred_col_name = f"predicted_{pred_target}"
@@ -149,22 +204,23 @@ class ModelInferenceActor:
 
 
 class MapReduceManager:
-    """
-    Singleton Manager for PyMapReduce Driver and Cluster connection lifecycle
-    """
     _driver: pymapreduce.Driver | None = None
+    _worker_handle: pymapreduce.WorkerHandle | None = None
     _is_initialized: bool = False
-    _lock: asyncio.Lock = asyncio.Lock()
+    _lock: asyncio.Lock | None = None
+
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
 
     @classmethod
     async def get_driver(cls) -> pymapreduce.Driver:
-        """
-        Get or initialize the singleton PyMapReduce Driver instance
-        """
         if cls._driver and cls._is_initialized:
             return cls._driver
 
-        async with cls._lock:
+        async with cls._get_lock():
             if cls._driver and cls._is_initialized:
                 return cls._driver
 
@@ -179,7 +235,6 @@ class MapReduceManager:
 
             if mode == constants.MapReduceMode.LOCAL:
                 logger.info(f"Initializing PyMapReduce in LOCAL EMBEDDED mode at {head_addr}...")
-                # Initialize local HeadNode with retry in case of WAL recovery
                 last_err = None
                 for attempt in range(1, 4):
                     try:
@@ -196,16 +251,14 @@ class MapReduceManager:
                 if cls._driver is None:
                     raise RuntimeError(f"Failed to initialize PyMapReduce HeadNode after 3 attempts: {last_err}")
 
-                # Start local worker utilizing all available CPU cores automatically
-                asyncio.ensure_future(
-                    pymapreduce.start_worker(head_addr, idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT)
+                cls._worker_handle = await pymapreduce.connect_worker(
+                    head_addr,
+                    idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT
                 )
 
-                # Allow a short moment for the local worker to register with HeadNode
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 logger.info("PyMapReduce Local Cluster successfully initialized and worker registered")
             else:
-                # CLUSTER mode
                 logger.info(f"Connecting to PyMapReduce Cluster at HeadNode '{head_addr}' with runtime_env working_dir={backend_dir}...")
                 last_err = None
                 for attempt in range(1, 4):
@@ -230,10 +283,16 @@ class MapReduceManager:
 
     @classmethod
     async def shutdown(cls) -> None:
-        """
-        Gracefully shutdown the driver connection.
-        """
-        async with cls._lock:
+        async with cls._get_lock():
+            if cls._worker_handle is not None:
+                try:
+                    await cls._worker_handle.disconnect(graceful=True)
+                    logger.info("PyMapReduce Local Worker disconnected")
+                except Exception as e:
+                    logger.warning(f"Error while disconnecting PyMapReduce Worker: {e}")
+                finally:
+                    cls._worker_handle = None
+
             if cls._driver and cls._is_initialized:
                 try:
                     mode = settings.PYMAPREDUCE.MODE
@@ -245,3 +304,4 @@ class MapReduceManager:
                 finally:
                     cls._driver = None
                     cls._is_initialized = False
+
