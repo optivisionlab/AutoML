@@ -594,7 +594,7 @@ class DatasetService:
                 "id": str(current_user.get("_id")),
                 "name": current_user.get("username")
             },
-            "status": 0,
+            "status": constants.JobStatus.RUNNING,
             "activate": 0,
             "create_at": now
         }

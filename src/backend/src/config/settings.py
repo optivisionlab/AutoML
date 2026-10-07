@@ -33,6 +33,7 @@ class JWTSettings(BaseModel):
 class MailSettings(BaseModel):
     USERNAME: str = Field(default="username", validation_alias="MAIL_USERNAME")
     PASSWORD: str = Field(default="password", validation_alias="MAIL_PASSWORD")
+    LOGO: str = Field(default="https://abc.png", validation_alias="MAIL_LOGO")
 
 
 class GoogleSettings(BaseModel):
@@ -55,9 +56,13 @@ class KafkaSettings(BaseModel):
 class MapReduceSettings(BaseModel):
     MODE: str = Field(default="local", validation_alias="MAPREDUCE_MODE")
     HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
-    TIMEOUT: int | None = Field(default=None, validation_alias="MAPREDUCE_TIMEOUT")
     WORKER_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_WORKER_IDLE_TIMEOUT")
-    ACTOR_IDLE_TIMEOUT: int | None = Field(default=300, validation_alias="MAPREDUCE_ACTOR_IDLE_TIMEOUT")
+    ACTOR_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_ACTOR_IDLE_TIMEOUT")
+
+
+class BackendAddress(BaseModel):
+    HOST: str = Field(default="localhost", validation_alias="BACKEND_HOST")
+    PORT: int = Field(default=9999, validation_alias="BACKEND_PORT")
 
 
 class Settings(BaseSettings):
@@ -66,18 +71,16 @@ class Settings(BaseSettings):
     """
     # System Paths
     BASE_DIR: Path = Path(__file__).resolve().parents[2]
-    LOGO: str = "https://"
 
     # Project Info
     PROJECT: ProjectInfo = ProjectInfo()
 
     # Address
-    HOST_BACK_END: str = "0.0.0.0"
-    PORT_BACK_END: int = 9999
+    BACKEND: BackendAddress = BackendAddress()
 
     # Domain
     FRONTEND_URL: str = "http://localhost:3000"
-    REDIRECT_URI: str = "http://localhost:9999"
+    REDIRECT_URI: str = "http://localhost:9996"
 
     # Database Settings
     MONGODB: MongoDB = MongoDB()

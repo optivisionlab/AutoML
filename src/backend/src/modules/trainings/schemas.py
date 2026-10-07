@@ -55,9 +55,6 @@ class AutoMLPipelineResult(BaseModel):
     best_model_bytes: bytes
     cv_strategy: CVStrategyConfig
     feature_names: list[str]
-    time_limit_reached: bool = False
-    completed_models: int
-    total_models: int
 
     model_config = {
         "arbitrary_types_allowed": True
@@ -74,6 +71,3 @@ class JobSuccessPayload(BaseModel):
     best_params: dict[str, Any]
     best_score: float
     model_scores: list[ModelScoreItem]
-    time_limit_reached: bool = False
-    completed_models: int | None = None
-    total_models: int | None = None

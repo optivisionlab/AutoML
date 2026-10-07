@@ -4,11 +4,11 @@ from typing import Any
 
 # Third-party Libraries
 import numpy as np
-from sklearn.base import BaseEstimator
-from sklearn.model_selection import BaseCrossValidator
 from skopt import gp_minimize
 from skopt.space import Categorical, Dimension
 from skopt.utils import use_named_args
+from sklearn.base import BaseEstimator
+from sklearn.model_selection import BaseCrossValidator, ParameterGrid
 
 # Local Libraries
 from src.modules.hpo.base import BaseSearchCV, TrialPruned
@@ -80,6 +80,8 @@ class BayesianSearch(BaseSearchCV):
         """
         self._init_search(X, y)
         param_grids = self._normalize_param_grid()
+        total_possible_combos = len(list(ParameterGrid(self.param_grid))) or 1
+        total_trials = min(self.n_calls, total_possible_combos)
         calls_per_grid = max(self.n_initial_points + 1, self.n_calls // len(param_grids))
 
         total_evaluated = 0
@@ -96,7 +98,7 @@ class BayesianSearch(BaseSearchCV):
                         X=X,
                         y=y,
                         trial_num=total_evaluated,
-                        total_trials=self.n_calls,
+                        total_trials=total_trials,
                     )
                     self._record_trial({}, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                 except TrialPruned:
@@ -120,7 +122,7 @@ class BayesianSearch(BaseSearchCV):
                             X=X,
                             y=y,
                             trial_num=total_evaluated,
-                            total_trials=self.n_calls,
+                            total_trials=total_trials,
                         )
                         self._record_trial(params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                         cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
@@ -131,11 +133,6 @@ class BayesianSearch(BaseSearchCV):
                         return 1e6  # High loss penalty for pruned configurations
 
                 return -float(cache[param_key][0].get(self.refit, 0.0))
-
-            if self.verbose > 0:
-                logger.info(
-                    f"[BayesianSearch] Space {grid_idx}/{len(param_grids)}: Optimizing with {effective_calls} calls..."
-                )
 
             callbacks = []
             if self.patience is not None:

@@ -9,7 +9,6 @@ from typing import Any
 import pandas as pd
 
 # Local Libraries
-from src.config import settings
 from src.shared import minio_service, search_space, constants, MapReduceManager
 from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
@@ -64,7 +63,8 @@ class TrainingService:
         metric_list: list[str],
         metric_sort: str,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
-        search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
+        search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
+        timeout: int | None = None
     ) -> list[dict[str, Any]]:
         space_models = (
             search_space.REGRESSION_MODELS
@@ -89,20 +89,19 @@ class TrainingService:
                 metric_list,
                 metric_sort,
                 problem_type,
-                search_algorithm,
+                search_algorithm
             )
             tasks.append(task_coro)
 
         task_futures = [asyncio.create_task(task_coroutine) for task_coroutine in tasks]
 
-        task_timeout = settings.PYMAPREDUCE.TIMEOUT
         logger.info(
-            f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={task_timeout}s)..."
+            f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={timeout}s)..."
         )
-        if task_timeout and task_timeout > 0:
+        if timeout and timeout > 0:
             completed_futures, pending_futures = await asyncio.wait(
                 task_futures,
-                timeout=float(task_timeout),
+                timeout=float(timeout),
                 return_when=asyncio.ALL_COMPLETED,
             )
             # Cancel all tasks that did not finish within the timeout
@@ -191,7 +190,8 @@ class TrainingService:
         models_to_train: list[str] | None = None,
         custom_params: dict[str, Any] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
-        search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
+        search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
+        timeout: int | None = None
     ) -> AutoMLPipelineResult:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
@@ -228,6 +228,7 @@ class TrainingService:
             metric_sort=metric_sort,
             problem_type=problem_type,
             search_algorithm=search_algorithm,
+            timeout=timeout,
         )
 
         best_entry, best_raw, best_score, model_scores = cls._evaluate_and_select_best_model(
@@ -254,9 +255,6 @@ class TrainingService:
             best_model_bytes=artifact_bytes,
             cv_strategy=cv_config,
             feature_names=feature_names,
-            time_limit_reached=(len(valid_results) < len(models_to_train)),
-            completed_models=len(valid_results),
-            total_models=len(models_to_train),
         )
 
     async def _load_dataset_df(self, dataset_id: str) -> tuple[pd.DataFrame, str]:
@@ -308,9 +306,6 @@ class TrainingService:
             best_params=pipeline_result.best_params,
             best_score=pipeline_result.best_score,
             model_scores=pipeline_result.model_scores,
-            time_limit_reached=pipeline_result.time_limit_reached,
-            completed_models=pipeline_result.completed_models,
-            total_models=pipeline_result.total_models,
         )
 
         await self.repo.update_success(job_id, final_result_payload)
@@ -319,7 +314,7 @@ class TrainingService:
             self.notif_service.push_notification(
                 user_id=user_id,
                 job_id=job_id,
-                status="1",
+                status=str(constants.JobStatus.SUCCESS),
                 message=f"Bộ dữ liệu [{dataset_name}] huấn luyện thành công.",
                 metadata={
                     "best_model": pipeline_result.best_model,
@@ -343,7 +338,7 @@ class TrainingService:
             self.notif_service.push_notification(
                 user_id=user_id,
                 job_id=job_id,
-                status="-1",
+                status=str(constants.JobStatus.FAILED),
                 message=f"Bộ dữ liệu [{dataset_name}] huấn luyện thất bại.",
                 metadata={"error_details": error_msg},
             )
@@ -365,14 +360,15 @@ class TrainingService:
             if "config" in config and isinstance(config["config"], dict):
                 config = config["config"]
 
-            problem_type = config.get("problem_type") or "classification"
+            problem_type = config.get("problem_type") or constants.ProblemType.CLASSIFICATION
             target_col = config.get("target")
             feature_cols = config.get("features") or config.get("list_feature")
             metric_list = config.get("metrics")
             metric_sort = config.get("metric_sort") or ("r2" if problem_type == constants.ProblemType.REGRESSION else "accuracy")
             models_to_train = config.get("models")
             custom_params = config.get("custom_params")
-            search_algorithm = config.get("search_algorithm") or config.get("hpo_algorithm") or "grid_search"
+            search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
+            timeout = config.get("timeout") or None
 
             pipeline_result = await self.train_automl_pipeline(
                 df=df,
@@ -384,6 +380,7 @@ class TrainingService:
                 custom_params=custom_params,
                 problem_type=problem_type,
                 search_algorithm=search_algorithm,
+                timeout=timeout,
             )
 
             _, storage_info = await self._save_best_model_artifact(

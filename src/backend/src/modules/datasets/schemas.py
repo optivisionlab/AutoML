@@ -66,8 +66,9 @@ class DatasetUpdate(BaseModel):
 
 class TrainingConfig(BaseModel):
     choose: str | None = None
+    timeout: int | None = None # seconds
     metric_sort: str
     list_feature: list
     problem_type: str
-    search_algorithm: str
+    search_algorithm: str | None = None
     target: str

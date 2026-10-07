@@ -1,14 +1,18 @@
 # Standard Libraries
 import time
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any
 
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator, clone, is_classifier
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.model_selection import BaseCrossValidator, check_cv
 
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # Logging
 logger = logging.getLogger(__name__)
@@ -207,6 +211,10 @@ class BaseSearchCV(BaseEstimator, ABC):
         fit_times: list[float] = []
         score_times: list[float] = []
 
+        model_name = self.estimator.__class__.__name__
+        trial_tag = f"[{trial_num}/{total_trials}] " if trial_num and total_trials else ""
+
+        # Fold-level evaluation
         for step, (train_idx, val_idx) in enumerate(cv_splits):
             fold_fit_start = time.time()
             model_fold = clone(self.estimator)
@@ -233,13 +241,6 @@ class BaseSearchCV(BaseEstimator, ABC):
 
             # Fold-level median pruning check
             if self._should_prune(step, current_mean_refit):
-                elapsed = time.time() - start_time
-                if self.verbose > 0:
-                    trial_tag = f"[{trial_num}/{total_trials}] " if trial_num and total_trials else ""
-                    logger.info(
-                        f"[{self.__class__.__name__}] {trial_tag}PRUNED at fold {step + 1}/{n_splits} | "
-                        f"Score {self.refit}: {current_mean_refit:.4f} ({elapsed:.2f}s)"
-                    )
                 raise TrialPruned(
                     f"Candidate pruned at fold {step + 1}/{n_splits} (score: {current_mean_refit:.4f})"
                 )
@@ -255,11 +256,8 @@ class BaseSearchCV(BaseEstimator, ABC):
         elapsed = time.time() - start_time
 
         if self.verbose > 0:
-            trial_tag = f"[{trial_num}/{total_trials}] " if trial_num and total_trials else ""
-            metrics_display = ", ".join(f"{k}: {v:.4f}" for k, v in mean_scores.items())
-            logger.info(
-                f"[{self.__class__.__name__}] {trial_tag}Params: {candidate_params} -> {metrics_display} ({elapsed:.2f}s)"
-            )
+            params_str = ", ".join(f"{k}: {repr(v)}" for k, v in candidate_params.items())
+            logger.info(f"[{model_name}] {trial_tag}[{params_str}]")
 
         return mean_scores, std_scores, fit_time, score_time
 
@@ -325,11 +323,6 @@ class BaseSearchCV(BaseEstimator, ABC):
         if self.best_params_:
             self.best_estimator_.set_params(**self.best_params_)
         self.best_estimator_.fit(X, y)
-
-        if self.verbose > 0:
-            logger.info(
-                f"[{self.__class__.__name__}] Best {self.refit}: {self.best_score_:.4f} | Params: {self.best_params_}"
-            )
 
         return self
 

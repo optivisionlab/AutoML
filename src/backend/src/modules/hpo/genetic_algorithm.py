@@ -5,7 +5,7 @@ from typing import Any
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import BaseCrossValidator
+from sklearn.model_selection import BaseCrossValidator, ParameterGrid
 
 # Local Libraries
 from src.modules.hpo.base import BaseSearchCV, TrialPruned
@@ -154,17 +154,13 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         self._init_search(X, y)
         param_grids = self._normalize_param_grid()
 
-        total_trials_estimate = self.population_size * self.n_generations * len(param_grids)
+        total_possible_combos = len(list(ParameterGrid(self.param_grid))) or 1
+        total_trials_estimate = min(self.population_size * self.n_generations * len(param_grids), total_possible_combos)
         trial_counter = 0
         cache: dict[tuple, tuple[dict[str, float], dict[str, float], float, float]] = {}
 
         for grid_idx, grid in enumerate(param_grids, start=1):
             population = [self._sample_individual(grid, rng) for _ in range(self.population_size)]
-
-            if self.verbose > 0:
-                logger.info(
-                    f"[GeneticAlgorithm] Space {grid_idx}/{len(param_grids)}: Population {self.population_size}, Generations {self.n_generations}"
-                )
 
             for gen in range(self.n_generations):
                 fitness_scores: list[float] = []

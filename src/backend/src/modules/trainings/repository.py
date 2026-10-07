@@ -7,6 +7,7 @@ from bson.errors import InvalidId
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
+from src.shared import constants
 from src.modules.trainings.schemas import JobSuccessPayload
 
 
@@ -63,8 +64,25 @@ class TrainingRepository:
 
         update_data = {
             "$set": {
-                "status": -1,
+                "status": constants.JobStatus.FAILED,
                 "infor": error_msg
+            }
+        }
+        await self.__job_collection.update_one(query, update_data)
+
+    async def update_cancelled(self, job_id: str, reason: str) -> None:
+        """
+        Update job state to cancelled (status = -2)
+        """
+        try:
+            query = {"_id": ObjectId(job_id)}
+        except (InvalidId, TypeError):
+            query = {"_id": job_id}
+
+        update_data = {
+            "$set": {
+                "status": constants.JobStatus.CANCELLED,
+                "infor": reason
             }
         }
         await self.__job_collection.update_one(query, update_data)
@@ -95,10 +113,8 @@ class TrainingRepository:
                 "best_params": payload_dict["best_params"],
                 "best_score": payload_dict["best_score"],
                 "orther_model_scores": payload_dict["model_scores"],
-                "status": 1,
-                "time_limit_reached": payload_dict.get("time_limit_reached", False),
-                "completed_models": payload_dict.get("completed_models"),
-                "total_models": payload_dict.get("total_models")
+                "status": constants.JobStatus.SUCCESS,
+                "infor": "Training completed"
             }
         }
         await self.__job_collection.update_one(query, update_data)

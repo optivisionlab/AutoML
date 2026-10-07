@@ -43,3 +43,10 @@ class SearchAlgorithm(str):
 
 class SearchConfig(str):
     N_JOBS = 1
+
+
+class JobStatus(int):
+    RUNNING = 0
+    SUCCESS = 1
+    FAILED = -1
+    CANCELLED = -2

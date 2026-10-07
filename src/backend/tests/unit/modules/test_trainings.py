@@ -38,9 +38,6 @@ class TestTrainingRepository(unittest.IsolatedAsyncioTestCase):
             "best_params": {"n_estimators": 100},
             "best_score": 0.98,
             "model_scores": [{"model_id": 0, "model_name": "RF", "scores": {"accuracy": 0.98}}],
-            "time_limit_reached": False,
-            "completed_models": 6,
-            "total_models": 6
         }
         await self.repo.update_success(job_id, payload)
         self.mock_jobs.update_one.assert_called_once()
@@ -171,9 +168,6 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
                 ModelScoreItem(model_id=0, model_name="DecisionTreeClassifier", scores={"accuracy": 0.95}, best_params={})
             ],
             cv_strategy=CVStrategyConfig(tier=1, name="StratifiedKFold", n_splits=5, description="5-fold CV"),
-            total_models=1,
-            completed_models=1,
-            time_limit_reached=False,
         )
 
         iris = load_iris(as_frame=True)

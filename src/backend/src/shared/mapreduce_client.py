@@ -4,8 +4,8 @@ import pickle
 import asyncio
 import logging
 import concurrent.futures
-from pathlib import Path
 from typing import Any, Coroutine
+from pathlib import Path
 
 # Third-party Libraries
 import numpy as np
@@ -253,7 +253,7 @@ class MapReduceManager:
 
                 cls._worker_handle = await pymapreduce.connect_worker(
                     head_addr,
-                    idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT
+                    idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT or 0
                 )
 
                 await asyncio.sleep(0.5)

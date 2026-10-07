@@ -25,6 +25,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Logging
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 logger = logging.getLogger(__name__)
 
 
@@ -38,14 +44,14 @@ def train_single_model_task(
     metric_list: list[str],
     metric_sort: str,
     problem_type: str = constants.ProblemType.CLASSIFICATION,
-    search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
+    search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
 ) -> dict[str, Any]:
     start_time = time.time()
 
     X_train, y_train = pickle.loads(train_data_bytes)
     model_cls = MODEL_CLASS_MAP.get(model_name)
     if not model_cls:
-        raise ValueError(f"Model '{model_name}' is not in MODEL_CLASS_MAP.")
+        raise ValueError(f"Model '{model_name}' is not in MODEL_CLASS_MAP")
 
     cv = build_cv_splitter(cv_config, problem_type=problem_type)
     scoring = ModelService.build_scoring_dict(metric_list, problem_type=problem_type)

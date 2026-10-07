@@ -25,7 +25,7 @@ def get_inference_service(db: AsyncDatabase = Depends(databases.get_db)) -> Infe
     return InferenceService(db)
 
 
-@router.get("/jobs", response_model=responses.PaginatedResponse[JobItemResponse])
+@router.get("/jobs", response_model=responses.PaginatedResponse[JobItemResponse], response_model_exclude_none=True)
 async def get_list_jobs(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -77,7 +77,7 @@ async def cancel_job(
     )
 
 
-@router.get("/models", response_model=responses.PaginatedResponse[JobItemResponse])
+@router.get("/models", response_model=responses.PaginatedResponse[JobItemResponse], response_model_exclude_none=True)
 async def get_list_active_models(
     current_page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),

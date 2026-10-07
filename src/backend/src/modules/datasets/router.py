@@ -225,7 +225,7 @@ async def get_dataset_features(
 
     return responses.BaseResponse(
         message="Features retrieved successfully",
-        data={"features": features}
+        data=features
     )
 
 
@@ -236,7 +236,7 @@ async def get_dataset_data(
     current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):
-    data, total_rows = await service.get_data_preview(
+    records, total_rows = await service.get_data_preview(
         current_user=current_user,
         dataset_id=id,
         num_rows=num_rows
@@ -246,7 +246,7 @@ async def get_dataset_data(
         message="Data retrieved successfully",
         data={
             "rows": total_rows,
-            "data": data
+            "records": records
         }
     )
 

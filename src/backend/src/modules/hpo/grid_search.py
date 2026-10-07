@@ -56,9 +56,6 @@ class GridSearch(BaseSearchCV):
         candidates = list(ParameterGrid(self.param_grid)) or [{}]
         total_trials = len(candidates)
 
-        if self.verbose > 0:
-            logger.info(f"[GridSearch] Evaluating {total_trials} candidate configurations...")
-
         for idx, candidate in enumerate(candidates, start=1):
             try:
                 mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(

@@ -44,7 +44,7 @@ class GmailService:
 
     @property
     def _logo(self) -> str:
-        return settings.LOGO
+        return settings.MAIL.LOGO
 
     def _load_template(self, filepath: Path) -> str | None:
         try:

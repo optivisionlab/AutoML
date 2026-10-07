@@ -25,13 +25,17 @@ from demo.ui_components import (
     render_dataset_overview_html,
     render_champion_card_html,
 )
+from src.config import setup_logging
 from src.shared import search_space
 from src.modules.models.service import LOWER_IS_BETTER_METRICS
 from src.modules.preprocessing.service import TabularPreprocessor
 from src.modules.trainings.service import TrainingService
 
 
-# Logging
+# Activate Logging
+if not logging.getLogger().handlers:
+    setup_logging()
+
 logger = logging.getLogger("demo_app")
 
 

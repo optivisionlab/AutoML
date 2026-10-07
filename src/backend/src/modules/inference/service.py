@@ -13,6 +13,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
 from src.core import exceptions
+from src.config import settings
 from src.shared import constants, minio_service, MapReduceManager, kafka_service
 from src.modules.trainings import TrainingRepository
 from src.modules.inference.schemas import (
@@ -123,7 +124,7 @@ class InferenceService:
         current_user: dict,
         job_id: str,
         activate: int,
-        base_url: str = "http://localhost:9999",
+        base_url: str = f"http://{settings.BACKEND.HOST}:{settings.BACKEND.PORT}",
     ) -> DeploymentInfoResponse:
         job_doc = await self._get_validated_job(current_user, job_id)
         await self.repo.update_activation(job_id, activate)
@@ -138,7 +139,7 @@ class InferenceService:
         self,
         current_user: dict,
         job_id: str,
-        base_url: str = "http://localhost:9999",
+        base_url: str = f"http://{settings.BACKEND.HOST}:{settings.BACKEND.PORT}",
     ) -> DeploymentInfoResponse:
         job_doc = await self._get_validated_job(current_user, job_id)
 
@@ -374,16 +375,16 @@ class InferenceService:
             )
 
         job_status = job_doc.get("status")
-        if job_status != 0:
-            status_desc = "completed" if job_status == 1 else "failed or cancelled"
+        if job_status != constants.JobStatus.RUNNING:
+            status_desc = "completed" if job_status == constants.JobStatus.SUCCESS else ("cancelled" if job_status == constants.JobStatus.CANCELLED else "failed")
             raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot cancel job with status {job_status} ({status_desc}). Only running or pending jobs can be cancelled",
                 error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
-        # Update job status in DB
-        await self.repo.update_failure(job_id, "Training job was cancelled by user.")
+        # Update job status in DB to cancelled
+        await self.repo.update_cancelled(job_id, "Training job was cancelled by user")
 
         # Notify consumer via Kafka so the worker process can be killed immediately
         cancel_payload = {
@@ -397,4 +398,4 @@ class InferenceService:
             key=str(job_id),
         )
 
-        return {"job_id": str(job_id), "status": -1}
+        return {"job_id": str(job_id), "status": constants.JobStatus.CANCELLED}

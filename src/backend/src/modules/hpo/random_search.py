@@ -62,9 +62,6 @@ class RandomSearch(BaseSearchCV):
         sampled_indices = rng.choice(len(all_candidates), size=n_samples, replace=False)
         sampled_candidates = [all_candidates[i] for i in sampled_indices]
 
-        if self.verbose > 0:
-            logger.info(f"[RandomSearch] Sampling {n_samples} random candidate configurations...")
-
         for idx, candidate in enumerate(sampled_candidates, start=1):
             try:
                 mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(

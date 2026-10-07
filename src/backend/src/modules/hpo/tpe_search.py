@@ -5,10 +5,10 @@ from typing import Any
 # Third-party Libraries
 import numpy as np
 import optuna
-from optuna.samplers import TPESampler
-from optuna.pruners import MedianPruner, NopPruner
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import BaseCrossValidator
+from optuna.pruners import MedianPruner, NopPruner
+from optuna.samplers import TPESampler
+from sklearn.model_selection import BaseCrossValidator, ParameterGrid
 
 # Local Libraries
 from src.modules.hpo.base import BaseSearchCV, TrialPruned
@@ -60,12 +60,16 @@ class TPESearch(BaseSearchCV):
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         self._init_search(X, y)
         param_grids = self._normalize_param_grid()
-        trials_per_grid = max(1, self.n_trials // len(param_grids))
+        total_possible_combos = len(list(ParameterGrid(self.param_grid))) or 1
+        total_trials = min(self.n_trials, total_possible_combos)
 
         total_evaluated = 0
         cache: dict[tuple, tuple[dict[str, float], dict[str, float], float, float]] = {}
 
         for grid_idx, grid in enumerate(param_grids, start=1):
+            combos_in_grid = len(list(ParameterGrid(grid))) or 1
+            trials_per_grid = min(max(1, self.n_trials // len(param_grids)), combos_in_grid)
+
             if not grid:
                 total_evaluated += 1
                 try:
@@ -74,7 +78,7 @@ class TPESearch(BaseSearchCV):
                         X=X,
                         y=y,
                         trial_num=total_evaluated,
-                        total_trials=self.n_trials,
+                        total_trials=total_trials,
                     )
                     self._record_trial({}, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                 except TrialPruned:
@@ -115,7 +119,7 @@ class TPESearch(BaseSearchCV):
                         X=X,
                         y=y,
                         trial_num=total_evaluated,
-                        total_trials=self.n_trials,
+                        total_trials=total_trials,
                     )
                     self._record_trial(sampled_params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                     cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
@@ -132,11 +136,6 @@ class TPESearch(BaseSearchCV):
                     study.stop()
 
                 return current_score
-
-            if self.verbose > 0:
-                logger.info(
-                    f"[TPESearch] Space {grid_idx}/{len(param_grids)}: Optimizing with up to {trials_per_grid} trials..."
-                )
 
             try:
                 study.optimize(objective, n_trials=trials_per_grid, n_jobs=self.n_jobs)

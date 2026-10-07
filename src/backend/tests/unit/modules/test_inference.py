@@ -438,7 +438,7 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         res = await self.service.cancel_job(self.current_user, self.job_id)
 
         self.assertEqual(res["job_id"], self.job_id)
-        self.assertEqual(res["status"], -1)
+        self.assertEqual(res["status"], -2)
         self.mock_jobs.update_one.assert_called_once()
         mock_send_kafka.assert_called_once()
         call_kwargs = mock_send_kafka.call_args.kwargs
