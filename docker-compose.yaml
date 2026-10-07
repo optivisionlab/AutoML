@@ -95,6 +95,13 @@ services:
     container_name: hautoml-frontend
     env_file:
       - ./src/frontend/.env
+    environment:
+      # NextAuth và server action gọi backend từ TRONG container: localhost:9996
+      # ở đây là chính container frontend, phải dùng tên service.
+      INTERNAL_API_URL: "http://hautoml-toolkit:9996"
+    volumes:
+      - ./src/frontend/src:/app/src
+      - ./src/frontend/public:/app/public
     ports:
       - "3000:3000"
     command: npm run dev

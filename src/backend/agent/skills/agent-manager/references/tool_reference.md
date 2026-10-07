@@ -1,18 +1,20 @@
 # Bảng tra toàn bộ tool của hệ thống HAutoML
 
-Tài liệu tổng hợp cho người phát triển, không nằm trong system prompt.
+Tài liệu tổng hợp cho người phát triển, không nằm trong system prompt. Agent
+nào dùng tool nào do `tools:` trong `skills/<agent>/SKILL.md` quyết định.
 
-## account
+## agent-manager
 
-| Tool | Endpoint | Ghi chú |
-|---|---|---|
-| `signup` | `POST /signup` | Tài khoản mới luôn `is_verified = false` |
-| `login` | `POST /login` | Token giữ trong client, không trả ra LLM |
-| `get_me` | `GET /me` | Cache `user_id` cho các tool sau |
-| `logout` | `POST /logout` | Xoá token và `user_id` |
-| `resend_verification_email` | `POST /auth/token/verifications` | Gửi lại link xác thực |
-| `verify_email` | `POST /auth/verifications` | Nhận token thuần hoặc nguyên link |
-| `dev_verify_account` | `POST /auth/verifications` | Chỉ khi `AGENT_DEV_TOOLS=1` |
+| Tool | Ghi chú |
+|---|---|
+| `ask_prompt_agent` | Chạy Prompt Agent → R (JSON 6 khoá) + `missing` |
+| `ask_data_agent` | Chạy Data Agent; schema nó đọc được giữ cho Model Agent |
+| `ask_model_agent` | Chạy Model Agent với R + hồ sơ dữ liệu → `configs` có `config_id` |
+| `ask_operation_agent` | Chạy Operation Agent với danh sách config đã kiểm |
+
+## prompt-agent
+
+Không có tool. Một lượt LLM trả JSON, code soát lại bằng `team.normalize_requirements`.
 
 ## data-agent
 
@@ -21,35 +23,39 @@ Tài liệu tổng hợp cho người phát triển, không nằm trong system p
 | `list_my_datasets` | `POST /get-list-data-by-userid` | Tự lấy `user_id` |
 | `get_dataset_info` | `GET /get-data-info` | Metadata, **không có tên cột** |
 | `get_dataset_schema` | `/get-data-info` + `/v2/auto/features` + `/v2/auto/data` | Gộp 3 lời gọi |
+| `read_reference` | — | Đọc file trong `references/`, tối đa 6000 ký tự |
 
 ## model-agent
 
 | Tool | Endpoint | Ghi chú |
 |---|---|---|
+| `list_metrics` | `GET /v2/auto/metrics` | |
+| `list_models` | — | Đọc `assets/system_models/*.yml` |
+| `submit_config` | `/get-data-info` + `/v2/auto/features` + `/v2/auto/data` + `/v2/auto/metrics` | Kiểm bằng `validate_config.py`, KHÔNG train |
+| `read_reference` | — | |
+
+## operation-agent
+
+| Tool | Endpoint | Ghi chú |
+|---|---|---|
+| `start_training` | `POST /v2/auto/jobs/training` | Chỉ nhận `config_id`, tự bật watcher |
+| `watch_job` | `POST /get-list-job-by-userId` (định kỳ) | Theo dõi nền tới khi `status ≠ 0` |
 | `list_my_jobs` | `POST /get-list-job-by-userId` | Tự lấy `user_id` |
-| `get_job_info` | `POST /get-job-info` | Cần `job_id` từ bước liệt kê |
+| `get_job_info` | `POST /get-job-info` | Kiểm quyền sở hữu trước |
+| `activate_model` | `POST /activate-model` | Kiểm quyền sở hữu + job đã xong |
+| `predict` | `POST /inference-model` | ≤ 50 mẫu, soát đủ cột. Backend hiện luôn 403 với job v2 |
 
-## agent-manager
+## Không phơi cho LLM
 
-| Tool | Ghi chú |
-|---|---|
-| `read_reference` | Đọc file trong `references/` của skill, tối đa 6000 ký tự |
+| Hàm | Ai gọi | Vì sao |
+|---|---|---|
+| `login`, `signup`, `verify_email`... | `chat.py`, `tests/` | Xác thực là việc của hạ tầng, LLM không cầm token |
+| `upload_dataset_file` | `server.py` (`POST /agent/upload`) | LLM không cầm được file |
 
 ## Tool chưa viết
 
-Những endpoint đã có ở backend nhưng chưa bọc thành tool:
-
-| Endpoint | Tool dự kiến | Thuộc skill |
+| Endpoint | Tool dự kiến | Thuộc agent |
 |---|---|---|
-| `POST /upload-dataset` | `upload_dataset` | data-agent |
-| `GET /v2/auto/data` | `preview_dataset` | data-agent |
 | `DELETE /delete-dataset/{id}` | `delete_dataset` | data-agent |
 | `POST /get-data-from-uci` | `import_uci_dataset` | data-agent |
-| `GET /v2/auto/metrics` | `list_metrics` | model-agent |
-| `POST /v2/auto/jobs/training` | `start_training` | model-agent |
-| `POST /activate-model` | `activate_model` | operation-agent |
-| `POST /inference-model` | `predict` | operation-agent |
 | `POST /v2/auto/{job_id}/predictions` | `batch_predict` | operation-agent |
-
-Lưu ý: `api_client.upload_dataset` và `api_client.get_dataset_preview` đã tồn
-tại, chỉ thiếu hàm bọc trong `tools.py` và schema trong `TOOL_SCHEMAS`.

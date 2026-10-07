@@ -79,6 +79,23 @@ def _first_env(*names: str) -> str | None:
     return next((os.getenv(name) for name in names if os.getenv(name)), None)
 
 
+def _azure_base(endpoint: str) -> str:
+    """
+    Chỉ giữ scheme + host của endpoint Azure.
+
+    Portal Azure hiện hiển thị URL dạng `https://<resource>.cognitiveservices.azure.com/openai/v1`.
+    Dán nguyên vào thì SDK AzureOpenAI nối thêm `/openai/deployments/...` thành
+    `/openai/v1/openai/deployments/...` và nhận 404 "Resource not found" - trông
+    như sai key nhưng thực ra key vẫn đúng.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(endpoint.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return endpoint
+    return f"{parsed.scheme}://{parsed.netloc}/"
+
+
 def resolve(provider: str | None = None, model: str | None = None) -> ProviderConfig:
     """
     Dựng cấu hình provider từ tham số và biến môi trường.
@@ -119,8 +136,9 @@ def resolve(provider: str | None = None, model: str | None = None) -> ProviderCo
             "Provider 'azure' cần AZURE_OPENAI_ENDPOINT, "
             "dạng https://<tên-resource>.openai.azure.com/"
         )
+    endpoint = _azure_base(endpoint)
 
-    deployment = resolved_model or _first_env("AZURE_OPENAI_DEPLOYMENT")
+    deployment =resolved_model or _first_env("AZURE_OPENAI_DEPLOYMENT")
     if not deployment:
         raise RuntimeError(
             "Provider 'azure' cần tên deployment. Đặt AZURE_OPENAI_DEPLOYMENT "

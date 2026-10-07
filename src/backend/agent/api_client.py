@@ -66,7 +66,7 @@ class HAutoMLClient:
     def close(self) -> None:
         self._http.close()
 
-    def _request(self, method: str, path: str, **kwargs) -> dict:
+    def _request(self, method: str, path: str, **kwargs) -> dict | list:
         headers = dict(kwargs.pop("headers", {}) or {})
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -142,21 +142,50 @@ class HAutoMLClient:
         file_path: str,
         timeout: float = 60.0,
     ) -> dict:
-        """
-        POST /upload-dataset - tải một file CSV/Excel lên.
-
-        Endpoint này nhận multipart form chứ không phải JSON như các endpoint
-        khác, nên không dùng được `json=` của _request.
-        """
+        """POST /upload-dataset từ một file trên đĩa. Dùng bởi tests/seed.py."""
         with open(file_path, "rb") as file:
-            return self._request(
-                "POST",
-                "/upload-dataset",
-                params={"user_id": user_id},
-                data={"data_name": data_name, "data_type": data_type},
-                files={"file_data": (os.path.basename(file_path), file, "text/csv")},
-                timeout=timeout,
-            )
+            content = file.read()
+
+        return self.upload_dataset_content(
+            user_id=user_id,
+            data_name=data_name,
+            data_type=data_type,
+            filename=os.path.basename(file_path),
+            content=content,
+            timeout=timeout,
+        )
+
+    def upload_dataset_content(
+        self,
+        user_id: str,
+        data_name: str,
+        data_type: str,
+        filename: str,
+        content: bytes,
+        mime_type: str = "text/csv",
+        timeout: float = 120.0,
+    ) -> dict:
+        """
+        POST /upload-dataset từ nội dung file trong bộ nhớ.
+
+        Dùng khi file đến từ trình duyệt (khung chat) chứ không nằm trên đĩa.
+        Endpoint nhận multipart form chứ không phải JSON, nên không đi qua
+        `json=` như các endpoint khác.
+
+        Backend chọn cách đọc theo ĐUÔI của filename (.xls/.xlsx → read_excel,
+        còn lại → read_csv), nên filename phải giữ đúng đuôi.
+
+        timeout dài hơn mặc định vì backend phải đọc file, chuyển sang parquet
+        rồi ghi lên MinIO - file 20 MB có thể mất vài chục giây.
+        """
+        return self._request(
+            "POST",
+            "/upload-dataset",
+            params={"user_id": user_id},
+            data={"data_name": data_name, "data_type": data_type},
+            files={"file_data": (filename, content, mime_type)},
+            timeout=timeout,
+        )
 
     def get_dataset_features(self, dataset_id: str, problem_type: str) -> dict:
         """
@@ -199,6 +228,34 @@ class HAutoMLClient:
     def get_job_info(self, job_id: str) -> dict:
         """POST /get-job-info - chi tiết một job huấn luyện."""
         return self._request("POST", "/get-job-info", params={"id": job_id})
+
+    def activate_model(self, job_id: str, activate: bool) -> dict:
+        """
+        POST /activate-model - bật/tắt model của một job để dùng dự đoán.
+
+        Backend KHÔNG kiểm quyền sở hữu ở endpoint này (ai đăng nhập cũng đổi
+        được job của người khác), nên tools.activate_model phải tự kiểm trước.
+        """
+        return self._request("POST", "/activate-model", params={
+            "job_id": job_id,
+            "activate": 1 if activate else 0,
+        })
+
+    def inference_model(
+        self,
+        job_id: str,
+        filename: str,
+        content: bytes,
+        timeout: float = 120.0,
+    ) -> dict | list:
+        """POST /inference-model - dự đoán trên file CSV bằng model của một job."""
+        return self._request(
+            "POST",
+            "/inference-model",
+            params={"job_id": job_id},
+            files={"file_data": (filename, content, "text/csv")},
+            timeout=timeout,
+        )
 
     def resend_verification_email(self, email: str) -> dict:
         """POST /auth/token/verifications - gửi lại email xác thực."""

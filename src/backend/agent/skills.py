@@ -1,25 +1,22 @@
 """
-Nạp skill từ agent/skills/, theo cấu trúc thư mục:
+Nạp skill từ agent/skills/. Mỗi thư mục là MỘT agent:
 
     skills/
-    ├── agent-manager/
-    │   └── SKILL.md
-    ├── data-agent/
-    │   ├── SKILL.md
-    │   └── references/
-    │       └── dataset_schema.md
-    └── model-agent/
-        ├── SKILL.md
-        ├── references/
-        │   └── search_strategies.md
-        └── scripts/
-            └── validate_config.py
+    ├── agent-manager/      Agent Manager - điều phối, uỷ thác, kiểm định
+    ├── prompt-agent/       ① chuẩn hoá yêu cầu thành R (JSON 6 khoá)
+    ├── data-agent/         ② tra cứu và phân tích dataset
+    │   └── references/dataset_schema.md
+    ├── model-agent/        ③ ra quyết định config
+    │   ├── references/search_strategies.md
+    │   └── scripts/validate_config.py, model_catalog.py
+    └── operation-agent/    ④ chạy, theo dõi, triển khai
 
 Ba thành phần, ba vai trò khác nhau:
 
   SKILL.md      Frontmatter (name, description, tools) + hướng dẫn.
-                Phần hướng dẫn được GHÉP THẲNG vào system prompt -> luôn tốn
-                token mỗi lượt. Viết ngắn, chỉ giữ luật hay dùng.
+                Phần hướng dẫn là system prompt của CHÍNH agent đó, và `tools`
+                là tập tool duy nhất agent đó được gọi. Viết ngắn, chỉ giữ luật
+                hay dùng - nó được gửi lại mỗi vòng lặp của agent.
 
   references/   KHÔNG nạp vào prompt. Agent chỉ thấy tên + mô tả, muốn đọc thì
                 gọi tool read_reference. Đây là chỗ để tài liệu dài: bảng tra,
@@ -168,13 +165,28 @@ def build_prompt(base: str, skills: list[Skill]) -> str:
         if skill.instructions:
             section += ["", skill.instructions]
 
-        if skill.references:
+        # Chỉ liệt kê khi agent có tool để đọc - không thì là chỉ dẫn vô dụng.
+        if skill.references and "read_reference" in skill.tools:
             section += ["", "Tài liệu tra cứu thêm (dùng tool read_reference khi cần):"]
             section += [f"- `{ref.ref_id}` — {ref.summary}" for ref in skill.references]
 
         parts.append("\n".join(section))
 
     return "\n\n\n".join(parts)
+
+
+def get_skill(name: str, skills: list[Skill] | None = None) -> Skill:
+    """
+    Skill của một agent. Mỗi agent ứng với đúng một thư mục skill cùng tên.
+
+    Raises:
+        SkillError: không có skill tên đó - thiếu thư mục là lỗi cấu hình, báo
+            ngay thay vì để agent chạy không có hướng dẫn.
+    """
+    for skill in skills if skills is not None else load_skills():
+        if skill.name == name:
+            return skill
+    raise SkillError(f"Không có skill '{name}' trong {SKILLS_DIR}")
 
 
 def allowed_tools(skills: list[Skill]) -> set[str]:

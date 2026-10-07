@@ -1,365 +1,309 @@
 """
-Agent xác thực chạy qua API chuẩn OpenAI Chat Completions.
+Sổ đăng ký tool và vòng lặp tool-calling dùng chung cho mọi agent.
 
-Dùng được với OpenRouter, Google AI Studio và OpenAI - cả ba đều nói cùng một
-giao thức, chỉ khác base_url/key/model (xem providers.py).
+Hệ thống có 5 agent (xem docs/hautoml-multi-agent-detailed.drawio, trang 1):
 
-File này tự viết vòng lặp gọi tool thay vì dùng helper có sẵn của SDK. Dài hơn
-nhưng cho phép quan sát và chen vào từng bước - đó là chỗ cắm callback báo tiến
-độ cho training, và cũng là lý do ba lỗi khó (thought_signature của Gemini,
-max_tokens bị thinking ăn hết) truy ra được.
+    Agent Manager ─┬─ ① Prompt Agent     hiểu yêu cầu → R (JSON 6 khoá)
+                   ├─ ② Data Agent       đặc điểm dữ liệu
+                   ├─ ③ Model Agent      ra quyết định config (không bấm chạy)
+                   └─ ④ Operation Agent  chạy, theo dõi, triển khai
+
+Agent nào dùng tool nào do `tools:` trong SKILL.md của nó quyết định - file này
+chỉ khai schema và nối tên tool với hàm Python. Mọi agent đều chạy qua cùng một
+hàm `run_tool_loop`, chỉ khác system prompt và tập tool.
+
+Dùng được với OpenRouter, Google AI Studio, OpenAI và Azure - cả bốn đều nói
+chuẩn Chat Completions (xem providers.py). Vòng lặp tự viết thay vì dùng helper
+của SDK để chen được vào từng bước: báo tiến độ, đếm token, và giữ
+thought_signature của Gemini.
 
 Chạy:
     cd src/backend
-    python -m agent.cli --provider openrouter "Đăng ký tài khoản ... rồi đăng nhập"
+    python -m agent.cli "tôi có dataset nào"
 """
 
 # Standard libraries
 import json
-from contextlib import nullcontext
 
 # Local modules
-from agent import providers, tools
+from agent import tools, tracing
 from agent.api_client import HAutoMLClient
-from agent.prompts import SYSTEM_PROMPT
 
 
-# Số vòng lặp tối đa, chặn trường hợp model gọi tool luẩn quẩn không dừng.
+# Số vòng lặp tối đa của Agent Manager, chặn model gọi tool luẩn quẩn.
 MAX_STEPS = 12
+# Sub-agent làm một việc hẹp, cần ít bước hơn.
+SUBAGENT_MAX_STEPS = 8
 
 # Những khoá bị che khi in log, tránh lộ mật khẩu ra terminal.
 _SECRET_KEYS = {"password", "new_password", "confirm_password"}
 
+_DATASET_ID = {
+    "type": "string",
+    "description": "ID dataset, lấy từ trường _id trong kết quả list_my_datasets.",
+}
+_PROBLEM_TYPE = {
+    "type": "string",
+    "enum": ["classification", "regression"],
+    "description": "Loại bài toán của dataset.",
+}
+_JOB_ID = {"type": "string", "description": "job_id, lấy từ list_my_jobs hoặc start_training."}
+_TASK = {
+    "type": "string",
+    "description": (
+        "Việc giao cho agent, viết đủ ngữ cảnh: agent này KHÔNG thấy lịch sử hội thoại. "
+        "Nêu rõ ID, tên cột, ràng buộc người dùng đã nói."
+    ),
+}
 
-# Schema tool theo định dạng OpenAI function calling.
-# Cố ý không dùng "additionalProperties" vì một số provider (Gemini) chỉ nhận
-# một tập con của JSON Schema.
+
+def _tool(name: str, description: str, properties: dict | None = None, required=None) -> dict:
+    """
+    Schema theo định dạng OpenAI function calling.
+
+    Cố ý không dùng "additionalProperties" vì một số provider (Gemini) chỉ nhận
+    một tập con của JSON Schema.
+    """
+    parameters: dict = {"type": "object", "properties": properties or {}}
+    if required:
+        parameters["required"] = list(required)
+    return {
+        "type": "function",
+        "function": {"name": name, "description": description, "parameters": parameters},
+    }
+
+
 TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "signup",
-            "description": "Đăng ký một tài khoản mới trên hệ thống HAutoML.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "username": {"type": "string", "description": "Tên đăng nhập, tối thiểu 3 ký tự."},
-                    "email": {"type": "string", "description": "Địa chỉ email, phải đúng định dạng."},
-                    "password": {"type": "string", "description": "Mật khẩu của tài khoản."},
-                    "full_name": {"type": "string", "description": "Họ và tên đầy đủ."},
-                    "gender": {"type": "string", "description": 'Giới tính, ví dụ "male" hoặc "female".'},
-                    "date": {"type": "string", "description": "Ngày sinh dạng dd/mm/yyyy."},
-                    "number": {"type": "string", "description": "Số điện thoại, tối thiểu 10 ký tự."},
-                },
-                "required": ["username", "email", "password", "full_name", "gender", "date", "number"],
+    # --- Agent Manager: uỷ thác cho 4 sub-agent ---------------------------------
+    _tool(
+        "ask_prompt_agent",
+        (
+            "Giao cho Prompt Agent chuẩn hoá yêu cầu thành R (JSON 6 khoá: user, problem, "
+            "dataset, model, knowledge, service) và liệt kê thông tin còn thiếu. Gọi ĐẦU TIÊN "
+            "khi người dùng muốn huấn luyện model mới. Không dùng cho tra cứu hay thao tác "
+            "trên job đã có."
+        ),
+        {"request": {
+            "type": "string",
+            "description": "Yêu cầu của người dùng, kèm mọi chi tiết họ đã nêu ở các lượt trước.",
+        }},
+        ["request"],
+    ),
+    _tool(
+        "ask_data_agent",
+        (
+            "Giao cho Data Agent tra cứu dataset: liệt kê, xem metadata, phân tích cột. Kết quả "
+            "phân tích được tự chuyển cho Model Agent."
+        ),
+        {"task": _TASK, "dataset_id": {**_DATASET_ID, "description": "Bỏ trống nếu chưa biết."}},
+        ["task"],
+    ),
+    _tool(
+        "ask_model_agent",
+        (
+            "Giao cho Model Agent ra quyết định config huấn luyện (target, đặc trưng, metric, "
+            "thuật toán tìm kiếm, max_time). Config được kiểm bằng code trước khi trả về "
+            "config_id. Model Agent KHÔNG bấm chạy."
+        ),
+        {"task": _TASK, "dataset_id": _DATASET_ID},
+        ["task", "dataset_id"],
+    ),
+    _tool(
+        "ask_operation_agent",
+        (
+            "Giao cho Operation Agent thực thi: chạy config đã kiểm (config_id), theo dõi job, "
+            "xem kết quả, kích hoạt model, dự đoán."
+        ),
+        {"task": _TASK},
+        ["task"],
+    ),
+
+    # --- Data Agent ---------------------------------------------------------------
+    _tool(
+        "list_my_datasets",
+        "Liệt kê các dataset của tài khoản đang đăng nhập. Không cần truyền user_id, tool tự lấy.",
+    ),
+    _tool(
+        "get_dataset_info",
+        (
+            "Xem metadata một dataset (tên, loại bài toán, ngày tạo). "
+            "KHÔNG có tên cột - muốn biết các thuộc tính thì dùng get_dataset_schema."
+        ),
+        {"dataset_id": _DATASET_ID},
+        ["dataset_id"],
+    ),
+    _tool(
+        "get_dataset_schema",
+        (
+            "Lấy danh sách thuộc tính (cột) của một dataset, kèm kiểu dữ liệu, số giá trị "
+            "khác nhau, số giá trị thiếu, vài giá trị mẫu, và cột nào dùng được làm biến "
+            "mục tiêu."
+        ),
+        {
+            "dataset_id": _DATASET_ID,
+            "problem_type": {
+                "type": "string",
+                "description": "classification hoặc regression. Bỏ trống thì lấy theo dataType của dataset.",
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "login",
-            "description": "Đăng nhập vào hệ thống HAutoML. Token được lưu lại cho các tool sau.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "username": {"type": "string", "description": "Tên đăng nhập hoặc email."},
-                    "password": {"type": "string", "description": "Mật khẩu."},
-                },
-                "required": ["username", "password"],
+        ["dataset_id"],
+    ),
+
+    # --- Model Agent --------------------------------------------------------------
+    _tool(
+        "list_metrics",
+        "Danh sách metric hợp lệ để xếp hạng model, theo loại bài toán.",
+        {"problem_type": _PROBLEM_TYPE},
+        ["problem_type"],
+    ),
+    _tool(
+        "list_models",
+        (
+            "Các model engine sẽ huấn luyện (đọc từ system_models/*.yml), kèm số tổ hợp tham "
+            "số. Engine luôn train TẤT CẢ các model này rồi xếp hạng."
+        ),
+        {"problem_type": _PROBLEM_TYPE},
+        ["problem_type"],
+    ),
+    _tool(
+        "submit_config",
+        (
+            "Chốt một config huấn luyện. Config được kiểm bằng code (validate_config.py) dựa "
+            "trên schema thật: hợp lệ thì trả config_id cho Operation Agent, không hợp lệ thì "
+            "trả errors kèm valid_columns / target_candidates / valid_metrics để sửa."
+        ),
+        {
+            "dataset_id": _DATASET_ID,
+            "target": {"type": "string", "description": "Cột mục tiêu, phải nằm trong target_candidates."},
+            "list_feature": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Các cột đặc trưng đầu vào. Không được chứa cột mục tiêu.",
+            },
+            "metric_sort": {"type": "string", "description": "Metric xếp hạng model, lấy từ list_metrics."},
+            "problem_type": {**_PROBLEM_TYPE, "description": "Bỏ trống thì lấy theo dataType của dataset."},
+            "search_algorithm": {
+                "type": "string",
+                "enum": ["grid_search", "genetic_algorithm", "bayesian_search"],
+                "description": "Mặc định grid_search.",
+            },
+            "max_time": {
+                "type": "integer",
+                "description": "Giới hạn thời gian tính bằng giây, 60 đến 86400. Mặc định 900.",
+            },
+            "rationale": {
+                "type": "string",
+                "description": "Một hai câu: vì sao chọn target, metric, thuật toán này.",
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_me",
-            "description": "Lấy thông tin hồ sơ của tài khoản đang đăng nhập. Phải login trước.",
-            "parameters": {"type": "object", "properties": {}},
+        ["dataset_id", "target", "list_feature", "metric_sort"],
+    ),
+
+    # --- Operation Agent ----------------------------------------------------------
+    _tool(
+        "start_training",
+        (
+            "Chạy một config ĐÃ được Model Agent chốt và kiểm hợp lệ. Trả job_id NGAY, job chạy "
+            "nền vài phút tới hàng giờ, hệ thống tự theo dõi và báo khi xong."
+        ),
+        {"config_id": {"type": "string", "description": "config_id do Model Agent trả về."}},
+        ["config_id"],
+    ),
+    _tool(
+        "watch_job",
+        "Bật theo dõi nền cho một job đang chạy: hệ thống tự báo khi job đổi trạng thái.",
+        {"job_id": _JOB_ID},
+        ["job_id"],
+    ),
+    _tool(
+        "list_my_jobs",
+        "Liệt kê các job huấn luyện của tài khoản đang đăng nhập. Không cần truyền user_id.",
+    ),
+    _tool(
+        "get_job_info",
+        "Xem chi tiết một job huấn luyện, gồm trạng thái và kết quả các model.",
+        {"job_id": _JOB_ID},
+        ["job_id"],
+    ),
+    _tool(
+        "activate_model",
+        "Kích hoạt (hoặc tắt) model của một job đã huấn luyện xong để dùng dự đoán.",
+        {
+            "job_id": _JOB_ID,
+            "activate": {"type": "boolean", "description": "true = kích hoạt, false = tắt. Mặc định true."},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "logout",
-            "description": "Đăng xuất tài khoản hiện tại.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "resend_verification_email",
-            "description": "Yêu cầu hệ thống gửi lại email xác thực cho một tài khoản chưa xác thực.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "email": {"type": "string", "description": "Email của tài khoản cần gửi lại link xác thực."},
-                },
-                "required": ["email"],
+        ["job_id"],
+    ),
+    _tool(
+        "predict",
+        (
+            "Dự đoán cho vài mẫu (tối đa 50) bằng model của một job đã kích hoạt. Mỗi mẫu là "
+            "object {tên cột: giá trị} chứa đủ các cột đặc trưng của job."
+        ),
+        {
+            "job_id": _JOB_ID,
+            "rows": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Các mẫu cần dự đoán.",
             },
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "verify_email",
-            "description": (
-                "Xác thực email của tài khoản bằng token trong link người dùng nhận được. "
-                "Xác thực xong là đăng nhập luôn, không cần gọi login nữa."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "token": {
-                        "type": "string",
-                        "description": (
-                            "Token xác thực. Nhận cả token thuần lẫn nguyên link "
-                            "dạng https://.../verify-email?token=..."
-                        ),
-                    },
-                },
-                "required": ["token"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_my_datasets",
-            "description": (
-                "Liệt kê các dataset của tài khoản đang đăng nhập. Phải login trước. "
-                "Không cần truyền user_id, tool tự lấy."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_dataset_info",
-            "description": (
-                "Xem metadata một dataset (tên, loại bài toán, ngày tạo). "
-                "KHÔNG có tên cột - muốn biết các thuộc tính thì dùng get_dataset_schema."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dataset_id": {
-                        "type": "string",
-                        "description": "ID dataset, lấy từ trường _id trong kết quả liệt kê dataset.",
-                    },
-                },
-                "required": ["dataset_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_dataset_schema",
-            "description": (
-                "Lấy danh sách thuộc tính (cột) của một dataset, kèm kiểu dữ liệu, số giá trị "
-                "khác nhau, số giá trị thiếu, vài giá trị mẫu, và cột nào dùng được làm biến "
-                "mục tiêu. Dùng tool này khi người dùng hỏi dataset có những cột/thuộc tính gì."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dataset_id": {
-                        "type": "string",
-                        "description": "ID dataset, lấy từ trường _id trong kết quả liệt kê dataset.",
-                    },
-                    "problem_type": {
-                        "type": "string",
-                        "description": (
-                            "classification hoặc regression. Bỏ trống thì tự lấy theo "
-                            "dataType của dataset."
-                        ),
-                    },
-                },
-                "required": ["dataset_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_metrics",
-            "description": (
-                "Danh sách metric hợp lệ để xếp hạng model, theo loại bài toán. "
-                "Gọi trước khi huấn luyện để biết metric_sort điền được gì."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "problem_type": {
-                        "type": "string",
-                        "enum": ["classification", "regression"],
-                        "description": "Loại bài toán của dataset.",
-                    },
-                },
-                "required": ["problem_type"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "start_training",
-            "description": (
-                "Khởi tạo job huấn luyện AutoML trên một dataset có sẵn. Trả về job_id NGAY, "
-                "job chạy nền vài phút tới hàng giờ - KHÔNG có kết quả ngay. "
-                "Bắt buộc gọi get_dataset_schema trước để biết tên cột thật."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "dataset_id": {
-                        "type": "string",
-                        "description": "ID dataset, lấy từ list_my_datasets.",
-                    },
-                    "target": {
-                        "type": "string",
-                        "description": "Cột mục tiêu. Phải nằm trong target_candidates của schema.",
-                    },
-                    "list_feature": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Các cột đặc trưng đầu vào. Không được chứa cột mục tiêu.",
-                    },
-                    "metric_sort": {
-                        "type": "string",
-                        "description": "Metric xếp hạng model, lấy từ list_metrics.",
-                    },
-                    "problem_type": {
-                        "type": "string",
-                        "enum": ["classification", "regression"],
-                        "description": "Bỏ trống thì lấy theo dataType của dataset.",
-                    },
-                    "search_algorithm": {
-                        "type": "string",
-                        "enum": ["grid_search", "genetic_algorithm", "bayesian_search"],
-                        "description": "Mặc định grid_search.",
-                    },
-                    "max_time": {
-                        "type": "integer",
-                        "description": "Giới hạn thời gian tính bằng giây, 60 đến 86400. Mặc định 900.",
-                    },
-                },
-                "required": ["dataset_id", "target", "list_feature", "metric_sort"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_reference",
-            "description": (
-                "Đọc một tài liệu tra cứu của skill. Các tài liệu này không nằm sẵn trong "
-                "hướng dẫn, chỉ có tên và mô tả. Dùng khi cần chi tiết mà hướng dẫn không đủ."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ref_id": {
-                        "type": "string",
-                        "description": "Định danh tài liệu, dạng <skill>/<tên>, ví dụ data-agent/dataset_schema.",
-                    },
-                },
-                "required": ["ref_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_my_jobs",
-            "description": (
-                "Liệt kê các job huấn luyện của tài khoản đang đăng nhập. Phải login trước. "
-                "Không cần truyền user_id, tool tự lấy."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_job_info",
-            "description": "Xem chi tiết một job huấn luyện, gồm trạng thái và kết quả các model.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {
-                        "type": "string",
-                        "description": "job_id, lấy từ kết quả liệt kê job.",
-                    },
-                },
-                "required": ["job_id"],
-            },
-        },
-    },
+        ["job_id", "rows"],
+    ),
+
+    # --- Dùng chung ---------------------------------------------------------------
+    _tool(
+        "read_reference",
+        (
+            "Đọc một tài liệu tra cứu của skill. Các tài liệu này không nằm sẵn trong "
+            "hướng dẫn, chỉ có tên và mô tả. Dùng khi cần chi tiết mà hướng dẫn không đủ."
+        ),
+        {"ref_id": {
+            "type": "string",
+            "description": "Định danh tài liệu, dạng <skill>/<tên>, ví dụ data-agent/dataset_schema.",
+        }},
+        ["ref_id"],
+    ),
 ]
 
-# Tool chỉ dành cho môi trường phát triển, bật bằng AGENT_DEV_TOOLS=1.
-DEV_TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "dev_verify_account",
-            "description": (
-                "CHỈ DÙNG KHI PHÁT TRIỂN: xác thực ngay một tài khoản mà không cần đọc email. "
-                "Dùng khi người dùng muốn thử hết luồng đăng ký -> xác thực -> đăng nhập trên "
-                "máy cục bộ. Xác thực xong là đăng nhập luôn."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "string",
-                        "description": "ID tài khoản, lấy từ trường user.id mà tool signup trả về.",
-                    },
-                    "email": {"type": "string", "description": "Email của tài khoản."},
-                },
-                "required": ["user_id"],
-            },
-        },
-    },
-]
+_SCHEMA_BY_NAME = {schema["function"]["name"]: schema for schema in TOOL_SCHEMAS}
 
-# Ánh xạ tên tool -> hàm trong tools.py. Mọi hàm đều nhận client làm tham số đầu.
+# Tool không cần trạng thái phiên: tên -> hàm trong tools.py, nhận client làm
+# tham số đầu. Không có tool xác thực nào ở đây: đăng nhập làm ở tầng phiên,
+# LLM không biết tới token.
 _DISPATCH = {
-    "signup": tools.signup,
-    "login": tools.login,
-    "get_me": tools.get_me,
-    "logout": tools.logout,
-    "resend_verification_email": tools.resend_verification_email,
-    "verify_email": tools.verify_email,
     "list_my_datasets": tools.list_my_datasets,
     "get_dataset_info": tools.get_dataset_info,
     "get_dataset_schema": tools.get_dataset_schema,
-    "read_reference": tools.read_reference,
     "list_metrics": tools.list_metrics,
-    "start_training": tools.start_training,
+    "list_models": tools.list_models,
     "list_my_jobs": tools.list_my_jobs,
     "get_job_info": tools.get_job_info,
+    "activate_model": tools.activate_model,
+    "predict": tools.predict,
+    "read_reference": tools.read_reference,
 }
 
-_DEV_DISPATCH = {
-    "dev_verify_account": tools.dev_verify_account,
+# Tool cần trạng thái của phiên (dữ liệu chuyển giữa các agent, job đang theo
+# dõi). Hàm thật do agent.team.AgentTeam dựng cho từng phiên.
+SESSION_TOOLS = {
+    "ask_prompt_agent",
+    "ask_data_agent",
+    "ask_model_agent",
+    "ask_operation_agent",
+    "submit_config",
+    "start_training",
+    "watch_job",
 }
 
 
-def _active_tools() -> tuple[list, dict]:
-    """
-    Danh sách tool cho lần chạy này.
+def known_tools() -> set[str]:
+    return set(_SCHEMA_BY_NAME)
 
-    Tính lúc chạy chứ không phải lúc import, để đổi AGENT_DEV_TOOLS có tác dụng
-    ngay mà không cần import lại module.
-    """
-    if tools.dev_tools_enabled():
-        return TOOL_SCHEMAS + DEV_TOOL_SCHEMAS, {**_DISPATCH, **_DEV_DISPATCH}
-    return TOOL_SCHEMAS, _DISPATCH
+
+def schemas_for(names: list[str]) -> list[dict]:
+    """Schema của đúng các tool một agent được dùng, theo thứ tự khai trong SKILL.md."""
+    return [_SCHEMA_BY_NAME[name] for name in names if name in _SCHEMA_BY_NAME]
 
 
 def _redact(tool_input: dict) -> dict:
@@ -373,7 +317,7 @@ def _call_tool(api: HAutoMLClient, dispatch: dict, name: str, arguments: dict) -
     """Gọi tool và bọc mọi lỗi thành dict, để một tool hỏng không làm chết vòng lặp."""
     handler = dispatch.get(name)
     if handler is None:
-        return {"ok": False, "error": f"Tool không tồn tại: {name}"}
+        return {"ok": False, "error": f"Tool không tồn tại hoặc agent này không được dùng: {name}"}
 
     try:
         return handler(api, **arguments)
@@ -423,8 +367,8 @@ def _accumulate_usage(total: dict, usage) -> None:
     """
     Cộng dồn token qua các lượt gọi LLM.
 
-    Một lần chạy agent gọi LLM nhiều lần (mỗi vòng lặp một lần), nên con số của
-    lượt cuối không phản ánh chi phí thật của cả lượt.
+    Một lần chạy agent gọi LLM nhiều lần (mỗi vòng lặp một lần, cộng các
+    sub-agent), nên con số của lượt cuối không phản ánh chi phí thật.
     """
     if usage is None:
         return
@@ -453,80 +397,101 @@ def _print_usage(total: dict) -> None:
     print(f"{line} = {total['total_tokens']} token")
 
 
-def _run_loop(
+def _no_event(_type: str, **_data) -> None:
+    pass
+
+
+def run_tool_loop(
     llm,
-    config,
+    model: str,
+    messages: list[dict],
     tool_schemas: list,
     dispatch: dict,
-    prompt: str,
-    base_url: str | None,
-    verbose: bool,
-    usage_total: dict,
-    on_event=None,
-) -> str:
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
+    api: HAutoMLClient,
+    usage: dict,
+    agent: str = "manager",
+    emit=None,
+    max_steps: int = MAX_STEPS,
+) -> str | None:
+    """
+    Vòng tool-calling: gọi LLM, chạy tool nó yêu cầu, lặp tới khi có câu trả lời.
 
-    with HAutoMLClient(base_url) as api:
-        for _ in range(MAX_STEPS):
-            response = llm.chat.completions.create(
-                model=config.model,
-                messages=messages,
-                tools=tool_schemas,
-                tool_choice="auto",
+    `messages` được nối thêm tại chỗ, nên phiên chat giữ được lịch sử còn
+    sub-agent thì truyền vào một list mới mỗi lần được giao việc.
+
+    Args:
+        agent: Tên agent đang chạy, gắn vào mọi sự kiện để frontend biết bước
+            nào thuộc agent nào.
+        emit: emit(type, **data) - nhận sự kiện "llm_call" và "tool_call".
+
+    Returns:
+        Câu trả lời cuối, hoặc None nếu chạy hết max_steps mà chưa xong.
+    """
+    emit = emit or _no_event
+
+    for _ in range(max_steps):
+        request: dict = {"model": model, "messages": messages}
+        if tool_schemas:
+            request.update(tools=tool_schemas, tool_choice="auto")
+
+        response = llm.chat.completions.create(**request)
+        _accumulate_usage(usage, response.usage)
+        if response.usage is not None:
+            emit(
+                "llm_call",
+                agent=agent,
+                prompt_tokens=response.usage.prompt_tokens or 0,
+                completion_tokens=response.usage.completion_tokens or 0,
+                total_tokens=response.usage.total_tokens or 0,
             )
-            _accumulate_usage(usage_total, response.usage)
-            if on_event is not None and response.usage is not None:
-                on_event({
-                    "type": "llm_call",
-                    "prompt_tokens": response.usage.prompt_tokens or 0,
-                    "completion_tokens": response.usage.completion_tokens or 0,
-                    "total_tokens": response.usage.total_tokens or 0,
-                })
 
-            message = response.choices[0].message
-            messages.append(_assistant_message(message))
+        message = response.choices[0].message
+        messages.append(_assistant_message(message))
 
-            # Không gọi tool nữa nghĩa là agent đã có câu trả lời cuối.
-            if not message.tool_calls:
-                return message.content or ""
+        # Không gọi tool nữa nghĩa là agent đã có câu trả lời cuối.
+        if not message.tool_calls:
+            return message.content or ""
 
-            for call in message.tool_calls:
-                # Gán trước: nếu json.loads ném lỗi thì nhánh báo sự kiện bên
-                # dưới vẫn có biến để dùng, thay vì NameError hoặc lấy nhầm giá
-                # trị còn sót của tool trước đó.
-                arguments: dict = {}
-                try:
-                    arguments = json.loads(call.function.arguments or "{}")
-                except json.JSONDecodeError as error:
-                    result = {"ok": False, "error": f"Tham số tool không phải JSON hợp lệ: {error}"}
-                else:
-                    if verbose:
-                        shown = json.dumps(_redact(arguments), ensure_ascii=False)
-                        print(f"  [tool] {call.function.name}({shown})")
+        for call in message.tool_calls:
+            # Gán trước: nếu json.loads ném lỗi thì nhánh báo sự kiện bên dưới
+            # vẫn có biến để dùng, thay vì NameError hoặc lấy nhầm giá trị còn
+            # sót của tool trước đó.
+            arguments: dict = {}
+            try:
+                arguments = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError as error:
+                result = {"ok": False, "error": f"Tham số tool không phải JSON hợp lệ: {error}"}
+            else:
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                emit(
+                    "tool_start",
+                    agent=agent,
+                    name=call.function.name,
+                    arguments=_redact(arguments),
+                )
+                with tracing.observe(
+                    call.function.name, as_type="tool", input=_redact(arguments), metadata={"agent": agent},
+                ) as observation:
                     result = _call_tool(api, dispatch, call.function.name, arguments)
+                    tracing.end(observation, output=result, warning=None if result.get("ok") else result.get("error"))
 
-                if on_event is not None:
-                    on_event({
-                        "type": "tool_call",
-                        "name": call.function.name,
-                        "arguments": _redact(arguments if isinstance(arguments, dict) else {}),
-                        "ok": bool(result.get("ok")),
-                        "error": result.get("error"),
-                    })
+            emit(
+                "tool_call",
+                agent=agent,
+                name=call.function.name,
+                arguments=_redact(arguments),
+                ok=bool(result.get("ok")),
+                error=result.get("error"),
+            )
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "content": json.dumps(result, ensure_ascii=False),
-                })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.id,
+                "content": json.dumps(result, ensure_ascii=False, default=str),
+            })
 
-    raise RuntimeError(
-        f"Agent chạy quá {MAX_STEPS} bước mà chưa kết thúc. "
-        "Xem lại log tool ở trên để biết nó lặp ở đâu."
-    )
+    return None
 
 
 def run_agent(
@@ -538,62 +503,40 @@ def run_agent(
     on_event=None,
 ) -> str:
     """
-    Chạy agent trên một prompt và trả về câu trả lời cuối cùng.
+    Chạy hệ thống agent trên MỘT prompt rồi trả câu trả lời cuối.
+
+    Dựng một phiên chat dùng một lần - cùng đường đi với khung chat trên web,
+    nên CLI và benchmark đo đúng thứ người dùng thật nhận được.
 
     Args:
         prompt: Yêu cầu của người dùng, bằng ngôn ngữ tự nhiên.
         base_url: URL backend HAutoML. None = HAUTOML_BASE_URL hoặc localhost:9996.
         provider: openrouter | google | openai | azure. None = LLM_PROVIDER.
         model: Slug model. None = LLM_MODEL hoặc mặc định của provider.
-        verbose: In ra từng tool được gọi và tổng token đã dùng.
-        on_event: Hàm nhận từng sự kiện trong lúc chạy, dùng để đo đạc hoặc
-            hiển thị tiến độ. Mỗi sự kiện là dict có "type":
-            "llm_call" (kèm số token) hoặc "tool_call" (kèm tên tool, tham số
-            đã che mật khẩu, và ok/error).
-
-    Returns:
-        Văn bản trả lời cuối cùng của agent.
+        verbose: In ra từng bước của các agent và tổng token đã dùng.
+        on_event: Hàm nhận từng sự kiện (dict có "type", "agent"...), dùng để
+            đo đạc. Xem agent/events.py.
     """
-    config = providers.resolve(provider, model)
-    llm = providers.build_client(config)
-    tool_schemas, dispatch = _active_tools()
-    tracer = providers.get_tracer()
-    usage_total = _new_usage()
+    # Import ở đây: chat.py import ngược lại module này.
+    from agent.chat import ChatSession, _flush_tracer
 
-    if verbose:
-        print(f"  [llm] {config.name} / {config.model}")
-        if tools.dev_tools_enabled():
-            print("  [llm] tool dev đang BẬT (AGENT_DEV_TOOLS)")
-
-    # Gộp mọi lời gọi LLM của lượt này vào một trace, để Langfuse cộng được
-    # tổng chi phí của cả lượt thay vì từng lời gọi rời rạc.
-    span_ctx = (
-        tracer.start_as_current_observation(
-            as_type="span", name="hautoml-agent", input=prompt,
-        )
-        if tracer is not None
-        else nullcontext()
-    )
+    session = ChatSession(base_url=base_url, provider=provider, model=model, verbose=verbose)
+    if on_event is not None:
+        session.events.subscribe(on_event)
 
     try:
-        with span_ctx as span:
-            if tracer is not None and verbose:
-                trace_id = tracer.get_current_trace_id()
-                if trace_id:
-                    print(f"  [cost] Langfuse: {tracer.get_trace_url(trace_id=trace_id)}")
-
-            answer = _run_loop(
-                llm, config, tool_schemas, dispatch, prompt, base_url, verbose,
-                usage_total, on_event,
-            )
-
-            if span is not None:
-                span.update(output=answer)
-
-            return answer
+        if verbose:
+            print(f"  [llm] {session.config.name} / {session.config.model}")
+            if not session.auth.get("ok"):
+                print(f"  [auth] {session.auth.get('error')}")
+        return session.send(prompt)
     finally:
         if verbose:
-            _print_usage(usage_total)
-        # Tiến trình CLI thoát ngay sau đây, phải flush không thì trace bị mất.
-        if tracer is not None:
-            tracer.flush()
+            _print_usage(session.usage)
+            if session.watcher.active():
+                print(
+                    "  [job] Job vẫn chạy nền trên backend. Hỏi lại sau "
+                    "(\"job của tôi tới đâu rồi\") để xem kết quả."
+                )
+        session.close()
+        _flush_tracer()
