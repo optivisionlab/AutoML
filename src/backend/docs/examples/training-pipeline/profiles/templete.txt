@@ -1,0 +1,79 @@
+phần 1: fe kết nối với db thì cần fe dùng api /connect-database gửi json 
+{
+	"db_type": "postgres",  (Bắt buộc: ví dụ "postgres", "mysql", "sqlite",...)
+  "database": "tên_database",  // Bắt buộc: Tên database (hoặc đường dẫn file .db nếu là sqlite/duckdb)
+  "host": "localhost",         // Tùy chọn, mặc định "localhost"
+  "port": 5432,                // Tùy chọn (nếu không truyền BE tự gán theo db_type: 5432, 3306, 1433...)
+  "user": "tên_user",          // Tùy chọn
+  "password": "mật_khẩu",      // Tùy chọn
+  "schema_name": "public",     // Tùy chọn (ví dụ "public" với Postgres)
+  "extra_params": {} 
+}
+
+
+thành công thì gửi be gửi lại json 
+ví dụ 
+{
+  "success": true,
+  "message": "Kết nối cơ sở dữ liệu thành công!",
+  "tables": [
+    "customers",
+    "orders",
+    "products",
+    "transactions"
+  ]
+}
+
+lỗi thì 
+
+{
+  "detail": "Kết nối thất bại: <lý do lỗi cụ thể>"
+}
+
+
+còn phần 2
+đổ dữ liệu vào
+dùng api /import-database-table
+fe gửi 
+{
+  "db_type": "postgres",
+  "database": "tên_database",
+  "host": "localhost",
+  "port": 5432,
+  "user": "tên_user",
+  "password": "mật_khẩu",
+  "schema_name": "public",
+  "extra_params": {},
+
+  "table_name": "customers",          // Bắt buộc: Tên bảng user chọn từ danh sách tables ở API 1
+  "data_name": "Dữ liệu Khách Hàng"   // Bắt buộc: Tên bộ dữ liệu user đặt để hiển thị trên web
+}
+
+ví dụ thành công thì 
+be gửi 
+{
+  "success": true,
+  "message": "Đã nhập thành công bảng 'customers' vào AutoML!",
+  "dataset": {
+    "_id": "670f...",
+    "dataName": "Dữ liệu Khách Hàng",
+    "dataType": "table",
+    "data_link": {
+      "bucket_name": "dataset",
+      "object_name": "0/uuid.parquet"
+    },
+    "createDate": 1711234567,
+    "latestUpdate": 1711234567,
+    "userId": "...",
+    "username": "...",
+    "role": "user",
+    "activate": 1
+  }
+}
+lỗi thì gửi 
+
+{
+  "detail": "Lỗi trong quá trình trích xuất dữ liệu: <chi tiết lỗi>"
+}
+2 cái api đều là post với cần header Authorization bearer token nhé 
+
