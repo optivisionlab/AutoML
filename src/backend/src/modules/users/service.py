@@ -42,7 +42,7 @@ class UserService:
 
         user['_id'] = str(user['_id'])
 
-        UserDetailResponse(**user)
+        return UserDetailResponse(**user)
 
     """
     Get Paginated Users
