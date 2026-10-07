@@ -2,33 +2,49 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { jwtDecode } from "jwt-decode";
 
+const getBaseApiUrl = (): string => {
+  const base = process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+  return base.replace(/\/+$/, "");
+};
+
+const getEndpoint = (path: string): string => {
+  const base = getBaseApiUrl();
+  const cleanPath = path.replace(/^\/+/, "");
+  if (base.endsWith("/api/v1") && cleanPath.startsWith("api/v1/")) {
+    return `${base}/${cleanPath.replace(/^api\/v1\//, "")}`;
+  }
+  if (!base.endsWith("/api/v1") && !cleanPath.startsWith("api/v1/")) {
+    return `${base}/api/v1/${cleanPath}`;
+  }
+  return `${base}/${cleanPath}`;
+};
+
 async function refreshAccessToken(token: any) {
   try {
-    console.log("Bắt đầu chưa gọi");
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/refresh`, {
+    const res = await fetch(getEndpoint("auth/refresh"), {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-
       body: JSON.stringify({
         refresh_token: token.refresh_token,
       }),
     });
 
-    console.log("Respon: ", res);
-    const data = await res.json();
+    const json = await res.json();
+    const data = json?.data || json;
 
-    console.log("Dữ liệu trả:", data);
+    if (!res.ok || !data?.access_token) {
+      throw new Error("Refresh token failed");
+    }
+
     const decoded: any = jwtDecode(data.access_token);
-    console.log("Token mới là: ", data.access_token);
 
     return {
       ...token,
       access_token: data.access_token,
-      refresh_token: data.refresh_token,
+      refresh_token: data.refresh_token || token.refresh_token,
       accessTokenExpires: decoded.exp * 1000, // ms
     };
   } catch {
@@ -50,48 +66,50 @@ export const authOptions: NextAuthOptions = {
           placeholder: "Nguyen Van A",
         },
         password: { label: "Password", type: "password" },
-
-        //
         access_token: { label: "Access Token", type: "text" },
         refresh_token: { label: "Refresh Token", type: "text" },
       },
       async authorize(credentials) {
-        // CASE 1: LOGIN GOOGLE, email
+        // CASE 1: GOOGLE SSO / EMAIL DIRECT TOKEN LOGIN
         if (credentials?.access_token) {
           const access_token = credentials.access_token;
-          const refresh_token = credentials.refresh_token;
+          const refresh_token = credentials.refresh_token || "";
 
           const decoded: any = jwtDecode(access_token);
 
-          // gọi API lấy user
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+          // Gọi API lấy profile user: GET /api/v1/auth/me
+          const res = await fetch(getEndpoint("auth/me"), {
             method: "GET",
             headers: {
               Authorization: `Bearer ${access_token}`,
+              Accept: "application/json",
             },
           });
 
-          const userInf = await res.json();
+          const json = await res.json();
+          const userInf = json?.data || json;
 
           return {
-            id: userInf._id,
-            username: userInf.username,
-            email: userInf.email,
-            role: userInf.role,
+            id: userInf?._id || userInf?.id || decoded.sub || "user",
+            username: userInf?.username || decoded.username || "user",
+            email: userInf?.email || decoded.email || "",
+            role: userInf?.role || decoded.role || "user",
             access_token,
             refresh_token,
-            accessTokenExpires: decoded.exp * 1000,
+            accessTokenExpires: decoded.exp ? decoded.exp * 1000 : Date.now() + 3600 * 1000,
           };
         }
 
-        // CASE 2: LOGIN THƯỜNG
+        // CASE 2: LOGIN THƯỜNG BẰNG USERNAME / PASSWORD
         try {
           const { username, password } = credentials as any;
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/login`, {
+          // POST /api/v1/auth/login
+          const res = await fetch(getEndpoint("auth/login"), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              Accept: "application/json",
             },
             body: JSON.stringify({
               username,
@@ -100,20 +118,23 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (!res.ok) {
-            throw new Error("Invalid credentials");
+            const errData = await res.json().catch(() => null);
+            throw new Error(errData?.detail || "Invalid credentials");
           }
 
-          const data = await res.json();
-          console.log("Data: ", data);
+          const json = await res.json();
+          const data = json?.data || json;
 
-          // Giải mã lấy thông tin
+          if (!data?.access_token) {
+            return null;
+          }
+
           const decoded: any = jwtDecode(data.access_token);
-          console.log("Decoded: ", decoded);
 
-          let userInf: any;
-          // Lấy thông tin user có access token
+          // Lấy thông tin user với access token vừa nhận
+          let userInf: any = null;
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+            const meRes = await fetch(getEndpoint("auth/me"), {
               method: "GET",
               headers: {
                 Accept: "application/json",
@@ -121,30 +142,25 @@ export const authOptions: NextAuthOptions = {
               },
             });
 
-            if (!res.ok) throw new Error("Lỗi khi gọi API");
-
-            const userInf1 = await res.json();
-            console.log(userInf1);
-            userInf = userInf1;
+            if (meRes.ok) {
+              const meJson = await meRes.json();
+              userInf = meJson?.data || meJson;
+            }
           } catch (err) {
-            console.error("Lỗi khi lấy dữ liệu:", err);
+            console.error("Lỗi khi lấy thông tin user me:", err);
           }
 
-          if (userInf) {
-            return {
-              id: userInf._id,
-              username: userInf.username,
-              email: userInf.email,
-              role: userInf.role,
-              access_token: data.access_token,
-              refresh_token: data.refresh_token,
-              accessTokenExpires: decoded.exp * 1000,
-            };
-          } else {
-            return null;
-          }
+          return {
+            id: userInf?._id || userInf?.id || decoded.sub || "user",
+            username: userInf?.username || username,
+            email: userInf?.email || decoded.email || "",
+            role: userInf?.role || decoded.role || "user",
+            access_token: data.access_token,
+            refresh_token: data.refresh_token || "",
+            accessTokenExpires: decoded.exp ? decoded.exp * 1000 : Date.now() + 3600 * 1000,
+          };
         } catch (error) {
-          console.error("Authorization error:", error);
+          console.error("NextAuth authorization error:", error);
           return null;
         }
       },
@@ -165,22 +181,14 @@ export const authOptions: NextAuthOptions = {
       }
 
       // Token còn hạn
-      console.log("Ngày hiện tại và hạn token");
-      console.log(Date.now());
-      console.log(token.accessTokenExpires);
-      if (Date.now() < Math.floor(token.accessTokenExpires)) {
-        console.log("Còn hạn");
+      if (token.accessTokenExpires && Date.now() < Math.floor(Number(token.accessTokenExpires))) {
         return token;
       }
 
-      // Token hết hạn → refresh
-      else {
-        console.log("Hêt hạn refresh lại");
-        return await refreshAccessToken(token);
-      }
+      // Token hết hạn → refresh token
+      return await refreshAccessToken(token);
     },
     async session({ session, token }) {
-      // Gán role từ token vào session.user
       if (token && session.user) {
         session.user.username = token.username as string;
         session.user.email = token.email as string;
@@ -189,7 +197,6 @@ export const authOptions: NextAuthOptions = {
         session.user.access_token = token.access_token as string;
         session.user.refresh_token = token.refresh_token as string;
       }
-      console.log("Session: ", session);
       return session;
     },
   },
@@ -204,7 +211,7 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
 
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET || "optivisionlab@hautoml",
 };
 
 export default NextAuth(authOptions);

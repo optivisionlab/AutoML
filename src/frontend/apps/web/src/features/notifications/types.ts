@@ -50,7 +50,7 @@ export const mapAutoNotificationToItem = (item: AutoNotification): NotificationI
     : Date.now();
 
   return {
-    id: item.id,
+    id: item._id || item.id || "",
     type,
     title,
     message: item.message || (isSuccess ? "Mô hình đã được huấn luyện hoàn tất." : "Quá trình huấn luyện không thành công."),

@@ -235,22 +235,23 @@ const ImplementProject = () => {
               </TableHeader>
               <TableBody>
                 {paginatedJobs.map((job) => {
+                  const jobId = job.job_id || job._id;
                   const isDone = isCompleted(job.status);
-                  const isSelected = selectedJobId === job.job_id;
+                  const isSelected = selectedJobId === jobId;
                   const readiness = isDone ? 100 : 42;
 
                   return (
                     <TableRow
                       key={job._id}
-                      id={`implement-row-${job.job_id}`}
+                      id={`implement-row-${jobId}`}
                       tabIndex={0}
-                      onClick={() => setFocusedJobId(job.job_id)}
-                      onFocus={() => setFocusedJobId(job.job_id)}
+                      onClick={() => setFocusedJobId(jobId)}
+                      onFocus={() => setFocusedJobId(jobId)}
                       className={cn(
                         "cursor-pointer transition-all outline-none",
-                        focusedJobId === job.job_id && "automl-row-focused",
+                        focusedJobId === jobId && "automl-row-focused",
                       )}
-                      data-focused={focusedJobId === job.job_id}
+                      data-focused={focusedJobId === jobId}
                     >
                       <TableCell className="font-bold text-[var(--automl-data-text)]">
                         <div className="flex items-center gap-2.5">
@@ -307,11 +308,11 @@ const ImplementProject = () => {
                               {
                                 label: t("actions.deploy"),
                                 disabled: !isDone,
-                                onClick: () => setSelectedJobId(job.job_id),
+                                onClick: () => setSelectedJobId(jobId),
                               },
                               {
                                 label: t("actions.viewHistory"),
-                                onClick: () => router.push(`/training-history/${job.job_id}`),
+                                onClick: () => router.push(`/training-history/${jobId}`),
                               },
                             ]}
                           />

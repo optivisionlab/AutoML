@@ -3,15 +3,12 @@
 import AppLoading from "@/shared/components/common/AppLoading";
 import { useState } from "react";
 import { Button } from "@/shared/components/ui/button";
-
 import { Card, CardHeader, CardTitle, CardContent } from "@/shared/components/ui/card";
 import { Dialog } from "@/shared/components/ui/dialog";
-
 import { useToast } from "@/shared/hooks/use-toast";
 import AddUserForm from "@/features/account/components/user-form/AddUserForm";
 import { Plus } from "lucide-react";
 import UserTable from "@/features/account/components/admin-users/UserTable";
-
 import UserForm, { FormData as UserFormData } from "@/features/account/components/admin-users/UserForm";
 import useUsers from "@/features/account/hooks/useUsers";
 import DialogForm from "@/shared/components/DialogForm";
@@ -21,8 +18,10 @@ import {
   useUpdateUserMutation,
 } from "@/core/api/userApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
+import PaginationCustom from "@/shared/components/common/Panigation";
 
 const UserManagementPage = () => {
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<UserFormData | null>(null);
@@ -31,7 +30,7 @@ const UserManagementPage = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const { users, fetchUsers, isLoading } = useUsers();
+  const { users, meta, fetchUsers, isLoading } = useUsers({ page: currentPage, page_size: 10 });
   const [updateUser] = useUpdateUserMutation();
   const [deleteUser] = useDeleteUserMutation();
   const { toast } = useToast();
@@ -58,10 +57,11 @@ const UserManagementPage = () => {
 
   const handleConfirmUpdate = async () => {
     if (!editingUser || !pendingFormData) return;
+    const targetId = editingUser._id || editingUser.username;
 
     try {
       await updateUser({
-        username: editingUser.username,
+        id: targetId,
         data: pendingFormData,
       }).unwrap();
 
@@ -69,7 +69,7 @@ const UserManagementPage = () => {
         title: "Cập nhật thành công!",
         description: "Thông tin người dùng đã được cập nhật.",
         className:
-          "bg-green-50 border border-green-300 text-green-700 [&>div>h3]:text-lg [&>div>h3]:font-semibold",
+          "bg-green-50 border border-green-300 text-green-700 font-semibold",
         duration: 3000,
       });
 
@@ -89,15 +89,16 @@ const UserManagementPage = () => {
 
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
+    const targetId = userToDelete._id || userToDelete.username;
 
     try {
-      await deleteUser(userToDelete.username).unwrap();
+      await deleteUser(targetId).unwrap();
 
       toast({
         title: "Xóa thành công!",
-        description: `Người dùng ${userToDelete.username} đã được xóa.`,
+        description: `Người dùng ${userToDelete.username} đã được xóa khỏi hệ thống.`,
         className:
-          "bg-green-50 border border-green-300 text-green-700 [&>div>h3]:text-lg [&>div>h3]:font-semibold",
+          "bg-green-50 border border-green-300 text-green-700 font-semibold",
         duration: 3000,
       });
 
@@ -130,7 +131,7 @@ const UserManagementPage = () => {
             </p>
           </div>
           <div className="automl-data-actions">
-            <span className="automl-data-chip">{users.length} users</span>
+            <span className="automl-data-chip">{meta.total_items} người dùng</span>
             <Button
               onClick={() => setIsAddDialogOpen(true)}
               className="automl-action-primary gap-2 px-4"
@@ -147,11 +148,18 @@ const UserManagementPage = () => {
           {isLoading ? (
             <AppLoading />
           ) : (
-            <UserTable
-              users={users}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
+            <>
+              <UserTable
+                users={users}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+              <PaginationCustom
+                currentPage={currentPage}
+                totalPages={meta.total_pages || 1}
+                onPageChange={setCurrentPage}
+              />
+            </>
           )}
         </CardContent>
       </Card>

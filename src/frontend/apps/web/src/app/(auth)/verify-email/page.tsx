@@ -3,6 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { CheckCircle2, XCircle, Mail, Send, ArrowRight } from "lucide-react";
+import { signIn } from "next-auth/react";
 import {
   useResendVerificationEmailMutation,
   useVerifyEmailTokenMutation,
@@ -23,12 +24,11 @@ export default function VerifyEmailPage() {
 
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
-  
   const [resendMessage, setResendMessage] = useState("");
 
   const isVerifying = useRef(false);
 
-  // Xác minh token
+  // Xác minh token từ URL
   useEffect(() => {
     if (!token || isVerifying.current) return;
 
@@ -37,16 +37,31 @@ export default function VerifyEmailPage() {
       setStatus("loading");
 
       try {
-        await verifyEmailToken({ token }).unwrap();
+        const res = await verifyEmailToken({ token }).unwrap();
+        const tokenData = res?.data;
+
         setStatus("success");
 
+        // Tự động đăng nhập nếu API trả về access_token + refresh_token
+        if (tokenData?.access_token) {
+          try {
+            await signIn("credentials", {
+              access_token: tokenData.access_token,
+              refresh_token: tokenData.refresh_token || "",
+              redirect: false,
+            });
+          } catch (signErr) {
+            console.warn("Auto sign-in error:", signErr);
+          }
+        }
+
         setTimeout(() => {
-          router.push("/login");
-        }, 3000);
+          router.push("/dashboard");
+        }, 1500);
       } catch (err: any) {
         setStatus("error");
         setErrorMessage(
-          getApiErrorMessage(err, "Liên kết không hợp lệ hoặc đã hết hạn."),
+          getApiErrorMessage(err, "Liên kết xác thực không hợp lệ hoặc đã hết hạn."),
         );
       }
     };
@@ -54,7 +69,7 @@ export default function VerifyEmailPage() {
     verifyToken();
   }, [token, verifyEmailToken, router]);
 
-  // Gửi lại email
+  // Gửi lại email xác thực
   const handleResendEmail = async () => {
     if (!email) {
       alert("Không tìm thấy thông tin email trên URL. Vui lòng quay lại trang đăng ký.");
@@ -64,20 +79,20 @@ export default function VerifyEmailPage() {
     setResendMessage("");
     try {
       const response = await resendVerificationEmail({ email }).unwrap();
-      setResendMessage(response.detail || "Đã gửi lại link xác nhận thành công!");
+      setResendMessage(
+        response?.message || "Đã gửi lại link xác nhận kèm mã QR thành công!",
+      );
     } catch (err: any) {
       alert(getApiErrorMessage(err, "Có lỗi xảy ra khi gửi lại email."));
     }
   };
 
-  // --- RENDERING UI ---
-
-  // Đang loading (gọi API)
+  // Đang loading (gọi API xác minh)
   if (status === "loading") {
     return (
       <AppLoading
         variant="page"
-        label="Đang xác minh email..."
+        label="Đang kích hoạt tài khoản..."
       />
     );
   }
@@ -91,14 +106,14 @@ export default function VerifyEmailPage() {
             <CheckCircle2 className="w-10 h-10 text-green-500" />
           </div>
           <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white">
-            Xác minh thành công!
+            Kích hoạt tài khoản thành công!
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-8">
-            Tài khoản của bạn đã được kích hoạt hoàn toàn.
+            Tài khoản của bạn đã được xác minh. Đang tự động đăng nhập vào hệ thống...
           </p>
           <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
             <Spinner className="h-4 w-4" />
-            Đang chuyển hướng đến trang đăng nhập...
+            Đang chuyển hướng đến Dashboard...
           </div>
         </div>
       </div>
@@ -119,22 +134,33 @@ export default function VerifyEmailPage() {
           <p className="text-gray-600 dark:text-gray-400 mb-8 px-2">
             {errorMessage}
           </p>
-          <button
-            onClick={() => router.push("/register")}
-            className="flex items-center justify-center gap-2 w-full bg-gray-900 dark:bg-white text-white dark:text-black py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all"
-          >
-            Quay lại trang đăng ký <ArrowRight className="w-4 h-4" />
-          </button>
+          <div className="space-y-3">
+            {email && (
+              <button
+                onClick={handleResendEmail}
+                disabled={isResending}
+                className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-all disabled:opacity-50"
+              >
+                {isResending ? <Spinner className="h-4 w-4" /> : <Send className="w-4 h-4" />}
+                Gửi lại email kích hoạt
+              </button>
+            )}
+            <button
+              onClick={() => router.push("/register")}
+              className="flex items-center justify-center gap-2 w-full bg-gray-900 dark:bg-white text-white dark:text-black py-3.5 rounded-xl font-semibold hover:opacity-90 transition-all"
+            >
+              Quay lại trang đăng ký <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Chưa verify (Màn hình ban đầu chờ check mail)
+  // Màn hình ban đầu chờ check mail
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0f0f0f] px-4 transition-colors duration-300">
       <div className="bg-white dark:bg-[#1a1a1a] border border-transparent dark:border-gray-800 shadow-2xl rounded-3xl p-8 max-w-md w-full text-center">
-        
         <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
           <Mail className="w-10 h-10 text-blue-600 dark:text-blue-500" />
         </div>
@@ -142,11 +168,11 @@ export default function VerifyEmailPage() {
         <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white">
           Kiểm tra hòm thư của bạn
         </h1>
-        
+
         <p className="text-gray-600 dark:text-gray-400 mb-6">
-          Chúng tôi đã gửi một liên kết xác minh an toàn tới:
+          Chúng tôi đã gửi một liên kết xác minh kèm mã QR kích hoạt tới:
         </p>
-        
+
         <div className="mb-8 p-4 bg-gray-50 dark:bg-[#0f0f0f] rounded-2xl border border-gray-100 dark:border-gray-800">
           <p className="font-semibold text-blue-600 dark:text-blue-400 text-lg break-all">
             {email || "Không tìm thấy email"}
@@ -168,16 +194,11 @@ export default function VerifyEmailPage() {
             disabled={isResending || !email}
             className="flex items-center justify-center gap-2 w-full bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 py-3.5 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isResending ? (
-              <Spinner className="h-5 w-5" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-            {isResending ? "Đang gửi..." : "Gửi lại email xác nhận"}
+            {isResending ? <Spinner className="h-5 w-5" /> : <Send className="w-4 h-4" />}
+            {isResending ? "Đang gửi..." : "Gửi lại email xác nhận (kèm QR)"}
           </button>
         </div>
 
-        {/* Thông báo gửi lại thành công */}
         {resendMessage && (
           <p className="mt-4 text-sm font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/10 py-2 px-3 rounded-lg">
             {resendMessage}
@@ -185,14 +206,13 @@ export default function VerifyEmailPage() {
         )}
 
         <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
-          <button 
-            onClick={() => router.push("/register")} 
+          <button
+            onClick={() => router.push("/register")}
             className="text-sm font-medium text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             Sử dụng email khác? <span className="underline">Đăng ký lại</span>
           </button>
         </div>
-
       </div>
     </div>
   );

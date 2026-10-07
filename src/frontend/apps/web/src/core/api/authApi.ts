@@ -1,104 +1,155 @@
 import {
   type ApiMessageResponse,
-  type RegisterUserPayload,
+  type BaseResponse,
   type ForgotPasswordPayload,
-  type VerifyEmailTokenPayload,
+  type LoginPayload,
+  type RefreshTokenPayload,
+  type RegisterUserPayload,
   type ResendVerificationPayload,
-  type VerifyOtpPayload,
+  type ResetPasswordPayload,
   type SendOtpPayload,
+  type SignupPayload,
+  type SignupResponse,
+  type TokenResponse,
+  type UserDetailResponse,
+  type VerifyEmailResponse,
+  type VerifyEmailTokenPayload,
+  type VerifyOtpPayload,
+  type VerifyOtpResponse,
 } from "@automl/domain";
 import { baseApi } from "./baseApi";
 
 export type {
   ApiMessageResponse,
-  RegisterUserPayload,
+  BaseResponse,
   ForgotPasswordPayload,
-  VerifyEmailTokenPayload,
+  LoginPayload,
+  RefreshTokenPayload,
+  RegisterUserPayload,
   ResendVerificationPayload,
-  VerifyOtpPayload,
+  ResetPasswordPayload,
   SendOtpPayload,
+  SignupPayload,
+  SignupResponse,
+  TokenResponse,
+  UserDetailResponse,
+  VerifyEmailResponse,
+  VerifyEmailTokenPayload,
+  VerifyOtpPayload,
+  VerifyOtpResponse,
 };
 
-// Các api auth
 export const authApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // API đăng ký tài khoản.
-    registerUser: builder.mutation<ApiMessageResponse, RegisterUserPayload>({
+    // 1.1 POST /api/v1/auth/signup
+    registerUser: builder.mutation<SignupResponse, SignupPayload | RegisterUserPayload>({
       query: (payload) => ({
-        url: "/signup",
+        url: "/api/v1/auth/signup",
         method: "POST",
         data: payload,
       }),
       invalidatesTags: ["Auth", "User"],
     }),
 
-    // API lấy thông tin người dùng đang đăng nhập.
-    getCurrentUser: builder.query<ApiMessageResponse, void>({
-      query: () => ({
-        url: "/me",
-      }),
-      providesTags: ["Auth"],
-    }),
-
-    // API yêu cầu gửi email đặt lại mật khẩu.
-    forgotPassword: builder.mutation<ApiMessageResponse, ForgotPasswordPayload>({
+    // 1.2 POST /api/v1/auth/login
+    login: builder.mutation<TokenResponse, LoginPayload>({
       query: (payload) => ({
-        url: "/forgot-password",
-        method: "POST",
-        data: payload,
-      }),
-    }),
-
-    // API đặt lại mật khẩu.
-    resetPassword: builder.mutation<ApiMessageResponse, unknown>({
-      query: (payload) => ({
-        url: "/reset-password",
-        method: "POST",
-        data: payload,
-      }),
-    }),
-
-    // API xác thực mã OTP.
-    verifyEmailToken: builder.mutation<
-      ApiMessageResponse,
-      VerifyEmailTokenPayload
-    >({
-      query: (payload) => ({
-        url: "/auth/verifications",
+        url: "/api/v1/auth/login",
         method: "POST",
         data: payload,
       }),
       invalidatesTags: ["Auth"],
     }),
 
+    // 1.3 POST /api/v1/auth/refresh
+    refreshToken: builder.mutation<TokenResponse, RefreshTokenPayload>({
+      query: (payload) => ({
+        url: "/api/v1/auth/refresh",
+        method: "POST",
+        data: payload,
+      }),
+    }),
+
+    // 1.4 GET /api/v1/auth/me
+    getCurrentUser: builder.query<UserDetailResponse, void>({
+      query: () => ({
+        url: "/api/v1/auth/me",
+      }),
+      providesTags: ["Auth"],
+    }),
+
+    // 1.5 POST /api/v1/auth/logout
+    logout: builder.mutation<BaseResponse<null>, void>({
+      query: () => ({
+        url: "/api/v1/auth/logout",
+        method: "POST",
+      }),
+      invalidatesTags: ["Auth"],
+    }),
+
+    // 1.7 POST /api/v1/auth/verifications
+    verifyEmailToken: builder.mutation<
+      VerifyEmailResponse,
+      VerifyEmailTokenPayload
+    >({
+      query: (payload) => ({
+        url: "/api/v1/auth/verifications",
+        method: "POST",
+        data: payload,
+      }),
+      invalidatesTags: ["Auth"],
+    }),
+
+    // 1.8 POST /api/v1/auth/token/verifications
     resendVerificationEmail: builder.mutation<
-      ApiMessageResponse,
+      BaseResponse<null>,
       ResendVerificationPayload
     >({
       query: (payload) => ({
-        url: "/auth/token/verifications",
+        url: "/api/v1/auth/token/verifications",
         method: "POST",
         data: payload,
       }),
     }),
 
-    verifyOtp: builder.mutation<ApiMessageResponse, VerifyOtpPayload>({
-      query: (payload) => ({
-        url: "/auth/verify-otp",
-        method: "POST",
-        data: payload,
-      }),
-    }),
-
+    // 1.9 POST /api/v1/auth/otp/verifications
     sendOtpVerification: builder.mutation<
-      ApiMessageResponse,
+      BaseResponse<null>,
       SendOtpPayload
     >({
       query: (payload) => ({
-        url: "/auth/otp/verifications",
+        url: "/api/v1/auth/otp/verifications",
         method: "POST",
         data: payload,
       }),
+    }),
+
+    // 1.10 POST /api/v1/auth/forgot-password
+    forgotPassword: builder.mutation<BaseResponse<null>, ForgotPasswordPayload>({
+      query: (payload) => ({
+        url: "/api/v1/auth/forgot-password",
+        method: "POST",
+        data: payload,
+      }),
+    }),
+
+    // 1.11 POST /api/v1/auth/verify-otp
+    verifyOtp: builder.mutation<VerifyOtpResponse, VerifyOtpPayload>({
+      query: (payload) => ({
+        url: "/api/v1/auth/verify-otp",
+        method: "POST",
+        data: payload,
+      }),
+    }),
+
+    // 1.12 POST /api/v1/auth/reset-password
+    resetPassword: builder.mutation<BaseResponse<null>, ResetPasswordPayload>({
+      query: (payload) => ({
+        url: "/api/v1/auth/reset-password",
+        method: "POST",
+        data: payload,
+      }),
+      invalidatesTags: ["Auth"],
     }),
   }),
 });
@@ -106,6 +157,10 @@ export const authApi = baseApi.injectEndpoints({
 export const {
   useForgotPasswordMutation,
   useGetCurrentUserQuery,
+  useLazyGetCurrentUserQuery,
+  useLoginMutation,
+  useLogoutMutation,
+  useRefreshTokenMutation,
   useRegisterUserMutation,
   useResendVerificationEmailMutation,
   useResetPasswordMutation,

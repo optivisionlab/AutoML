@@ -11,7 +11,7 @@ export type Dataset = {
   createDate: number;
   latestUpdate?: number;
   lastestUpdate?: number;
-  userId: string;
+  userId?: string;
   username?: string;
 };
 

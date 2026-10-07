@@ -1,3 +1,5 @@
+import { BaseResponse, OffsetPaginatedResponse } from "./common.types";
+
 export interface NotificationMetadata {
   best_model?: string;
   best_score?: number;
@@ -5,34 +7,43 @@ export interface NotificationMetadata {
 }
 
 export interface AutoNotification {
-  id: string;
-  user_id: string;
+  _id?: string;
+  id?: string;
+  user_id?: string;
   job_id?: string;
-  status: number; // 1 = thành công, khác 1 = thất bại/lỗi
+  status: string | number; // "1" | 1 = thành công, khác 1 = thất bại/lỗi
   message: string;
   metadata?: NotificationMetadata;
   is_read: boolean;
-  created_at: number; // Unix timestamp tính bằng giây (e.g. 1788804743.46836)
+  created_at: number; // Unix timestamp
 }
 
 export interface GetNotificationsParams {
-  userId: string;
+  userId?: string;
   offset?: number;
   limit?: number;
 }
 
-export interface NotificationsResponse {
-  data: AutoNotification[];
-  unread_count: number;
-  has_more: boolean;
-}
+export type NotificationItem = AutoNotification;
+export type NotificationsListResponse = OffsetPaginatedResponse<AutoNotification>;
+export type UnreadNotificationsResponse = OffsetPaginatedResponse<AutoNotification>;
 
 export interface MarkNotificationReadParams {
   notificationId: string;
-  userId: string;
+  userId?: string;
 }
 
-export interface MarkNotificationReadResponse {
-  status?: string;
-  detail?: string;
+export type MarkNotificationReadResponse = BaseResponse<null>;
+
+// Legacy compatibility
+export interface NotificationsResponse {
+  data: AutoNotification[];
+  unread_count?: number;
+  has_more?: boolean;
+  meta?: {
+    offset: number;
+    limit: number;
+    total_items: number;
+    has_more: boolean;
+  };
 }

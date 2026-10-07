@@ -166,11 +166,12 @@ const TrainingHistory = () => {
       setCurrentPage(targetPage);
     }
 
-    setFocusedJobId(targetJob.job_id);
-    setFlashJobId(targetJob.job_id);
+    const targetJobId = targetJob.job_id || targetJob._id;
+    setFocusedJobId(targetJobId);
+    setFlashJobId(targetJobId);
 
     const timer = setTimeout(() => {
-      const el = document.getElementById(`job-row-${targetJob.job_id}`);
+      const el = document.getElementById(`job-row-${targetJobId}`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.focus();
@@ -291,113 +292,116 @@ const TrainingHistory = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentJobs.map((job) => (
-                  <React.Fragment key={job._id}>
-                    <TableRow
-                      id={`job-row-${job.job_id}`}
-                      tabIndex={0}
-                      onClick={() => setFocusedJobId(job.job_id)}
-                      onFocus={() => setFocusedJobId(job.job_id)}
-                      className={cn(
-                        "cursor-pointer transition-all outline-none",
-                        focusedJobId === job.job_id &&
-                          "automl-row-focused bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/50 shadow-xs",
-                        flashJobId === job.job_id &&
-                          "automl-row-flash ring-2 ring-blue-600 bg-blue-100/70 dark:bg-blue-900/50 shadow-md",
-                      )}
-                      data-focused={focusedJobId === job.job_id}
-                    >
-                      <TableCell className="font-bold text-[var(--automl-data-text)]">
-                        <div className="flex items-center gap-2.5">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-automl-blue-soft text-[11px] font-black text-automl-blue">
-                            {(job.data?.name || "TR").slice(0, 2).toUpperCase()}
-                          </span>
-                          <span className="min-w-0 truncate">
-                            {job.data?.name || common("unknown")}
-                          </span>
-                        </div>
-                      </TableCell>
-
-                      <TableCell>
-                        {isCompleted(job.status)
-                          ? job.best_model || common("unknown")
-                          : t("processing")}
-                      </TableCell>
-
-                      <TableCell>
-                        {isCompleted(job.status) && job.best_score !== undefined
-                          ? (
-                            <div className="min-w-28 max-w-36">
-                              <div className="mb-1 flex items-center justify-between gap-2 text-xs font-bold">
-                                <span>{(job.best_score * 100).toFixed(1)}%</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/10">
-                                <div
-                                  className="h-1.5 rounded-full bg-automl-blue transition-all"
-                                  style={{ width: `${Math.min(job.best_score * 100, 100)}%` }}
-                                />
-                              </div>
-                            </div>
-                          )
-                          : t("processing")}
-                      </TableCell>
-
-                      <TableCell>{formatDate(job.create_at, dateLocale, common("noData"))}</TableCell>
-
-                      <TableCell className="text-center">
-                        {isCompleted(job.status) ? (
-                          <Badge variant="outline" className="automl-status-success rounded-full px-2.5 py-0.5 text-xs font-bold">
-                            {t("status.completed")}
-                          </Badge>
-                        ) : isRunning(job.status) ? (
-                          <Badge variant="secondary" className="automl-status-warning rounded-full px-2.5 py-0.5 text-xs font-bold">
-                            {t("status.training")}
-                          </Badge>
-                        ) : (
-                          <Badge variant="default" className="automl-status-error rounded-full px-2.5 py-0.5 text-xs font-bold">
-                            <XCircle className="mr-1 h-3 w-3" />
-                            {t("status.error")}
-                          </Badge>
+                {currentJobs.map((job) => {
+                  const jobId = job.job_id || job._id;
+                  return (
+                    <React.Fragment key={job._id}>
+                      <TableRow
+                        id={`job-row-${jobId}`}
+                        tabIndex={0}
+                        onClick={() => setFocusedJobId(jobId)}
+                        onFocus={() => setFocusedJobId(jobId)}
+                        className={cn(
+                          "cursor-pointer transition-all outline-none",
+                          focusedJobId === jobId &&
+                            "automl-row-focused bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/50 shadow-xs",
+                          flashJobId === jobId &&
+                            "automl-row-flash ring-2 ring-blue-600 bg-blue-100/70 dark:bg-blue-900/50 shadow-md",
                         )}
-                      </TableCell>
+                        data-focused={focusedJobId === jobId}
+                      >
+                        <TableCell className="font-bold text-[var(--automl-data-text)]">
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-automl-blue-soft text-[11px] font-black text-automl-blue">
+                              {(job.data?.name || "TR").slice(0, 2).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 truncate">
+                              {job.data?.name || common("unknown")}
+                            </span>
+                          </div>
+                        </TableCell>
 
-                      <TableCell className="text-center">
-                        <div className="flex justify-center">
-                          <RowActionMenu
-                            label={t("openActions", { name: job.data?.name || "training run" })}
-                            items={[
-                              {
-                                label: t("actions.viewDetails"),
-                                disabled: !isCompleted(job.status),
-                                onClick: () => router.push(`/training-history/${job.job_id}`),
-                              },
-                              {
-                                label: openRow === job.job_id ? t("actions.closeUpload") : t("actions.uploadTest"),
-                                onClick: () =>
-                                  setOpenRow(
-                                    openRow === job.job_id ? null : job.job_id,
-                                  ),
-                              },
-                            ]}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        <TableCell>
+                          {isCompleted(job.status)
+                            ? job.best_model || common("unknown")
+                            : t("processing")}
+                        </TableCell>
 
-                    {openRow === job.job_id && (
-                      <TableRow>
-                        <TableCell colSpan={6}>
-                          <div className="rounded-xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] p-4 animate-in fade-in slide-in-from-top-2">
-                            <UploadPredictBox
-                              jobId={job.job_id}
-                              disabled={!isCompleted(job.status)}
+                        <TableCell>
+                          {isCompleted(job.status) && job.best_score !== undefined
+                            ? (
+                              <div className="min-w-28 max-w-36">
+                                <div className="mb-1 flex items-center justify-between gap-2 text-xs font-bold">
+                                  <span>{(job.best_score * 100).toFixed(1)}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/10">
+                                  <div
+                                    className="h-1.5 rounded-full bg-automl-blue transition-all"
+                                    style={{ width: `${Math.min(job.best_score * 100, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )
+                            : t("processing")}
+                        </TableCell>
+
+                        <TableCell>{formatDate(job.create_at, dateLocale, common("noData"))}</TableCell>
+
+                        <TableCell className="text-center">
+                          {isCompleted(job.status) ? (
+                            <Badge variant="outline" className="automl-status-success rounded-full px-2.5 py-0.5 text-xs font-bold">
+                              {t("status.completed")}
+                            </Badge>
+                          ) : isRunning(job.status) ? (
+                            <Badge variant="secondary" className="automl-status-warning rounded-full px-2.5 py-0.5 text-xs font-bold">
+                              {t("status.training")}
+                            </Badge>
+                          ) : (
+                            <Badge variant="default" className="automl-status-error rounded-full px-2.5 py-0.5 text-xs font-bold">
+                              <XCircle className="mr-1 h-3 w-3" />
+                              {t("status.error")}
+                            </Badge>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-center">
+                          <div className="flex justify-center">
+                            <RowActionMenu
+                              label={t("openActions", { name: job.data?.name || "training run" })}
+                              items={[
+                                {
+                                  label: t("actions.viewDetails"),
+                                  disabled: !isCompleted(job.status),
+                                  onClick: () => router.push(`/training-history/${jobId}`),
+                                },
+                                {
+                                  label: openRow === jobId ? t("actions.closeUpload") : t("actions.uploadTest"),
+                                  onClick: () =>
+                                    setOpenRow(
+                                      openRow === jobId ? null : jobId,
+                                    ),
+                                },
+                              ]}
                             />
                           </div>
                         </TableCell>
                       </TableRow>
-                    )}
-                  </React.Fragment>
-                ))}
+
+                      {openRow === jobId && (
+                        <TableRow>
+                          <TableCell colSpan={6}>
+                            <div className="rounded-xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] p-4 animate-in fade-in slide-in-from-top-2">
+                              <UploadPredictBox
+                                jobId={jobId}
+                                disabled={!isCompleted(job.status)}
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
 

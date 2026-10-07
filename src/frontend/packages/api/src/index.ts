@@ -1,6 +1,7 @@
 export * from "./client";
 export * from "./errors";
 export * from "./form-data";
+export * from "./download";
 export * from "./services/auth.service";
 export * from "./services/dataset.service";
 export * from "./services/automl.service";

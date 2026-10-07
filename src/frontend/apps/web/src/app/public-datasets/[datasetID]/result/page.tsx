@@ -114,7 +114,7 @@ const ResultPage = ({ params }: Props) => {
         console.log(JSON.stringify(requestBody));
 
         const res = await startTrainingJob(requestBody).unwrap();
-        const jobId = res?.job_id;
+        const jobId = res?.data?.job_id || (res as any)?.job_id;
         if (jobId) {
           setCreatedJobId(jobId);
           sessionStorage.setItem("latest_training_job_id", jobId);

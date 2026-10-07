@@ -15,7 +15,7 @@ export default function Page() {
   });
   const dataName = isError
     ? "Không thể tải tên bộ dữ liệu"
-    : data?.dataName || "Đang tải...";
+    : data?.data?.dataName || (data as any)?.dataName || "Đang tải...";
 
   useEffect(() => {
     sessionStorage.clear();

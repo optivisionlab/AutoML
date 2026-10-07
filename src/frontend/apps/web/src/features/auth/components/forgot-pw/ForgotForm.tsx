@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useTransition } from "react";
+import React from "react";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -15,14 +15,14 @@ import {
 import { Label } from "@/shared/components/ui/label";
 import { Input } from "@/shared/components/ui/input";
 import { Button } from "@/shared/components/ui/button";
-import { forgotPassword } from "@/app/serverActions/auth";
+import { useForgotPasswordMutation } from "@/core/api/authApi";
+import { getApiErrorMessage } from "@/core/api/baseApi";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// Schema validate
 const forgotSchema = z.object({
   email: z.string().min(1, { message: "Email không được để trống" }).email({
-    message: "Email không hợp lệ",
+    message: "Email không đúng định dạng",
   }),
 });
 
@@ -30,8 +30,8 @@ type FormValues = z.infer<typeof forgotSchema>;
 
 const ForgotForm = () => {
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const [forgotPassword, { isLoading }] = useForgotPasswordMutation();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(forgotSchema),
@@ -40,86 +40,78 @@ const ForgotForm = () => {
     },
   });
 
-  // Submit
-  const onSubmit = (data: FormValues) => {
-    startTransition(async () => {
-      const res = await forgotPassword(data.email);
+  const onSubmit = async (data: FormValues) => {
+    try {
+      const res = await forgotPassword({ email: data.email }).unwrap();
 
-      if (res.ok) {
-        toast({
-          title: "Thành công!",
-          description: "Đã gửi OTP về gmail của bạn",
-          variant: "default",
-          style: {
-            backgroundColor: "#22c55e", // xanh lá Tailwind green-500
-            color: "white",
-          },
-        });
+      toast({
+        title: "Đã gửi mã OTP!",
+        description:
+          res?.message || "Mã OTP 6 số đã được gửi tới email của bạn (hạn 5 phút).",
+        className: "bg-green-100 text-green-800 border border-green-300",
+        duration: 4000,
+      });
 
-        router.push(`/verify-otp?email=${data.email}`);
-      } else {
-        toast({
-          title: "Lỗi",
-          description: res.error,
-          variant: "destructive",
-        });
-      }
-    });
+      router.push(`/verify-otp?email=${encodeURIComponent(data.email)}`);
+    } catch (err: any) {
+      toast({
+        title: "Lỗi yêu cầu",
+        description: getApiErrorMessage(err, "Không thể gửi mã OTP. Vui lòng kiểm tra lại email."),
+        variant: "destructive",
+      });
+    }
   };
 
   return (
-    <div className="border border-solid border-[#ddd] p-[45px] rounded-xl">
+    <div className="border border-solid border-slate-200 bg-white dark:border-white/10 dark:bg-automl-navy p-[45px] rounded-3xl shadow-sm">
       <Form {...form}>
-        <h1 className="text-2xl text-center text-blue-600 mb-[20px] font-bold">
-          Lấy lại mật khẩu
+        <h1 className="text-2xl text-center text-blue-600 dark:text-blue-400 mb-[20px] font-black">
+          Quên mật khẩu
         </h1>
+        <p className="text-center text-sm text-slate-500 dark:text-slate-400 mb-6">
+          Nhập email đã đăng ký để nhận mã OTP xác minh đặt lại mật khẩu mới.
+        </p>
+
         <form
           onSubmit={form.handleSubmit(onSubmit)}
           className="max-w-md w-full flex flex-col gap-4"
         >
-          {/* Email */}
           <FormField
             control={form.control}
             name="email"
             render={({ field }) => (
               <FormItem>
-                <Label className="text-center font-bold">
-                  Nhập email cần lấy lại
+                <Label className="font-bold text-slate-900 dark:text-white">
+                  Địa chỉ Email
                 </Label>
                 <FormControl>
-                  <Input placeholder="Nhập email..." type="email" {...field} />
+                  <Input
+                    placeholder="name@example.com"
+                    type="email"
+                    {...field}
+                    className="h-11 rounded-xl"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* Nút submit */}
           <Button
             type="submit"
-            disabled={isPending}
-            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7]"
+            disabled={isLoading}
+            className="w-full bg-[#3a6df4] text-white hover:bg-[#5b85f7] h-11 rounded-xl font-bold"
           >
-            {isPending ? "Đang gửi..." : "Gửi yêu cầu"}
+            {isLoading ? "Đang gửi OTP..." : "Nhận mã OTP"}
           </Button>
 
-          <p className="text-center text-sm text-muted-foreground">
-            <div></div>
+          <p className="text-center text-sm text-muted-foreground mt-3">
             <Link
               href="/login"
-              className="text-blue-600 hover:underline font-medium"
+              className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
             >
               Quay về đăng nhập
             </Link>
-            <div></div>
-            {!isPending && (
-              <Link
-                href="/change-pw"
-                className="text-blue-600 hover:underline font-medium"
-              >
-                Thay đổi mật khẩu
-              </Link>
-            )}
           </p>
         </form>
       </Form>

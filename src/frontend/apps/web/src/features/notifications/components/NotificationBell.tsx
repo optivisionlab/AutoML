@@ -42,7 +42,6 @@ import { type AutoNotification } from "../types";
 
 const formatRelativeTime = (timestampInSecondsOrMs: number): string => {
   if (!timestampInSecondsOrMs) return "Vừa xong";
-  // Nếu nhỏ hơn 1e11 thì là giây, quy đổi sang ms
   const ms =
     timestampInSecondsOrMs < 1e11
       ? timestampInSecondsOrMs * 1000
@@ -100,17 +99,20 @@ export default function NotificationBell() {
       dispatch(setLoading(true));
       try {
         const res = await fetchNotificationsTrigger({
-          userId,
           offset: 0,
           limit: 10,
         }).unwrap();
 
+        const notifList: AutoNotification[] = res?.data || [];
+        const unreadComputed = notifList.filter((n) => !n.is_read).length;
+        const hasMoreData = Boolean(res?.meta?.has_more);
+
         if (isMounted) {
           dispatch(
             setInitialNotifications({
-              data: res.data || [],
-              unread_count: res.unread_count ?? 0,
-              has_more: Boolean(res.has_more),
+              data: notifList,
+              unread_count: unreadComputed,
+              has_more: hasMoreData,
               filter: "all",
             })
           );
@@ -130,7 +132,7 @@ export default function NotificationBell() {
     };
   }, [userId, isInitialized, fetchNotificationsTrigger, dispatch]);
 
-  // 2. Xử lý chuyển tab ("Tất cả" vs "Chưa đọc") theo phong cách Facebook
+  // 2. Xử lý chuyển tab ("Tất cả" vs "Chưa đọc")
   const handleTabChange = async (targetFilter: "all" | "unread") => {
     if (filter === targetFilter) return;
     dispatch(setFilter(targetFilter));
@@ -139,25 +141,33 @@ export default function NotificationBell() {
 
     dispatch(setLoading(true));
     try {
-      const fetchFn =
-        targetFilter === "unread"
-          ? fetchUnreadNotificationsTrigger
-          : fetchNotificationsTrigger;
-
-      const res = await fetchFn({
-        userId,
-        offset: 0,
-        limit: 10,
-      }).unwrap();
-
-      dispatch(
-        setInitialNotifications({
-          data: res.data || [],
-          unread_count: res.unread_count ?? 0,
-          has_more: Boolean(res.has_more),
-          filter: targetFilter,
-        })
-      );
+      if (targetFilter === "unread") {
+        const res = await fetchUnreadNotificationsTrigger().unwrap();
+        const notifList: AutoNotification[] = res?.data || [];
+        dispatch(
+          setInitialNotifications({
+            data: notifList,
+            unread_count: notifList.length,
+            has_more: Boolean(res?.meta?.has_more),
+            filter: targetFilter,
+          })
+        );
+      } else {
+        const res = await fetchNotificationsTrigger({
+          offset: 0,
+          limit: 10,
+        }).unwrap();
+        const notifList: AutoNotification[] = res?.data || [];
+        const unreadComputed = notifList.filter((n) => !n.is_read).length;
+        dispatch(
+          setInitialNotifications({
+            data: notifList,
+            unread_count: unreadComputed,
+            has_more: Boolean(res?.meta?.has_more),
+            filter: targetFilter,
+          })
+        );
+      }
     } catch (err) {
       console.warn("[Notifications] Lỗi khi đổi tab:", err);
       dispatch(setLoading(false));
@@ -170,23 +180,26 @@ export default function NotificationBell() {
 
     dispatch(setLoadingMore(true));
     try {
-      const fetchFn =
-        filter === "unread"
-          ? fetchUnreadNotificationsTrigger
-          : fetchNotificationsTrigger;
-
-      const res = await fetchFn({
-        userId,
-        offset: offset,
-        limit: limit || 10,
-      }).unwrap();
-
-      dispatch(
-        appendNotifications({
-          data: res.data || [],
-          has_more: Boolean(res.has_more),
-        })
-      );
+      if (filter === "unread") {
+        const res = await fetchUnreadNotificationsTrigger().unwrap();
+        dispatch(
+          appendNotifications({
+            data: res?.data || [],
+            has_more: Boolean(res?.meta?.has_more),
+          })
+        );
+      } else {
+        const res = await fetchNotificationsTrigger({
+          offset: offset,
+          limit: limit || 10,
+        }).unwrap();
+        dispatch(
+          appendNotifications({
+            data: res?.data || [],
+            has_more: Boolean(res?.meta?.has_more),
+          })
+        );
+      }
     } catch (err) {
       console.warn("[Notifications] Lỗi khi tải thêm thông báo:", err);
       dispatch(setLoadingMore(false));
@@ -233,16 +246,12 @@ export default function NotificationBell() {
 
   // 4. Xử lý khi click vào một thông báo
   const handleNotificationClick = async (item: AutoNotification) => {
-    // Nếu chưa đọc: Optimistic update giảm unreadCount và gọi API
-    if (!item.is_read) {
-      dispatch(markAsRead(item.id));
-      if (userId) {
-        markNotificationReadApi({ notificationId: item.id, userId })
-          .unwrap()
-          .catch((err) => {
-            console.warn("[Notifications] Không thể cập nhật trạng thái đọc:", err);
-          });
-      }
+    const notifId = item._id || item.id || "";
+    if (!item.is_read && notifId) {
+      dispatch(markAsRead(notifId));
+      markNotificationReadApi(notifId).catch((err) => {
+        console.warn("[Notifications] Không thể cập nhật trạng thái đọc:", err);
+      });
     }
 
     // Điều hướng tới chi tiết Job nếu có
@@ -257,13 +266,13 @@ export default function NotificationBell() {
     if (unreadCount === 0) return;
 
     dispatch(markAllAsRead());
-    if (userId) {
-      // Gọi API đọc các thông báo chưa đọc
-      const unreadItems = rawNotifications.filter((n) => !n.is_read);
-      unreadItems.forEach((n) => {
-        markNotificationReadApi({ notificationId: n.id, userId }).catch(() => {});
-      });
-    }
+    const unreadItems = rawNotifications.filter((n) => !n.is_read);
+    unreadItems.forEach((n) => {
+      const id = n._id || n.id;
+      if (id) {
+        markNotificationReadApi(id).catch(() => {});
+      }
+    });
   };
 
   return (
@@ -289,7 +298,7 @@ export default function NotificationBell() {
         sideOffset={8}
         className="w-[360px] sm:w-[420px] p-0 rounded-2xl border-slate-200/90 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950 backdrop-blur-xl overflow-hidden"
       >
-        {/* Header - Thiết kế Facebook Web */}
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 p-3.5 dark:border-white/10">
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -320,7 +329,7 @@ export default function NotificationBell() {
           </div>
         </div>
 
-        {/* Tab Lọc theo chuẩn Facebook: [Tất cả] và [Chưa đọc] */}
+        {/* Tab Filter: [Tất cả] và [Chưa đọc] */}
         <div className="flex items-center gap-2 border-b border-slate-100 px-3.5 py-2 dark:border-white/10">
           <button
             onClick={() => handleTabChange("all")}
@@ -344,7 +353,7 @@ export default function NotificationBell() {
           </button>
         </div>
 
-        {/* Danh sách thông báo dạng Facebook */}
+        {/* Danh sách thông báo */}
         <ScrollArea className="max-h-[380px] min-h-[180px] overflow-y-auto">
           {isLoading && rawNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400">
@@ -365,14 +374,15 @@ export default function NotificationBell() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-white/5">
-              {rawNotifications.map((item) => {
-                const isSuccess = item.status === 1;
+              {rawNotifications.map((item, idx) => {
+                const isSuccess = String(item.status) === "1" || Number(item.status) === 1;
                 const bestModel = item.metadata?.best_model;
                 const bestScore = item.metadata?.best_score;
+                const key = item._id || item.id || `notif_${idx}`;
 
                 return (
                   <div
-                    key={item.id}
+                    key={key}
                     onClick={() => handleNotificationClick(item)}
                     className={`group relative flex cursor-pointer items-start gap-3 p-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-white/5 ${
                       !item.is_read
@@ -446,7 +456,6 @@ export default function NotificationBell() {
                       </div>
                     </div>
 
-                    {/* Dấu chấm xanh unread chuẩn Facebook */}
                     {!item.is_read && (
                       <span className="mt-3 h-2.5 w-2.5 shrink-0 rounded-full bg-blue-600 shadow-xs ring-2 ring-white dark:ring-slate-950" />
                     )}
@@ -454,10 +463,8 @@ export default function NotificationBell() {
                 );
               })}
 
-              {/* Phần tử Sentinel để kích hoạt tải thêm (Infinite Scroll) */}
               <div ref={sentinelRef} className="h-1" />
 
-              {/* Trạng thái tải thêm */}
               {isLoadingMore && (
                 <div className="flex items-center justify-center p-3 text-xs text-slate-500 gap-2">
                   <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
@@ -465,7 +472,6 @@ export default function NotificationBell() {
                 </div>
               )}
 
-              {/* Báo đã hết dữ liệu */}
               {!hasMore && rawNotifications.length > 0 && (
                 <div className="p-3 text-center text-[11px] text-slate-400 dark:text-slate-500">
                   Bạn đã xem hết thông báo
@@ -475,7 +481,7 @@ export default function NotificationBell() {
           )}
         </ScrollArea>
 
-        {/* Footer - Trạng thái kết nối MQTT WebSocket (cổng 1884) */}
+        {/* Footer */}
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 px-3.5 py-2 text-[10px] font-medium text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
           <span className="flex items-center gap-1.5">
             <span className="relative flex h-2 w-2">
@@ -493,8 +499,8 @@ export default function NotificationBell() {
               />
             </span>
             {mqttConnected
-              ? "MQTT WebSocket đã kết nối (1884)"
-              : "MQTT WebSocket sẵn sàng"}
+              ? "MQTT Realtime đã kết nối"
+              : "MQTT Sẵn sàng"}
           </span>
 
           <span className="text-[9px] text-slate-400">

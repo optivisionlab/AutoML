@@ -133,6 +133,7 @@ const ResultPage = ({ params }: Props) => {
 
       const modelsRecord: Record<string, any> = {};
       legacyJobResult.orther_model_scores.forEach((m) => {
+        if (!m.model_name) return;
         modelsRecord[m.model_name] = {
           status: "done",
           error: null,
@@ -172,7 +173,9 @@ const ResultPage = ({ params }: Props) => {
           status: "done",
           params: {
             problem_type: legacyJobResult.config?.problem_type || "regression",
-            model_names: legacyJobResult.orther_model_scores.map((m) => m.model_name),
+            model_names: legacyJobResult.orther_model_scores
+              .map((m) => m.model_name)
+              .filter((name): name is string => Boolean(name)),
             metric_sort: metricSort,
             metrics: { [metricSort]: "maximize" },
           },
