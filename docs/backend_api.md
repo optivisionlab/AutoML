@@ -94,13 +94,76 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
 
 ---
 
-## 3. Tác vụ AutoML & Huấn luyện
+## 3. Tác vụ AutoML & Huấn luyện (V1)
+
+### `POST /training-file-local`
+- **Mô tả**: Huấn luyện mô hình trực tiếp từ file dữ liệu (CSV) và file cấu hình (YAML). Hỗ trợ cả 3 bài toán: `classification`, `regression`, và `forecasting` (Time Series).
+- **Request Body**: `multipart/form-data`:
+  - `file_data`: File CSV chứa dữ liệu huấn luyện.
+  - `file_config`: File YAML chứa cấu hình huấn luyện.
+- **Ví dụ cấu hình YAML cho Time Series Forecasting**:
+  ```yaml
+  choose: "new model"
+  problem_type: "forecasting"
+  target: "y"
+  list_feature: ["exog_feature1", "exog_feature2"]
+  metric_sort: "mae"
+  search_algorithm: "grid_search"
+  forecasting:
+    time_column: "date"
+    lags: [1, 7]
+    rolling_windows: [7]
+  ```
+- **Response**: Đối tượng JSON chứa kết quả mô hình tốt nhất:
+  ```json
+  {
+    "best_model_id": 0,
+    "best_model": "Pipeline(...)",
+    "best_params": {"model__alpha": 1.0},
+    "best_score": 0.45,
+    "orther_model_scores": [...],
+    "time_limit_reached": false
+  }
+  ```
 
 ### `POST /train-from-requestbody-json/`
-- **Mô tả**: Bắt đầu một công việc huấn luyện mới dựa trên cấu hình JSON.
+- **Mô tả**: Bắt đầu công việc huấn luyện từ JSON payload. Hỗ trợ `classification`, `regression`, và `forecasting`.
 - **Tham số truy vấn (Query Parameters)**: `userId` (string), `id_data` (string).
-- **Request Body**: Một đối tượng JSON (`Item`) chứa cấu hình huấn luyện (features, target, models, metrics, v.v.).
-- **Response**: Một đối tượng JSON chứa ID và trạng thái của công việc.
+- **Request Body**: Đối tượng JSON (`Item`) gồm `data` (mảng records) và `config` (cấu hình bài toán).
+- **Ví dụ Body cho Time Series Forecasting**:
+  ```json
+  {
+    "data": [
+      {"date": "2024-01-01", "y": 20.0, "temp": 15.0},
+      {"date": "2024-01-02", "y": 21.5, "temp": 16.2}
+    ],
+    "config": {
+      "choose": "new model",
+      "problem_type": "forecasting",
+      "target": "y",
+      "list_feature": ["temp"],
+      "metric_sort": "mae",
+      "search_algorithm": "grid_search",
+      "forecasting": {
+        "time_column": "date",
+        "lags": [1, 3],
+        "rolling_windows": [3]
+      }
+    }
+  }
+  ```
+- **Response**: Đối tượng JSON chứa chi tiết công việc đã lưu vào MongoDB:
+  ```json
+  {
+    "job_id": "uuid-string",
+    "best_model_id": 0,
+    "best_model": "Pipeline(...)",
+    "best_params": {...},
+    "best_score": 0.45,
+    "config": {...},
+    "status": 1
+  }
+  ```
 
 ### `POST /get-list-job-by-userId`
 - **Mô tả**: Lấy danh sách tất cả các công việc huấn luyện cho một người dùng cụ thể.
@@ -112,11 +175,12 @@ Tất cả các điểm cuối đều tương đối so với URL cơ sở nơi 
 - **Request Body**: `{"id": "job_id"}`
 - **Response**: Một đối tượng JSON chứa chi tiết công việc.
 
-### `POST /inference-model/`
-- **Mô tả**: Thực hiện suy luận (inference) bằng một mô hình đã được huấn luyện.
+### `POST /inference-model`
+- **Mô tả**: Thực hiện suy luận (inference) bằng một mô hình đã được huấn luyện. Hỗ trợ tự động cả Classification, Regression và Time Series Forecasting.
+  - Với **Forecasting**: Nếu dòng cuối cùng của cột `target` là null/NaN, hệ thống tự động dự báo cho bước tiếp theo (`predict_next`). Nếu dữ liệu đầy đủ mốc thời gian, hệ thống tự động sinh lag features và dự đoán cho các bước sau thời gian khởi tạo.
 - **Tham số truy vấn (Query Parameter)**: `job_id` (string).
-- **Request Body**: `multipart/form-data` chứa `file_data` (dữ liệu cần dự đoán).
-- **Response**: Kết quả dự đoán.
+- **Request Body**: `multipart/form-data` chứa `file_data` (file CSV chứa dữ liệu cần dự đoán).
+- **Response**: Mảng JSON chứa các dòng dữ liệu kèm theo cột `predict`.
 
 ### `POST /activate-model`
 - **Mô tả**: Kích hoạt hoặc vô hiệu hóa một mô hình đã được huấn luyện để suy luận.

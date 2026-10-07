@@ -394,7 +394,7 @@ async def get_list_data_user(db: AsyncDatabase = Depends(get_db), current_user =
 @app.post("/training-file-local")
 def api_train_local(file_data: UploadFile, file_config: UploadFile):
 
-    best_model_id, best_model, best_score, best_params, model_scores = app_train_local(
+    best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = app_train_local(
         file_data, file_config
     )
 
@@ -404,12 +404,13 @@ def api_train_local(file_data: UploadFile, file_config: UploadFile):
         "best_params": best_params,
         "best_score": best_score,
         "orther_model_scores": model_scores,
+        "time_limit_reached": time_limit_reached,
     }
 
 
 @app.post("/train-from-requestbody-json/")
-def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Depends(get_db)):
-    return train_json(item, userId, id_data, db)
+async def api_train_json(item: Item, userId: str, id_data:str, db: AsyncDatabase = Depends(get_db)):
+    return await train_json(item, userId, id_data, db)
 
 
 

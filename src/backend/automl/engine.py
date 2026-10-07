@@ -23,7 +23,7 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import Ridge
 from pymongo.asynchronous.database import AsyncDatabase
 
-from automl.process_forecasting import build_pipeline, preprocess_data as preprocess_forecasting
+from automl.process_forecasting import build_pipeline, preprocess_data as preprocess_forecasting, make_forecasting_table
 
 from automl.model import Item
 from automl.search.factory import SearchStrategyFactory
@@ -292,7 +292,8 @@ def get_data_config_from_json(file_content: Item):
     search_algorithm = config.get('search_algorithm', 'grid_search')  # Default to 'grid_search' if not specified
     max_time = config.get('max_time', None)  # Thời gian tối đa (giây), None = dùng default từ YAML
 
-    models, metric_list = get_model()
+    models, metric_list = (get_forecasting_models() if config.get("problem_type") == "forecasting" else get_model())
+
     return data, choose, list_feature, target, metric_list, metric_sort, models, search_algorithm, max_time
 
 
@@ -826,12 +827,16 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
         get_data_config_from_json(item)
     )
 
-    X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
-
     problem_type = item.config.get('problem_type', 'classification')
 
+    if problem_type == "forecasting":
+        X_processed, y_processed, preprocessor, le_target = preprocess_forecasting(list_feature, target, data, item.config)
+    else:
+        X_processed, y_processed, preprocessor, le_target = preprocess_data(list_feature, target, data)
+
     best_model_id, best_model, best_score, best_params, model_scores, time_limit_reached = train_process(
-        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time
+        X_processed, y_processed, metric_list, metric_sort, models, problem_type, search_algorithm, max_time,
+        forecasting_config=item.config.get("forecasting")
     )
 
     data_name, user_name = await get_dataset_and_user_info(id_data, userId, db)
@@ -864,10 +869,74 @@ async def train_json(item: Item, userId, id_data, db: AsyncDatabase):
 
     job_result = await job_collection.insert_one(job)
     if job_result.inserted_id:
+        job["_id"] = str(job_result.inserted_id)
         job.pop("model")
         return JSONResponse(content=serialize_mongo_doc(job))
     else:
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi train")
+
+
+# Suy luận kết quả
+async def _inference_forecasting(stored_model_data: dict, file_data):
+    """Xử lý dự đoán chuỗi thời gian cho mô hình forecasting."""
+    config = stored_model_data.get("config", {})
+    raw_model = stored_model_data.get("model")
+    list_feature = config.get("list_feature", [])
+    forecast_options = config.get("forecasting", {})
+    time_column = forecast_options.get("time_column")
+    target_column = config.get("target")
+    lags = forecast_options.get("lags", [1, 7])
+    rolling_windows = forecast_options.get("rolling_windows", [7])
+
+    if isinstance(raw_model, (bytes, bytearray)):
+        try:
+            model = pickle.loads(raw_model)
+        except Exception as e:
+            return {"error": f"Failed to unpickle model: {str(e)}"}
+    elif isinstance(raw_model, dict):
+        try:
+            buffer = await asyncio.to_thread(minIOStorage.get_object, raw_model.get('bucket_name'), raw_model.get('object_name'))
+            model = await asyncio.to_thread(pickle.load, buffer)
+        except Exception as e:
+            return {"error": f"Failed to load model from storage: {str(e)}"}
+    else:
+        return {"error": "Invalid model format in job"}
+
+    try:
+        contents = await file_data.read()
+        data_file = BytesIO(contents)
+        data = await asyncio.to_thread(pd.read_csv, data_file)
+    except Exception as e:
+        return {"error": f"Cannot read CSV file: {str(e)}"}
+
+    if not time_column or time_column not in data.columns:
+        return {"error": f"Missing required time column: {time_column}"}
+
+    try:
+        predict_next = target_column in data.columns and pd.isna(data[target_column].iloc[-1])
+        X_pred, _ = make_forecasting_table(
+            data, target_column, time_column, list_feature,
+            lags=lags, rolling_windows=rolling_windows,
+            predict_next=predict_next
+        )
+        y_pred = await asyncio.to_thread(model.predict, X_pred)
+        if hasattr(y_pred, 'ravel'):
+            y_pred = y_pred.ravel()
+
+        if predict_next:
+            data_result = data.iloc[[-1]].copy()
+            data_result['predict'] = y_pred
+        else:
+            data_result = data.copy()
+            data_result[time_column] = pd.to_datetime(data_result[time_column])
+            pred_series = pd.Series(y_pred, index=X_pred.index, name="predict")
+            data_result = data_result.merge(pred_series, left_on=time_column, right_index=True, how="left")
+            data_result[time_column] = data[time_column]
+
+        data_result = data_result.replace({np.nan: None})
+        return await asyncio.to_thread(data_result.to_dict, orient="records")
+    except Exception as e:
+        return {"error": f"Failed during forecasting prediction: {str(e)}"}
 
 
 # Suy luận kết quả
@@ -900,6 +969,10 @@ async def inference_model(job_id: str, user_id: str, file_data, db: AsyncDatabas
             }
     except Exception as e:
         return {"error": f"Failed to retrieve model: {str(e)}"}
+
+    # Nhánh riêng cho forecasting
+    if stored_model_data.get("config", {}).get("problem_type") == "forecasting":
+        return await _inference_forecasting(stored_model_data, file_data)
     
     list_feature = stored_model_data.get("config", {}).get("list_feature", [])
 
