@@ -151,6 +151,37 @@ Trích xuất bảng (tối đa 50.000 dòng) → Parquet → MinIO → đăng k
 
 ---
 
+## Time Series Forecasting
+
+Dự báo một bước tiếp theo (`horizon = 1`) cho một chuỗi có mốc thời gian đều, không trùng. Huấn luyện qua `POST /api/v1/datasets/{id}/training` với `problem_type = "time_series"` và khối `time_series`:
+
+```json
+{
+  "problem_type": "time_series",
+  "target": "cnt",
+  "list_feature": ["temp", "hum"],
+  "metric_sort": "mae",
+  "search_algorithm": "grid_search",
+  "time_series": {
+    "time_column": "dteday",
+    "lags": [1, 7],
+    "rolling_windows": [7],
+    "n_splits": 5,
+    "test_size": null,
+    "gap": 0,
+    "max_train_size": null
+  }
+}
+```
+
+- `time_series.time_column` là bắt buộc; `horizon` chỉ nhận giá trị 1.
+- Metric: `mse`, `mae`, `rmse`, `r2` (mặc định sắp xếp theo `rmse`). Mô hình: Ridge, RandomForestRegressor, GradientBoostingRegressor (`assets/time_series.yml`).
+- Đánh giá bằng `TimeSeriesSplit`; điểm là điểm CV chọn mô hình, không phải điểm test độc lập.
+- `GET /api/v1/datasets/{id}/features?problem_type=time_series` gợi ý các cột số có thể làm target.
+- Suy luận (`POST /api/v1/inference/models/{job_id}/predict` hoặc `/predict/file`): mỗi dòng phải có cột thời gian, cột target và các `list_feature`. Nếu dòng cuối (theo thời gian) có target rỗng → chỉ dự báo bước kế tiếp; ngược lại dự đoán mọi dòng sau giai đoạn khởi tạo lag. Dòng không dự đoán được trả `null`.
+
+---
+
 ## Training (V1 - Đồng bộ)
 
 ### POST /training-file-local

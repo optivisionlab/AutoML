@@ -213,7 +213,7 @@ async def delete_dataset(
 @router.get("/{id}/features", response_model=responses.BaseResponse[dict])
 async def get_dataset_features(
     id: str = Path(..., description="Dataset ID"),
-    problem_type: str = Query(..., description="Type of problem (classification, regression)"),
+    problem_type: str = Query(..., description="Type of problem (classification, regression, time_series)"),
     current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):

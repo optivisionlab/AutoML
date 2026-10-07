@@ -15,6 +15,7 @@ from src.modules.preprocessing.regression import (
     prepare_regression_data,
     determine_regression_cv_tier,
 )
+from src.modules.preprocessing.time_series import prepare_time_series_data
 from src.modules.preprocessing.classification import (
     prepare_classification_data,
     determine_classification_cv_tier,
@@ -77,6 +78,8 @@ class TabularPreprocessor:
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         min_class_count: int = 5,
     ) -> CVStrategyConfig:
+        if problem_type == constants.ProblemType.TIME_SERIES:
+            raise ValueError("Time series CV depends on its TimeSeriesConfig; use prepare_time_series_data")
         if problem_type == constants.ProblemType.REGRESSION:
             return determine_regression_cv_tier(n_rows)
         return determine_classification_cv_tier(n_rows, min_class_count)
@@ -89,8 +92,18 @@ class TabularPreprocessor:
         feature_cols: list[str] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         random_state: int = 42,
+        time_series_config: dict[str, Any] | None = None,
     ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray] | None, CVStrategyConfig, list[str], FittedPreprocessor]:
-        if problem_type == constants.ProblemType.REGRESSION:
+        if problem_type == constants.ProblemType.TIME_SERIES:
+            # Learned preprocessing stays inside the model Pipeline (fitted per CV fold), so there is nothing to fit here
+            (X_train, y_train), test_data, cv_config, features = prepare_time_series_data(
+                df=df,
+                target_col=target_col,
+                feature_cols=feature_cols,
+                time_series_config=time_series_config,
+            )
+            preprocessor, target_encoder = None, None
+        elif problem_type == constants.ProblemType.REGRESSION:
             (X_train, y_train), test_data, cv_config, features, preprocessor, target_encoder = prepare_regression_data(
                 df=df,
                 target_col=target_col,

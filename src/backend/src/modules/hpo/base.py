@@ -18,6 +18,13 @@ warnings.filterwarnings("ignore", category=UserWarning)
 logger = logging.getLogger(__name__)
 
 
+def take_rows(X: Any, idx: np.ndarray) -> Any:
+    """
+    Row selection that works for ndarrays and DataFrames (time series Pipelines)
+    """
+    return X.iloc[idx] if hasattr(X, "iloc") else X[idx]
+
+
 class TrialPruned(Exception):
     """
     Exception raised when a hyperparameter candidate is pruned early
@@ -221,8 +228,8 @@ class BaseSearchCV(BaseEstimator, ABC):
             if candidate_params:
                 model_fold.set_params(**candidate_params)
 
-            X_tr, y_tr = X[train_idx], y[train_idx]
-            X_val, y_val = X[val_idx], y[val_idx]
+            X_tr, y_tr = take_rows(X, train_idx), y[train_idx]
+            X_val, y_val = take_rows(X, val_idx), y[val_idx]
 
             model_fold.fit(X_tr, y_tr)
             fit_times.append(time.time() - fold_fit_start)

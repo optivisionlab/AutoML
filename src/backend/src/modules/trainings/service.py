@@ -27,6 +27,13 @@ from src.modules.trainings.repository import TrainingRepository
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_METRIC_SORT = {
+    constants.ProblemType.CLASSIFICATION: "accuracy",
+    constants.ProblemType.REGRESSION: "r2",
+    constants.ProblemType.TIME_SERIES: "rmse",
+}
+
+
 class TrainingService:
     def __init__(self, repo: TrainingRepository, notif_service: NotificationService):
         self.repo = repo
@@ -38,12 +45,14 @@ class TrainingService:
         target_col: str,
         feature_cols: list[str] | None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
+        time_series_config: dict[str, Any] | None = None,
     ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
         (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
             problem_type=problem_type,
+            time_series_config=time_series_config,
         )
         logger.info(f"Dataset preprocessed. Applied CV Strategy: {cv_config.description}")
 
@@ -66,11 +75,7 @@ class TrainingService:
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
         timeout: int | None = None
     ) -> list[dict[str, Any]]:
-        space_models = (
-            search_space.REGRESSION_MODELS
-            if problem_type == constants.ProblemType.REGRESSION
-            else search_space.CLASSIFICATION_MODELS
-        )
+        space_models = search_space.get_models(problem_type)
 
         tasks = []
         for model_name in models_to_train:
@@ -191,7 +196,8 @@ class TrainingService:
         custom_params: dict[str, Any] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
-        timeout: int | None = None
+        timeout: int | None = None,
+        time_series_config: dict[str, Any] | None = None,
     ) -> AutoMLPipelineResult:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
@@ -199,14 +205,9 @@ class TrainingService:
         driver = await MapReduceManager.get_driver()
 
         target_col = target_col or str(df.columns[-1])
-        if problem_type == constants.ProblemType.REGRESSION:
-            metric_list = metric_list or search_space.REGRESSION_METRIC_LIST
-            metric_sort = metric_sort or "r2"
-            models_to_train = models_to_train or list(search_space.REGRESSION_MODELS.keys())
-        else:
-            metric_list = metric_list or search_space.CLASSIFICATION_METRIC_LIST
-            metric_sort = metric_sort or "accuracy"
-            models_to_train = models_to_train or list(search_space.CLASSIFICATION_MODELS.keys())
+        metric_list = metric_list or search_space.get_metric_list(problem_type)
+        metric_sort = metric_sort or DEFAULT_METRIC_SORT.get(problem_type, "accuracy")
+        models_to_train = models_to_train or list(search_space.get_models(problem_type).keys())
 
         custom_params = custom_params or {}
 
@@ -215,6 +216,7 @@ class TrainingService:
             target_col=target_col,
             feature_cols=feature_cols,
             problem_type=problem_type,
+            time_series_config=time_series_config,
         )
 
         valid_results = await cls._dispatch_and_collect_tasks(
@@ -243,6 +245,7 @@ class TrainingService:
             "feature_names": feature_names,
             "target_name": target_col,
             "problem_type": problem_type,
+            "time_series": time_series_config,
         }
         artifact_bytes = pickle.dumps(artifact)
 
@@ -364,7 +367,7 @@ class TrainingService:
             target_col = config.get("target")
             feature_cols = config.get("features") or config.get("list_feature")
             metric_list = config.get("metrics")
-            metric_sort = config.get("metric_sort") or ("r2" if problem_type == constants.ProblemType.REGRESSION else "accuracy")
+            metric_sort = config.get("metric_sort") or DEFAULT_METRIC_SORT.get(problem_type, "accuracy")
             models_to_train = config.get("models")
             custom_params = config.get("custom_params")
             search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
@@ -381,6 +384,7 @@ class TrainingService:
                 problem_type=problem_type,
                 search_algorithm=search_algorithm,
                 timeout=timeout,
+                time_series_config=config.get("time_series"),
             )
 
             _, storage_info = await self._save_best_model_artifact(

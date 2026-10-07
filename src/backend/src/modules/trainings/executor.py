@@ -7,7 +7,7 @@ from typing import Any, Type
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold
+from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold, TimeSeriesSplit
 
 # Local Libraries
 from src.shared import constants
@@ -20,7 +20,13 @@ from src.modules.hpo import (
     TPESearch,
 )
 from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
-from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
+from src.modules.preprocessing import (
+    CVStrategyConfig,
+    ContinuousStratifiedKFold,
+    ContinuousRepeatedStratifiedKFold,
+    build_time_series_pipeline,
+    MODEL_STEP,
+)
 from src.modules.trainings.schemas import ModelTaskResult
 
 
@@ -32,6 +38,15 @@ def build_cv_splitter(
     cv_config: CVStrategyConfig | dict[str, Any],
     problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> BaseCrossValidator:
+    if problem_type == constants.ProblemType.TIME_SERIES:
+        options = cv_config if isinstance(cv_config, dict) else cv_config.model_dump()
+        return TimeSeriesSplit(
+            n_splits=options.get("n_splits", 5),
+            test_size=options.get("fold_test_size"),
+            gap=options.get("gap", 0),
+            max_train_size=options.get("max_train_size"),
+        )
+
     if isinstance(cv_config, dict):
         tier = cv_config.get("tier", 2)
         n_splits = cv_config.get("n_splits", 5)
@@ -62,8 +77,20 @@ def tune_and_fit_model(
     X_train: np.ndarray,
     y_train: np.ndarray,
     search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
+    problem_type: str = constants.ProblemType.CLASSIFICATION,
 ) -> tuple[BaseEstimator, dict[str, Any], BaseSearchCV]:
     model = model_cls()
+
+    is_time_series = problem_type == constants.ProblemType.TIME_SERIES
+    if is_time_series:
+        # Preprocessing lives in the Pipeline so it is fitted on train folds only
+        if "random_state" in model.get_params():
+            model.set_params(random_state=42)
+        model = build_time_series_pipeline(model)
+        param_grid = [
+            {k if "__" in k else f"{MODEL_STEP}__{k}": v for k, v in grid.items()}
+            for grid in ([param_grid] if isinstance(param_grid, dict) else param_grid)
+        ]
 
     match search_algorithm:
         case constants.SearchAlgorithm.TPESEARCH:
@@ -114,7 +141,11 @@ def tune_and_fit_model(
 
     searcher.fit(X_train, y_train)
 
-    return searcher.best_estimator_, searcher.best_params_, searcher
+    best_params = searcher.best_params_
+    if is_time_series:
+        best_params = {k.removeprefix(f"{MODEL_STEP}__"): v for k, v in best_params.items()}
+
+    return searcher.best_estimator_, best_params, searcher
 
 
 def evaluate_trained_model(

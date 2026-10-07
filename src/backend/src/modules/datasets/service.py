@@ -493,7 +493,7 @@ class DatasetService:
                         features[col_name] = True
                     else:
                         features[col_name] = False
-                elif problem_type == constants.ProblemType.REGRESSION:
+                elif problem_type in (constants.ProblemType.REGRESSION, constants.ProblemType.TIME_SERIES):
                     if suggested_type in ["regression", "both"]:
                         features[col_name] = True
                     else:

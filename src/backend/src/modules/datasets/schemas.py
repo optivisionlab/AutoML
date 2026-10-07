@@ -3,7 +3,11 @@ from enum import Enum
 from datetime import datetime
 
 # Third-party Libraries
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
+
+# Local Libraries
+from src.shared import constants
+from src.modules.preprocessing import TimeSeriesConfig
 
 
 class DataTypeEnum(str, Enum):
@@ -72,3 +76,10 @@ class TrainingConfig(BaseModel):
     problem_type: str
     search_algorithm: str | None = None
     target: str
+    time_series: TimeSeriesConfig | None = None
+
+    @model_validator(mode="after")
+    def _time_series_needs_config(self) -> "TrainingConfig":
+        if self.problem_type == constants.ProblemType.TIME_SERIES and self.time_series is None:
+            raise ValueError("time_series config (with time_column) is required when problem_type is 'time_series'")
+        return self

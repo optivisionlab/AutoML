@@ -65,6 +65,7 @@ def train_single_model_task(
         X_train=X_train,
         y_train=y_train,
         search_algorithm=search_algorithm,
+        problem_type=problem_type,
     )
 
     scores, primary_score = evaluate_trained_model(

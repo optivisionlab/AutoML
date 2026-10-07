@@ -45,10 +45,7 @@ class ModelService:
         metric_list: list[str] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION
     ) -> dict[str, Any]:
-        metrics = (
-            metric_list
-            or (search_space.REGRESSION_METRIC_LIST if problem_type == "regression" else search_space.CLASSIFICATION_METRIC_LIST)
-        )
+        metrics = metric_list or search_space.get_metric_list(problem_type)
         scoring: dict[str, Any] = {}
 
         for metric in metrics:
@@ -87,7 +84,7 @@ class ModelService:
                     logger.warning(f"Unsupported metric '{metric}', skipping.")
 
         if not scoring:
-            if problem_type == "regression":
+            if problem_type in (constants.ProblemType.REGRESSION, constants.ProblemType.TIME_SERIES):
                 scoring["r2"] = make_scorer(r2_score)
             else:
                 scoring["accuracy"] = make_scorer(accuracy_score)
@@ -102,10 +99,7 @@ class ModelService:
         metric_list: list[str] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION
     ) -> dict[str, float]:
-        if problem_type == constants.ProblemType.REGRESSION:
-            metrics = metric_list or search_space.REGRESSION_METRIC_LIST
-        else:
-            metrics = metric_list or search_space.CLASSIFICATION_METRIC_LIST
+        metrics = metric_list or search_space.get_metric_list(problem_type)
 
         y_pred = model.predict(X_test)
         results: dict[str, float] = {}

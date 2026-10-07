@@ -76,9 +76,21 @@ class InferenceService:
 
         return job_doc
 
+    @staticmethod
+    def _required_columns(config: dict[str, Any]) -> list[str]:
+        """
+        Columns every request row must carry. Time series also needs the time column and the
+        target history (null for the step to forecast) to rebuild its lag features.
+        """
+        features = list(config.get("list_feature", []))
+        if config.get("problem_type") == constants.ProblemType.TIME_SERIES:
+            time_column = (config.get("time_series") or {}).get("time_column")
+            return [c for c in (time_column, config.get("target")) if c] + features
+        return features
+
     def _build_deployment_info_response(self, job_doc: dict[str, Any], job_id: str, base_url: str) -> DeploymentInfoResponse:
         config = job_doc.get("config", {})
-        features = config.get("list_feature", [])
+        features = self._required_columns(config)
         model_name = job_doc.get("best_model", "AutoML_Model")
         activate_val = job_doc.get("activate", 0)
         best_score = job_doc.get("best_score")
@@ -88,7 +100,12 @@ class InferenceService:
         sample_record: dict[str, Any] = {}
         features_schema: list[FeatureSchemaItem] = []
 
+        time_column = (config.get("time_series") or {}).get("time_column")
         for feat in features:
+            if feat == time_column:
+                sample_record[feat] = "2024-01-01"
+                features_schema.append(FeatureSchemaItem(name=feat, data_type="datetime", sample_value="2024-01-01"))
+                continue
             sample_record[feat] = 1.0
             features_schema.append(FeatureSchemaItem(name=feat, data_type="float", sample_value=1.0))
 
@@ -163,10 +180,11 @@ class InferenceService:
         storage_info = job_doc.get("model", {})
         config = job_doc.get("config", {})
         expected_features = config.get("list_feature", [])
+        required_columns = self._required_columns(config)
 
-        if expected_features and request.data:
+        if required_columns and request.data:
             first_row = request.data[0]
-            missing_cols = [col for col in expected_features if col not in first_row]
+            missing_cols = [col for col in required_columns if col not in first_row]
             if missing_cols:
                 raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
