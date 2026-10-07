@@ -117,6 +117,40 @@ Lấy tất cả datasets (admin).
 
 ---
 
+## Database Connectors
+
+Prefix: `/api/v1/connectors/database` (yêu cầu đăng nhập). Hỗ trợ 12 loại CSDL: PostgreSQL, MySQL, SQLite, DuckDB, Snowflake, BigQuery, ClickHouse, MSSQL, Oracle, Trino/Presto, Hive, Redshift. Mỗi request chứa các trường kết nối:
+
+| Trường | Mô tả |
+|--------|-------|
+| `db_type` (bắt buộc) | `postgres`, `mysql`, `sqlite`, `duckdb`, `snowflake`, `bigquery`, `clickhouse`, `mssql`, `oracle`, `trino`, `hive`, `redshift` |
+| `database` (bắt buộc) | Tên CSDL, đường dẫn file hoặc `:memory:` (SQLite/DuckDB) |
+| `host`, `port`, `user`, `password` | Thông tin máy chủ (tùy chọn, cổng mặc định theo từng CSDL) |
+| `schema_name` | Tên schema (tùy chọn) |
+| `extra_params` | Tham số riêng: Snowflake `account`/`warehouse`/`role`, MSSQL `driver`/`trust_server_certificate`, Oracle `service_name`/`sid`, BigQuery `cred_file_path`, Hive `auth` |
+
+### POST /api/v1/connectors/database/connect
+
+Kiểm tra kết nối và trả về danh sách bảng/view: `data.tables: [...]`.
+
+### POST /api/v1/connectors/database/table-info
+
+Xem trước cấu trúc và dữ liệu mẫu của một bảng.
+
+**Body**: các trường kết nối + `table_name` (bắt buộc), `limit` (1-100, mặc định 10).
+
+**Response** `data`: `table_name`, `columns` (`name`, `type`), `preview_data`, `preview_count`.
+
+### POST /api/v1/connectors/database/import
+
+Trích xuất bảng (tối đa 50.000 dòng) → Parquet → MinIO → đăng ký dataset (`dataType: table`) trong MongoDB.
+
+**Body**: các trường kết nối + `table_name`, `data_name` (bắt buộc), `description`, `public` (tùy chọn).
+
+**Response** `data`: dataset vừa tạo (cùng schema với `POST /api/v1/datasets`). Có thể huấn luyện ngay qua `POST /api/v1/datasets/{id}/training`.
+
+---
+
 ## Training (V1 - Đồng bộ)
 
 ### POST /training-file-local
