@@ -265,6 +265,7 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         csv_content = b"feature_x,feature_y,category_col\n1.5,2.5,red\n6.5,7.5,blue\n"
         mock_file = AsyncMock()
         mock_file.filename = "test_data.csv"
+        mock_file.file = io.BytesIO(csv_content)
         mock_file.read.return_value = csv_content
 
         filename, media_type, buffer = await self.service.predict_file(
@@ -313,6 +314,7 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
 
         mock_file = AsyncMock()
         mock_file.filename = "test_data.xlsx"
+        mock_file.file = excel_buf
         mock_file.read.return_value = excel_buf.getvalue()
 
         filename, media_type, buffer = await self.service.predict_file(
@@ -326,6 +328,78 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         df_out = pd.read_excel(buffer)
         self.assertEqual(len(df_out), 2)
         self.assertIn("predicted_target_col", df_out.columns)
+
+    async def test_predict_file_oversized_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "huge_data.csv"
+        mock_file.size = 150 * 1024 * 1024 # 150MB > 100MB limit
+        mock_file.file = None
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("exceeds the maximum allowed limit", ctx.exception.detail)
+
+    async def test_predict_file_oversized_after_read_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "streamed_huge_data.csv"
+        mock_file.size = None
+        mock_file.file = None
+        # Mock read returning > 100MB
+        mock_file.read.return_value = b"x" * (101 * 1024 * 1024)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("exceeds the maximum allowed limit", ctx.exception.detail)
+
+    async def test_predict_file_unsupported_format_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "bad_format.pdf"
+        mock_file.size = 100
+        mock_file.file = io.BytesIO(b"FAKE_PDF_DATA")
+        mock_file.read.return_value = b"FAKE_PDF_DATA"
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Unsupported file format", ctx.exception.detail)
+
+    async def test_predict_file_missing_filename_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = ""
+        mock_file.size = 100
+        mock_file.file = io.BytesIO(b"FAKE_DATA")
+        mock_file.read.return_value = b"FAKE_DATA"
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("must have a valid filename", ctx.exception.detail)
 
     async def test_export_notebook(self):
         self.mock_jobs.find_one.return_value = self.mock_job_doc

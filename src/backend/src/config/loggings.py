@@ -84,4 +84,4 @@ def setup_logging() -> None:
 
     # Create logger to notify setup success
     logger = logging.getLogger(__name__)
-    logger.info("Logging configured successfully.")
+    logger.info("Logging configured successfully")

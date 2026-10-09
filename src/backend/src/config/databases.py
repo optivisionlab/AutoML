@@ -57,7 +57,6 @@ class DatabaseManager:
         Close the connection to the database when shutting down the application.
         """
         if cls.client is not None:
-            logger.info("Closing MongoDB connection pool...")
             await cls.client.close()
             cls.client = None
             cls.db = None

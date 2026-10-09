@@ -68,7 +68,7 @@ async def start_training_consumer() -> None:
                         job_id=job_id,
                         dataset_id=dataset_id,
                         user_id=user_id,
-                        config=config
+                        config=config,
                     )
                 )
 

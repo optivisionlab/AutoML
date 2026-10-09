@@ -9,7 +9,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import LabelEncoder
 
 # Local Libraries
-from src.shared import constants
+from src.core import constants
 from src.modules.preprocessing.schemas import CVStrategyConfig
 from src.modules.preprocessing.regression import (
     prepare_regression_data,

@@ -1,6 +1,6 @@
 # Standard Libraries
 import unittest
-from src.shared.search_space import (
+from src.core.search_space import (
     CLASSIFICATION_MODELS,
     CLASSIFICATION_METRIC_LIST,
 )

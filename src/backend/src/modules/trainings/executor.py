@@ -10,7 +10,7 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold
 
 # Local Libraries
-from src.shared import constants
+from src.core import constants
 from src.modules.hpo import (
     BaseSearchCV,
     GridSearch,

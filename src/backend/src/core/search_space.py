@@ -1,31 +1,24 @@
 # Standard Libraries
 import yaml
-import logging
 from typing import Any
 
 # Local Libraries
 from src.config import settings
-from src.shared import constants
-
-
-# Logging
-logger = logging.getLogger(__name__)
+from src.core.constants import ProblemType
 
 
 def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
     match problem_type:
-        case constants.ProblemType.CLASSIFICATION:
+        case ProblemType.CLASSIFICATION:
             target_path = settings.BASE_DIR / "assets" / "classification.yml"
-        case constants.ProblemType.REGRESSION:
+        case ProblemType.REGRESSION:
             target_path = settings.BASE_DIR / "assets" / "regression.yml"
-        case constants.ProblemType.TIME_SERIES:
+        case ProblemType.TIME_SERIES:
             target_path = settings.BASE_DIR / "assets" / "time_series.yml"
         case _:
-            logger.error(f"Invalid problem type: {problem_type}")
             raise ValueError(f"Invalid problem type: {problem_type}")
 
     if not target_path.exists():
-        logger.error(f"Configuration file not found at: {target_path}")
         raise FileNotFoundError(f"Configuration file not found at: {target_path}")
 
     with open(target_path, "r", encoding="utf-8") as file:
@@ -43,5 +36,6 @@ def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]
     return models, metrics
 
 
+# Load models
 CLASSIFICATION_MODELS, CLASSIFICATION_METRIC_LIST = _load_model_config("classification")
 REGRESSION_MODELS, REGRESSION_METRIC_LIST = _load_model_config("regression")

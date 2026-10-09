@@ -94,7 +94,7 @@ async def update_avatar(
     id: str = Path(..., description="User ID"),
     file: UploadFile = File(..., description="Uploaded image file"),
     service: UserService = Depends(get_user_service)
-):
+):        
     avatar_base64 = await service.update_user_avatar(id, file)
 
     return responses.BaseResponse(

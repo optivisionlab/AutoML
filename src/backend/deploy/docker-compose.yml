@@ -55,7 +55,7 @@ services:
       target: production
     container_name: hautoml_consumer
     restart: unless-stopped
-    command: ["python", "-m", "src.core.consumer"]
+    command: ["python", "-m", "src.kafka_consumer"]
     env_file:
       - ../.env
     environment:
