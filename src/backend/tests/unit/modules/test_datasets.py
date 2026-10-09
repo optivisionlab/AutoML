@@ -1,9 +1,11 @@
 # Standard Libraries
+import io
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
-import time
 
 # Third-party Libraries
+import pandas as pd
 from fastapi.testclient import TestClient
 
 # Local Libraries
@@ -267,6 +269,91 @@ class TestDatasetServiceLogic(unittest.IsolatedAsyncioTestCase):
         # Admin -> Success
         await self.service.delete_dataset(self.admin_user, str(oid))
         self.mock_repo.delete_dataset.assert_called_with(oid)
+
+    def test_detect_csv_delimiter_and_process_stream(self):
+        csv_data = b"colA;colB;colC\n1;2;3\n4;5;6\n"
+        stream = io.BytesIO(csv_data)
+        delimiter = self.service._detect_csv_delimiter(stream)
+        self.assertEqual(delimiter, ";")
+
+        parquet_buffer = self.service._process_stream_to_parquet(stream, "data.csv")
+        self.assertIsInstance(parquet_buffer, io.BytesIO)
+        df_read = pd.read_parquet(parquet_buffer)
+        self.assertEqual(len(df_read), 2)
+        self.assertListEqual(list(df_read.columns), ["colA", "colB", "colC"])
+
+    def test_process_stream_to_parquet_excel(self):
+        excel_buffer = io.BytesIO()
+        df_src = pd.DataFrame({"x": [10, 20], "y": [30, 40]})
+        df_src.to_excel(excel_buffer, index=False, engine="openpyxl")
+        excel_buffer.seek(0)
+
+        parquet_buffer = self.service._process_stream_to_parquet(excel_buffer, "data.xlsx")
+        df_read = pd.read_parquet(parquet_buffer)
+        self.assertEqual(len(df_read), 2)
+        self.assertListEqual(list(df_read.columns), ["x", "y"])
+
+    @patch("src.shared.minio_service.upload_file_stream", new_callable=AsyncMock)
+    @patch("src.shared.minio_service.upload_dataset", new_callable=AsyncMock)
+    async def test_upload_and_process_dataset_table_and_image(self, mock_upload_dataset, mock_upload_stream):
+        from src.modules.datasets.schemas import DatasetCreate, DataTypeEnum
+        from bson import ObjectId
+
+        user_id = str(ObjectId())
+        user = {"_id": user_id, "username": "testuser", "role": "user"}
+        self.mock_repo.create_dataset.side_effect = lambda doc: {**doc, "_id": ObjectId()}
+
+        # 1. Test TABLE upload
+        csv_file = AsyncMock()
+        csv_file.filename = "table.csv"
+        csv_file.content_type = "text/csv"
+        csv_file.file = io.BytesIO(b"a,b\n1,2\n3,4\n")
+
+        payload_table = DatasetCreate(dataName="My Table", dataType=DataTypeEnum.TABLE, public=True)
+        resp_table = await self.service.upload_and_process_dataset(user, payload_table, csv_file)
+        self.assertEqual(resp_table.dataName, "My Table")
+        mock_upload_dataset.assert_called_once()
+
+        # 2. Test IMAGE upload
+        img_file = AsyncMock()
+        img_file.filename = "photo.png"
+        img_file.content_type = "image/png"
+        img_file.file = io.BytesIO(b"\x89PNG\r\n\x1a\n...")
+
+        payload_img = DatasetCreate(dataName="My Image", dataType=DataTypeEnum.IMAGE, public=False)
+        resp_img = await self.service.upload_and_process_dataset(user, payload_img, img_file)
+        self.assertEqual(resp_img.dataName, "My Image")
+        mock_upload_stream.assert_called_once()
+
+    @patch("src.shared.backblaze_service.get_url", new_callable=AsyncMock)
+    @patch("src.shared.backblaze_service.upload_file_stream", new_callable=AsyncMock)
+    @patch("src.shared.minio_service.upload_dataset", new_callable=AsyncMock)
+    async def test_upload_dataset_with_thumbnail_uses_backblaze_storage(self, mock_minio_upload, mock_backblaze_upload, mock_backblaze_get_url):
+        from src.modules.datasets.schemas import DatasetCreate, DataTypeEnum
+        from bson import ObjectId
+
+        user_id = str(ObjectId())
+        user = {"_id": user_id, "username": "testuser", "role": "user"}
+        self.mock_repo.create_dataset.side_effect = lambda doc: {**doc, "_id": ObjectId()}
+        mock_backblaze_get_url.return_value = "https://s3.backblazeb2.com/hautoml-storage/thumbnails/thumb.png"
+
+        csv_file = AsyncMock()
+        csv_file.filename = "data.csv"
+        csv_file.content_type = "text/csv"
+        csv_file.file = io.BytesIO(b"a,b\n1,2\n")
+
+        thumb_file = AsyncMock()
+        thumb_file.filename = "cover.png"
+        thumb_file.content_type = "image/png"
+        thumb_file.file = io.BytesIO(b"PNG_BYTES")
+
+        payload = DatasetCreate(dataName="Data with Cover", dataType=DataTypeEnum.TABLE, public=True)
+        resp = await self.service.upload_and_process_dataset(user, payload, csv_file, thumbnail_file=thumb_file)
+
+        self.assertEqual(resp.dataName, "Data with Cover")
+        self.assertEqual(resp.thumbnail, "https://s3.backblazeb2.com/hautoml-storage/thumbnails/thumb.png")
+        mock_minio_upload.assert_called_once()
+        mock_backblaze_upload.assert_called_once()
 
 
 if __name__ == "__main__":

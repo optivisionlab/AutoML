@@ -20,7 +20,6 @@ from src.modules.inference.schemas import (
 # Router Definition
 router = APIRouter(prefix="/inference", tags=["Inference & Model Serving"])
 
-
 def get_inference_service(db: AsyncDatabase = Depends(databases.get_db)) -> InferenceService:
     return InferenceService(db)
 

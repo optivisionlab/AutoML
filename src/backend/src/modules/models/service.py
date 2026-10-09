@@ -20,7 +20,7 @@ from sklearn.metrics import (
 )
 
 # Local Libraries
-from src.shared import search_space, constants
+from src.core import search_space, constants
 
 
 # Logging

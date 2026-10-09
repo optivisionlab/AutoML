@@ -14,6 +14,7 @@ from sklearn.model_selection import BaseCrossValidator, check_cv
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
 # Logging
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class TrialPruned(Exception):
     """
     Exception raised when a hyperparameter candidate is pruned early
     """
-    ...
+    pass
 
 
 def convert_numpy_types(obj: Any) -> Any:
@@ -338,7 +339,7 @@ class BaseSearchCV(BaseEstimator, ABC):
         """
         Executes the hyperparameter search
         """
-        ...
+        pass
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         if self.best_estimator_ is None:

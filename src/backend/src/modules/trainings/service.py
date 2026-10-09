@@ -9,7 +9,8 @@ from typing import Any
 import pandas as pd
 
 # Local Libraries
-from src.shared import minio_service, search_space, constants, MapReduceManager
+from src.core import search_space, constants
+from src.shared import minio_service, MapReduceManager
 from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
 from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig

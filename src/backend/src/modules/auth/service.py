@@ -7,8 +7,8 @@ from datetime import datetime, timezone, timedelta
 from fastapi import BackgroundTasks, status
 
 # Local Libraries
-from src.core import security, exceptions
-from src.shared import utils, constants, email_service
+from src.core import utils, security, exceptions, constants
+from src.shared import email_service
 from src.modules.auth.schemas import UserRegisterRequest, UserResponse, UserLoginRequest, TokenResponse, ResetPasswordRequest
 from src.modules.auth.repository import AuthRepository
 

@@ -1,4 +1,4 @@
-# Local Libraries
+# Standard Libraries
 import io
 import json
 import math
@@ -12,9 +12,9 @@ from fastapi import status, UploadFile
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.core import exceptions
+from src.core import exceptions, constants, utils
 from src.config import settings
-from src.shared import constants, minio_service, MapReduceManager, kafka_service
+from src.shared import minio_service, MapReduceManager, kafka_service
 from src.modules.trainings import TrainingRepository
 from src.modules.inference.schemas import (
     DeploymentInfoResponse,
@@ -223,6 +223,14 @@ class InferenceService:
             )
 
         storage_info = job_doc.get("model", {})
+
+        max_batch_mb = 100
+        utils.validate_file_size(
+            file,
+            max_size_mb=max_batch_mb,
+            error_message=f"Batch prediction file size exceeds the maximum allowed limit of {max_batch_mb}MB.",
+        )
+
         file_bytes = await file.read()
         if not file_bytes:
             raise exceptions.CustomException(
@@ -231,7 +239,28 @@ class InferenceService:
                 error_code=constants.ErrorCode.BAD_REQUEST,
             )
 
-        filename_orig = file.filename or "data.csv"
+        utils.validate_file_bytes_size(
+            file_bytes,
+            max_size_mb=max_batch_mb,
+            error_message=f"Batch prediction file size exceeds the maximum allowed limit of {max_batch_mb}MB.",
+        )
+
+        if not file.filename:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file must have a valid filename with an extension (.csv, .xlsx, .xls).",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+
+        filename_orig = file.filename
+        ext = filename_orig.split(".")[-1].lower() if "." in filename_orig else ""
+        if ext not in ["csv", "xlsx", "xls"]:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file format '{ext}'. Only CSV and Excel (.xlsx, .xls) files are supported for batch prediction.",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+
         config = job_doc.get("config", {})
         expected_features = config.get("list_feature", [])
         target_col = config.get("target", "target")

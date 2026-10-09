@@ -9,7 +9,7 @@ from fastapi import FastAPI
 # Local Libraries
 from src.core import middlewares, exceptions
 from src.config import settings, setup_logging, databases
-from src.shared import mqtt_service, kafka_service, minio_service
+from src.shared import mqtt_service, kafka_service, minio_service, backblaze_service
 from src.modules.auth import auth
 from src.modules.users import users
 from src.modules.datasets import datasets
@@ -26,19 +26,11 @@ if not logging.getLogger().handlers:
 # Lifespan Context Manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifespan events
-    """
-    # Initialize the connection pool to MongoDB.
+    # Initialize connection pool to MongoDB
     await databases.DatabaseManager.connection()
-
-    # Bring the database instance into the FastAPI state.
     app.state.db = databases.DatabaseManager.db
 
-    # MQTT connection
     await mqtt_service.connect()
-
-    # Kafka connection
     await kafka_service.connect()
 
     yield
@@ -48,6 +40,7 @@ async def lifespan(app: FastAPI):
     await mqtt_service.disconnect()
     await kafka_service.disconnect()
     await minio_service.close()
+    await backblaze_service.close()
 
 
 # Initialize Application

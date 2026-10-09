@@ -1,4 +1,5 @@
 # Standard Libraries
+import uuid
 import math
 import base64
 from bson import ObjectId
@@ -8,8 +9,8 @@ from bson.errors import InvalidId
 from fastapi import UploadFile, status
 
 # Local Libraries
-from src.core import exceptions
-from src.shared import constants
+from src.core import exceptions, constants
+from src.shared import backblaze_service
 from src.modules.users.schemas import UserResponse, UserDetailResponse, UpdateUserRequest, ChangePasswordRequest
 from src.modules.users.repository import UserRepository
 
@@ -150,19 +151,33 @@ class UserService:
                 error_code=constants.ErrorCode.NOT_FOUND
             )
 
-        avatar_base64 = user.get('avatar')
-        if not avatar_base64:
+        avatar_val = user.get('avatar')
+        if not avatar_val:
             raise exceptions.CustomException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="This user has not updated their profile picture",
                 error_code=constants.ErrorCode.NOT_FOUND
             )
 
-        try:
-            if "," in avatar_base64:
-                avatar_base64 = avatar_base64.split(",")[1]
+        # Backblaze storage reference
+        if avatar_val.startswith("avatars/"):
+            try:
+                buffer = await backblaze_service.get_object(avatar_val)
+                return buffer.getvalue()
+            except Exception as e:
+                raise exceptions.CustomException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to retrieve avatar image from storage",
+                    error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
+                )
 
-            return base64.b64decode(avatar_base64)
+        # Backward compatibility for legacy Base64 avatar strings
+        try:
+            raw_b64 = avatar_val
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",")[1]
+
+            return base64.b64decode(raw_b64)
         except Exception as e:
             raise exceptions.CustomException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -170,9 +185,6 @@ class UserService:
                 error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
             )
 
-    """
-    Update Avatar
-    """
     async def update_user_avatar(self, user_id: str, file: UploadFile) -> str:
         try:
             oid = ObjectId(user_id)
@@ -191,19 +203,35 @@ class UserService:
                 error_code=constants.ErrorCode.NOT_FOUND
             )
 
-        if not file.content_type.startswith("image/"):
+        if not file.content_type or not file.content_type.startswith("image/"):
             raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only image file uploads are supported",
                 error_code=constants.ErrorCode.BAD_REQUEST
             )
 
-        avatar_data = await file.read()
-        avatar_base64 = base64.b64encode(avatar_data).decode('utf-8')
+        old_avatar = user_exists.get("avatar")
 
-        await self.repo.update_avatar(oid, avatar_base64)
+        file_extension = file.filename.split(".")[-1] if file.filename and "." in file.filename else "png"
+        object_name = f"avatars/{user_id}/avatar_{uuid.uuid4().hex[:8]}.{file_extension}"
 
-        return avatar_base64
+        if hasattr(file.file, "seek"):
+            file.file.seek(0)
+
+        await backblaze_service.upload_file_stream(
+            object_name=object_name,
+            file_obj=file.file,
+            content_type=file.content_type
+        )
+
+        # Update MongoDB with Backblaze object path (replacing legacy base64)
+        await self.repo.update_avatar(oid, object_name)
+
+        # Clean up old object in Backblaze if applicable
+        if old_avatar and isinstance(old_avatar, str) and old_avatar.startswith("avatars/"):
+            await backblaze_service.remove_object(old_avatar)
+
+        return object_name
 
     """
     Update Password

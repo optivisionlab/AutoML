@@ -10,7 +10,7 @@ import pymapreduce
 from sklearn.exceptions import ConvergenceWarning
 
 # Local Libraries
-from src.shared import constants
+from src.core import constants
 from src.modules.models import MODEL_CLASS_MAP, ModelService
 from src.modules.preprocessing import CVStrategyConfig
 from src.modules.trainings.executor import (
