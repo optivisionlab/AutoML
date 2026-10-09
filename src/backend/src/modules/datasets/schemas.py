@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 # Local Libraries
-from src.shared import constants
+from src.core import constants
 from src.modules.preprocessing import TimeSeriesConfig
 
 

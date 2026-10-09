@@ -44,9 +44,9 @@ TIME_SERIES_MODELS, TIME_SERIES_METRIC_LIST = _load_model_config("time_series")
 
 def get_models(problem_type: str) -> dict[str, list[dict[str, Any]]]:
     match problem_type:
-        case constants.ProblemType.REGRESSION:
+        case ProblemType.REGRESSION:
             return REGRESSION_MODELS
-        case constants.ProblemType.TIME_SERIES:
+        case ProblemType.TIME_SERIES:
             return TIME_SERIES_MODELS
         case _:
             return CLASSIFICATION_MODELS
@@ -54,9 +54,9 @@ def get_models(problem_type: str) -> dict[str, list[dict[str, Any]]]:
 
 def get_metric_list(problem_type: str) -> list[str]:
     match problem_type:
-        case constants.ProblemType.REGRESSION:
+        case ProblemType.REGRESSION:
             return REGRESSION_METRIC_LIST
-        case constants.ProblemType.TIME_SERIES:
+        case ProblemType.TIME_SERIES:
             return TIME_SERIES_METRIC_LIST
         case _:
             return CLASSIFICATION_METRIC_LIST
