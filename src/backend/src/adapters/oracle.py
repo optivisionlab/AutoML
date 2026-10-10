@@ -1,11 +1,11 @@
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 
 class OracleAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối Oracle Database qua oracledb."""
+    """Oracle Database adapter (oracledb)."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)
@@ -18,10 +18,10 @@ class OracleAdapter(BaseDatabaseAdapter):
         sid = self.config.extra_params.get("sid")
         service_name = self.config.extra_params.get("service_name") or self.config.database
         if sid:
-            # Với SID, SQLAlchemy yêu cầu đặt trực tiếp vào path của database
+            # With a SID, SQLAlchemy expects it in the URL path
             path = f"/{quote_plus(sid)}"
         elif service_name:
-            # Với Service Name, SQLAlchemy yêu cầu truyền qua query parameter
+            # With a service name, SQLAlchemy expects it as a query parameter
             path = f"/?service_name={quote_plus(service_name)}"
         else:
             path = ""
@@ -42,7 +42,7 @@ class OracleAdapter(BaseDatabaseAdapter):
         return f'"{escaped}"'
 
     def build_select_query(self, table_name: str, limit: int = 50000) -> str:
-        """Oracle 12c+ dùng cú pháp FETCH FIRST n ROWS ONLY thay cho LIMIT"""
+        """Oracle 12c+ uses FETCH FIRST n ROWS ONLY instead of LIMIT."""
         safe_table = self.get_full_table_name(table_name)
         return f"SELECT * FROM {safe_table} FETCH FIRST {int(limit)} ROWS ONLY"
 

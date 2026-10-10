@@ -1,11 +1,11 @@
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 
 class HiveAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối Apache Hive qua PyHive."""
+    """Apache Hive adapter (PyHive)."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)

@@ -1,11 +1,11 @@
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 
 class MSSQLAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối Microsoft SQL Server (MSSQL) qua pyodbc."""
+    """Microsoft SQL Server adapter (pyodbc)."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)
@@ -17,7 +17,7 @@ class MSSQLAdapter(BaseDatabaseAdapter):
         password = quote_plus(self.config.password or "")
         db = quote_plus(self.config.database)
         
-        # Lấy tên ODBC driver từ extra_params (mặc định ODBC Driver 17 for SQL Server)
+        # ODBC driver name comes from extra_params (default: ODBC Driver 17 for SQL Server)
         driver = (
             self.config.extra_params.get("driver")
             or self.config.extra_params.get("odbc_driver")
@@ -27,7 +27,7 @@ class MSSQLAdapter(BaseDatabaseAdapter):
 
         url = f"mssql+pyodbc://{user}:{password}@{self.config.host}:{self.config.port}/{db}?driver={driver_param}"
 
-        # Bổ sung tùy chọn TrustServerCertificate nếu có
+        # Add TrustServerCertificate when provided
         trust_cert = self.config.extra_params.get("trust_server_certificate") or self.config.extra_params.get("TrustServerCertificate")
         if trust_cert is not None:
             url += f"&TrustServerCertificate={str(trust_cert).lower()}"
@@ -47,7 +47,7 @@ class MSSQLAdapter(BaseDatabaseAdapter):
         return f"[{escaped}]"
 
     def build_select_query(self, table_name: str, limit: int = 50000) -> str:
-        """MSSQL dùng SELECT TOP thay vì LIMIT"""
+        """MSSQL uses SELECT TOP instead of LIMIT."""
         safe_table = self.get_full_table_name(table_name)
         return f"SELECT TOP ({int(limit)}) * FROM {safe_table}"
 

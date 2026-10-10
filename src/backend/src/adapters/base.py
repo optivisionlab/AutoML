@@ -5,24 +5,24 @@ import pandas as pd
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-# --- 1. ĐỊNH NGHĨA CÁC EXCEPTION CHUẨN HÓA ---
+# --- 1. Standard adapter exceptions ---
 class DatabaseAdapterError(Exception):
-    """Lỗi gốc cho toàn bộ adapter"""
+    """Base error for all database adapters."""
     pass
 
 class DatabaseConnectionError(DatabaseAdapterError):
-    """Lỗi khi không thể kết nối tới DB (sai IP/port, timeout)"""
+    """Raised when the database cannot be reached (wrong host/port, timeout)."""
     pass
 
 class TableNotFoundError(DatabaseAdapterError):
-    """Lỗi khi không tìm thấy bảng"""
+    """Raised when the requested table or view does not exist."""
     pass
 
 class QueryExecutionError(DatabaseAdapterError):
-    """Lỗi khi truy vấn dữ liệu"""
+    """Raised when a query fails."""
     pass
 
-# --- 2. CẤU HÌNH KẾT NỐI CHUẨN ---
+# --- 2. Connection config ---
 @dataclass
 class DatabaseConfig:
     db_type: str
@@ -35,7 +35,7 @@ class DatabaseConfig:
     connect_timeout: int = 5
     extra_params: Dict[str, Any] = field(default_factory=dict)
 
-# --- 3. TẦNG CHUNG TRỪU TƯỢNG (BASE ADAPTER) ---
+# --- 3. Base adapter ---
 class BaseDatabaseAdapter(ABC):
     def __init__(self, config: DatabaseConfig):
         self.config = config
@@ -47,38 +47,38 @@ class BaseDatabaseAdapter(ABC):
             self._engine = self.create_engine()
         return self._engine
 
-    # Các hàm trừu tượng: Mỗi hệ CSDL con bắt buộc phải tự viết
+    # Abstract methods: every database adapter must implement these
     @abstractmethod
     def get_connection_url(self) -> str:
-        """Tạo chuỗi connection string riêng cho CSDL"""
+        """Build the SQLAlchemy connection URL for this database."""
         pass
 
     @abstractmethod
     def create_engine(self) -> Engine:
-        """Khởi tạo SQLAlchemy engine kèm cấu hình riêng (timeout, charset...)"""
+        """Create the SQLAlchemy engine with database-specific options (timeout, charset...)."""
         pass
 
     @abstractmethod
     def quote_identifier(self, identifier: str) -> str:
-        """Bọc tên bảng theo chuẩn từng CSDL (Postgres dùng ", MySQL dùng `)"""
+        """Quote an identifier using the database's rules (Postgres uses ", MySQL uses `)."""
         pass
 
-    # Các hàm dùng chung (Đã có sẵn logic dùng cho mọi CSDL)
+    # Shared methods (work for every database)
     def get_test_query(self) -> str:
-        """Câu lệnh kiểm tra kết nối (mặc định SELECT 1, CSDL như Oracle cần SELECT 1 FROM DUAL)"""
+        """Query used to test the connection (SELECT 1 by default; Oracle needs SELECT 1 FROM DUAL)."""
         return "SELECT 1"
 
     def test_connection(self) -> bool:
-        """Kiểm tra nhanh kết nối"""
+        """Quickly check that the database is reachable."""
         try:
             with self.engine.connect() as conn:
                 conn.execute(text(self.get_test_query()))
             return True
         except Exception as e:
-            raise DatabaseConnectionError(f"Không thể kết nối đến cơ sở dữ liệu: {str(e)}") from e
+            raise DatabaseConnectionError(f"Could not connect to the database: {str(e)}") from e
 
     def get_tables(self) -> List[str]:
-        """Lấy danh sách tên bảng (bao gồm cả views nếu có)"""
+        """List table names (views included when available)."""
         try:
             schema = (
                 self.config.schema_name.strip()
@@ -95,10 +95,10 @@ class BaseDatabaseAdapter(ABC):
                 all_tables = set(tables + views)
                 return sorted(list(all_tables))
         except Exception as e:
-            raise DatabaseConnectionError(f"Lỗi khi lấy danh sách bảng: {str(e)}") from e
+            raise DatabaseConnectionError(f"Failed to list tables: {str(e)}") from e
 
     def get_full_table_name(self, table_name: str) -> str:
-        """Ghép schema_name với tên bảng nếu có chỉ định schema"""
+        """Prefix the table name with schema_name when a schema is set."""
         safe_table = self.quote_identifier(table_name)
         schema = (
             self.config.schema_name.strip()
@@ -111,23 +111,23 @@ class BaseDatabaseAdapter(ABC):
         return safe_table
 
     def build_select_query(self, table_name: str, limit: int = 50000) -> str:
-        """Xây dựng câu lệnh SELECT giới hạn số dòng (override ở MSSQL, Oracle)"""
+        """Build a row-limited SELECT (overridden for MSSQL and Oracle)."""
         safe_table = self.get_full_table_name(table_name)
         return f"SELECT * FROM {safe_table} LIMIT {int(limit)}"
 
     def fetch_table_to_dataframe(self, table_name: str, limit: int = 50000) -> pd.DataFrame:
-        """Kéo dữ liệu bảng về DataFrame an toàn"""
+        """Load a table into a DataFrame."""
         tables = self.get_tables()
         canonical_table = None
         if table_name in tables:
             canonical_table = table_name
         else:
-            # Fallback cho CSDL trả về chữ HOA như Snowflake, Oracle
+            # Case-insensitive fallback for databases that return upper-case names (Snowflake, Oracle)
             lower_map = {t.lower(): t for t in tables}
             if table_name.lower() in lower_map:
                 canonical_table = lower_map[table_name.lower()]
             else:
-                raise TableNotFoundError(f"Bảng hoặc view '{table_name}' không tồn tại trong CSDL.")
+                raise TableNotFoundError(f"Table or view '{table_name}' does not exist in the database.")
 
         query = self.build_select_query(table_name=canonical_table, limit=limit)
 
@@ -135,13 +135,13 @@ class BaseDatabaseAdapter(ABC):
             with self.engine.connect() as conn:
                 return pd.read_sql(text(query), con=conn)
         except Exception as e:
-            raise QueryExecutionError(f"Lỗi trích xuất bảng '{table_name}': {str(e)}") from e
+            raise QueryExecutionError(f"Failed to read table '{table_name}': {str(e)}") from e
 
     def run_sql(self, sql: str, limit: Optional[int] = 1000) -> pd.DataFrame:
-        """Cho phép AI Agent thực thi câu SQL tự do một cách an toàn"""
+        """Run a read-only SQL query (SELECT / WITH only)."""
         cleaned_sql = sql.strip().upper()
         if not (cleaned_sql.startswith("SELECT") or cleaned_sql.startswith("WITH")):
-            raise ValueError("Chỉ cho phép thực thi câu lệnh truy vấn đọc dữ liệu (SELECT / WITH).")
+            raise ValueError("Only read-only queries (SELECT / WITH) are allowed.")
         with self.engine.connect() as conn:
             df = pd.read_sql(text(sql), con=conn)
             if limit is not None and len(df) > limit:
@@ -149,7 +149,7 @@ class BaseDatabaseAdapter(ABC):
             return df
 
     def get_table_schema(self, table_name: str) -> Dict[str, Any]:
-        """Trích xuất danh sách cột & kiểu dữ liệu để làm Prompt ngữ cảnh cho Agent"""
+        """Return the column names and types of a table."""
         schema = (
             self.config.schema_name.strip()
             if self.config.schema_name and self.config.schema_name.strip()
@@ -160,11 +160,11 @@ class BaseDatabaseAdapter(ABC):
             try:
                 columns = inspector.get_columns(table_name, schema=schema)
                 if not columns and table_name not in self.get_tables():
-                    raise TableNotFoundError(f"Bảng hoặc view '{table_name}' không tồn tại trong CSDL.")
+                    raise TableNotFoundError(f"Table or view '{table_name}' does not exist in the database.")
             except Exception as e:
                 if isinstance(e, TableNotFoundError):
                     raise
-                raise TableNotFoundError(f"Bảng hoặc view '{table_name}' không tồn tại trong CSDL: {str(e)}") from e
+                raise TableNotFoundError(f"Table or view '{table_name}' does not exist in the database: {str(e)}") from e
 
             return {
                 "table_name": table_name,
@@ -173,12 +173,12 @@ class BaseDatabaseAdapter(ABC):
 
 
     def dispose(self):
-        """Dọn dẹp và đóng Engine, giải phóng Connection Pool"""
+        """Dispose the engine and release its connection pool."""
         if self._engine is not None:
             self._engine.dispose()
             self._engine = None
 
-    # Hỗ trợ cú pháp "with adapter:"
+    # Support "with adapter:" usage
     def __enter__(self):
         return self
 

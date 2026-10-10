@@ -13,7 +13,6 @@ from src.shared import mqtt_service, kafka_service, minio_service, backblaze_ser
 from src.modules.auth import auth
 from src.modules.users import users
 from src.modules.datasets import datasets
-from src.modules.connectors import connectors
 from src.modules.notifications import notifications
 from src.modules.inference import inference
 
@@ -63,7 +62,6 @@ app.include_router(auth, prefix="/api/v1")
 app.include_router(users, prefix="/api/v1")
 app.include_router(notifications, prefix="/api/v1")
 app.include_router(datasets, prefix="/api/v1")
-app.include_router(connectors, prefix="/api/v1")
 app.include_router(inference, prefix="/api/v1")
 
 

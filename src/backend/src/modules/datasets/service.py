@@ -20,7 +20,9 @@ from fastapi import status, UploadFile
 # Local Libraries
 from src.core import exceptions, constants
 from src.shared import minio_service, backblaze_service
-from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate
+from src.adapters.base import DatabaseAdapterError, DatabaseConfig
+from src.adapters.factory import DatabaseAdapterFactory
+from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate, DatabaseConnection, TableInfoRequest, ImportTableRequest
 from src.modules.datasets.repository import DatasetRepository
 
 
@@ -634,3 +636,96 @@ class DatasetService:
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return inserted_doc["_id"]
+
+    """
+    External Database Import
+    """
+    @staticmethod
+    def _list_database_tables(config: DatabaseConfig) -> list[str]:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            adapter.test_connection()
+            return adapter.get_tables()
+
+    @staticmethod
+    def _read_database_table_info(config: DatabaseConfig, table_name: str, limit: int) -> dict[str, Any]:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            schema_info = adapter.get_table_schema(table_name)
+            df = adapter.fetch_table_to_dataframe(table_name=table_name, limit=limit)
+
+        # NaN / NaT / None are not JSON serializable
+        preview = [
+            {key: (None if pd.isna(value) else value) for key, value in row.items()}
+            for row in df.to_dict(orient="records")
+        ]
+        return {
+            "table_name": table_name,
+            "columns": schema_info.get("columns", []),
+            "preview_data": preview,
+            "preview_count": len(preview),
+        }
+
+    @staticmethod
+    def _read_database_table_to_parquet(config: DatabaseConfig, table_name: str, limit: int) -> io.BytesIO:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            df = adapter.fetch_table_to_dataframe(table_name=table_name, limit=limit)
+
+        if df.empty:
+            raise ValueError(f"Table '{table_name}' is empty.")
+
+        df.columns = df.columns.astype(str).str.strip()
+        buffer = io.BytesIO()
+        df.to_parquet(buffer, index=False)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    async def _run_database_call(func, *args) -> Any:
+        """
+        Run a blocking SQLAlchemy call off the event loop and map adapter errors to HTTP 400
+        """
+        try:
+            return await asyncio.to_thread(func, *args)
+        except (DatabaseAdapterError, ValueError) as e:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+                error_code=constants.ErrorCode.BAD_REQUEST
+            )
+
+    async def connect_database(self, payload: DatabaseConnection) -> list[str]:
+        return await self._run_database_call(self._list_database_tables, payload.to_config())
+
+    async def get_database_table_info(self, payload: TableInfoRequest) -> dict[str, Any]:
+        return await self._run_database_call(self._read_database_table_info, payload.to_config(), payload.table_name, payload.limit)
+
+    async def import_database_table(self, current_user: dict, payload: ImportTableRequest, limit: int = 50000) -> DatasetResponse:
+        parquet_buffer = await self._run_database_call(self._read_database_table_to_parquet, payload.to_config(), payload.table_name, limit)
+
+        user_id = str(current_user["_id"])
+        bucket_name = "dataset"
+        object_name = f"{user_id}/{uuid.uuid4()}.parquet"
+        await minio_service.upload_dataset(bucket_name, object_name, parquet_buffer)
+
+        now = datetime.now(timezone.utc).timestamp()
+        data_doc = {
+            "dataName": payload.data_name,
+            "dataType": DataTypeEnum.TABLE.value,
+            "public": payload.public,
+            "data_link": {
+                "bucket_name": bucket_name,
+                "object_name": object_name
+            },
+            "latestUpdate": now,
+            "createDate": now,
+            "userId": user_id,
+            "username": current_user.get("username", "unknown"),
+            "role": current_user.get("role", "user"),
+            "activate": 1,
+            "thumbnail": None,
+            "description": payload.description
+        }
+
+        inserted_doc = await self.repo.create_dataset(data_doc)
+        inserted_doc["_id"] = str(inserted_doc["_id"])
+
+        return DatasetResponse(**inserted_doc)

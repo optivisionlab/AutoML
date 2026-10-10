@@ -1,11 +1,11 @@
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 
 class SnowflakeAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối Snowflake Data Warehouse qua snowflake-sqlalchemy."""
+    """Snowflake adapter (snowflake-sqlalchemy)."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)

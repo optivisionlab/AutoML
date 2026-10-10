@@ -1,11 +1,11 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig, DatabaseConnectionError
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig, DatabaseConnectionError
 
 
 class DuckDBAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối DuckDB (hỗ trợ cả file .duckdb và in-memory) qua duckdb-engine."""
+    """DuckDB adapter (duckdb-engine), supports .duckdb files and in-memory databases."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)
@@ -21,7 +21,7 @@ class DuckDBAdapter(BaseDatabaseAdapter):
     def create_engine(self) -> Engine:
         if self.config.database != ":memory:" and not os.path.exists(self.config.database):
             raise DatabaseConnectionError(
-                f"Tệp CSDL DuckDB '{self.config.database}' không tồn tại trên hệ thống máy chủ."
+                f"DuckDB database file '{self.config.database}' does not exist on the server."
             )
         url = self.get_connection_url()
         is_read_only = self.config.extra_params.get("read_only", True) if self.config.database != ":memory:" else False

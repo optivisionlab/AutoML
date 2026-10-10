@@ -240,28 +240,6 @@ Hỗ trợ các mô hình hồi quy:
 - Support Vector Regression
 - v.v.
 
-### 5.3 Dự báo chuỗi thời gian (Time Series)
-
-HAutoML hỗ trợ dự báo một bước tiếp theo bằng các mô hình hồi quy của scikit-learn theo hướng **reduction to tabular regression**: chuỗi thời gian được chuyển thành bảng đặc trưng `X` và target `y` trước khi huấn luyện.
-
-**a) Tạo đặc trưng theo thời gian**
-
-Từ giá trị target trong quá khứ, hệ thống tạo các lag feature (`lag_1`, `lag_7`...), rolling mean/std trên các cửa sổ lịch sử và calendar feature (thứ trong tuần, tháng, cuối tuần). Khi dự đoán tại thời điểm *t*, các lag và rolling feature chỉ dùng target trước *t*, nhằm tránh data leakage. Phần này nằm ở `src/modules/preprocessing/time_series.py`.
-
-**b) Pipeline**
-
-Bảng feature đi qua một `sklearn.pipeline.Pipeline`: `ColumnTransformer` (số: `SimpleImputer` + `StandardScaler`; chữ: `SimpleImputer` + `OneHotEncoder`) → estimator (Ridge, RandomForestRegressor, GradientBoostingRegressor). Pipeline được fit nguyên vẹn trong từng fold nên preprocessing chỉ học từ train fold.
-
-**c) Đánh giá theo thời gian**
-
-Dùng `TimeSeriesSplit` thay cho K-Fold (`n_splits`, `test_size`, `gap`, `max_train_size` cấu hình trong khối `time_series`): mô hình học từ quá khứ và được kiểm tra trên dữ liệu xảy ra sau đó.
-
-**d) Tìm siêu tham số**
-
-Cả 5 thuật toán tìm kiếm của `src/modules/hpo` (grid, random, TPE, Bayesian, GA) dùng chung Pipeline và `TimeSeriesSplit`. Vì estimator nằm ở bước cuối, tham số được truyền nội bộ dạng `model__<param>` và được trả về dạng `<param>`.
-
-Phiên bản hiện tại hỗ trợ một chuỗi có mốc thời gian đều, không trùng và `horizon = 1`. Multi-step forecasting, nhiều chuỗi độc lập và resampling nằm ngoài phạm vi.
-
 ## 6. Xử lý dữ liệu mất cân bằng
 
 Để xử lý các tập dữ liệu bị mất cân bằng (imbalanced datasets):
@@ -298,14 +276,14 @@ Hệ thống đảm bảo:
 ### 8.2 Giới hạn hiện tại
 
 - 🔸 Chưa hỗ trợ deep learning trực tiếp (chỉ scikit-learn)
-- 🔸 Time series hiện hỗ trợ một bước tiếp theo, một chuỗi và mốc thời gian đều; chưa hỗ trợ multi-step hoặc nhiều chuỗi độc lập
+- 🔸 Khiếm khuyết trong xử lý chuỗi thời gian (time series)
 - 🔸 Chưa hỗ trợ ensemble methods nâng cao
 - 🔸 Thời gian tìm kiếm siêu tham số có thể lâu với không gian tham số lớn
 
 ### 8.3 Hướng phát triển tương lai
 
 - Tích hợp TensorFlow/PyTorch cho neural networks
-- Mở rộng time series sang nhiều bước dự báo, nhiều chuỗi và resampling
+- Thêm hỗ trợ time series forecasting
 - Ensemble methods và stacking
 - Auto feature engineering
 - Explainability tools (SHAP, LIME)

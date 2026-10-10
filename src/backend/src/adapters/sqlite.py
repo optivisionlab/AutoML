@@ -2,11 +2,11 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
-from .base import BaseDatabaseAdapter, DatabaseConfig, DatabaseConnectionError
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig, DatabaseConnectionError
 
 
 class SQLiteAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối CSDL SQLite (tương thích cả file vật lý và in-memory)."""
+    """SQLite adapter, supports database files and in-memory databases."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)
@@ -16,14 +16,14 @@ class SQLiteAdapter(BaseDatabaseAdapter):
         if db_path == ":memory:":
             return "sqlite:///:memory:"
         if db_path.startswith("/"):
-            # Đường dẫn tuyệt đối chuẩn trong SQLAlchemy cần 4 dấu gạch chéo
+            # SQLAlchemy needs four slashes for an absolute path
             return f"sqlite:////{db_path.lstrip('/')}"
         return f"sqlite:///{db_path}"
 
     def create_engine(self) -> Engine:
         if self.config.database != ":memory:" and not os.path.exists(self.config.database):
             raise DatabaseConnectionError(
-                f"Tệp CSDL SQLite '{self.config.database}' không tồn tại trên hệ thống máy chủ."
+                f"SQLite database file '{self.config.database}' does not exist on the server."
             )
 
         url = self.get_connection_url()

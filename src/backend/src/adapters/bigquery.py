@@ -1,16 +1,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from .base import BaseDatabaseAdapter, DatabaseConfig
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 
 class BigQueryAdapter(BaseDatabaseAdapter):
-    """Adapter kết nối Google BigQuery qua sqlalchemy-bigquery."""
+    """Google BigQuery adapter (sqlalchemy-bigquery)."""
 
     def __init__(self, config: DatabaseConfig):
         super().__init__(config)
 
     def get_connection_url(self) -> str:
-        # BigQuery xác định theo project_id và dataset_id
+        # BigQuery is addressed by project_id and dataset_id
         project_id = (
             self.config.extra_params.get("project_id")
             or (self.config.host if self.config.host and self.config.host != "localhost" else None)

@@ -16,6 +16,7 @@ from miniopy_async import Minio
 # Local Libraries
 from src.core import constants
 from src.config import settings
+from src.modules.preprocessing.time_series import predict_time_series
 
 
 # Logging
@@ -122,9 +123,6 @@ class ModelInferenceActor:
         df_input.columns = df_input.columns.astype(str).str.strip()
 
         if self.problem_type == constants.ProblemType.TIME_SERIES:
-            # Imported lazily: the actor module is loaded before the modules package on workers
-            from src.modules.preprocessing import predict_time_series
-
             return predict_time_series(
                 self.model,
                 df_input,
