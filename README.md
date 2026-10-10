@@ -50,6 +50,10 @@ Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là s
 
 ---
 
+**Xác thực tài khoản**:  docker exec mongodb mongosh -u root -p password123 --authenticationDatabase admin --quiet \
+  --eval 'db.getSiblingDB("AutoML").tbl_User.updateOne({email:"example@gmail.com"},{$set:{is_verified:true}})'
+;
+
 ### Triển khai từ mã nguồn
 
 **1. Tải mã nguồn dự án**
@@ -95,7 +99,10 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 > 
 > Tại thư mục: AutoML/
 ```bash
-# Hệ thống có dùng MinIO, yêu cầu thông tin tài khoản mật khẩu đồng nhất giữa .env và docker-compose.yaml
+# Nạp image MinIO từ file nén có sẵn trong repo (do MinIO đã ngừng phát hành public image trên Docker Hub / Quay.io)
+docker load -i minio.tar.gz
+
+# Khởi chạy hệ thống (lưu ý thông tin tài khoản mật khẩu MinIO đồng nhất giữa .env và docker-compose.yaml)
 docker-compose up -d --build
 ```
 

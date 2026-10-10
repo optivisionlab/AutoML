@@ -1,0 +1,19 @@
+# Thư viện của agent (src/backend/agent). Cài riêng, không cần requirements của backend:
+#   pip install -r src/backend/agent/requirements.txt
+# Agent chỉ nói chuyện với backend qua HTTP nên không import code backend.
+
+# LLM: một SDK cho cả OpenRouter, Google, OpenAI và Azure (đều theo chuẩn Chat Completions)
+openai>=2.0
+httpx>=0.28
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# HTTP API + SSE cho khung chat (agent.server)
+fastapi>=0.115
+uvicorn>=0.30
+# FastAPI cần để đọc form multipart ở POST /agent/upload
+python-multipart>=0.0.9
+
+# Tuỳ chọn: đo token, chi phí và ghi log từng bước lên Langfuse.
+# Chỉ bật khi có LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY trong .env.
+langfuse>=4.0

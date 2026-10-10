@@ -7,6 +7,7 @@ services:
       - ./src/backend/.env
     environment:
       HOST_BACK_END: "hautoml-toolkit"
+      PORT_BACK_END: 9996
       MINIO_ENDPOINT: "minio:9000"
     networks:
       - hautoml-network
@@ -24,15 +25,24 @@ services:
     env_file:
       - ./src/backend/.env
     environment:
+      PORT_BACK_END: 9996
       WORKER_LIST: "http://hautoml-worker:4000,"
       KAFKA_SERVER: "kafka:9092"
       MONGODB_CONNECT: "mongodb://root:password123@mongodb:27017/admin?authSource=admin"
       MINIO_ENDPOINT: "minio:9000"
       REDIRECT_URI: "http://hautoml-toolkit:9996"
-      FRONTEND_URL: "http://hautoml-frontend:3000"
+      # Backend dùng biến này để dựng link trong email (xác thực, quên mật khẩu).
+      # Người dùng mở link bằng trình duyệt trên máy, nên phải là localhost chứ
+      # không phải tên service trong mạng Docker (hautoml-frontend).
+      FRONTEND_URL: "http://localhost:3000"
     ports:
       - "9996:9996"
     command: python app.py
+    # app.py kết nối Kafka lúc khởi động; Kafka chưa sẵn sàng thì app báo
+    # "Application startup failed" nhưng container vẫn "Up" và không mở cổng 9996.
+    depends_on:
+      kafka:
+        condition: service_healthy
     networks:
       - hautoml-network
       - kafka-network
@@ -60,6 +70,12 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 15s
+      start_period: 20s
+      retries: 10
     networks:
       - kafka-network
 
@@ -78,6 +94,7 @@ services:
 
   minio:
     image: quay.io/minio/minio:latest
+    pull_policy: if_not_present
     container_name: minio
     restart: unless-stopped
     ports:
@@ -90,11 +107,41 @@ services:
     networks:
       - hautoml-network
 
+  hautoml_agent:
+    build: ./src/backend/agent
+    image: hautoml-agent:local
+    container_name: hautoml-agent
+    env_file:
+      - ./src/backend/.env
+    environment:
+      # Gọi backend bằng tên service: localhost trong container là chính nó.
+      HAUTOML_BASE_URL: "http://hautoml-toolkit:9996"
+    volumes:
+      # Sửa code agent không cần build lại, chỉ cần: docker compose restart hautoml_agent
+      - ./src/backend/agent:/app/agent
+      # classification.yml / regression.yml cho tool list_models
+      - ./src/backend/assets:/app/assets:ro
+    ports:
+      - "9500:9500"
+    depends_on:
+      - hautoml_toolkit
+    restart: unless-stopped
+    networks:
+      - hautoml-network
+    logging: *default-logging
+
   hautoml_frontend:
     image: optivisionlab/hautoml-frontend:v2.2
     container_name: hautoml-frontend
     env_file:
       - ./src/frontend/.env
+    environment:
+      # NextAuth và server action gọi backend từ TRONG container: localhost:9996
+      # ở đây là chính container frontend, phải dùng tên service.
+      INTERNAL_API_URL: "http://hautoml-toolkit:9996"
+    volumes:
+      - ./src/frontend/src:/app/src
+      - ./src/frontend/public:/app/public
     ports:
       - "3000:3000"
     command: npm run dev

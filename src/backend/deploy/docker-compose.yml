@@ -102,6 +102,7 @@ services:
   # ==========================================
   minio:
     image: quay.io/minio/minio:latest
+    pull_policy: if_not_present
     container_name: minio
     restart: unless-stopped
     ports:

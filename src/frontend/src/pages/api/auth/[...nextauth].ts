@@ -2,10 +2,16 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { jwtDecode } from "jwt-decode";
 
+// File này chạy phía SERVER (trong container frontend khi dùng Docker), nơi
+// "localhost" là chính container đó chứ không phải backend. INTERNAL_API_URL là
+// địa chỉ backend nhìn từ server (vd http://hautoml-toolkit:9996); không đặt thì
+// dùng NEXT_PUBLIC_BASE_API như khi chạy npm run dev ngoài Docker.
+const API = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_BASE_API;
+
 async function refreshAccessToken(token: any) {
   try {
     console.log("Bắt đầu chưa gọi");
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/refresh`, {
+    const res = await fetch(`${API}/refresh`, {
       method: "POST",
 
       headers: {
@@ -64,7 +70,7 @@ export const authOptions: NextAuthOptions = {
           const decoded: any = jwtDecode(access_token);
 
           // gọi API lấy user
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+          const res = await fetch(`${API}/me`, {
             method: "GET",
             headers: {
               Authorization: `Bearer ${access_token}`,
@@ -88,7 +94,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const { username, password } = credentials as any;
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/login`, {
+          const res = await fetch(`${API}/login`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -113,7 +119,7 @@ export const authOptions: NextAuthOptions = {
           let userInf: any;
           // Lấy thông tin user có access token
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_API}/me`, {
+            const res = await fetch(`${API}/me`, {
               method: "GET",
               headers: {
                 Accept: "application/json",
