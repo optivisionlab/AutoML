@@ -182,15 +182,16 @@ class GeneticAlgorithmSearch(BaseSearchCV):
                             self._record_trial(individual, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                             cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
                         except TrialPruned:
-                            zero_scores = {m: 0.0 for m in self.scoring}
-                            self._record_trial(individual, zero_scores, zero_scores, 0.0, 0.0, is_pruned=True)
-                            cache[param_key] = (zero_scores, zero_scores, 0.0, 0.0)
-                            mean_scores = zero_scores
+                            pruned_scores = {m: -float("inf") for m in self.scoring}
+                            self._record_trial(individual, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
+                            cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
+                            mean_scores = pruned_scores
 
-                    fitness_scores.append(float(mean_scores.get(self.refit, 0.0)))
+                    fitness_scores.append(float(mean_scores.get(self.refit, -float("inf"))))
 
                 best_fitness = max(fitness_scores)
-                mean_fitness = float(np.mean(fitness_scores))
+                finite_fitness = [f for f in fitness_scores if np.isfinite(f)]
+                mean_fitness = float(np.mean(finite_fitness)) if finite_fitness else float(best_fitness)
 
                 if self.verbose > 0:
                     logger.info(

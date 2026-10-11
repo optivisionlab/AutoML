@@ -11,7 +11,6 @@ import pandas as pd
 # Local Libraries
 from src.core import search_space, constants
 from src.shared import minio_service, MapReduceManager
-from src.modules.models import LOWER_IS_BETTER_METRICS
 from src.modules.notifications import NotificationService
 from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
 from src.modules.trainings.tasks import train_single_model_task
@@ -158,7 +157,7 @@ class TrainingService:
         normalized_metric = metric_sort.strip().lower().replace(" ", "_")
 
         # Select best model: Minimize error metrics, Maximize accuracy/R2
-        if normalized_metric in LOWER_IS_BETTER_METRICS:
+        if normalized_metric in constants.LOWER_IS_BETTER_METRICS:
             best_model_entry = min(
                 model_scores,
                 key=lambda score_item: score_item.scores.get(normalized_metric, float("inf")),

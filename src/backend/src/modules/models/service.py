@@ -27,18 +27,6 @@ from src.core import search_space, constants
 logger = logging.getLogger(__name__)
 
 
-LOWER_IS_BETTER_METRICS = {
-    "mse",
-    "mae",
-    "mape",
-    "rmse",
-    "mean_squared_error",
-    "mean_absolute_error",
-    "mean_absolute_percentage_error",
-    "root_mean_squared_error",
-}
-
-
 class ModelService:
     @staticmethod
     def build_scoring_dict(

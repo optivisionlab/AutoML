@@ -19,7 +19,7 @@ from src.modules.hpo import (
     GeneticAlgorithmSearch,
     TPESearch,
 )
-from src.modules.models import ModelService, LOWER_IS_BETTER_METRICS
+from src.modules.models import ModelService
 from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
 from src.modules.trainings.schemas import ModelTaskResult
 
@@ -144,12 +144,19 @@ def evaluate_trained_model(
             key = f"mean_test_{m_clean}"
             if key in search.cv_results_:
                 val = float(search.cv_results_[key][search.best_index_])
-                if m_clean in LOWER_IS_BETTER_METRICS and val < 0:
+                if m_clean in constants.LOWER_IS_BETTER_METRICS and val < 0:
                     val = abs(val)
                 scores[m_clean] = val
             else:
                 scores[m_clean] = 0.0
-        primary_score = scores.get(metric_clean, float(search.best_score_))
+
+        if metric_clean in scores:
+            primary_score = scores[metric_clean]
+        else:
+            raw_primary = float(search.best_score_)
+            if metric_clean in constants.LOWER_IS_BETTER_METRICS and raw_primary < 0:
+                raw_primary = abs(raw_primary)
+            primary_score = raw_primary
 
     return scores, primary_score
 

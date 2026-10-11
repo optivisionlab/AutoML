@@ -70,10 +70,11 @@ class GridSearch(BaseSearchCV):
                 if self._check_early_stopping(score):
                     break
             except TrialPruned:
+                pruned_scores = {m: -float("inf") for m in self.scoring}
                 self._record_trial(
                     candidate,
-                    {m: 0.0 for m in self.scoring},
-                    {m: 0.0 for m in self.scoring},
+                    pruned_scores,
+                    pruned_scores,
                     0.0,
                     0.0,
                     is_pruned=True,
