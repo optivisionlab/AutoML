@@ -1,0 +1,29 @@
+# Requirements
+# Use to pre-install machine learning and schema dependencies for cluster workers
+# python 3.12.10
+fastapi[standard]==0.141.1
+
+numpy==1.26.2
+pandas==2.2.2
+scikit-learn==1.5.1
+scikit-optimize==0.10.2
+xgboost==3.1.2
+optuna==5.0.0
+
+openpyxl==3.1.5
+xlrd==2.0.2
+pyarrow==21.0.0
+pyyaml==6.0.2
+
+authlib==1.5.2
+PyJWT==2.10.1
+argon2-cffi==23.1.0
+passlib==1.7.4
+
+pymongo==4.10.1
+aiokafka==0.12.0
+miniopy-async==1.23.5
+qrcode==8.2
+aiomqtt==2.5.1
+
+pymapreduce-core==0.1.14
