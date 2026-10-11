@@ -26,8 +26,7 @@ from demo.ui_components import (
     render_champion_card_html,
 )
 from src.config import setup_logging
-from src.core import search_space
-from src.modules.models.service import LOWER_IS_BETTER_METRICS
+from src.core import search_space, constants
 from src.modules.preprocessing.service import TabularPreprocessor
 from src.modules.trainings.service import TrainingService
 
@@ -207,7 +206,7 @@ async def execute_demo_training(
 
         # Sort model scores based on whether lower or higher is better
         normalized_metric = metric_sort.strip().lower().replace(" ", "_")
-        is_lower_better = normalized_metric in LOWER_IS_BETTER_METRICS
+        is_lower_better = normalized_metric in constants.LOWER_IS_BETTER_METRICS
 
         sorted_scores = sorted(
             pipeline_result.model_scores,

@@ -102,7 +102,8 @@ class BayesianSearch(BaseSearchCV):
                     )
                     self._record_trial({}, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                 except TrialPruned:
-                    self._record_trial({}, {m: 0.0 for m in self.scoring}, {m: 0.0 for m in self.scoring}, 0.0, 0.0, is_pruned=True)
+                    pruned_scores = {m: -float("inf") for m in self.scoring}
+                    self._record_trial({}, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
                 continue
 
             total_combos = np.prod([len(d.categories) for d in dimensions if hasattr(d, "categories")], dtype=int)
@@ -127,12 +128,12 @@ class BayesianSearch(BaseSearchCV):
                         self._record_trial(params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                         cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
                     except TrialPruned:
-                        zero_scores = {m: 0.0 for m in self.scoring}
-                        self._record_trial(params, zero_scores, zero_scores, 0.0, 0.0, is_pruned=True)
-                        cache[param_key] = (zero_scores, zero_scores, 0.0, 0.0)
+                        pruned_scores = {m: -float("inf") for m in self.scoring}
+                        self._record_trial(params, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
+                        cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
                         return 1e6  # High loss penalty for pruned configurations
 
-                return -float(cache[param_key][0].get(self.refit, 0.0))
+                return -float(cache[param_key][0].get(self.refit, -float("inf")))
 
             callbacks = []
             if self.patience is not None:

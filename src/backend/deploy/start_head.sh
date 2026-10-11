@@ -57,7 +57,7 @@ fi
 # Verify pymapreduce-core installation
 if ! python3 -c "import pymapreduce" &> /dev/null; then
     echo "pymapreduce-core library not found. Installing..."
-    pip install --no-cache-dir pymapreduce-core==0.1.9
+    pip install --no-cache-dir pymapreduce-core
 fi
 
 # Ensure log directory exists

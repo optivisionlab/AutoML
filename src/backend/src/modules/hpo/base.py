@@ -239,12 +239,13 @@ class BaseSearchCV(BaseEstimator, ABC):
             for metric, scorer_fn in self.scoring.items():
                 try:
                     score_val = float(scorer_fn(model_fold, X_val, y_val))
-                except Exception:
-                    score_val = 0.0
+                except Exception as exc:
+                    logger.warning(f"Failed to compute score for metric '{metric}': {exc}")
+                    score_val = -float("inf")
                 fold_scores[metric].append(score_val)
             score_times.append(time.time() - fold_eval_start)
 
-            current_mean_refit = float(np.mean(fold_scores.get(self.refit, [0.0])))
+            current_mean_refit = float(np.mean(fold_scores.get(self.refit, [-float("inf")])))
             step_intermediate_refit_scores.append(current_mean_refit)
 
             # Fold-level median pruning check
@@ -257,7 +258,7 @@ class BaseSearchCV(BaseEstimator, ABC):
         for step, score in enumerate(step_intermediate_refit_scores):
             self._fold_history_by_step.setdefault(step, []).append(score)
 
-        mean_scores = {m: float(np.mean(vals)) if vals else 0.0 for m, vals in fold_scores.items()}
+        mean_scores = {m: float(np.mean(vals)) if vals else -float("inf") for m, vals in fold_scores.items()}
         std_scores = {m: float(np.std(vals)) if vals else 0.0 for m, vals in fold_scores.items()}
         fit_time = float(np.mean(fit_times)) if fit_times else 0.0
         score_time = float(np.mean(score_times)) if score_times else 0.0
@@ -282,7 +283,8 @@ class BaseSearchCV(BaseEstimator, ABC):
         Records evaluated trial metrics into trials_history_ and cv_results_
         """
         clean_params = convert_numpy_types(candidate_params)
-        refit_score = mean_scores.get(self.refit, 0.0)
+        default_score = -float("inf") if is_pruned else 0.0
+        refit_score = mean_scores.get(self.refit, default_score)
 
         self.cv_results_["params"].append(clean_params)
         self.cv_results_["mean_fit_time"].append(fit_time)
@@ -291,7 +293,7 @@ class BaseSearchCV(BaseEstimator, ABC):
         self.cv_results_["std_test_score"].append(std_scores.get(self.refit, 0.0))
 
         for metric in self.scoring:
-            self.cv_results_[f"mean_test_{metric}"].append(mean_scores.get(metric, 0.0))
+            self.cv_results_[f"mean_test_{metric}"].append(mean_scores.get(metric, default_score))
             self.cv_results_[f"std_test_{metric}"].append(std_scores.get(metric, 0.0))
 
         self.trials_history_.append({
@@ -323,7 +325,15 @@ class BaseSearchCV(BaseEstimator, ABC):
             metric_scores = np.array(self.cv_results_[f"mean_test_{metric}"], dtype=float)
             self.cv_results_[f"rank_test_{metric}"] = (np.argsort(np.argsort(-metric_scores)) + 1).tolist()
 
-        self.best_index_ = int(np.argmax(test_scores))
+        # Prioritize non-pruned trials when selecting the best candidate
+        is_pruned_list = [t.get("is_pruned", False) for t in self.trials_history_]
+        non_pruned_indices = [i for i, pruned in enumerate(is_pruned_list) if not pruned]
+
+        if non_pruned_indices:
+            self.best_index_ = int(max(non_pruned_indices, key=lambda i: test_scores[i]))
+        else:
+            self.best_index_ = int(np.argmax(test_scores))
+
         self.best_score_ = float(test_scores[self.best_index_])
         self.best_params_ = self.cv_results_["params"][self.best_index_]
 

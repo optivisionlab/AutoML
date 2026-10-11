@@ -12,7 +12,8 @@ from src.modules.preprocessing import (
     prepare_classification_data,
     prepare_regression_data,
 )
-from src.modules.models.service import ModelService, LOWER_IS_BETTER_METRICS
+from src.core import constants
+from src.modules.models.service import ModelService
 from src.modules.models.registry import MODEL_CLASS_MAP
 
 
@@ -94,7 +95,7 @@ class TestPreprocessingPipeline(unittest.TestCase):
         self.assertIn("mape", metrics)
         
         for metric in ["mse", "mae", "mape", "rmse"]:
-            self.assertIn(metric, LOWER_IS_BETTER_METRICS)
+            self.assertIn(metric, constants.LOWER_IS_BETTER_METRICS)
 
         # Classification metrics test
         X_cls = np.array([[1], [2], [3], [4]])

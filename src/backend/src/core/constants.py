@@ -50,3 +50,11 @@ class JobStatus(int):
     SUCCESS = 1
     FAILED = -1
     CANCELLED = -2
+
+
+LOWER_IS_BETTER_METRICS: frozenset[str] = frozenset({
+    "mse",
+    "mae",
+    "mape",
+    "rmse"
+})
