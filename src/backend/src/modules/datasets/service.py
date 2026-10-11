@@ -20,8 +20,7 @@ from fastapi import status, UploadFile
 # Local Libraries
 from src.core import exceptions, constants
 from src.shared import minio_service, backblaze_service
-from src.adapters.base import DatabaseAdapterError, DatabaseConfig
-from src.adapters.factory import DatabaseAdapterFactory
+from src.adapters import DatabaseAdapterError, DatabaseConfig, DatabaseAdapterFactory
 from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate, DatabaseConnection, TableInfoRequest, ImportTableRequest
 from src.modules.datasets.repository import DatasetRepository
 
@@ -595,49 +594,6 @@ class DatasetService:
             )
 
     """
-    Create Metadata Of Job
-    """
-    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
-        try:
-            oid = ObjectId(dataset_id)
-        except InvalidId:
-            raise exceptions.CustomException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid dataset ID format",
-                error_code=constants.ErrorCode.BAD_REQUEST,
-            )
-
-        data_doc = await self.repo.get_dataset_by_id(oid)
-        if not data_doc or not self._has_read_permission(data_doc, current_user):
-            raise exceptions.CustomException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Dataset not found or access denied",
-                error_code=constants.ErrorCode.NOT_FOUND
-            )
-
-        # Save Job
-        now = datetime.now(timezone.utc).timestamp()
-        job_doc = {
-            "config": config,
-            "data": {
-                "id": dataset_id,
-                "name": data_doc.get("dataName")
-            },
-            "user": {
-                "id": str(current_user.get("_id")),
-                "name": current_user.get("username")
-            },
-            "status": constants.JobStatus.RUNNING,
-            "activate": 0,
-            "create_at": now
-        }
-
-        inserted_doc = await self.repo.create_job(job_doc)
-        inserted_doc["_id"] = str(inserted_doc["_id"])
-
-        return inserted_doc["_id"]
-
-    """
     External Database Import
     """
     @staticmethod
@@ -729,3 +685,46 @@ class DatasetService:
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return DatasetResponse(**inserted_doc)
+
+    """
+    Create Metadata Of Job
+    """
+    async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
+        try:
+            oid = ObjectId(dataset_id)
+        except InvalidId:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dataset ID format",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+
+        data_doc = await self.repo.get_dataset_by_id(oid)
+        if not data_doc or not self._has_read_permission(data_doc, current_user):
+            raise exceptions.CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or access denied",
+                error_code=constants.ErrorCode.NOT_FOUND
+            )
+
+        # Save Job
+        now = datetime.now(timezone.utc).timestamp()
+        job_doc = {
+            "config": config,
+            "data": {
+                "id": dataset_id,
+                "name": data_doc.get("dataName")
+            },
+            "user": {
+                "id": str(current_user.get("_id")),
+                "name": current_user.get("username")
+            },
+            "status": constants.JobStatus.RUNNING,
+            "activate": 0,
+            "create_at": now
+        }
+
+        inserted_doc = await self.repo.create_job(job_doc)
+        inserted_doc["_id"] = str(inserted_doc["_id"])
+
+        return inserted_doc["_id"]

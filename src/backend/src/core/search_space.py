@@ -24,7 +24,7 @@ def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]
     with open(target_path, "r", encoding="utf-8") as file:
         data = yaml.safe_load(file) or {}
 
-    models_raw = data.get("Classification_models") or data.get("Regression_models") or data.get("Time_series_models") or data.get("models") or {}
+    models_raw = data.get("models") or {}
     metrics = data.get("metric_list", [])
 
     models: dict[str, list[dict[str, Any]]] = {

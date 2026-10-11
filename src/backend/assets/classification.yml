@@ -7,7 +7,7 @@ metric_list:
   - recall_weighted
   - f1_macro
   - f1_weighted
-Classification_models:
+models:
   0:
     model: DecisionTreeClassifier
     params:

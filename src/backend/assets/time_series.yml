@@ -3,7 +3,7 @@ metric_list:
   - mae
   - rmse
   - r2
-Time_series_models:
+models:
   0:
     model: Ridge
     params:

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 
 # Local Libraries
 from src.core import constants
-from src.adapters.base import DatabaseConfig
+from src.adapters import DatabaseConfig
 from src.modules.preprocessing import TimeSeriesConfig
 
 
