@@ -24,7 +24,7 @@ miniopy-async==1.23.5
 qrcode==8.2
 aiomqtt==2.5.1
 
-pymapreduce-core==0.1.14
+pymapreduce-core==0.1.15
 
 # Database Drivers & Connectors
 sqlalchemy==2.0.30

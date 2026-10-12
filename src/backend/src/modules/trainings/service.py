@@ -62,8 +62,7 @@ class TrainingService:
     @staticmethod
     async def _dispatch_and_collect_tasks(
         driver: Any,
-        models_to_train: list[str],
-        custom_params: dict[str, Any],
+        space_models: dict[str, list[dict[str, Any]]],
         train_bytes: bytes,
         test_bytes: bytes | None,
         cv_config: CVStrategyConfig,
@@ -73,17 +72,8 @@ class TrainingService:
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
         timeout: int | None = None
     ) -> list[dict[str, Any]]:
-        space_models = search_space.get_models(problem_type)
-
-        tasks = []
-        for model_name in models_to_train:
-            if model_name in space_models:
-                param_grid = custom_params.get(model_name) or space_models[model_name]
-            else:
-                logger.warning(f"Model '{model_name}' not in predefined search space, using default.")
-                param_grid = [{}]
-
-            task_coro = train_single_model_task.remote(
+        tasks = [
+            train_single_model_task.remote(
                 model_name,
                 param_grid,
                 train_bytes,
@@ -94,39 +84,29 @@ class TrainingService:
                 problem_type,
                 search_algorithm
             )
-            tasks.append(task_coro)
+            for model_name, param_grid in space_models.items()
+        ]
 
         task_futures = [asyncio.create_task(task_coroutine) for task_coroutine in tasks]
 
         logger.info(
             f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={timeout}s)..."
         )
-        if timeout and timeout > 0:
-            completed_futures, pending_futures = await asyncio.wait(
-                task_futures,
-                timeout=float(timeout),
-                return_when=asyncio.ALL_COMPLETED,
-            )
-            # Cancel all tasks that did not finish within the timeout
-            for pending_future in pending_futures:
-                pending_future.cancel()
+        wait_timeout = float(timeout) if timeout and timeout > 0 else None
+        completed_futures, pending_futures = await asyncio.wait(
+            task_futures,
+            timeout=wait_timeout,
+            return_when=asyncio.ALL_COMPLETED,
+        )
+        for pending_future in pending_futures:
+            pending_future.cancel()
 
-            raw_outputs = []
-            for completed_future in completed_futures:
-                try:
-                    task_output = completed_future.result()
-                    raw_outputs.append(task_output)
-                except Exception as exc:
-                    logger.warning(f"Training task encountered an error: {exc}")
-        else:
-            completed_futures, _ = await asyncio.wait(task_futures, return_when=asyncio.ALL_COMPLETED)
-            raw_outputs = []
-            for completed_future in completed_futures:
-                try:
-                    task_output = completed_future.result()
-                    raw_outputs.append(task_output)
-                except Exception as exc:
-                    logger.warning(f"Training task encountered an error: {exc}")
+        raw_outputs = []
+        for completed_future in completed_futures:
+            try:
+                raw_outputs.append(completed_future.result())
+            except Exception as exc:
+                logger.warning(f"Training task encountered an error: {exc}")
 
         valid_results: list[dict[str, Any]] = []
         for raw_output in raw_outputs:
@@ -188,10 +168,7 @@ class TrainingService:
         df: pd.DataFrame,
         target_col: str | None = None,
         feature_cols: list[str] | None = None,
-        metric_list: list[str] | None = None,
         metric_sort: str | None = None,
-        models_to_train: list[str] | None = None,
-        custom_params: dict[str, Any] | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
         timeout: int | None = None,
@@ -202,11 +179,14 @@ class TrainingService:
         driver = await MapReduceManager.get_driver()
 
         target_col = target_col or str(df.columns[-1])
-        metric_list = metric_list or search_space.get_metric_list(problem_type)
-        metric_sort = metric_sort or DEFAULT_METRIC_SORT.get(problem_type, "accuracy")
-        models_to_train = models_to_train or list(search_space.get_models(problem_type).keys())
-
-        custom_params = custom_params or {}
+        if problem_type == constants.ProblemType.REGRESSION:
+            space_models = search_space.REGRESSION_MODELS
+            metric_list = search_space.REGRESSION_METRIC_LIST
+            metric_sort = metric_sort or "r2"
+        else:
+            space_models = search_space.CLASSIFICATION_MODELS
+            metric_list = search_space.CLASSIFICATION_METRIC_LIST
+            metric_sort = metric_sort or "accuracy"
 
         train_bytes, test_bytes, cv_config, feature_names, preprocessor = cls._prepare_pipeline_inputs(
             df=df,
@@ -217,8 +197,7 @@ class TrainingService:
 
         valid_results = await cls._dispatch_and_collect_tasks(
             driver=driver,
-            models_to_train=models_to_train,
-            custom_params=custom_params,
+            space_models=space_models,
             train_bytes=train_bytes,
             test_bytes=test_bytes,
             cv_config=cv_config,
@@ -362,11 +341,8 @@ class TrainingService:
 
             problem_type = config.get("problem_type") or constants.ProblemType.CLASSIFICATION
             target_col = config.get("target")
-            feature_cols = config.get("features") or config.get("list_feature")
-            metric_list = config.get("metrics")
-            metric_sort = config.get("metric_sort") or DEFAULT_METRIC_SORT.get(problem_type, "accuracy")
-            models_to_train = config.get("models")
-            custom_params = config.get("custom_params")
+            feature_cols = config.get("list_feature")
+            metric_sort = config.get("metric_sort") or None
             search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
             timeout = config.get("timeout") or None
 
@@ -374,13 +350,10 @@ class TrainingService:
                 df=df,
                 target_col=target_col,
                 feature_cols=feature_cols,
-                metric_list=metric_list,
                 metric_sort=metric_sort,
-                models_to_train=models_to_train,
-                custom_params=custom_params,
                 problem_type=problem_type,
                 search_algorithm=search_algorithm,
-                timeout=timeout,
+                timeout=timeout
             )
 
             _, storage_info = await self._save_best_model_artifact(
