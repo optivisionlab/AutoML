@@ -12,15 +12,21 @@ from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
 
 # Local Libraries
-from src.modules.preprocessing.schemas import CVStrategyConfig, TimeSeriesConfig
+from src.modules.preprocessing.schemas import TimeSeriesConfig
 
 
 # Prefix of every engineered column, and of the Pipeline step that holds the estimator
 FEATURE_PREFIX = "__forecast_"
 MODEL_STEP = "model"
+
+# Sampling interval -> seasonal period, used for the lag and rolling window
+SEASONAL_PERIODS = {pd.Timedelta(days=1): 7, pd.Timedelta(hours=1): 24}
+
+# Longest span of future steps one prediction request may ask for
+MAX_FORECAST_STEPS = 365
 
 
 def _positive_ints(values, name: str, minimum: int = 1) -> tuple[int, ...]:
@@ -129,72 +135,141 @@ def build_time_series_pipeline(estimator: BaseEstimator) -> Pipeline:
     return Pipeline([("preprocessor", preprocessor), (MODEL_STEP, estimator)])
 
 
-def determine_time_series_cv_tier(n_rows: int, config: TimeSeriesConfig) -> CVStrategyConfig:
-    splitter = TimeSeriesSplit(
-        n_splits=config.n_splits,
-        test_size=config.test_size,
-        gap=config.gap,
-        max_train_size=config.max_train_size,
-    )
-    # Fail early on insufficient samples / invalid configuration
-    list(splitter.split(np.zeros(n_rows)))
+def determine_time_series_cv_tier(
+    n_rows: int,
+    time_column: str,
+    lags: list[int],
+    rolling_windows: list[int],
+) -> TimeSeriesConfig:
+    """
+    Pick the chronological CV by the number of usable rows, like the regression and classification tiers
+    """
+    tier, n_splits = (1, 3) if n_rows < 200 else (2, 5)
+    # Fail early on insufficient samples
+    list(TimeSeriesSplit(n_splits=n_splits).split(np.zeros(n_rows)))
 
-    return CVStrategyConfig(
-        tier=2,
+    return TimeSeriesConfig(
+        tier=tier,
         name="TimeSeriesSplit",
-        n_splits=config.n_splits,
-        gap=config.gap,
-        max_train_size=config.max_train_size,
-        fold_test_size=config.test_size,
-        has_holdout=False,
-        description=f"Expanding-window TimeSeriesSplit with {config.n_splits} chronological folds (gap={config.gap})",
+        n_splits=n_splits,
+        time_column=time_column,
+        lags=lags,
+        rolling_windows=rolling_windows,
+        description=f"Expanding-window TimeSeriesSplit with {n_splits} chronological folds",
     )
+
+
+def _find_time_column(df: pd.DataFrame, feature_cols: list[str]) -> str:
+    # ponytail: a text column counts as a date when every value parses, so a text column of bare numbers can be mistaken for one
+    candidates = [
+        col for col in feature_cols
+        if pd.api.types.is_datetime64_any_dtype(df[col])
+        or (df[col].dtype == object and pd.to_datetime(df[col], errors="coerce", format="mixed").notna().all())
+    ]
+    if len(candidates) != 1:
+        raise ValueError(f"Time series needs exactly one datetime column among the features, found {candidates}")
+    return candidates[0]
 
 
 def prepare_time_series_data(
     df: pd.DataFrame,
     target_col: str,
-    feature_cols: list[str] | None,
-    time_series_config: TimeSeriesConfig | dict | None,
-) -> tuple[tuple[pd.DataFrame, np.ndarray], None, CVStrategyConfig, list[str]]:
-    if time_series_config is None:
-        raise ValueError("time_series config with a time_column is required for time_series problems")
-    config = TimeSeriesConfig.model_validate(time_series_config)
+    feature_cols: list[str] | None = None,
+) -> tuple[tuple[pd.DataFrame, np.ndarray], None, TimeSeriesConfig, list[str], FunctionTransformer, None]:
+    if target_col not in df.columns:
+        raise ValueError(f"Target column '{target_col}' not found in dataset columns: {list(df.columns)}")
+
+    if not feature_cols:
+        feature_cols = [col for col in df.columns if col != target_col]
+    else:
+        feature_cols = [col for col in feature_cols if col in df.columns and col != target_col]
+
+    time_column = _find_time_column(df, feature_cols)
+    interval = pd.to_datetime(df[time_column]).sort_values().diff().median()
+    period = SEASONAL_PERIODS.get(interval)
+    lags, rolling_windows = ([1, period], [period]) if period else ([1], [])
 
     X, y = make_time_series_table(
-        df, target_col, config.time_column, feature_cols or [],
-        config.lags, config.rolling_windows,
+        df, target_col, time_column,
+        [col for col in feature_cols if col != time_column],
+        lags, rolling_windows,
     )
-    cv_config = determine_time_series_cv_tier(len(X), config)
+    cv_config = determine_time_series_cv_tier(len(X), time_column, lags, rolling_windows)
 
-    return (X, y.to_numpy()), None, cv_config, list(X.columns)
+    # The time series model reads the raw feature columns itself, so the preprocessor only passes them through
+    return (X, y.to_numpy()), None, cv_config, feature_cols, FunctionTransformer(), None
 
 
-def predict_time_series(
-    model: BaseEstimator,
-    df: pd.DataFrame,
-    target_col: str,
-    config: TimeSeriesConfig | dict,
-    list_feature: list[str],
-) -> list[float | None]:
+class TimeSeriesForecaster:
     """
-    Predict aligned with the rows of df (None where no prediction is possible).
-
-    If the last observation (in time order) has a missing target, only that next step is
-    predicted; otherwise every row beyond the lag/rolling warm-up is predicted.
+    Fitted pipeline plus the tail of the training series. It forecasts the steps that follow the training data
+    one at a time, feeding each forecast back in as the newest history (recursive forecasting).
     """
-    config = TimeSeriesConfig.model_validate(config)
-    if config.time_column not in df.columns:
-        raise ValueError(f"Missing required time column: {config.time_column}")
 
-    timestamps = pd.to_datetime(df[config.time_column], errors="raise")
-    predict_next = target_col in df.columns and pd.isna(df[target_col].iloc[int(np.argmax(timestamps.to_numpy()))])
+    def __init__(
+        self,
+        pipeline: Pipeline,
+        config: TimeSeriesConfig,
+        df: pd.DataFrame,
+        target_col: str,
+        feature_cols: list[str],
+    ):
+        self.pipeline = pipeline
+        self.time_column = config.time_column
+        self.target_col = target_col
+        self.feature_cols = feature_cols
+        self.exogenous = [col for col in feature_cols if col != config.time_column]
+        self.numeric = [col for col in self.exogenous if pd.api.types.is_numeric_dtype(df[col])]
+        self.lags = config.lags
+        self.rolling_windows = config.rolling_windows
 
-    X, _ = make_time_series_table(
-        df, target_col, config.time_column, list_feature,
-        config.lags, config.rolling_windows, predict_next=predict_next,
-    )
-    predictions = pd.Series(np.asarray(model.predict(X)).ravel(), index=X.index)
+        series = pd.DataFrame({
+            "time": pd.to_datetime(df[config.time_column]),
+            "target": pd.to_numeric(df[target_col]).astype(float),
+        }).sort_values("time")
+        self.last_time = series["time"].iloc[-1]
+        self.interval = series["time"].diff().median()
+        self.history = series["target"].to_list()[-max((*config.lags, *config.rolling_windows)):]
 
-    aligned = timestamps.map(predictions)
-    return [None if pd.isna(v) else float(v) for v in aligned]
+    def predict(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        """
+        X holds the feature columns of the future timestamps to forecast, in any order
+        """
+        df = X if isinstance(X, pd.DataFrame) else pd.DataFrame(X, columns=self.feature_cols)
+        df = df.reset_index(drop=True)
+
+        steps = (pd.to_datetime(df[self.time_column]) - self.last_time) / self.interval
+        if not ((steps >= 1) & (steps % 1 == 0)).all():
+            raise ValueError("Timestamps must come after the last training timestamp, on the same regular interval")
+        steps = steps.astype(int)
+        horizon = int(steps.max())
+        if horizon > MAX_FORECAST_STEPS:
+            raise ValueError(f"Cannot forecast more than {MAX_FORECAST_STEPS} steps after the training data")
+
+        # Exogenous values of steps that were not requested stay missing and are imputed by the pipeline
+        exogenous = df[self.exogenous].set_axis(steps)
+        exogenous = exogenous[~exogenous.index.duplicated(keep="last")].reindex(range(1, horizon + 1))
+        for col in self.numeric:
+            exogenous[col] = pd.to_numeric(exogenous[col], errors="coerce")
+        padding = pd.DataFrame(index=range(len(self.history)), columns=exogenous.columns).astype(exogenous.dtypes)
+
+        history = list(self.history)
+        forecasts = {}
+        for step in range(1, horizon + 1):
+            frame = pd.concat([
+                pd.DataFrame({
+                    self.time_column: pd.date_range(
+                        end=self.last_time + step * self.interval, periods=len(history) + 1, freq=self.interval
+                    ),
+                    self.target_col: [*history, np.nan],
+                }),
+                pd.concat([padding, exogenous.iloc[[step - 1]]], ignore_index=True),
+            ], axis=1)
+            X_step, _ = make_time_series_table(
+                frame, self.target_col, self.time_column, self.exogenous,
+                self.lags, self.rolling_windows, predict_next=True,
+            )
+            forecasts[step] = float(self.pipeline.predict(X_step)[0])
+            history = [*history[1:], forecasts[step]]
+
+        return np.array([forecasts[step] for step in steps])

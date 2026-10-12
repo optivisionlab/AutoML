@@ -12,7 +12,7 @@ import pandas as pd
 from src.core import search_space, constants
 from src.shared import minio_service, MapReduceManager
 from src.modules.notifications import NotificationService
-from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
+from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig, TimeSeriesForecaster
 from src.modules.trainings.tasks import train_single_model_task
 from src.modules.trainings.schemas import (
     AutoMLPipelineResult,
@@ -45,14 +45,12 @@ class TrainingService:
         target_col: str,
         feature_cols: list[str] | None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
-        time_series_config: dict[str, Any] | None = None,
     ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
         (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
             problem_type=problem_type,
-            time_series_config=time_series_config,
         )
         logger.info(f"Dataset preprocessed. Applied CV Strategy: {cv_config.description}")
 
@@ -197,7 +195,6 @@ class TrainingService:
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
         timeout: int | None = None,
-        time_series_config: dict[str, Any] | None = None,
     ) -> AutoMLPipelineResult:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
@@ -216,7 +213,6 @@ class TrainingService:
             target_col=target_col,
             feature_cols=feature_cols,
             problem_type=problem_type,
-            time_series_config=time_series_config,
         )
 
         valid_results = await cls._dispatch_and_collect_tasks(
@@ -239,13 +235,14 @@ class TrainingService:
         )
 
         best_estimator = pickle.loads(best_raw["model_bytes"])
+        if problem_type == constants.ProblemType.TIME_SERIES:
+            best_estimator = TimeSeriesForecaster(best_estimator, cv_config, df, target_col, feature_names)
         artifact = {
             "model": best_estimator,
             "preprocessor": preprocessor,
             "feature_names": feature_names,
             "target_name": target_col,
             "problem_type": problem_type,
-            "time_series": time_series_config,
         }
         artifact_bytes = pickle.dumps(artifact)
 
@@ -384,7 +381,6 @@ class TrainingService:
                 problem_type=problem_type,
                 search_algorithm=search_algorithm,
                 timeout=timeout,
-                time_series_config=config.get("time_series"),
             )
 
             _, storage_info = await self._save_best_model_artifact(

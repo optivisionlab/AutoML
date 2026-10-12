@@ -16,7 +16,6 @@ from miniopy_async import Minio
 # Local Libraries
 from src.core import constants
 from src.config import settings
-from src.modules.preprocessing.time_series import predict_time_series
 
 
 # Logging
@@ -96,14 +95,12 @@ class ModelInferenceActor:
             self.feature_names = artifact.get("feature_names", [])
             self.target_name = artifact.get("target_name", "target")
             self.problem_type = artifact.get("problem_type", "classification")
-            self.time_series = artifact.get("time_series")
         else:
             self.model = artifact
             self.preprocessor = None
             self.feature_names = []
             self.target_name = "target"
             self.problem_type = "classification"
-            self.time_series = None
 
     def cleanup(self) -> None:
         self.model = None
@@ -121,15 +118,6 @@ class ModelInferenceActor:
             return []
 
         df_input.columns = df_input.columns.astype(str).str.strip()
-
-        if self.problem_type == constants.ProblemType.TIME_SERIES:
-            return predict_time_series(
-                self.model,
-                df_input,
-                target_col=self.target_name,
-                config=self.time_series,
-                list_feature=expected_features or [],
-            )
 
         if self.preprocessor is not None:
             X = self.preprocessor.transform(df_input)
