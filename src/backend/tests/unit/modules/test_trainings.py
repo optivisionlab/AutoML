@@ -88,7 +88,6 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             df=df,
             target_col="target",
             metric_sort="accuracy",
-            models_to_train=["DecisionTreeClassifier", "GaussianNB"],
             problem_type="classification",
         )
 
@@ -136,7 +135,6 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             df=df,
             target_col="target",
             metric_sort="r2",
-            models_to_train=["LinearRegression", "DecisionTreeRegressor"],
             problem_type="regression",
         )
 
@@ -196,7 +194,7 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
                     "problem_type": "classification",
                     "target": "target",
                     "metric_sort": "accuracy",
-                    "models": ["DecisionTreeClassifier", "GaussianNB"]
+                    "list_feature": ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"]
                 }
             )
 
