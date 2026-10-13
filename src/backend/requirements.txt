@@ -25,3 +25,23 @@ qrcode==8.2
 aiomqtt==2.5.1
 
 pymapreduce-core==0.1.15
+
+# Database Drivers & Connectors
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+pymysql==1.1.1
+cryptography==47.0.0
+pyodbc==5.3.0
+snowflake-sqlalchemy==1.11.1
+snowflake-connector-python==4.8.0
+sqlalchemy-bigquery==1.17.3
+google-cloud-bigquery==3.46.1
+duckdb==1.5.6
+duckdb-engine==0.17.0
+clickhouse-connect==1.10.0
+oracledb==26.0.1
+trino==0.340.0
+pyhive==0.7.0
+thrift==0.25.0
+thrift-sasl==0.4.3
+sqlalchemy-redshift==1.0.0

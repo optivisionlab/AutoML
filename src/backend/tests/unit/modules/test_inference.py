@@ -543,6 +543,67 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
             await self.service.cancel_job(self.current_user, self.job_id)
         self.assertEqual(ctx.exception.status_code, 400)
 
+    async def test_get_deployment_info_time_series(self):
+        ts_job_doc = {
+            "_id": self.job_oid,
+            "user": {"id": str(self.user_oid), "name": "tester"},
+            "status": 1,
+            "activate": 1,
+            "best_model": "Ridge",
+            "best_score": 0.12,
+            "model": {"bucket_name": "models", "object_name": "path/model.pkl"},
+            "config": {
+                "list_feature": ["date", "temperature"],
+                "target": "demand",
+                "problem_type": "time_series",
+            },
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=ts_job_doc)
+
+        resp = await self.service.get_deployment_info(self.current_user, self.job_id)
+        self.assertEqual(resp.model_name, "Ridge")
+        self.assertEqual(resp.sample_payload["data"][0]["date"], 1.0)
+        self.assertEqual(resp.sample_payload["data"][0]["temperature"], 1.0)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.invoke_actor", new_callable=AsyncMock)
+    async def test_predict_time_series_success(self, mock_invoke):
+        ts_job_doc = {
+            "_id": self.job_oid,
+            "user": {"id": str(self.user_oid), "name": "tester"},
+            "status": 1,
+            "activate": 1,
+            "best_model": "Ridge",
+            "model": {"bucket_name": "models", "object_name": "path/model.pkl"},
+            "config": {
+                "list_feature": ["date", "temperature"],
+                "target": "demand",
+                "problem_type": "time_series",
+            },
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=ts_job_doc)
+        mock_invoke.return_value = [10.5, 12.3]
+
+        req = PredictRequest(data=[
+            {"date": "2024-01-01 00:00:00", "temperature": 25.0},
+            {"date": "2024-01-02 00:00:00", "temperature": 26.0},
+        ])
+        resp = await self.service.predict(self.current_user, self.job_id, req)
+        self.assertEqual(resp.predictions, [10.5, 12.3])
+        self.assertEqual(resp.total_samples, 2)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.invoke_actor", new_callable=AsyncMock)
+    async def test_predict_error_handling(self, mock_invoke):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+        mock_invoke.side_effect = ValueError("Timestamps must come after the last training timestamp")
+
+        req = PredictRequest(data=[
+            {"feature_x": 1.0, "feature_y": 2.0, "category_col": "red"}
+        ])
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict(self.current_user, self.job_id, req)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Timestamps must come after", ctx.exception.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

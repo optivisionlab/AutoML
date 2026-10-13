@@ -7,12 +7,13 @@ from typing import Any
 
 # Third-party Libraries
 import pandas as pd
+from sklearn.base import BaseEstimator
 
 # Local Libraries
 from src.core import search_space, constants
 from src.shared import minio_service, MapReduceManager
 from src.modules.notifications import NotificationService
-from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig
+from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig, TimeSeriesForecaster
 from src.modules.trainings.tasks import train_single_model_task
 from src.modules.trainings.schemas import (
     AutoMLPipelineResult,
@@ -176,6 +177,10 @@ class TrainingService:
             space_models = search_space.REGRESSION_MODELS
             metric_list = search_space.REGRESSION_METRIC_LIST
             metric_sort = metric_sort or "r2"
+        elif problem_type == constants.ProblemType.TIME_SERIES:
+            space_models = search_space.TIME_SERIES_MODELS
+            metric_list = search_space.TIME_SERIES_METRIC_LIST
+            metric_sort = metric_sort or "rmse"
         else:
             space_models = search_space.CLASSIFICATION_MODELS
             metric_list = search_space.CLASSIFICATION_METRIC_LIST
@@ -207,14 +212,15 @@ class TrainingService:
         )
 
         best_estimator = pickle.loads(best_raw["model_bytes"])
-        artifact = {
-            "model": best_estimator,
-            "preprocessor": preprocessor,
-            "feature_names": feature_names,
-            "target_name": target_col,
-            "problem_type": problem_type,
-        }
-        artifact_bytes = pickle.dumps(artifact)
+        artifact_bytes = cls._package_serving_artifact(
+            best_estimator=best_estimator,
+            preprocessor=preprocessor,
+            feature_names=feature_names,
+            target_col=target_col,
+            problem_type=problem_type,
+            cv_config=cv_config,
+            df=df,
+        )
 
         return AutoMLPipelineResult(
             best_model_id=best_entry.model_id,
@@ -226,6 +232,36 @@ class TrainingService:
             cv_strategy=cv_config,
             feature_names=feature_names,
         )
+
+    @classmethod
+    def _package_serving_artifact(
+        cls,
+        best_estimator: BaseEstimator,
+        preprocessor: FittedPreprocessor,
+        feature_names: list[str],
+        target_col: str,
+        problem_type: str,
+        cv_config: CVStrategyConfig,
+        df: pd.DataFrame,
+    ) -> bytes:
+        serving_model = best_estimator
+        if problem_type == constants.ProblemType.TIME_SERIES:
+            serving_model = TimeSeriesForecaster(
+                pipeline=best_estimator,
+                config=cv_config,
+                df=df,
+                target_col=target_col,
+                feature_cols=feature_names,
+            )
+
+        artifact = {
+            "model": serving_model,
+            "preprocessor": preprocessor,
+            "feature_names": feature_names,
+            "target_name": target_col,
+            "problem_type": problem_type,
+        }
+        return pickle.dumps(artifact)
 
     async def _load_dataset_df(self, dataset_id: str) -> tuple[pd.DataFrame, str]:
         dataset_doc = await self.repo.get_dataset_info(dataset_id)
@@ -333,7 +369,7 @@ class TrainingService:
             problem_type = config.get("problem_type") or constants.ProblemType.CLASSIFICATION
             target_col = config.get("target")
             feature_cols = config.get("list_feature")
-            metric_sort = config.get("metric_sort") or None
+            metric_sort = config.get("metric_sort")
             search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
             timeout = config.get("timeout") or None
 

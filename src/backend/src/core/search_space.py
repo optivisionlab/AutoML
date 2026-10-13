@@ -39,3 +39,4 @@ def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]
 # Load models
 CLASSIFICATION_MODELS, CLASSIFICATION_METRIC_LIST = _load_model_config("classification")
 REGRESSION_MODELS, REGRESSION_METRIC_LIST = _load_model_config("regression")
+TIME_SERIES_MODELS, TIME_SERIES_METRIC_LIST = _load_model_config("time_series")

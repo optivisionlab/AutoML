@@ -14,7 +14,10 @@ from src.modules.datasets.schemas import (
     DatasetAdminResponse,
     DatasetCreate,
     DatasetUpdate,
-    TrainingConfig
+    TrainingConfig,
+    DatabaseConnection,
+    TableInfoRequest,
+    ImportTableRequest
 )
 from src.modules.datasets.service import DatasetService
 from src.modules.datasets.repository import DatasetRepository
@@ -116,6 +119,48 @@ async def get_all_datasets_for_admin(
     )
 
 
+@router.post("/database/connect", response_model=responses.BaseResponse[dict])
+async def connect_database(
+    payload: DatabaseConnection,
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    tables = await service.connect_database(payload)
+
+    return responses.BaseResponse(
+        message="Database connection successful",
+        data={"tables": tables}
+    )
+
+
+@router.post("/database/table-info", response_model=responses.BaseResponse[dict])
+async def get_database_table_info(
+    payload: TableInfoRequest,
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    info = await service.get_database_table_info(payload)
+
+    return responses.BaseResponse(
+        message=f"Successfully retrieved information of table '{payload.table_name}'",
+        data=info
+    )
+
+
+@router.post("/database/import", response_model=responses.BaseResponse[DatasetResponse])
+async def import_database_table(
+    payload: ImportTableRequest,
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    dataset = await service.import_database_table(current_user=current_user, payload=payload)
+
+    return responses.BaseResponse(
+        message=f"Table '{payload.table_name}' imported successfully",
+        data=dataset
+    )
+
+
 @router.get("/{id}", response_model=responses.BaseResponse[DatasetResponse])
 async def get_dataset_by_id(
     id: str = Path(..., description="Dataset ID"),
@@ -213,7 +258,7 @@ async def delete_dataset(
 @router.get("/{id}/features", response_model=responses.BaseResponse[dict])
 async def get_dataset_features(
     id: str = Path(..., description="Dataset ID"),
-    problem_type: str = Query(..., description="Type of problem (classification, regression)"),
+    problem_type: str = Query(..., description="Type of problem (classification, regression, time_series)"),
     current_user: dict = Depends(dependencies.get_current_user),
     service: DatasetService = Depends(get_dataset_service)
 ):

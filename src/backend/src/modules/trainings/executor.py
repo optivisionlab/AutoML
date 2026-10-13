@@ -7,7 +7,7 @@ from typing import Any, Type
 # Third-party Libraries
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold
+from sklearn.model_selection import BaseCrossValidator, StratifiedKFold, RepeatedStratifiedKFold, TimeSeriesSplit
 
 # Local Libraries
 from src.core import constants
@@ -20,7 +20,13 @@ from src.modules.hpo import (
     TPESearch,
 )
 from src.modules.models import ModelService
-from src.modules.preprocessing import CVStrategyConfig, ContinuousStratifiedKFold, ContinuousRepeatedStratifiedKFold
+from src.modules.preprocessing import (
+    CVStrategyConfig,
+    ContinuousStratifiedKFold,
+    ContinuousRepeatedStratifiedKFold,
+    build_time_series_pipeline,
+    MODEL_STEP,
+)
 from src.modules.trainings.schemas import ModelTaskResult
 
 
@@ -32,6 +38,15 @@ def build_cv_splitter(
     cv_config: CVStrategyConfig | dict[str, Any],
     problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> BaseCrossValidator:
+    if problem_type == constants.ProblemType.TIME_SERIES:
+        options = cv_config if isinstance(cv_config, dict) else cv_config.model_dump()
+        return TimeSeriesSplit(
+            n_splits=options.get("n_splits", 5),
+            test_size=options.get("fold_test_size"),
+            gap=options.get("gap", 0),
+            max_train_size=options.get("max_train_size"),
+        )
+
     if isinstance(cv_config, dict):
         tier = cv_config.get("tier", 2)
         n_splits = cv_config.get("n_splits", 5)
@@ -53,9 +68,34 @@ def build_cv_splitter(
     return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
 
-def tune_and_fit_model(
+def build_trainable_model(
     model_cls: Type[BaseEstimator],
-    param_grid: list[dict[str, Any]] | dict[str, Any],
+    param_grid: list[dict[str, Any]],
+    problem_type: str = constants.ProblemType.CLASSIFICATION,
+) -> tuple[BaseEstimator, list[dict[str, Any]]]:
+    model = model_cls()
+    if problem_type == constants.ProblemType.TIME_SERIES:
+        if "random_state" in model.get_params():
+            model.set_params(random_state=42)
+        model = build_time_series_pipeline(model)
+        param_grid = [
+            {k if "__" in k else f"{MODEL_STEP}__{k}": v for k, v in grid.items()}
+            for grid in param_grid
+        ]
+
+    return model, param_grid
+
+
+def _clean_best_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k.removeprefix(f"{MODEL_STEP}__"): v
+        for k, v in params.items()
+    }
+
+
+def tune_and_fit_model(
+    estimator: BaseEstimator | Type[BaseEstimator],
+    param_grid: list[dict[str, Any]],
     cv: BaseCrossValidator,
     scoring: dict[str, Any],
     metric_sort: str,
@@ -63,12 +103,10 @@ def tune_and_fit_model(
     y_train: np.ndarray,
     search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
 ) -> tuple[BaseEstimator, dict[str, Any], BaseSearchCV]:
-    model = model_cls()
-
     match search_algorithm:
         case constants.SearchAlgorithm.TPESEARCH:
             searcher = TPESearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -77,7 +115,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.RANDOMSEARCH:
             searcher = RandomSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -86,7 +124,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.BAYESIANSEARCH:
             searcher = BayesianSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -95,7 +133,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.GENETICALGORITHM:
             searcher = GeneticAlgorithmSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -104,7 +142,7 @@ def tune_and_fit_model(
             )
         case _:
             searcher = GridSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -114,7 +152,7 @@ def tune_and_fit_model(
 
     searcher.fit(X_train, y_train)
 
-    return searcher.best_estimator_, searcher.best_params_, searcher
+    return searcher.best_estimator_, _clean_best_params(searcher.best_params_), searcher
 
 
 def evaluate_trained_model(
@@ -123,7 +161,6 @@ def evaluate_trained_model(
     test_data_bytes: bytes | None,
     metric_list: list[str],
     metric_sort: str,
-    problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> tuple[dict[str, float], float]:
     metric_clean = metric_sort.lower().strip().replace(" ", "_")
 
@@ -134,7 +171,6 @@ def evaluate_trained_model(
             X_test,
             y_test,
             metric_list,
-            problem_type=problem_type,
         )
         primary_score = scores.get(metric_clean, 0.0)
     else:

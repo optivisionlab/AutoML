@@ -15,6 +15,7 @@ from src.modules.preprocessing.regression import (
     prepare_regression_data,
     determine_regression_cv_tier,
 )
+from src.modules.preprocessing.time_series import prepare_time_series_data
 from src.modules.preprocessing.classification import (
     prepare_classification_data,
     determine_classification_cv_tier,
@@ -90,7 +91,13 @@ class TabularPreprocessor:
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         random_state: int = 42,
     ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray] | None, CVStrategyConfig, list[str], FittedPreprocessor]:
-        if problem_type == constants.ProblemType.REGRESSION:
+        if problem_type == constants.ProblemType.TIME_SERIES:
+            (X_train, y_train), test_data, cv_config, features, preprocessor, target_encoder = prepare_time_series_data(
+                df=df,
+                target_col=target_col,
+                feature_cols=feature_cols,
+            )
+        elif problem_type == constants.ProblemType.REGRESSION:
             (X_train, y_train), test_data, cv_config, features, preprocessor, target_encoder = prepare_regression_data(
                 df=df,
                 target_col=target_col,
