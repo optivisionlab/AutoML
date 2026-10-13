@@ -14,9 +14,16 @@ export const metadata: Metadata = {
   description:
     "HAutoML Low code & No code - Mã nguồn mở tuyệt vời cho quy trình tự động hóa học máy",
   icons: {
-    icon: "/favicon_io/favicon.ico",
-    apple: "/favicon_io/apple-touch-icon.png",
-    shortcut: "/favicon_io/favicon-32x32.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/logoHautoMLNotext.png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
   },
   openGraph: {
     title: "HAutoML",
