@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, Depends, Query, Path, File, Form, Bod
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.core import dependencies, responses
+from src.core import dependencies, responses, search_space
 from src.config import databases
 from src.shared import kafka_service
 from src.modules.datasets.schemas import (
@@ -57,6 +57,23 @@ async def get_list_datasets(
         message="Successfully retrieved the data list",
         data=datasets,
         meta=responses.PaginationMeta(**meta)
+    )
+
+
+@router.get("/metrics", response_model=responses.BaseResponse[dict])
+async def get_problem_metrics(
+    problem_type: str = Query("classification", description="Problem type: classification, regression, time_series")
+):
+    """
+    Get list of supported evaluation metrics loaded from assets/ YAML configs for the given problem type
+    """
+    metrics = search_space.get_metrics_by_problem_type(problem_type)
+    return responses.BaseResponse(
+        message="Metrics retrieved successfully",
+        data={
+            "problem_type": problem_type,
+            "metrics": metrics
+        }
     )
 
 

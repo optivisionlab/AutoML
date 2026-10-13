@@ -53,6 +53,32 @@ class TestDatasetsAPI(unittest.TestCase):
         self.assertEqual(len(data["data"]), 1)
         self.assertEqual(data["meta"]["total_items"], 1)
 
+    def test_get_problem_metrics_classification(self):
+        response = self.client.get("/api/v1/datasets/metrics?problem_type=classification")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("metrics", data["data"])
+        self.assertIn("accuracy", data["data"]["metrics"])
+        self.assertIn("f1_macro", data["data"]["metrics"])
+
+    def test_get_problem_metrics_regression(self):
+        response = self.client.get("/api/v1/datasets/metrics?problem_type=regression")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("metrics", data["data"])
+        self.assertIn("r2", data["data"]["metrics"])
+        self.assertIn("mse", data["data"]["metrics"])
+
+    def test_get_problem_metrics_time_series(self):
+        response = self.client.get("/api/v1/datasets/metrics?problem_type=time_series")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("metrics", data["data"])
+        self.assertIn("rmse", data["data"]["metrics"])
+
     def test_get_dataset_by_id_success(self):
         self.mock_dataset_service.get_dataset_detail.return_value = {
             "id": "dataset_1", 
