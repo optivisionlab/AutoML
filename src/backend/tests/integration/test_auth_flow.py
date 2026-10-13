@@ -67,7 +67,7 @@ def test_auth_workflow(test_client, mock_db):
         "password": "secure_password_123"
     }
     signup_res = test_client.post("/api/v1/auth/signup", json=signup_payload)
-    assert signup_res.status_code == 200
+    assert signup_res.status_code == 201
     assert signup_res.json()["success"] is True
 
     # 2. Login Request

@@ -34,7 +34,6 @@ class DatasetRepository:
         total_items = await self.__collection.count_documents(filter_query)
 
         projection = {
-            "userId": 0,
             "username": 0,
             "role": 0,
             "data_link": 0

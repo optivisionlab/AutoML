@@ -9,7 +9,7 @@ class UserResponse(BaseModel):
     fullName: str | None = None
     role: str
     avatar: str | None = None
-    is_verified: bool
+    is_verified: bool = True
 
     model_config = {
         "populate_by_name": True,

@@ -355,6 +355,50 @@ class TestDatasetServiceLogic(unittest.IsolatedAsyncioTestCase):
         mock_minio_upload.assert_called_once()
         mock_backblaze_upload.assert_called_once()
 
+    def test_dataset_response_datetime_serialization(self):
+        from datetime import datetime
+        from src.modules.datasets.schemas import DatasetResponse, DataTypeEnum
+        now = datetime.now()
+        resp = DatasetResponse(
+            _id="123",
+            dataName="Test",
+            dataType=DataTypeEnum.TABLE,
+            createDate=now,
+            latestUpdate=now
+        )
+        data = resp.model_dump()
+        self.assertEqual(data["createDate"], now.timestamp())
+        self.assertEqual(data["latestUpdate"], now.timestamp())
+
+    async def test_get_user_datasets_formats_object_id_as_string(self):
+        from bson import ObjectId
+        oid = ObjectId()
+        user_id = "user_1"
+        self.mock_repo.get_datasets_with_count.return_value = (
+            [
+                {
+                    "_id": oid,
+                    "dataName": "Dataset 1",
+                    "dataType": "table",
+                    "createDate": 1000.0,
+                    "latestUpdate": 2000.0,
+                    "userId": user_id,
+                    "public": False,
+                }
+            ],
+            1
+        )
+
+        datasets, meta = await self.service.get_user_datasets(
+            user_id=user_id,
+            current_page=1,
+            page_size=10
+        )
+        self.assertEqual(len(datasets), 1)
+        self.assertEqual(datasets[0].id, str(oid))
+        self.assertEqual(meta["total_items"], 1)
+        self.assertEqual(meta["total_pages"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

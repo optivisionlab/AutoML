@@ -30,7 +30,7 @@ def get_auth_service(db: AsyncDatabase = Depends(databases.get_db)) -> AuthServi
     return AuthService(AuthRepository(db))
 
 
-@router.post("/signup", response_model=responses.BaseResponse[UserResponse])
+@router.post("/signup", response_model=responses.BaseResponse[UserResponse], status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserRegisterRequest,
     background_tasks: BackgroundTasks,

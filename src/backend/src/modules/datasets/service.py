@@ -84,6 +84,7 @@ class DatasetService:
         for doc in raw_datasets:
             if doc.get("userId") == "0":
                 doc["public"] = True
+            doc["_id"] = str(doc["_id"])
 
         formatted_datasets = [DatasetResponse(**doc) for doc in raw_datasets]
 
@@ -123,6 +124,7 @@ class DatasetService:
         for doc in raw_datasets:
             if doc.get("userId") == "0":
                 doc["public"] = True
+            doc["_id"] = str(doc["_id"])
 
         formatted_datasets = [DatasetAdminResponse(**doc) for doc in raw_datasets]
 

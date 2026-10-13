@@ -78,5 +78,25 @@ class TestNotificationsAPI(unittest.TestCase):
         data = response.json()
         self.assertTrue(data["success"])
 
+
+class TestNotificationRepository(unittest.IsolatedAsyncioTestCase):
+    async def test_mark_as_read_matched_count(self):
+        from unittest.mock import MagicMock
+        from src.modules.notifications.repository import NotificationRepository
+        mock_db = MagicMock()
+        mock_collection = AsyncMock()
+        mock_db.tbl_Notification = mock_collection
+
+        # Document matched but was already read (modified_count=0, matched_count=1)
+        mock_update_result = MagicMock()
+        mock_update_result.matched_count = 1
+        mock_update_result.modified_count = 0
+        mock_collection.update_one.return_value = mock_update_result
+
+        repo = NotificationRepository(mock_db)
+        success = await repo.mark_as_read("user_123", "notif_456")
+        self.assertTrue(success)
+
+
 if __name__ == "__main__":
     unittest.main()

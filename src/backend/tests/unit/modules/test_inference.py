@@ -604,6 +604,19 @@ class TestInferenceService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("Timestamps must come after", ctx.exception.detail)
 
+    def test_job_item_response_datetime_serialization(self):
+        from datetime import datetime
+        from src.modules.inference.schemas import JobItemResponse
+        now = datetime.now()
+        item = JobItemResponse(
+            _id="job_123",
+            status=1,
+            activate=1,
+            create_at=now
+        )
+        dumped = item.model_dump()
+        self.assertEqual(dumped["create_at"], now.timestamp())
+
 
 if __name__ == "__main__":
     unittest.main()

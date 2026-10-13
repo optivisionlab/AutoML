@@ -29,8 +29,8 @@ class DatasetResponse(BaseModel):
     id: str = Field(alias="_id")
     dataName: str
     dataType: DataTypeEnum
-    createDate: float
-    latestUpdate: float
+    createDate: float | datetime
+    latestUpdate: float | datetime
 
     thumbnail: str | None = None
     description: str | None = None
