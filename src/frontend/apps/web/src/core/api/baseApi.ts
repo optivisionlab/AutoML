@@ -1,6 +1,6 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { BaseQueryFn } from "@reduxjs/toolkit/query";
-import { getSession } from "next-auth/react";
+import { getSession, signOut } from "next-auth/react";
 import {
   createApiClient,
   createPublicClient,
@@ -24,6 +24,23 @@ export const axiosClient = createApiClient({
     return session?.user?.access_token;
   },
 });
+
+// Xử lý tự động khi token bị hết hạn hoặc không hợp lệ (401)
+axiosClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/login") &&
+      !window.location.pathname.startsWith("/register")
+    ) {
+      console.warn("[Auth] Phiên đăng nhập đã hết hạn (401), tự động đăng xuất...");
+      await signOut({ callbackUrl: "/login" });
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Public client without authentication token
 export const publicClient = createPublicClient(

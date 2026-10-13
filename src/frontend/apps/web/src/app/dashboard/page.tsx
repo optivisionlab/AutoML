@@ -23,6 +23,7 @@ import {
   TrainingJob,
   useGetLegacyJobsByUserIdQuery,
 } from "@/core/api/jobApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import { cn } from "@/shared/lib/utils";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -70,7 +71,10 @@ export default function DashboardPage() {
   const t = useTranslations("Dashboard");
   const common = useTranslations("Common");
   const { data: session, status } = useSession();
-  const userId = session?.user?.id;
+  const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
+    skip: !session?.user,
+  });
+  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
   const isAdmin = session?.user?.role === "admin";
 
   const { data: publicDatasets = [], isLoading: isPublicLoading } =
@@ -84,8 +88,8 @@ export default function DashboardPage() {
       skip: !isAdmin,
     });
   const { data: jobs = [], isLoading: isJobsLoading } =
-    useGetLegacyJobsByUserIdQuery(userId ?? "", {
-      skip: !userId,
+    useGetLegacyJobsByUserIdQuery(userId ?? undefined, {
+      skip: !session?.user,
     });
 
   const ownedDatasets = isAdmin ? adminDatasets : personalDatasets;

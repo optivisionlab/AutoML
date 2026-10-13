@@ -25,7 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/components/ui/dropdown-menu";
 import ModeToggle from "@/shared/components/mode-toggle";
-import { useGetUserQuery } from "@/core/api/userApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
+import { useGetUserAvatarQuery } from "@/core/api/userApi";
 import LanguageToggle from "@/shared/components/language-toggle";
 import NotificationBell from "@/features/notifications/components/NotificationBell";
 import { useTranslations } from "next-intl";
@@ -33,13 +34,40 @@ import { useTranslations } from "next-intl";
 const getAvatarSrc = (avatar?: string | null) => {
   if (!avatar) return undefined;
 
+  // Nếu là Data URI hoàn chỉnh
+  if (avatar.startsWith("data:image/")) {
+    return avatar;
+  }
+
+  // Nếu là URL tuyệt đối http/https
+  if (avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  // Nếu là đường dẫn file ảnh tĩnh trong public (ví dụ /avatar.png)
   if (
-    avatar.startsWith("http://") ||
-    avatar.startsWith("https://") ||
-    avatar.startsWith("/") ||
-    avatar.startsWith("data:image")
+    avatar.startsWith("/") &&
+    (avatar.endsWith(".png") ||
+      avatar.endsWith(".jpg") ||
+      avatar.endsWith(".jpeg") ||
+      avatar.endsWith(".webp") ||
+      avatar.endsWith(".svg") ||
+      avatar.length < 200)
   ) {
     return avatar;
+  }
+
+  // Nếu là chuỗi Base64
+  if (avatar.startsWith("/9j/")) {
+    return `data:image/jpeg;base64,${avatar}`;
+  }
+
+  if (avatar.startsWith("iVBOR")) {
+    return `data:image/png;base64,${avatar}`;
+  }
+
+  if (avatar.startsWith("UklGR")) {
+    return `data:image/webp;base64,${avatar}`;
   }
 
   return `data:image/png;base64,${avatar}`;
@@ -56,24 +84,34 @@ export default function DashboardTopbar({
 }) {
   const t = useTranslations("Topbar");
   const { data: session } = useSession();
-  const username = session?.user?.username;
   const roleLabel =
     session?.user?.role === "admin" ? t("adminRole") : t("userRole");
-  const { data: userResponse, refetch: refetchUser } = useGetUserQuery(
-    username ?? "",
-    { skip: !username },
+
+  // Lấy thông tin user hiện tại qua /api/v1/auth/me
+  const { data: userResponse, refetch: refetchUser } = useGetCurrentUserQuery(
+    undefined,
+    { skip: !session?.user },
   );
   const userData = userResponse?.data;
-  const avatarUrl = getAvatarSrc(userData?.avatar ?? userData?.image);
+  const userId = userData?._id || userData?.id || session?.user?.id;
+  const username = userData?.username || session?.user?.username;
+
+  // Nếu avatar được lưu trên object storage (đường dẫn avatars/...), tải qua /api/v1/users/{id}/avatar
+  const isObjectStorageAvatar = userData?.avatar?.startsWith("avatars/");
+  const { data: blobAvatarUrl } = useGetUserAvatarQuery(userId ?? "", {
+    skip: !userId || !isObjectStorageAvatar,
+  });
+
+  const avatarUrl = isObjectStorageAvatar
+    ? blobAvatarUrl
+    : getAvatarSrc(userData?.avatar ?? userData?.image);
 
   useEffect(() => {
-    if (!username) return;
-
     const handleAvatarUpdate = () => refetchUser();
     window.addEventListener("avatar-updated", handleAvatarUpdate);
     return () =>
       window.removeEventListener("avatar-updated", handleAvatarUpdate);
-  }, [refetchUser, username]);
+  }, [refetchUser]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-automl-navy/90 transition-colors">
@@ -141,13 +179,13 @@ export default function DashboardTopbar({
               <button className="flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-2 text-slate-700 shadow-none transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15 active:scale-95">
                 <Avatar className="h-6 w-6 ring-1 ring-slate-200/80 dark:ring-white/10">
                   <AvatarImage src={avatarUrl} alt="avatar" />
-                  <AvatarFallback className="bg-automl-blue-soft text-[9px] font-black text-automl-blue">
-                    {username?.slice(0, 2).toUpperCase() ?? <User2 className="h-3 w-3" />}
+                  <AvatarFallback className="bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-300">
+                    <User2 className="h-3.5 w-3.5" />
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden text-left leading-tight sm:block">
                   <span className="block text-xs font-black text-automl-ink dark:text-white">
-                    {session?.user?.username ?? "HAutoML"}
+                    {username ?? "HAutoML"}
                   </span>
                   <span className="text-[10px] font-semibold text-automl-muted dark:text-white/55">
                     {roleLabel}
@@ -165,13 +203,13 @@ export default function DashboardTopbar({
                 <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5 dark:bg-white/10">
                   <Avatar className="h-9 w-9">
                     <AvatarImage src={avatarUrl} alt="avatar" />
-                    <AvatarFallback className="bg-automl-blue-soft text-xs font-black text-automl-blue">
-                      {username?.slice(0, 2).toUpperCase() ?? "HA"}
+                    <AvatarFallback className="bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-300">
+                      <User2 className="h-5 w-5" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-black text-automl-ink dark:text-white">
-                      {session?.user?.username ?? "HAutoML"}
+                      {username ?? "HAutoML"}
                     </p>
                     <p className="truncate text-[10px] font-semibold text-automl-muted dark:text-white/55">
                       {roleLabel}

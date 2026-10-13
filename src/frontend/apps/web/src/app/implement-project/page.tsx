@@ -36,6 +36,7 @@ import {
 
 import PaginationCustom from "@/shared/components/common/Panigation";
 import { useGetLegacyJobsByUserIdQuery } from "@/core/api/jobApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import { useActivateModelMutation } from "@/core/api/inferenceApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
 import { CheckCircle2, Clock3, Gauge, Search, ServerCog } from "lucide-react";
@@ -68,10 +69,13 @@ const ImplementProject = () => {
 
   const { data: session } = useSession();
   const router = useRouter();
-  const userId = session?.user?.id;
+  const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
+    skip: !session?.user,
+  });
+  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
   const { data: jobs = [], isLoading } = useGetLegacyJobsByUserIdQuery(
-    userId ?? "",
-    { skip: !userId },
+    userId ?? undefined,
+    { skip: !session?.user },
   );
   const [activateModel] = useActivateModelMutation();
   const dateLocale = locale === "vi" ? "vi-VN" : "en-US";

@@ -72,28 +72,38 @@ export const automlApi = baseApi.injectEndpoints({
     // Các metric
     getMetrics: builder.query<MetricsResponse, string>({
       query: (problemType) => ({
-        url: `/api/v1/datasets/default`,
+        url: `/api/v1/datasets/metrics`,
         params: {
           problem_type: problemType,
         },
       }),
-      transformResponse: (_res: any, _meta: any, problemType: string): MetricsResponse => {
-        const metricsMap: Record<string, string> =
+      transformResponse: (res: any, _meta: any, problemType: string): MetricsResponse => {
+        const list: string[] = res?.data?.metrics || [];
+        if (list.length > 0) {
+          const metricsMap: Record<string, string> = {};
+          list.forEach((m: string) => {
+            metricsMap[m] = m;
+          });
+          return { metrics: metricsMap };
+        }
+
+        // Fallback if API response is empty
+        const fallbackMap: Record<string, string> =
           problemType === "classification"
             ? {
-                Accuracy: "accuracy",
-                F1: "f1",
-                Precision: "precision",
-                Recall: "recall",
+                accuracy: "accuracy",
+                f1: "f1",
+                precision: "precision",
+                recall: "recall",
               }
             : {
-                R2: "r2",
-                RMSE: "rmse",
-                MAE: "mae",
-                MSE: "mse",
-                MAPE: "mape",
+                r2: "r2",
+                rmse: "rmse",
+                mae: "mae",
+                mse: "mse",
+                mape: "mape",
               };
-        return { metrics: metricsMap };
+        return { metrics: fallbackMap };
       },
       providesTags: (_result, _error, problemType) => [
         { type: "AutoML", id: `metrics-${problemType}` },

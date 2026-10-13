@@ -35,6 +35,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import {
   UpdateUserPayload,
   useChangeUserPasswordMutation,
+  useGetUserAvatarQuery,
   useUpdateAvatarMutation,
   useUpdateUserMutation,
 } from "@/core/api/userApi";
@@ -74,13 +75,40 @@ const inputClass =
 const getAvatarSrc = (avatar?: string | null) => {
   if (!avatar) return "";
 
+  // Nếu là Data URI hoàn chỉnh
+  if (avatar.startsWith("data:image/")) {
+    return avatar;
+  }
+
+  // Nếu là URL tuyệt đối http/https
+  if (avatar.startsWith("http://") || avatar.startsWith("https://")) {
+    return avatar;
+  }
+
+  // Nếu là đường dẫn file ảnh tĩnh trong public (ví dụ /avatar.png)
   if (
-    avatar.startsWith("http://") ||
-    avatar.startsWith("https://") ||
-    avatar.startsWith("/") ||
-    avatar.startsWith("data:image")
+    avatar.startsWith("/") &&
+    (avatar.endsWith(".png") ||
+      avatar.endsWith(".jpg") ||
+      avatar.endsWith(".jpeg") ||
+      avatar.endsWith(".webp") ||
+      avatar.endsWith(".svg") ||
+      avatar.length < 200)
   ) {
     return avatar;
+  }
+
+  // Nếu là chuỗi Base64
+  if (avatar.startsWith("/9j/")) {
+    return `data:image/jpeg;base64,${avatar}`;
+  }
+
+  if (avatar.startsWith("iVBOR")) {
+    return `data:image/png;base64,${avatar}`;
+  }
+
+  if (avatar.startsWith("UklGR")) {
+    return `data:image/webp;base64,${avatar}`;
   }
 
   return `data:image/png;base64,${avatar}`;
@@ -97,6 +125,11 @@ const Profile = () => {
 
   const user = userResponse?.data || (session?.user as any);
   const userId = user?._id || user?.id || session?.user?.id;
+
+  const isObjectStorageAvatar = user?.avatar?.startsWith("avatars/");
+  const { data: blobAvatarUrl } = useGetUserAvatarQuery(userId ?? "", {
+    skip: !userId || !isObjectStorageAvatar,
+  });
 
   const [activeTab, setActiveTab] = useState<number>(0);
   const [updateUser] = useUpdateUserMutation();
@@ -141,10 +174,13 @@ const Profile = () => {
       number: user.number || "",
     });
 
-    const avatar = getAvatarSrc(user.avatar ?? user.image);
-    setAvatarUrl(avatar);
-    setOriginalAvatar(avatar);
-  }, [user]);
+    const resolvedAvatar = isObjectStorageAvatar && blobAvatarUrl
+      ? blobAvatarUrl
+      : getAvatarSrc(user.avatar ?? user.image);
+
+    setAvatarUrl(resolvedAvatar);
+    setOriginalAvatar(resolvedAvatar);
+  }, [user, blobAvatarUrl, isObjectStorageAvatar]);
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -320,8 +356,8 @@ const Profile = () => {
                 alt="avatar"
                 className="object-cover"
               />
-              <AvatarFallback className="rounded-[2rem] bg-automl-blue-soft text-4xl font-black text-automl-blue">
-                {initials}
+              <AvatarFallback className="rounded-[2rem] bg-slate-100 dark:bg-white/10 text-slate-400">
+                <UserIcon className="h-16 w-16" />
               </AvatarFallback>
             </Avatar>
 

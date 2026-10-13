@@ -10,8 +10,9 @@ import {
   type UserDetailResponse,
   type UsersListResponse,
 } from "@automl/domain";
+import axios from "axios";
 import { appendUniversalFile } from "@automl/api";
-import { baseApi } from "./baseApi";
+import { axiosClient, baseApi } from "./baseApi";
 
 export type {
   BaseResponse,
@@ -86,6 +87,31 @@ export const userApi = baseApi.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    // 2.5 GET /api/v1/users/{id}/avatar
+    getUserAvatar: builder.query<string, string>({
+      async queryFn(id) {
+        if (!id) return { data: "" };
+        try {
+          const response = await axiosClient.get(`/api/v1/users/${id}/avatar`, {
+            responseType: "blob",
+          });
+          const blobUrl = URL.createObjectURL(response.data);
+          return { data: blobUrl };
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            return {
+              error: {
+                status: error.response?.status,
+                data: error.response?.data ?? error.message,
+              },
+            };
+          }
+          return { error: { data: "Failed to fetch avatar" } };
+        }
+      },
+      providesTags: (_result, _error, id) => [{ type: "User", id: `${id}-avatar` }],
+    }),
+
     // 2.6 POST /api/v1/users/{id}/avatar
     updateAvatar: builder.mutation<
       UploadAvatarResponse,
@@ -102,11 +128,15 @@ export const userApi = baseApi.injectEndpoints({
           data: formData,
         };
       },
-      invalidatesTags: (_result, _error, { id, username }) => [
-        "User",
-        "Auth",
-        { type: "User", id: id || username },
-      ],
+      invalidatesTags: (_result, _error, { id, username }) => {
+        const targetId = id || username;
+        return [
+          "User",
+          "Auth",
+          { type: "User", id: targetId },
+          { type: "User", id: `${targetId}-avatar` },
+        ];
+      },
     }),
 
     // 2.7 POST /api/v1/users/{id}/password
@@ -128,8 +158,10 @@ export const {
   useChangeUserPasswordMutation,
   useCreateUserMutation,
   useDeleteUserMutation,
+  useGetUserAvatarQuery,
   useGetUserQuery,
   useGetUsersQuery,
+  useLazyGetUserAvatarQuery,
   useLazyGetUserQuery,
   useLazyGetUsersQuery,
   useUpdateAvatarMutation,

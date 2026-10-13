@@ -4,7 +4,7 @@ import logging
 
 # Local Libraries
 from src.config import setup_logging, settings, databases
-from src.shared import kafka_service, minio_service, MapReduceManager
+from src.shared import kafka_service, minio_service, MapReduceManager, mqtt_service
 from src.modules.trainings import TrainingRepository, TrainingService
 from src.modules.notifications import NotificationRepository, NotificationService
 
@@ -25,6 +25,7 @@ async def start_training_consumer() -> None:
         logger.info("Initializing Training Consumer resources...")
         await databases.DatabaseManager.connection()
         await MapReduceManager.get_driver()
+        await mqtt_service.connect()
 
         # Instantiate Repositories and Services
         db = databases.DatabaseManager.db
@@ -102,6 +103,11 @@ async def start_training_consumer() -> None:
             await minio_service.close()
         except Exception as e:
             logger.debug(f"Error closing MinIO session: {e}")
+
+        try:
+            await mqtt_service.disconnect()
+        except Exception as e:
+            logger.debug(f"Error disconnecting MQTT: {e}")
 
         try:
             await databases.DatabaseManager.close_connection()

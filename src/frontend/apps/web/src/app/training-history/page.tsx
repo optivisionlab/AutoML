@@ -27,6 +27,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import PaginationCustom from "@/shared/components/common/Panigation";
 import UploadPredictBox from "@/shared/components/common/UploadPredictBox";
 import { useGetLegacyJobsByUserIdQuery } from "@/core/api/jobApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import { Activity, CheckCircle2, Clock3, Gauge, Search, XCircle } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAppSettings } from "@/shared/hooks/useAppSettings";
@@ -60,10 +61,15 @@ const TrainingHistory = () => {
   const [effectiveHighlight, setEffectiveHighlight] = useState<string | null>(null);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [flashJobId, setFlashJobId] = useState<string | null>(null);
-  const userId = session?.user?.id;
+
+  const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
+    skip: !session?.user,
+  });
+  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
+
   const { data: jobs = [], isLoading, refetch } = useGetLegacyJobsByUserIdQuery(
-    userId ?? "",
-    { skip: !userId },
+    userId ?? undefined,
+    { skip: !session?.user },
   );
 
   // Đọc target highlight từ URL hoặc sessionStorage
@@ -82,10 +88,10 @@ const TrainingHistory = () => {
 
   // Luôn refetch khi có target highlight hoặc khi vào trang để lấy job mới nhất từ backend
   useEffect(() => {
-    if (userId) {
+    if (session?.user) {
       refetch();
     }
-  }, [userId, effectiveHighlight, refetch]);
+  }, [session?.user, effectiveHighlight, refetch]);
 
   const { settings } = useAppSettings();
   const [currentPage, setCurrentPage] = useState<number>(1);

@@ -316,7 +316,7 @@ const ResultPage = ({ params }: Props) => {
     return leaderboardModels.map((m) => {
       const row: Record<string, string | number> = { name: m.model_name };
       Object.keys(metricsConfig).forEach((mKey) => {
-        const val = m.scores[mKey];
+        const val = m.scores[mKey] ?? (m.scores as any)?.[`${mKey}_macro`];
         if (typeof val === "number") {
           row[mKey] = parseFloat(val.toFixed(4));
         }

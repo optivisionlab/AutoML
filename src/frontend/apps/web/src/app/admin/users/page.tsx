@@ -57,7 +57,7 @@ const UserManagementPage = () => {
 
   const handleConfirmUpdate = async () => {
     if (!editingUser || !pendingFormData) return;
-    const targetId = editingUser._id || editingUser.username;
+    const targetId = editingUser._id || (editingUser as any).id || editingUser.username;
 
     try {
       await updateUser({
@@ -89,7 +89,7 @@ const UserManagementPage = () => {
 
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
-    const targetId = userToDelete._id || userToDelete.username;
+    const targetId = userToDelete._id || (userToDelete as any).id || userToDelete.username;
 
     try {
       await deleteUser(targetId).unwrap();

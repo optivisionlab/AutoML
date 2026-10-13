@@ -7,6 +7,7 @@ import mqtt, { type MqttClient } from "mqtt";
 import { useToast } from "@/shared/hooks/use-toast";
 import { getStoredAppSettings } from "@/shared/hooks/useAppSettings";
 import { baseApi } from "@/core/api/baseApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import {
   receiveRealtimeNotification,
   setMqttConnected,
@@ -79,9 +80,12 @@ export function useNotificationSocket() {
   const dispatch = useDispatch();
   const { toast } = useToast();
   const { data: session } = useSession();
+  const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
+    skip: !session?.user,
+  });
   const clientRef = useRef<MqttClient | null>(globalMqttClient);
 
-  const userId = session?.user?.id;
+  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
 
   useEffect(() => {
     if (!userId) {
@@ -244,8 +248,8 @@ export function useNotificationSocket() {
         // Chèn thông báo vào Redux store để cập nhật Bell UI ngay tức thì
         dispatch(receiveRealtimeNotification(notificationData));
 
-        // Tự động invalidate tag RTK Query để cập nhật bảng Lịch sử (Job) và Notification ngay lập tức
-        dispatch(baseApi.util.invalidateTags(["Job", "Notification"]));
+        // Tự động invalidate tag RTK Query để cập nhật bảng Lịch sử (Job), Notification, Dataset và Inference ngay lập tức mà không cần F5
+        dispatch(baseApi.util.invalidateTags(["Job", "Notification", "Dataset", "Inference"]));
 
         // Kiểm tra cấu hình cài đặt người dùng (Settings)
         const appSettings = getStoredAppSettings();

@@ -316,8 +316,8 @@ class TrainingService:
 
         await self.repo.update_success(job_id, final_result_payload)
 
-        asyncio.create_task(
-            self.notif_service.push_notification(
+        try:
+            await self.notif_service.push_notification(
                 user_id=user_id,
                 job_id=job_id,
                 status=str(constants.JobStatus.SUCCESS),
@@ -327,7 +327,8 @@ class TrainingService:
                     "best_score": pipeline_result.best_score,
                 },
             )
-        )
+        except Exception as notif_err:
+            logger.error(f"Failed to push training success notification for job {job_id}: {notif_err}", exc_info=True)
 
         return final_result_payload.model_dump()
 
@@ -340,15 +341,16 @@ class TrainingService:
     ) -> None:
         await self.repo.update_failure(job_id, error_msg)
 
-        asyncio.create_task(
-            self.notif_service.push_notification(
+        try:
+            await self.notif_service.push_notification(
                 user_id=user_id,
                 job_id=job_id,
                 status=str(constants.JobStatus.FAILED),
                 message=f"Bộ dữ liệu [{dataset_name}] huấn luyện thất bại.",
                 metadata={"error_details": error_msg},
             )
-        )
+        except Exception as notif_err:
+            logger.error(f"Failed to push training failure notification for job {job_id}: {notif_err}", exc_info=True)
 
     async def process_training_job(
         self,

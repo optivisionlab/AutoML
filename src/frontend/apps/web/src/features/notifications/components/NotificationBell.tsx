@@ -23,6 +23,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { type RootState } from "@/core/store/store";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import {
   useLazyGetNotificationsQuery,
   useLazyGetUnreadNotificationsQuery,
@@ -63,8 +64,11 @@ export default function NotificationBell() {
   const router = useRouter();
   const dispatch = useDispatch();
   const { data: session } = useSession();
+  const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
+    skip: !session?.user,
+  });
 
-  const userId = session?.user?.id;
+  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
 
   // Kích hoạt kết nối MQTT WebSocket thời gian thực (cổng 1884)
   useNotificationSocket();
@@ -89,6 +93,32 @@ export default function NotificationBell() {
   const [fetchNotificationsTrigger] = useLazyGetNotificationsQuery();
   const [fetchUnreadNotificationsTrigger] = useLazyGetUnreadNotificationsQuery();
   const [markNotificationReadApi] = useMarkNotificationReadMutation();
+
+  // Tải lại thông báo mới nhất khi người dùng mở popover chuông
+  useEffect(() => {
+    if (!isOpen || !userId) return;
+
+    fetchNotificationsTrigger({
+      offset: 0,
+      limit: 10,
+    })
+      .unwrap()
+      .then((res) => {
+        const notifList: AutoNotification[] = res?.data || [];
+        const unreadComputed = notifList.filter((n) => !n.is_read).length;
+        dispatch(
+          setInitialNotifications({
+            data: notifList,
+            unread_count: unreadComputed,
+            has_more: Boolean(res?.meta?.has_more),
+            filter,
+          })
+        );
+      })
+      .catch((err) => {
+        console.warn("[Notifications] Không thể tải lại thông báo khi mở chuông:", err);
+      });
+  }, [isOpen, userId, filter, fetchNotificationsTrigger, dispatch]);
 
   // 1. Tải danh sách thông báo ban đầu khi vào ứng dụng
   useEffect(() => {

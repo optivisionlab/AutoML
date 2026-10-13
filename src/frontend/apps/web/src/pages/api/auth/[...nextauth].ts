@@ -43,6 +43,7 @@ async function refreshAccessToken(token: any) {
 
     return {
       ...token,
+      id: token.id || decoded.sub,
       access_token: data.access_token,
       refresh_token: data.refresh_token || token.refresh_token,
       accessTokenExpires: decoded.exp * 1000, // ms
@@ -180,6 +181,11 @@ export const authOptions: NextAuthOptions = {
         token.accessTokenExpires = user.accessTokenExpires;
       }
 
+      // Đảm bảo token.id luôn có nếu token.sub có
+      if (!token.id && token.sub) {
+        token.id = token.sub;
+      }
+
       // Token còn hạn
       if (token.accessTokenExpires && Date.now() < Math.floor(Number(token.accessTokenExpires))) {
         return token;
@@ -192,10 +198,11 @@ export const authOptions: NextAuthOptions = {
       if (token && session.user) {
         session.user.username = token.username as string;
         session.user.email = token.email as string;
-        session.user.id = token.id as string;
+        session.user.id = (token.id || token.sub) as string;
         session.user.role = token.role as string;
         session.user.access_token = token.access_token as string;
         session.user.refresh_token = token.refresh_token as string;
+        (session as any).error = token.error;
       }
       return session;
     },
