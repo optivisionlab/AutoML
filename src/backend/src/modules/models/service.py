@@ -20,7 +20,7 @@ from sklearn.metrics import (
 )
 
 # Local Libraries
-from src.core import search_space, constants
+from src.core import constants
 
 
 # Logging
@@ -31,12 +31,11 @@ class ModelService:
     @staticmethod
     def build_scoring_dict(
         metric_list: list[str] | None = None,
-        problem_type: str = constants.ProblemType.CLASSIFICATION
+        problem_type: str = constants.ProblemType.CLASSIFICATION,
     ) -> dict[str, Any]:
-        metrics = metric_list or search_space.get_metric_list(problem_type)
         scoring: dict[str, Any] = {}
 
-        for metric in metrics:
+        for metric in metric_list:
             metric_clean = metric.lower().strip().replace(" ", "_")
             match metric_clean:
                 # Classification
@@ -85,14 +84,11 @@ class ModelService:
         X_test: np.ndarray,
         y_test: np.ndarray,
         metric_list: list[str] | None = None,
-        problem_type: str = constants.ProblemType.CLASSIFICATION
     ) -> dict[str, float]:
-        metrics = metric_list or search_space.get_metric_list(problem_type)
-
         y_pred = model.predict(X_test)
         results: dict[str, float] = {}
 
-        for metric in metrics:
+        for metric in metric_list:
             metric_clean = metric.lower().strip().replace(" ", "_")
             match metric_clean:
                 # Classification metrics

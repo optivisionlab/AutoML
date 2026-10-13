@@ -29,4 +29,3 @@ class TimeSeriesConfig(CVStrategyConfig):
     gap: int = Field(0, description="Samples skipped between train and validation of each chronological fold")
     max_train_size: int | None = Field(None, description="Maximum train window of a chronological fold")
     fold_test_size: int | None = Field(None, description="Validation window size of a chronological fold")
-

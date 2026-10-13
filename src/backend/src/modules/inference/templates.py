@@ -166,7 +166,7 @@ class DockerPackageTemplate:
             f"docker build -t hautoml-model-{job_id[:8]} .\n\n"
             f"# 2. Run Container\n"
             f"docker run -d -p 8000:8000 --name my-model hautoml-model-{job_id[:8]}\n\n"
-            f"# 3. Test Prediction\n"
+            f"# 3. Test Prediction (Example for classification)\n"
             f"curl -X POST http://localhost:8000/predict \\\n"
             f"  -H \"Content-Type: application/json\" \\\n"
             f"  -d '{{\"data\": [{json.dumps(sample_dict)}]}}'\n"
@@ -182,7 +182,25 @@ class NotebookTemplate:
         best_score: float,
         features: list[str],
         target: str,
+        problem_type: str = "classification",
     ) -> dict[str, Any]:
+        is_continuous = problem_type in ("regression", "time_series")
+        metrics_import = (
+            "from sklearn.metrics import r2_score, mean_squared_error\n"
+            if is_continuous
+            else "from sklearn.metrics import classification_report, accuracy_score\n"
+        )
+        dummy_y_line = (
+            "y_dummy = np.random.randn(100)\n\n"
+            if is_continuous
+            else "y_dummy = np.random.randint(0, 2, size=100)\n\n"
+        )
+        eval_line = (
+            "print('Sample verification R2 score:', r2_score(y_dummy, preds))\n"
+            if is_continuous
+            else "print('Sample verification accuracy:', accuracy_score(y_dummy, preds))\n"
+        )
+
         return {
             "cells": [
                 {
@@ -204,9 +222,8 @@ class NotebookTemplate:
                         "import numpy as np\n",
                         "import pandas as pd\n",
                         "import pickle\n",
-                        "from sklearn.model_selection import StratifiedKFold, cross_val_score\n",
-                        "from sklearn.preprocessing import StandardScaler, LabelEncoder\n",
-                        "from sklearn.metrics import classification_report, accuracy_score\n",
+                        "from sklearn.model_selection import cross_val_score\n",
+                        metrics_import,
                     ],
                 },
                 {
@@ -224,7 +241,7 @@ class NotebookTemplate:
                         f"TARGET_COL = '{target}'\n",
                         f"BEST_HYPERPARAMS = {json.dumps(best_params, indent=2)}\n\n",
                         "import sklearn.ensemble, sklearn.tree, sklearn.linear_model, sklearn.svm, sklearn.neighbors\n",
-                        f"model_cls = getattr(sklearn.ensemble, '{model_name}', None) or getattr(sklearn.tree, '{model_name}', None) or getattr(sklearn.linear_model, '{model_name}', None)\n",
+                        f"model_cls = getattr(sklearn.ensemble, '{model_name}', None) or getattr(sklearn.tree, '{model_name}', None) or getattr(sklearn.linear_model, '{model_name}', None) or getattr(sklearn.svm, '{model_name}', None) or getattr(sklearn.neighbors, '{model_name}', None)\n",
                         "model = model_cls(**BEST_HYPERPARAMS)\n",
                         "print('Model initialized with params:', BEST_HYPERPARAMS)\n",
                     ],
@@ -244,10 +261,10 @@ class NotebookTemplate:
                         "# df = pd.read_csv('your_dataset.csv')\n\n",
                         "# Sample synthetic verification:\n",
                         "X_dummy = np.random.randn(100, len(FEATURE_COLS))\n",
-                        "y_dummy = np.random.randint(0, 2, size=100)\n\n",
+                        dummy_y_line,
                         "model.fit(X_dummy, y_dummy)\n",
                         "preds = model.predict(X_dummy)\n",
-                        "print('Sample verification accuracy:', accuracy_score(y_dummy, preds))\n",
+                        eval_line,
                     ],
                 },
                 {

@@ -491,7 +491,7 @@ class DatasetService:
                 detail="Dataset not found, access denied, or data link missing",
                 error_code=constants.ErrorCode.NOT_FOUND
             )
-            
+
         bucket_name = data_link.get("bucket_name")
         object_name = data_link.get("object_name")
 
@@ -513,7 +513,7 @@ class DatasetService:
                     continue
 
                 series = df_preview[col_name]
-    
+
                 if series.isnull().all() or series.nunique() <= 1:
                     features[col_name] = False
                     continue
@@ -649,13 +649,26 @@ class DatasetService:
             )
 
     async def connect_database(self, payload: DatabaseConnection) -> list[str]:
-        return await self._run_database_call(self._list_database_tables, payload.to_config())
+        return await self._run_database_call(
+            self._list_database_tables,
+            payload.to_config()
+        )
 
     async def get_database_table_info(self, payload: TableInfoRequest) -> dict[str, Any]:
-        return await self._run_database_call(self._read_database_table_info, payload.to_config(), payload.table_name, payload.limit)
+        return await self._run_database_call(
+            self._read_database_table_info,
+            payload.to_config(),
+            payload.table_name,
+            payload.limit
+        )
 
     async def import_database_table(self, current_user: dict, payload: ImportTableRequest, limit: int = 50000) -> DatasetResponse:
-        parquet_buffer = await self._run_database_call(self._read_database_table_to_parquet, payload.to_config(), payload.table_name, limit)
+        parquet_buffer = await self._run_database_call(
+            self._read_database_table_to_parquet,
+            payload.to_config(),
+            payload.table_name,
+            limit
+        )
 
         user_id = str(current_user["_id"])
         bucket_name = "dataset"

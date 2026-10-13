@@ -68,34 +68,45 @@ def build_cv_splitter(
     return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
 
-def tune_and_fit_model(
+def build_trainable_model(
     model_cls: Type[BaseEstimator],
-    param_grid: list[dict[str, Any]] | dict[str, Any],
+    param_grid: list[dict[str, Any]],
+    problem_type: str = constants.ProblemType.CLASSIFICATION,
+) -> tuple[BaseEstimator, list[dict[str, Any]]]:
+    model = model_cls()
+    if problem_type == constants.ProblemType.TIME_SERIES:
+        if "random_state" in model.get_params():
+            model.set_params(random_state=42)
+        model = build_time_series_pipeline(model)
+        param_grid = [
+            {k if "__" in k else f"{MODEL_STEP}__{k}": v for k, v in grid.items()}
+            for grid in param_grid
+        ]
+
+    return model, param_grid
+
+
+def _clean_best_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k.removeprefix(f"{MODEL_STEP}__"): v
+        for k, v in params.items()
+    }
+
+
+def tune_and_fit_model(
+    estimator: BaseEstimator | Type[BaseEstimator],
+    param_grid: list[dict[str, Any]],
     cv: BaseCrossValidator,
     scoring: dict[str, Any],
     metric_sort: str,
     X_train: np.ndarray,
     y_train: np.ndarray,
     search_algorithm: str = constants.SearchAlgorithm.GRIDSEARCH,
-    problem_type: str = constants.ProblemType.CLASSIFICATION,
 ) -> tuple[BaseEstimator, dict[str, Any], BaseSearchCV]:
-    model = model_cls()
-
-    is_time_series = problem_type == constants.ProblemType.TIME_SERIES
-    if is_time_series:
-        # Preprocessing lives in the Pipeline so it is fitted on train folds only
-        if "random_state" in model.get_params():
-            model.set_params(random_state=42)
-        model = build_time_series_pipeline(model)
-        param_grid = [
-            {k if "__" in k else f"{MODEL_STEP}__{k}": v for k, v in grid.items()}
-            for grid in ([param_grid] if isinstance(param_grid, dict) else param_grid)
-        ]
-
     match search_algorithm:
         case constants.SearchAlgorithm.TPESEARCH:
             searcher = TPESearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -104,7 +115,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.RANDOMSEARCH:
             searcher = RandomSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -113,7 +124,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.BAYESIANSEARCH:
             searcher = BayesianSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -122,7 +133,7 @@ def tune_and_fit_model(
             )
         case constants.SearchAlgorithm.GENETICALGORITHM:
             searcher = GeneticAlgorithmSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -131,7 +142,7 @@ def tune_and_fit_model(
             )
         case _:
             searcher = GridSearch(
-                estimator=model,
+                estimator=estimator,
                 param_grid=param_grid,
                 cv=cv,
                 scoring=scoring,
@@ -141,11 +152,7 @@ def tune_and_fit_model(
 
     searcher.fit(X_train, y_train)
 
-    best_params = searcher.best_params_
-    if is_time_series:
-        best_params = {k.removeprefix(f"{MODEL_STEP}__"): v for k, v in best_params.items()}
-
-    return searcher.best_estimator_, best_params, searcher
+    return searcher.best_estimator_, _clean_best_params(searcher.best_params_), searcher
 
 
 def evaluate_trained_model(
@@ -154,7 +161,6 @@ def evaluate_trained_model(
     test_data_bytes: bytes | None,
     metric_list: list[str],
     metric_sort: str,
-    problem_type: str = constants.ProblemType.CLASSIFICATION
 ) -> tuple[dict[str, float], float]:
     metric_clean = metric_sort.lower().strip().replace(" ", "_")
 
@@ -165,7 +171,6 @@ def evaluate_trained_model(
             X_test,
             y_test,
             metric_list,
-            problem_type=problem_type,
         )
         primary_score = scores.get(metric_clean, 0.0)
     else:

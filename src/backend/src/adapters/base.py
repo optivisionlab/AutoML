@@ -1,9 +1,13 @@
+# Standard Libraries
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
+
+# Third-party Libraries
 import pandas as pd
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
+
 
 # --- 1. Standard adapter exceptions ---
 class DatabaseAdapterError(Exception):
@@ -33,7 +37,7 @@ class DatabaseConfig:
     password: Optional[str] = None
     schema_name: Optional[str] = None
     connect_timeout: int = 5
-    extra_params: Dict[str, Any] = field(default_factory=dict)
+    extra_params: dict[str, Any] = field(default_factory=dict)
 
 # --- 3. Base adapter ---
 class BaseDatabaseAdapter(ABC):
@@ -77,7 +81,7 @@ class BaseDatabaseAdapter(ABC):
         except Exception as e:
             raise DatabaseConnectionError(f"Could not connect to the database: {str(e)}") from e
 
-    def get_tables(self) -> List[str]:
+    def get_tables(self) -> list[str]:
         """List table names (views included when available)."""
         try:
             schema = (
@@ -148,7 +152,7 @@ class BaseDatabaseAdapter(ABC):
                 return df.head(limit)
             return df
 
-    def get_table_schema(self, table_name: str) -> Dict[str, Any]:
+    def get_table_schema(self, table_name: str) -> dict[str, Any]:
         """Return the column names and types of a table."""
         schema = (
             self.config.schema_name.strip()

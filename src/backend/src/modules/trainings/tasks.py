@@ -2,8 +2,8 @@
 import time
 import pickle
 import logging
-from typing import Any
 import warnings
+from typing import Any
 
 # Third-party Libraries
 import pymapreduce
@@ -15,6 +15,7 @@ from src.modules.models import MODEL_CLASS_MAP, ModelService
 from src.modules.preprocessing import CVStrategyConfig
 from src.modules.trainings.executor import (
     build_cv_splitter,
+    build_trainable_model,
     tune_and_fit_model,
     evaluate_trained_model,
     package_task_result,
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 @pymapreduce.remote
 def train_single_model_task(
     model_name: str,
-    param_grid: list[dict[str, Any]] | dict[str, Any],
+    param_grid: list[dict[str, Any]],
     train_data_bytes: bytes,
     test_data_bytes: bytes | None,
     cv_config: CVStrategyConfig | dict[str, Any],
@@ -56,16 +57,21 @@ def train_single_model_task(
     cv = build_cv_splitter(cv_config, problem_type=problem_type)
     scoring = ModelService.build_scoring_dict(metric_list, problem_type=problem_type)
 
-    best_estimator, best_params, search = tune_and_fit_model(
+    estimator, adapted_param_grid = build_trainable_model(
         model_cls=model_cls,
         param_grid=param_grid,
+        problem_type=problem_type,
+    )
+
+    best_estimator, best_params, search = tune_and_fit_model(
+        estimator=estimator,
+        param_grid=adapted_param_grid,
         cv=cv,
         scoring=scoring,
         metric_sort=metric_sort,
         X_train=X_train,
         y_train=y_train,
         search_algorithm=search_algorithm,
-        problem_type=problem_type,
     )
 
     scores, primary_score = evaluate_trained_model(
@@ -74,7 +80,6 @@ def train_single_model_task(
         test_data_bytes=test_data_bytes,
         metric_list=metric_list,
         metric_sort=metric_sort,
-        problem_type=problem_type,
     )
 
     task_result = package_task_result(

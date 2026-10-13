@@ -1,6 +1,11 @@
+# Standard Libraries
 from urllib.parse import quote_plus
+
+# Third-party Libraries
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+
+# Local Libraries
 from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 
 class MySQLAdapter(BaseDatabaseAdapter):

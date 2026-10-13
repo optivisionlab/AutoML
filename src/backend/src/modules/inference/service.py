@@ -165,21 +165,28 @@ class InferenceService:
         expected_features = config.get("list_feature", [])
 
         if expected_features and request.data:
-            first_row = request.data[0]
-            missing_cols = [col for col in expected_features if col not in first_row]
-            if missing_cols:
-                raise exceptions.CustomException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Missing required feature columns: {missing_cols}",
-                    error_code=constants.ErrorCode.BAD_REQUEST,
-                )
+            for idx, row in enumerate(request.data):
+                missing_cols = [col for col in expected_features if col not in row]
+                if missing_cols:
+                    raise exceptions.CustomException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Record at index {idx} is missing required feature columns: {missing_cols}",
+                        error_code=constants.ErrorCode.BAD_REQUEST,
+                    )
 
-        start_time = time.perf_counter()
-        raw_preds = await InferenceActorRegistry.invoke_actor(
-            job_id, storage_info, "predict", request.data, expected_features
-        )
-        predictions = await self._resolve_actor_output(raw_preds)
-        latency_ms = (time.perf_counter() - start_time) * 1000.0
+        try:
+            start_time = time.perf_counter()
+            raw_preds = await InferenceActorRegistry.invoke_actor(
+                job_id, storage_info, "predict", request.data, expected_features
+            )
+            predictions = await self._resolve_actor_output(raw_preds)
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
+        except Exception as e:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to perform prediction: {str(e)}",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
 
         return PredictResponse(
             job_id=job_id,
@@ -278,6 +285,7 @@ class InferenceService:
         config = job_doc.get("config", {})
         features = config.get("list_feature", [])
         target = config.get("target", "target")
+        problem_type = config.get("problem_type", constants.ProblemType.CLASSIFICATION)
 
         notebook = NotebookTemplate.generate_notebook_dict(
             model_name=model_name,
@@ -285,6 +293,7 @@ class InferenceService:
             best_score=best_score,
             features=features,
             target=target,
+            problem_type=problem_type,
         )
 
         content_bytes = json.dumps(notebook, indent=2).encode("utf-8")

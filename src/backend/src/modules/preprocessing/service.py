@@ -78,8 +78,6 @@ class TabularPreprocessor:
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         min_class_count: int = 5,
     ) -> CVStrategyConfig:
-        if problem_type == constants.ProblemType.TIME_SERIES:
-            raise ValueError("Time series CV depends on the time column; use prepare_time_series_data")
         if problem_type == constants.ProblemType.REGRESSION:
             return determine_regression_cv_tier(n_rows)
         return determine_classification_cv_tier(n_rows, min_class_count)

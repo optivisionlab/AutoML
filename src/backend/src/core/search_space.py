@@ -40,23 +40,3 @@ def _load_model_config(problem_type: str) -> tuple[dict[str, list[dict[str, Any]
 CLASSIFICATION_MODELS, CLASSIFICATION_METRIC_LIST = _load_model_config("classification")
 REGRESSION_MODELS, REGRESSION_METRIC_LIST = _load_model_config("regression")
 TIME_SERIES_MODELS, TIME_SERIES_METRIC_LIST = _load_model_config("time_series")
-
-
-def get_models(problem_type: str) -> dict[str, list[dict[str, Any]]]:
-    match problem_type:
-        case ProblemType.REGRESSION:
-            return REGRESSION_MODELS
-        case ProblemType.TIME_SERIES:
-            return TIME_SERIES_MODELS
-        case _:
-            return CLASSIFICATION_MODELS
-
-
-def get_metric_list(problem_type: str) -> list[str]:
-    match problem_type:
-        case ProblemType.REGRESSION:
-            return REGRESSION_METRIC_LIST
-        case ProblemType.TIME_SERIES:
-            return TIME_SERIES_METRIC_LIST
-        case _:
-            return CLASSIFICATION_METRIC_LIST

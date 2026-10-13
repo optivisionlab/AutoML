@@ -1,4 +1,7 @@
-from typing import Dict, Type
+# Standard Libraries
+from typing import Type
+
+# Local Libraries
 from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
 from src.adapters.postgres import PostgresAdapter
 from src.adapters.mysql import MySQLAdapter
@@ -15,7 +18,7 @@ from src.adapters.redshift import RedshiftAdapter
 
 
 # db_type (lower-case) -> adapter class; aliases point to the same class
-ADAPTERS: Dict[str, Type[BaseDatabaseAdapter]] = {
+ADAPTERS: dict[str, Type[BaseDatabaseAdapter]] = {
     "postgres": PostgresAdapter,
     "postgresql": PostgresAdapter,
     "mysql": MySQLAdapter,
