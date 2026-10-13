@@ -67,7 +67,7 @@ class BaseSearchCV(BaseEstimator, ABC):
         param_grid: list[dict[str, Any]] | dict[str, Any],
         patience: int | None = None,
         min_delta: float = 1e-4,
-        enable_pruning: bool = False,
+        enable_pruning: bool = True,
         pruning_startup_trials: int = 5,
         pruning_warmup_folds: int = 1,
         cv: BaseCrossValidator | int = 5,
@@ -86,7 +86,7 @@ class BaseSearchCV(BaseEstimator, ABC):
         self.pruning_warmup_folds = max(0, pruning_warmup_folds)
         self.cv = cv
         self.scoring = scoring or {}
-        self.refit = refit
+        self.refit = (refit or "accuracy").lower().strip().replace(" ", "_").replace("-", "_")
         self.random_state = random_state
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -143,6 +143,16 @@ class BaseSearchCV(BaseEstimator, ABC):
         """
         Initializes search state and precomputes CV fold splits
         """
+        if self.scoring:
+            matching = [
+                k for k in self.scoring
+                if k.lower().strip().replace(" ", "_").replace("-", "_") == self.refit
+            ]
+            if matching:
+                self.refit = matching[0]
+            elif self.refit not in self.scoring:
+                self.refit = next(iter(self.scoring))
+
         self._init_cv_results()
         cv_splitter = check_cv(self.cv, y, classifier=is_classifier(self.estimator))
         self.cv_splits_ = list(cv_splitter.split(X, y))
@@ -162,6 +172,9 @@ class BaseSearchCV(BaseEstimator, ABC):
         history_at_step = self._fold_history_by_step.get(step, [])
         if len(history_at_step) < self.pruning_startup_trials:
             return False
+
+        if not np.isfinite(current_mean_score):
+            return True
 
         median_score = float(np.median(history_at_step))
         return current_mean_score < median_score
@@ -238,14 +251,16 @@ class BaseSearchCV(BaseEstimator, ABC):
             fold_eval_start = time.time()
             for metric, scorer_fn in self.scoring.items():
                 try:
-                    score_val = float(scorer_fn(model_fold, X_val, y_val))
+                    val = scorer_fn(model_fold, X_val, y_val)
+                    score_val = float(val) if np.isfinite(val) else -1e6
                 except Exception as exc:
                     logger.warning(f"Failed to compute score for metric '{metric}': {exc}")
-                    score_val = -float("inf")
+                    score_val = -1e6
                 fold_scores[metric].append(score_val)
             score_times.append(time.time() - fold_eval_start)
 
-            current_mean_refit = float(np.mean(fold_scores.get(self.refit, [-float("inf")])))
+            refit_vals = fold_scores.get(self.refit, [])
+            current_mean_refit = float(np.mean(refit_vals)) if refit_vals and np.isfinite(np.mean(refit_vals)) else -1e6
             step_intermediate_refit_scores.append(current_mean_refit)
 
             # Fold-level median pruning check
@@ -258,8 +273,14 @@ class BaseSearchCV(BaseEstimator, ABC):
         for step, score in enumerate(step_intermediate_refit_scores):
             self._fold_history_by_step.setdefault(step, []).append(score)
 
-        mean_scores = {m: float(np.mean(vals)) if vals else -float("inf") for m, vals in fold_scores.items()}
-        std_scores = {m: float(np.std(vals)) if vals else 0.0 for m, vals in fold_scores.items()}
+        mean_scores = {
+            m: float(np.mean(vals)) if vals and np.isfinite(np.mean(vals)) else -1e6
+            for m, vals in fold_scores.items()
+        }
+        std_scores = {
+            m: float(np.std(vals)) if vals and np.isfinite(np.std(vals)) else 0.0
+            for m, vals in fold_scores.items()
+        }
         fit_time = float(np.mean(fit_times)) if fit_times else 0.0
         score_time = float(np.mean(score_times)) if score_times else 0.0
         elapsed = time.time() - start_time
@@ -283,8 +304,9 @@ class BaseSearchCV(BaseEstimator, ABC):
         Records evaluated trial metrics into trials_history_ and cv_results_
         """
         clean_params = convert_numpy_types(candidate_params)
-        default_score = -float("inf") if is_pruned else 0.0
-        refit_score = mean_scores.get(self.refit, default_score)
+        default_score = -1e6 if is_pruned else 0.0
+        raw_refit = mean_scores.get(self.refit, default_score)
+        refit_score = float(raw_refit) if np.isfinite(raw_refit) else default_score
 
         self.cv_results_["params"].append(clean_params)
         self.cv_results_["mean_fit_time"].append(fit_time)
@@ -293,7 +315,9 @@ class BaseSearchCV(BaseEstimator, ABC):
         self.cv_results_["std_test_score"].append(std_scores.get(self.refit, 0.0))
 
         for metric in self.scoring:
-            self.cv_results_[f"mean_test_{metric}"].append(mean_scores.get(metric, default_score))
+            raw_metric = mean_scores.get(metric, default_score)
+            metric_val = float(raw_metric) if np.isfinite(raw_metric) else default_score
+            self.cv_results_[f"mean_test_{metric}"].append(metric_val)
             self.cv_results_[f"std_test_{metric}"].append(std_scores.get(metric, 0.0))
 
         self.trials_history_.append({
@@ -318,11 +342,21 @@ class BaseSearchCV(BaseEstimator, ABC):
             self.best_estimator_ = clone(self.estimator).fit(X, y)
             return self
 
-        test_scores = np.array(self.cv_results_["mean_test_score"], dtype=float)
+        test_scores = np.nan_to_num(
+            np.array(self.cv_results_["mean_test_score"], dtype=float),
+            nan=-1e9,
+            posinf=1e9,
+            neginf=-1e9,
+        )
         self.cv_results_["rank_test_score"] = (np.argsort(np.argsort(-test_scores)) + 1).tolist()
 
         for metric in self.scoring:
-            metric_scores = np.array(self.cv_results_[f"mean_test_{metric}"], dtype=float)
+            metric_scores = np.nan_to_num(
+                np.array(self.cv_results_[f"mean_test_{metric}"], dtype=float),
+                nan=-1e9,
+                posinf=1e9,
+                neginf=-1e9,
+            )
             self.cv_results_[f"rank_test_{metric}"] = (np.argsort(np.argsort(-metric_scores)) + 1).tolist()
 
         # Prioritize non-pruned trials when selecting the best candidate

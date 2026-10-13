@@ -27,7 +27,7 @@ class RandomSearch(BaseSearchCV):
         n_iter: int = 20,
         patience: int | None = None,
         min_delta: float = 1e-4,
-        enable_pruning: bool = False,
+        enable_pruning: bool = True,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
@@ -72,11 +72,11 @@ class RandomSearch(BaseSearchCV):
                     total_trials=n_samples,
                 )
                 self._record_trial(candidate, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
-                score = mean_scores.get(self.refit, 0.0)
+                score = mean_scores.get(self.refit, -1e6)
                 if self._check_early_stopping(score):
                     break
             except TrialPruned:
-                pruned_scores = {m: -float("inf") for m in self.scoring}
+                pruned_scores = {m: -1e6 for m in self.scoring}
                 self._record_trial(
                     candidate,
                     pruned_scores,

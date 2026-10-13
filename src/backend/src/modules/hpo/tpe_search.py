@@ -82,7 +82,7 @@ class TPESearch(BaseSearchCV):
                     )
                     self._record_trial({}, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                 except TrialPruned:
-                    pruned_scores = {m: -float("inf") for m in self.scoring}
+                    pruned_scores = {m: -1e6 for m in self.scoring}
                     self._record_trial({}, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
                 continue
 
@@ -111,7 +111,8 @@ class TPESearch(BaseSearchCV):
 
                 if param_key in cache:
                     cached_mean_scores, _, _, _ = cache[param_key]
-                    return float(cached_mean_scores.get(self.refit, -float("inf")))
+                    cached_val = cached_mean_scores.get(self.refit, -1e6)
+                    return float(cached_val) if np.isfinite(cached_val) else -1e6
 
                 total_evaluated += 1
                 try:
@@ -125,12 +126,13 @@ class TPESearch(BaseSearchCV):
                     self._record_trial(sampled_params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                     cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
                 except TrialPruned as prune_exc:
-                    pruned_scores = {m: -float("inf") for m in self.scoring}
+                    pruned_scores = {m: -1e6 for m in self.scoring}
                     self._record_trial(sampled_params, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
                     cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
                     raise optuna.TrialPruned(str(prune_exc))
 
-                current_score = float(mean_scores.get(self.refit, -float("inf")))
+                raw_curr = mean_scores.get(self.refit, -1e6)
+                current_score = float(raw_curr) if np.isfinite(raw_curr) else -1e6
 
                 # Check centralized early stopping
                 if self._check_early_stopping(current_score):
