@@ -109,10 +109,12 @@ export interface ConnectDBPayload {
   extra_params?: Record<string, unknown>;
 }
 
-export interface ConnectDBResponse {
-  success: boolean;
-  message: string;
+export interface ConnectDBResponseData {
   tables: string[];
+}
+
+export interface ConnectDBResponse extends BaseResponse<ConnectDBResponseData> {
+  tables?: string[];
 }
 
 export interface ImportDatabaseTablePayload {
@@ -126,10 +128,11 @@ export interface ImportDatabaseTablePayload {
   password?: string;
   schema_name?: string;
   extra_params?: Record<string, unknown>;
+  description?: string | null;
+  public?: boolean;
 }
 
-export interface ImportDatabaseTableResponse {
-  success: boolean;
-  message: string;
+export interface ImportDatabaseTableResponse extends BaseResponse<Dataset> {
   dataset_id?: string;
 }
+

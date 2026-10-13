@@ -134,7 +134,10 @@ export const createDatasetService = (client: AxiosInstance) => ({
 
   // Database connector extension
   connectDatabase: async (payload: ConnectDBPayload): Promise<ConnectDBResponse> => {
-    const res = await client.post<ConnectDBResponse>("/connect-database", payload);
+    const res = await client.post<ConnectDBResponse>(
+      "/api/v1/datasets/database/connect",
+      payload,
+    );
     return res.data;
   },
 
@@ -142,7 +145,7 @@ export const createDatasetService = (client: AxiosInstance) => ({
     payload: ImportDatabaseTablePayload,
   ): Promise<ImportDatabaseTableResponse> => {
     const res = await client.post<ImportDatabaseTableResponse>(
-      "/import-database-table",
+      "/api/v1/datasets/database/import",
       payload,
     );
     return res.data;

@@ -241,7 +241,7 @@ export default function ConnectDatabaseDialog({
 
       const res = await connectDatabase(payload).unwrap();
 
-      const tableList = res.tables || [];
+      const tableList = res.data?.tables || res.tables || [];
       setTables(tableList);
 
       if (tableList.length > 0) {

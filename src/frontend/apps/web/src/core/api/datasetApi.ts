@@ -178,7 +178,7 @@ export const datasetApi = baseApi.injectEndpoints({
     // External Database connector endpoints
     connectDatabase: builder.mutation<ConnectDBResponse, ConnectDBPayload>({
       query: (payload) => ({
-        url: "/connect-database",
+        url: "/api/v1/datasets/database/connect",
         method: "POST",
         data: payload,
       }),
@@ -189,7 +189,7 @@ export const datasetApi = baseApi.injectEndpoints({
       ImportDatabaseTablePayload
     >({
       query: (payload) => ({
-        url: "/import-database-table",
+        url: "/api/v1/datasets/database/import",
         method: "POST",
         data: payload,
       }),
