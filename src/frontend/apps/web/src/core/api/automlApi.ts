@@ -33,7 +33,11 @@ export const automlApi = baseApi.injectEndpoints({
         },
       }),
       transformResponse: (response: any) => {
-        return response?.data || response;
+        const raw = response?.data || response;
+        if (raw && typeof raw === "object" && "features" in raw) {
+          return raw as FeaturesResponse;
+        }
+        return { features: (raw as FeatureMap) || {} };
       },
       providesTags: (_result, _error, { datasetId }) => [
         { type: "AutoML", id: `features-${datasetId}` },
@@ -49,7 +53,16 @@ export const automlApi = baseApi.injectEndpoints({
         },
       }),
       transformResponse: (response: any) => {
-        return response?.data || response;
+        const payload = response?.data || response;
+        if (payload && typeof payload === "object") {
+          const list = payload.data || payload.records || [];
+          return {
+            ...payload,
+            data: list,
+            records: list,
+          };
+        }
+        return payload;
       },
       providesTags: (_result, _error, datasetId) => [
         { type: "AutoML", id: `preview-${datasetId}` },
@@ -99,14 +112,13 @@ export const automlApi = baseApi.injectEndpoints({
           url: `/api/v1/datasets/${datasetId}/training`,
           method: "POST",
           data: {
-            config: {
-              choose: config.choose,
-              problem_type: config.problem_type || config.problemType,
-              target: config.target,
-              list_feature: config.list_feature || config.features,
-              metric_sort: config.metric_sort,
-              search_algorithm: config.search_algorithm || "bayesian_search",
-            },
+            choose: config.choose,
+            problem_type: config.problem_type || config.problemType,
+            target: config.target,
+            list_feature: config.list_feature || config.features,
+            metric_sort: config.metric_sort,
+            search_algorithm: config.search_algorithm || "tpe_search",
+            timeout: config.timeout,
           },
         };
       },

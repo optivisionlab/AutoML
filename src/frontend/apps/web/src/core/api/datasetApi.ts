@@ -156,6 +156,18 @@ export const datasetApi = baseApi.injectEndpoints({
           params: { num_rows: numRows ?? 50 },
         };
       },
+      transformResponse: (response: any) => {
+        const payload = response?.data || response;
+        if (payload && typeof payload === "object") {
+          const list = payload.data || payload.records || [];
+          return {
+            ...payload,
+            data: list,
+            records: list,
+          };
+        }
+        return payload;
+      },
       providesTags: (_result, _error, arg) => {
         const datasetId = typeof arg === "string" ? arg : arg.datasetId;
         return [{ type: "Dataset", id: `data-${datasetId}` }];
@@ -170,7 +182,7 @@ export const datasetApi = baseApi.injectEndpoints({
       query: ({ id, config }) => ({
         url: `/api/v1/datasets/${id}/training`,
         method: "POST",
-        data: { config },
+        data: config,
       }),
       invalidatesTags: ["Job", "Inference"],
     }),
@@ -198,8 +210,8 @@ export const datasetApi = baseApi.injectEndpoints({
 
     // Legacy hook compatibility
     getDatasetsByUserId: builder.query<Dataset[], string | void>({
-      query: () => ({
-        url: "/api/v1/datasets",
+      query: (userId) => ({
+        url: userId === "0" ? "/api/v1/datasets/default" : "/api/v1/datasets",
         params: { current_page: 1, page_size: 100 },
       }),
       transformResponse: (response: DatasetsListResponse) => response.data || [],

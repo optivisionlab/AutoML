@@ -102,7 +102,8 @@ const ResultPage = ({ params }: Props) => {
           metric_sort: config.metric_sort,
           list_feature: config.list_feature,
           target: config.target,
-          problem_type: config.problemType
+          problem_type: config.problemType,
+          search_algorithm: "tpe_search",
         },
       };
 

@@ -54,6 +54,7 @@ export interface DatasetFeaturesResponseData {
 export interface DatasetDataPreviewResponseData {
   rows: number;
   data: Record<string, unknown>[];
+  records?: Record<string, unknown>[];
 }
 
 export interface DatasetTrainingConfig {
@@ -62,7 +63,8 @@ export interface DatasetTrainingConfig {
   target: string;
   list_feature: string[];
   metric_sort: string;
-  search_algorithm:
+  search_algorithm?:
+    | "tpe_search"
     | "bayesian_search"
     | "grid_search"
     | "random_search"

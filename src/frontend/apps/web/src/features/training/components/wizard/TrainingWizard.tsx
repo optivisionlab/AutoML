@@ -188,7 +188,7 @@ export default function TrainingWizard({
       skip: !shouldFetchTrainingMeta,
     });
 
-  const listFeature = featuresData?.features ?? {};
+  const listFeature = featuresData?.features ?? (featuresData as any) ?? {};
   const metrics = metricsData?.metrics ?? {};
   const featureNames = Object.keys(listFeature);
   const selectableFeatures = featureNames.filter((name) => name !== selectedTarget);

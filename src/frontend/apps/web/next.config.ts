@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   transpilePackages: ["@automl/domain", "@automl/api"],
   images: {
+    unoptimized: true,
     domains: [
       "developers.google.com",
       "avatars.githubusercontent.com",

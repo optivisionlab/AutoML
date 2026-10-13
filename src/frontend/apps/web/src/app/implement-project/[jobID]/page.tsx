@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -46,6 +47,7 @@ type TabKey = "snippets" | "realtime" | "batch" | "export";
 
 export default function ModelServingWorkbenchPage() {
   const params = useParams();
+  const { data: session } = useSession();
   const rawId = params?.jobID;
   const jobId = Array.isArray(rawId) ? rawId[0] : rawId || "";
 
@@ -247,6 +249,7 @@ export default function ModelServingWorkbenchPage() {
         defaultFileName: `predicted_${batchFile.name}`,
         method: "POST",
         dataPayload: formData,
+        token: (session?.user as any)?.access_token,
       });
 
       toast({
@@ -293,6 +296,7 @@ export default function ModelServingWorkbenchPage() {
         url: endpoint,
         defaultFileName: defaultName,
         method: "GET",
+        token: (session?.user as any)?.access_token,
       });
 
       toast({

@@ -12,4 +12,5 @@ export interface MetricsResponse {
 export interface DataPreviewResponse {
   rows: number;
   data: Record<string, unknown>[];
+  records?: Record<string, unknown>[];
 }

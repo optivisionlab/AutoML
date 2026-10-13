@@ -127,7 +127,7 @@ export const createDatasetService = (client: AxiosInstance) => ({
   ): Promise<StartTrainingResponse> => {
     const res = await client.post<StartTrainingResponse>(
       `/api/v1/datasets/${id}/training`,
-      { config },
+      config,
     );
     return res.data;
   },

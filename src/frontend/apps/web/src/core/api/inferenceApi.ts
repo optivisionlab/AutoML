@@ -189,16 +189,26 @@ export const inferenceApi = baseApi.injectEndpoints({
       },
       invalidatesTags: ["Inference"],
     }),
-    cancelPrediction: builder.mutation<unknown, string>({
-      query: () => ({
-        url: "/api/v1/notifications",
+    cancelJob: builder.mutation<BaseResponse<{ status: string; job_id: string }>, string>({
+      query: (jobId) => ({
+        url: `/api/v1/inference/jobs/${jobId}/cancel`,
+        method: "POST",
       }),
+      invalidatesTags: ["Job", "Inference"],
+    }),
+    cancelPrediction: builder.mutation<BaseResponse<{ status: string; job_id: string }>, string>({
+      query: (jobId) => ({
+        url: `/api/v1/inference/jobs/${jobId}/cancel`,
+        method: "POST",
+      }),
+      invalidatesTags: ["Job", "Inference"],
     }),
   }),
 });
 
 export const {
   useActivateModelMutation,
+  useCancelJobMutation,
   useCancelPredictionMutation,
   useGetActiveModelsQuery,
   useGetModelDeploymentInfoQuery,

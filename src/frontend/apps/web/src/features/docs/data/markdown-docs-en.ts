@@ -623,7 +623,7 @@ Create and enqueue an asynchronous AutoML training job.
     "problem_type": "classification",
     "target": "target_column",
     "list_feature": ["feature_1", "feature_2", "feature_3"],
-    "search_algorithm": "bayesian_search",
+    "search_algorithm": "tpe_search",
     "metric_sort": "f1_score"
   }
 }
