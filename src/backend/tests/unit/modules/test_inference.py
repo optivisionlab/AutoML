@@ -1,0 +1,623 @@
+import io
+import json
+import pickle
+import zipfile
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+from bson import ObjectId
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+
+from src.core.exceptions import CustomException
+from src.modules.preprocessing import TabularPreprocessor
+from src.modules.inference.registry import InferenceActorRegistry
+from src.modules.inference.service import InferenceService
+from src.modules.inference.schemas import PredictRequest
+
+
+class TestInferenceActorRegistry(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        await InferenceActorRegistry.clear()
+
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
+    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    async def test_get_or_create_actor_and_eviction(self, mock_get_driver, mock_actor_remote):
+        mock_actor_handle = MagicMock()
+        mock_actor_remote.return_value = mock_actor_handle
+
+        job_id = "job_123"
+        storage_info = {"bucket_name": "models", "object_name": "path/model.pkl"}
+
+        actor1 = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
+        self.assertEqual(actor1, mock_actor_handle)
+        mock_actor_remote.assert_called_once()
+        mock_get_driver.assert_called_once()
+
+        # Calling again should return cached actor without calling remote again
+        mock_actor_remote.reset_mock()
+        actor2 = await InferenceActorRegistry.get_or_create_actor(job_id, storage_info)
+        self.assertEqual(actor2, mock_actor_handle)
+        mock_actor_remote.assert_not_called()
+
+        with patch("pymapreduce.kill", new_callable=AsyncMock) as mock_kill:
+            evicted = await InferenceActorRegistry.evict_actor(job_id)
+            self.assertTrue(evicted)
+            mock_kill.assert_called_once_with(mock_actor_handle)
+            self.assertNotIn(job_id, InferenceActorRegistry._actors)
+
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
+    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    async def test_invoke_actor_with_retry(self, mock_get_driver, mock_actor_remote):
+        first_handle = MagicMock()
+        first_handle.predict.remote = AsyncMock(side_effect=RuntimeError("Actor Disconnected"))
+
+        second_handle = MagicMock()
+        second_handle.predict.remote = AsyncMock(return_value=["ClassA"])
+
+        mock_actor_remote.side_effect = [first_handle, second_handle]
+
+        job_id = "job_retry_123"
+        storage_info = {"bucket_name": "models", "object_name": "path/model.pkl"}
+
+        res = await InferenceActorRegistry.invoke_actor(
+            job_id, storage_info, "predict", [{"feat": 1.0}], ["feat"]
+        )
+
+        self.assertEqual(res, ["ClassA"])
+        self.assertEqual(mock_actor_remote.call_count, 2)
+
+
+class TestInferenceService(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mock_db = MagicMock()
+        self.mock_jobs = MagicMock()
+        self.mock_jobs.find_one = AsyncMock()
+        self.mock_jobs.update_one = AsyncMock()
+        self.mock_jobs.count_documents = AsyncMock()
+        self.mock_db.tbl_Job = self.mock_jobs
+        self.service = InferenceService(self.mock_db)
+
+        self.user_oid = ObjectId()
+        self.current_user = {
+            "_id": self.user_oid,
+            "username": "tester",
+            "role": "user",
+        }
+
+        # Train a mock dataset with preprocessor bundle
+        raw_df = pd.DataFrame({
+            "feature_x": [1.0, 3.0, 5.0, 7.0],
+            "feature_y": [2.0, 4.0, 6.0, 8.0],
+            "category_col": ["red", "blue", "red", "blue"],
+            "target_col": ["ClassA", "ClassB", "ClassA", "ClassB"],
+        })
+        (X_train, y_train), _, _, feature_cols, self.preprocessor = TabularPreprocessor.prepare_data(
+            df=raw_df,
+            target_col="target_col",
+        )
+
+        self.model = RandomForestClassifier(n_estimators=10, random_state=42)
+        self.model.fit(X_train, y_train)
+
+        self.artifact = {
+            "model": self.model,
+            "preprocessor": self.preprocessor,
+            "feature_names": feature_cols,
+            "target_name": "target_col",
+            "problem_type": "classification",
+        }
+        self.artifact_bytes = pickle.dumps(self.artifact)
+
+        self.job_oid = ObjectId()
+        self.job_id = str(self.job_oid)
+        self.mock_job_doc = {
+            "_id": self.job_oid,
+            "user": {"id": str(self.user_oid), "name": "tester"},
+            "status": 1,
+            "activate": 1,
+            "best_model": "RandomForestClassifier",
+            "best_score": 0.95,
+            "best_params": {"n_estimators": 10},
+            "model": {"bucket_name": "models", "object_name": f"{self.user_oid}/{self.job_id}/model.pkl"},
+            "config": {
+                "list_feature": feature_cols,
+                "target": "target_col",
+            },
+        }
+
+    async def test_toggle_model_activation(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+        self.mock_jobs.update_one.return_value = MagicMock(modified_count=1)
+
+        resp = await self.service.toggle_model_activation(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            activate=0,
+            base_url="http://api.hautoml.com",
+        )
+        self.assertEqual(resp.activate, 0)
+        self.assertEqual(resp.status, "INACTIVE")
+        self.mock_jobs.update_one.assert_called()
+
+        resp2 = await self.service.toggle_model_activation(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            activate=1,
+            base_url="http://api.hautoml.com",
+        )
+        self.assertEqual(resp2.activate, 1)
+        self.assertEqual(resp2.status, "ACTIVE")
+        self.assertIn("curl", resp2.code_snippets.curl)
+        self.assertIn("import requests", resp2.code_snippets.python)
+
+    async def test_get_deployment_info(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        info = await self.service.get_deployment_info(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            base_url="http://localhost:9999",
+        )
+        self.assertEqual(info.job_id, self.job_id)
+        self.assertEqual(info.model_name, "RandomForestClassifier")
+        self.assertEqual(info.features, ["feature_x", "feature_y", "category_col"])
+        self.assertIn("curl -X POST", info.code_snippets.curl)
+        self.assertIn("fetch(", info.code_snippets.javascript)
+        self.assertIn("HttpClient", info.code_snippets.csharp)
+        self.assertIn("curl_init", info.code_snippets.php)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_success_with_decoded_labels(self, mock_get_actor):
+        mock_actor = MagicMock()
+        mock_actor.predict.remote = AsyncMock(return_value=["ClassA", "ClassB"])
+        mock_get_actor.return_value = mock_actor
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        req = PredictRequest(
+            data=[
+                {"feature_x": 1.5, "feature_y": 2.5, "category_col": "red"},
+                {"feature_x": 6.5, "feature_y": 7.5, "category_col": "blue"},
+            ]
+        )
+
+        res = await self.service.predict(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            request=req,
+        )
+
+        self.assertEqual(res.total_samples, 2)
+        self.assertEqual(len(res.predictions), 2)
+        self.assertIn(res.predictions[0], ["ClassA", "ClassB"])
+        self.assertIn(res.predictions[1], ["ClassA", "ClassB"])
+        self.assertGreaterEqual(res.latency_ms, 0.0)
+        mock_actor.predict.remote.assert_called_once_with(req.data, self.mock_job_doc["config"]["list_feature"])
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_regression_success(self, mock_get_actor):
+        mock_actor = MagicMock()
+        mock_actor.predict.remote = AsyncMock(return_value=[55.0])
+        mock_get_actor.return_value = mock_actor
+
+        reg_job_doc = dict(self.mock_job_doc)
+        reg_job_doc["best_model"] = "LinearRegression"
+        reg_job_doc["config"] = {"list_feature": ["feature_x", "feature_y"], "target": "target_col", "problem_type": "regression"}
+        self.mock_jobs.find_one.return_value = reg_job_doc
+
+        req = PredictRequest(
+            data=[
+                {"feature_x": 5.0, "feature_y": 50.0},
+            ]
+        )
+        res = await self.service.predict(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            request=req,
+        )
+        self.assertEqual(res.total_samples, 1)
+        self.assertEqual(len(res.predictions), 1)
+        self.assertIsInstance(res.predictions[0], (float, int))
+        self.assertAlmostEqual(res.predictions[0], 55.0, delta=1.0)
+        mock_actor.predict.remote.assert_called_once_with(req.data, ["feature_x", "feature_y"])
+
+    async def test_predict_when_inactive_raises_forbidden(self):
+        inactive_job = dict(self.mock_job_doc)
+        inactive_job["activate"] = 0
+        self.mock_jobs.find_one.return_value = inactive_job
+
+        req = PredictRequest(data=[{"feature_x": 1.0, "feature_y": 2.0, "category_col": "red"}])
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                request=req,
+            )
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_predict_missing_columns_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        with patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock) as mock_get_actor:
+            mock_actor = MagicMock()
+            mock_get_actor.return_value = mock_actor
+
+            req = PredictRequest(data=[{"feature_x": 1.0}])
+
+            with self.assertRaises(CustomException) as ctx:
+                await self.service.predict(
+                    current_user=self.current_user,
+                    job_id=self.job_id,
+                    request=req,
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_file_csv_success(self, mock_get_actor):
+        csv_out = b"feature_x,feature_y,category_col,predicted_target_col\n1.5,2.5,red,ClassA\n6.5,7.5,blue,ClassB\n"
+        mock_actor = MagicMock()
+        mock_actor.predict_file.remote = AsyncMock(return_value=("predicted_test_data.csv", "text/csv", csv_out))
+        mock_get_actor.return_value = mock_actor
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        csv_content = b"feature_x,feature_y,category_col\n1.5,2.5,red\n6.5,7.5,blue\n"
+        mock_file = AsyncMock()
+        mock_file.filename = "test_data.csv"
+        mock_file.file = io.BytesIO(csv_content)
+        mock_file.read.return_value = csv_content
+
+        filename, media_type, buffer = await self.service.predict_file(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            file=mock_file,
+        )
+
+        self.assertEqual(filename, "predicted_test_data.csv")
+        self.assertEqual(media_type, "text/csv")
+        df_out = pd.read_csv(buffer)
+        self.assertEqual(len(df_out), 2)
+        self.assertIn("predicted_target_col", df_out.columns)
+        self.assertEqual(len(df_out["predicted_target_col"]), 2)
+        self.assertIn(df_out["predicted_target_col"].iloc[0], ["ClassA", "ClassB"])
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.get_or_create_actor", new_callable=AsyncMock)
+    async def test_predict_file_excel_success(self, mock_get_actor):
+        excel_out_buf = io.BytesIO()
+        df_fake = pd.DataFrame({
+            "feature_x": [1.5, 6.5],
+            "feature_y": [2.5, 7.5],
+            "category_col": ["red", "blue"],
+            "predicted_target_col": ["ClassA", "ClassB"],
+        })
+        df_fake.to_excel(excel_out_buf, index=False, engine="openpyxl")
+        excel_bytes = excel_out_buf.getvalue()
+
+        mock_actor = MagicMock()
+        mock_actor.predict_file.remote = AsyncMock(return_value=(
+            "predicted_test_data.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            excel_bytes,
+        ))
+        mock_get_actor.return_value = mock_actor
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        df_in = pd.DataFrame({
+            "feature_x": [1.5, 6.5],
+            "feature_y": [2.5, 7.5],
+            "category_col": ["red", "blue"]
+        })
+        excel_buf = io.BytesIO()
+        df_in.to_excel(excel_buf, index=False, engine="openpyxl")
+        excel_buf.seek(0)
+
+        mock_file = AsyncMock()
+        mock_file.filename = "test_data.xlsx"
+        mock_file.file = excel_buf
+        mock_file.read.return_value = excel_buf.getvalue()
+
+        filename, media_type, buffer = await self.service.predict_file(
+            current_user=self.current_user,
+            job_id=self.job_id,
+            file=mock_file,
+        )
+
+        self.assertEqual(filename, "predicted_test_data.xlsx")
+        self.assertIn("spreadsheetml", media_type)
+        df_out = pd.read_excel(buffer)
+        self.assertEqual(len(df_out), 2)
+        self.assertIn("predicted_target_col", df_out.columns)
+
+    async def test_predict_file_oversized_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "huge_data.csv"
+        mock_file.size = 150 * 1024 * 1024 # 150MB > 100MB limit
+        mock_file.file = None
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("exceeds the maximum allowed limit", ctx.exception.detail)
+
+    async def test_predict_file_oversized_after_read_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "streamed_huge_data.csv"
+        mock_file.size = None
+        mock_file.file = None
+        # Mock read returning > 100MB
+        mock_file.read.return_value = b"x" * (101 * 1024 * 1024)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("exceeds the maximum allowed limit", ctx.exception.detail)
+
+    async def test_predict_file_unsupported_format_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = "bad_format.pdf"
+        mock_file.size = 100
+        mock_file.file = io.BytesIO(b"FAKE_PDF_DATA")
+        mock_file.read.return_value = b"FAKE_PDF_DATA"
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Unsupported file format", ctx.exception.detail)
+
+    async def test_predict_file_missing_filename_raises_bad_request(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        mock_file = AsyncMock()
+        mock_file.filename = ""
+        mock_file.size = 100
+        mock_file.file = io.BytesIO(b"FAKE_DATA")
+        mock_file.read.return_value = b"FAKE_DATA"
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict_file(
+                current_user=self.current_user,
+                job_id=self.job_id,
+                file=mock_file,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("must have a valid filename", ctx.exception.detail)
+
+    async def test_export_notebook(self):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        filename, nb_bytes = await self.service.export_notebook(
+            current_user=self.current_user,
+            job_id=self.job_id,
+        )
+        self.assertTrue(filename.endswith(".ipynb"))
+        nb_dict = json.loads(nb_bytes.decode("utf-8"))
+        self.assertEqual(nb_dict["nbformat"], 4)
+        self.assertGreater(len(nb_dict["cells"]), 0)
+
+    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
+    async def test_export_docker_package(self, mock_get_object):
+        mock_get_object.return_value = self.artifact_bytes
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        filename, zip_bytes = await self.service.export_docker_package(
+            current_user=self.current_user,
+            job_id=self.job_id,
+        )
+        self.assertTrue(filename.endswith(".zip"))
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+            file_list = z.namelist()
+            self.assertIn("model.pkl", file_list)
+            self.assertIn("app.py", file_list)
+            self.assertIn("requirements.txt", file_list)
+            self.assertIn("Dockerfile", file_list)
+            self.assertIn("README.md", file_list)
+
+            app_code = z.read("app.py").decode("utf-8")
+            self.assertIn("FastAPI", app_code)
+            self.assertIn("model.predict", app_code)
+
+    @patch("src.shared.minio_service.get_object", new_callable=AsyncMock)
+    async def test_export_model_binary(self, mock_get_object):
+        mock_get_object.return_value = self.artifact_bytes
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+
+        filename, binary_bytes = await self.service.export_model_binary(
+            current_user=self.current_user,
+            job_id=self.job_id,
+        )
+        self.assertTrue(filename.endswith(".pkl"))
+        self.assertEqual(binary_bytes, self.artifact_bytes)
+
+    async def test_get_user_jobs_all(self):
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = mock_cursor
+        mock_cursor.skip.return_value = mock_cursor
+        mock_cursor.limit.return_value = mock_cursor
+        mock_cursor.to_list = AsyncMock(return_value=[self.mock_job_doc])
+
+        self.mock_jobs.count_documents.return_value = 1
+        self.mock_jobs.find.return_value = mock_cursor
+
+        jobs, meta = await self.service.get_user_jobs(
+            user_id=str(self.user_oid),
+            current_page=1,
+            page_size=10,
+            activate=None,
+            data_name="iris",
+            sort_name="asc",
+            sort_time="desc",
+        )
+
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(meta["total_items"], 1)
+        self.assertEqual(jobs[0].id, self.job_id)
+        self.mock_jobs.count_documents.assert_called_once()
+        query_arg = self.mock_jobs.count_documents.call_args[0][0]
+        self.assertNotIn("activate", query_arg)
+        self.assertEqual(query_arg["data.name"]["$regex"], "iris")
+
+    async def test_get_user_jobs_active_models(self):
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = mock_cursor
+        mock_cursor.skip.return_value = mock_cursor
+        mock_cursor.limit.return_value = mock_cursor
+        mock_cursor.to_list = AsyncMock(return_value=[self.mock_job_doc])
+
+        self.mock_jobs.count_documents.return_value = 1
+        self.mock_jobs.find.return_value = mock_cursor
+
+        models, meta = await self.service.get_user_jobs(
+            user_id=str(self.user_oid),
+            current_page=1,
+            page_size=10,
+            activate=1,
+        )
+
+        self.assertEqual(len(models), 1)
+        self.assertEqual(meta["total_items"], 1)
+        self.mock_jobs.count_documents.assert_called()
+        query_arg = self.mock_jobs.count_documents.call_args[0][0]
+        self.assertEqual(query_arg["activate"], 1)
+
+    @patch("src.modules.inference.service.kafka_service.send_message", new_callable=AsyncMock)
+    async def test_cancel_job_success(self, mock_send_kafka):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": str(self.user_oid), "name": "testuser"},
+            "status": 0,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+        self.mock_jobs.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
+
+        res = await self.service.cancel_job(self.current_user, self.job_id)
+
+        self.assertEqual(res["job_id"], self.job_id)
+        self.assertEqual(res["status"], -2)
+        self.mock_jobs.update_one.assert_called_once()
+        mock_send_kafka.assert_called_once()
+        call_kwargs = mock_send_kafka.call_args.kwargs
+        self.assertEqual(call_kwargs["key"], self.job_id)
+        self.assertEqual(call_kwargs["value"]["action"], "cancel")
+
+    async def test_cancel_job_forbidden_for_other_user(self):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": "other_user_id", "name": "other"},
+            "status": 0,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.cancel_job(self.current_user, self.job_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_cancel_job_already_completed_raises_bad_request(self):
+        job_doc = {
+            "_id": ObjectId(self.job_id),
+            "user": {"id": str(self.user_oid), "name": "testuser"},
+            "status": 1,
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=job_doc)
+
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.cancel_job(self.current_user, self.job_id)
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    async def test_get_deployment_info_time_series(self):
+        ts_job_doc = {
+            "_id": self.job_oid,
+            "user": {"id": str(self.user_oid), "name": "tester"},
+            "status": 1,
+            "activate": 1,
+            "best_model": "Ridge",
+            "best_score": 0.12,
+            "model": {"bucket_name": "models", "object_name": "path/model.pkl"},
+            "config": {
+                "list_feature": ["date", "temperature"],
+                "target": "demand",
+                "problem_type": "time_series",
+            },
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=ts_job_doc)
+
+        resp = await self.service.get_deployment_info(self.current_user, self.job_id)
+        self.assertEqual(resp.model_name, "Ridge")
+        self.assertEqual(resp.sample_payload["data"][0]["date"], 1.0)
+        self.assertEqual(resp.sample_payload["data"][0]["temperature"], 1.0)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.invoke_actor", new_callable=AsyncMock)
+    async def test_predict_time_series_success(self, mock_invoke):
+        ts_job_doc = {
+            "_id": self.job_oid,
+            "user": {"id": str(self.user_oid), "name": "tester"},
+            "status": 1,
+            "activate": 1,
+            "best_model": "Ridge",
+            "model": {"bucket_name": "models", "object_name": "path/model.pkl"},
+            "config": {
+                "list_feature": ["date", "temperature"],
+                "target": "demand",
+                "problem_type": "time_series",
+            },
+        }
+        self.mock_jobs.find_one = AsyncMock(return_value=ts_job_doc)
+        mock_invoke.return_value = [10.5, 12.3]
+
+        req = PredictRequest(data=[
+            {"date": "2024-01-01 00:00:00", "temperature": 25.0},
+            {"date": "2024-01-02 00:00:00", "temperature": 26.0},
+        ])
+        resp = await self.service.predict(self.current_user, self.job_id, req)
+        self.assertEqual(resp.predictions, [10.5, 12.3])
+        self.assertEqual(resp.total_samples, 2)
+
+    @patch("src.modules.inference.registry.InferenceActorRegistry.invoke_actor", new_callable=AsyncMock)
+    async def test_predict_error_handling(self, mock_invoke):
+        self.mock_jobs.find_one.return_value = self.mock_job_doc
+        mock_invoke.side_effect = ValueError("Timestamps must come after the last training timestamp")
+
+        req = PredictRequest(data=[
+            {"feature_x": 1.0, "feature_y": 2.0, "category_col": "red"}
+        ])
+        with self.assertRaises(CustomException) as ctx:
+            await self.service.predict(self.current_user, self.job_id, req)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Timestamps must come after", ctx.exception.detail)
+
+    def test_job_item_response_datetime_serialization(self):
+        from datetime import datetime
+        from src.modules.inference.schemas import JobItemResponse
+        now = datetime.now()
+        item = JobItemResponse(
+            _id="job_123",
+            status=1,
+            activate=1,
+            create_at=now
+        )
+        dumped = item.model_dump()
+        self.assertEqual(dumped["create_at"], now.timestamp())
+
+
+if __name__ == "__main__":
+    unittest.main()
+
