@@ -1,0 +1,164 @@
+# Standard Libraries
+from typing import Any
+from bson import ObjectId
+
+# Third-party Libraries
+from pymongo.asynchronous.database import AsyncDatabase
+
+
+class DatasetRepository:
+    def __init__(self, db: AsyncDatabase):
+        self.__collection = db.tbl_Data
+        self.__job_collection = db.tbl_Job
+
+    # Data Collection
+    async def get_datasets_with_count(self, user_id: str, skip: int, limit: int, public: bool = False, data_type: str | None = None, sort_params: list[tuple] | None = None) -> tuple[list[dict], int]:
+        """
+        Retrieving user datasets
+        """
+        filter_query: dict[str, Any] = {
+            "activate": 1
+        }
+
+        if public: 
+            filter_query["$or"] = [
+                {"public": True},
+                {"userId": "0"}
+            ]
+        else:
+            filter_query["userId"] = user_id
+
+        if data_type:
+            filter_query["dataType"] = data_type
+
+        total_items = await self.__collection.count_documents(filter_query)
+
+        projection = {
+            "username": 0,
+            "role": 0,
+            "data_link": 0
+        }
+
+        cursor = self.__collection.find(filter_query, projection=projection)
+
+        if sort_params:
+            cursor = cursor.sort(sort_params)
+
+        cursor = cursor.skip(skip).limit(limit)
+        datasets = await cursor.to_list(length=limit)
+
+        return datasets, total_items
+
+    async def get_all_datasets_with_count(self, skip: int, limit: int, data_type: str | None = None, sort_params: list[tuple] | None = None) -> tuple[list[dict], int]:
+        """
+        Retrieve all datasets
+        """
+        filter_query: dict[str, Any] = {
+            "activate": 1
+        }
+
+        if data_type:
+            filter_query["dataType"] = data_type
+
+        total_items = await self.__collection.count_documents(filter_query)
+
+        projection = {
+            "data_link": 0
+        }
+
+        cursor = self.__collection.find(filter_query, projection=projection)
+
+        if sort_params:
+            cursor = cursor.sort(sort_params)
+
+        cursor = cursor.skip(skip).limit(limit)
+        datasets = await cursor.to_list(length=limit)
+
+        return datasets, total_items
+
+    async def get_dataset_by_id(self, dataset_id: ObjectId, include_data_link: bool = False) -> dict | None:
+        """
+        Retrieve detail dataset
+        """
+        filter_query: dict[str, Any] = {
+            "_id": dataset_id,
+            "activate": 1
+        }
+
+        projection: dict[str, int] = {
+            "username": 0,
+            "role": 0
+        }
+        if not include_data_link:
+            projection["data_link"] = 0
+
+        dataset = await self.__collection.find_one(filter_query, projection=projection)
+
+        return dataset
+
+    async def get_data_link_by_id(self, dataset_id: ObjectId) -> dict | None:
+        """
+        Retrieve data_link of dataset
+        """
+        filter_query = {
+            "_id": dataset_id,
+            "activate": 1
+        }
+        dataset = await self.__collection.find_one(filter_query, projection={"data_link": 1})
+        return dataset.get("data_link") if dataset else None
+
+    async def create_dataset(self, dataset_doc: dict[str, Any]) -> dict[str, Any]:
+        """
+        Save metadata of dataset
+        """
+        result = await self.__collection.insert_one(dataset_doc)
+        dataset_doc["_id"] = result.inserted_id
+
+        return dataset_doc
+
+    async def update_dataset(self, dataset_id: ObjectId, update_data: dict[str, Any]) -> bool:
+        """
+        Update metadata
+        """
+        filter_query = {
+            "_id": dataset_id,
+            "activate": 1
+        }
+
+        result = await self.__collection.update_one(filter_query, {"$set": update_data})
+        return result.modified_count > 0
+
+    async def delete_dataset(self, dataset_id: ObjectId) -> bool:
+        """
+        Soft delete dataset
+        """
+        filter_query = {
+            "_id": dataset_id,
+            "activate": 1
+        }
+
+        result = await self.__collection.update_one(filter_query, {"$set": {"activate": 0}})
+        return result.modified_count > 0
+
+    # Job Collection
+    async def create_job(self, job_doc: dict[str, Any]) -> dict[str, Any]:
+        """
+        Save metadata of job
+        """
+        result = await self.__job_collection.insert_one(job_doc)
+        job_doc["_id"] = result.inserted_id
+
+        return job_doc
+
+    async def get_job_by_id(self, job_id: ObjectId) -> dict[str, Any] | None:
+        """
+        Retrieve job document by ID
+        """
+        return await self.__job_collection.find_one({"_id": job_id})
+
+    async def update_job(self, job_id: ObjectId, update_data: dict[str, Any]) -> bool:
+        """
+        Update job metadata by ID
+        """
+        result = await self.__job_collection.update_one({"_id": job_id}, {"$set": update_data})
+        return result.modified_count > 0

@@ -1,0 +1,53 @@
+# Standard Libraries
+from urllib.parse import quote_plus
+
+# Third-party Libraries
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+
+# Local Libraries
+from src.adapters.base import BaseDatabaseAdapter, DatabaseConfig
+
+
+class OracleAdapter(BaseDatabaseAdapter):
+    """Oracle Database adapter (oracledb)."""
+
+    def __init__(self, config: DatabaseConfig):
+        super().__init__(config)
+        if not self.config.port:
+            self.config.port = 1521
+
+    def get_connection_url(self) -> str:
+        user = quote_plus(self.config.user or "")
+        password = quote_plus(self.config.password or "")
+        sid = self.config.extra_params.get("sid")
+        service_name = self.config.extra_params.get("service_name") or self.config.database
+        if sid:
+            # With a SID, SQLAlchemy expects it in the URL path
+            path = f"/{quote_plus(sid)}"
+        elif service_name:
+            # With a service name, SQLAlchemy expects it as a query parameter
+            path = f"/?service_name={quote_plus(service_name)}"
+        else:
+            path = ""
+        return f"oracle+oracledb://{user}:{password}@{self.config.host}:{self.config.port}{path}"
+
+    def create_engine(self) -> Engine:
+        url = self.get_connection_url()
+        return create_engine(
+            url,
+            pool_pre_ping=True,
+        )
+
+    def get_test_query(self) -> str:
+        return "SELECT 1 FROM DUAL"
+
+    def quote_identifier(self, identifier: str) -> str:
+        escaped = identifier.replace('"', '""')
+        return f'"{escaped}"'
+
+    def build_select_query(self, table_name: str, limit: int = 50000) -> str:
+        """Oracle 12c+ uses FETCH FIRST n ROWS ONLY instead of LIMIT."""
+        safe_table = self.get_full_table_name(table_name)
+        return f"SELECT * FROM {safe_table} FETCH FIRST {int(limit)} ROWS ONLY"
+
