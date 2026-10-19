@@ -14,7 +14,7 @@
         <link rel="prev" href="../getting_started/">
       
       
-        <link rel="next" href="../backend_api/">
+        <link rel="next" href="../scientific_approach/">
       
       
         
@@ -283,17 +283,18 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../scientific_approach.md" class="md-tabs__link">
-        
-  
-  
     
+    
+      <li class="md-tabs__item">
+        <a href="../scientific_approach/" class="md-tabs__link">
+          
+  
   
   Phương pháp khoa học
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -523,6 +524,89 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#so-o-tong-quan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sơ đồ tổng quan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cac-thanh-phan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Các thành phần
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cau-truc-ma-nguon-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cấu trúc mã nguồn backend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cấu trúc mã nguồn backend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bo-chuyen-oi-csdl-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bộ chuyển đổi CSDL (adapters)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#luong-huan-luyen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Luồng huấn luyện
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thong-bao-realtime-mqtt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thông báo realtime (MQTT)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#xac-thuc-va-phan-quyen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Xác thực và phân quyền
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cong-nghe-su-dung" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -535,10 +619,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#backend-python" class="md-nav__link">
+  <a href="#backend-python-310" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Backend (Python)
+        Backend (Python ≥ 3.10)
       
     </span>
   </a>
@@ -575,9 +659,25 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../scientific_approach.md" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -591,7 +691,107 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Phương pháp khoa học
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scientific_approach/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tổng quan
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hpo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tối ưu siêu tham số
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../time_series/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dự báo chuỗi thời gian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -758,40 +958,156 @@
 
 
 <h1 id="kien-truc-he-thong">Kiến trúc hệ thống</h1>
-<p>HAutoML được xây dựng theo kiến trúc microservices, bao gồm các thành phần chính sau:</p>
+<p>HAutoML gồm frontend, backend API và các tiến trình huấn luyện nền, giao tiếp qua hàng đợi tin nhắn. Các dịch vụ hạ tầng (cơ sở dữ liệu, lưu trữ, hàng đợi, broker MQTT) có thể chạy bằng Docker Compose.</p>
+<h2 id="so-o-tong-quan">Sơ đồ tổng quan</h2>
+<pre class="mermaid"><code>flowchart LR
+    FE["Frontend&lt;br/&gt;Next.js"] -- "REST /api/v1" --&gt; API["Backend API&lt;br/&gt;FastAPI (src.main)"]
+    API -- "Metadata" --&gt; DB[("MongoDB")]
+    API -- "Dataset, model" --&gt; MINIO[("MinIO")]
+    API -- "Avatar, thumbnail" --&gt; B2[("Backblaze B2")]
+    API -- "Job huấn luyện" --&gt; KAFKA{{"Kafka&lt;br/&gt;train-job-topic"}}
+    KAFKA --&gt; CONS["Training Consumer&lt;br/&gt;(src.kafka_consumer)"]
+    CONS -- "Tác vụ theo mô hình" --&gt; MR["PyMapReduce&lt;br/&gt;head + workers"]
+    CONS -- "Kết quả" --&gt; DB
+    CONS -- "Model artifact" --&gt; MINIO
+    CONS -- "Thông báo" --&gt; MQTT{{"MQTT broker&lt;br/&gt;Mosquitto"}}
+    API -- "Thông báo" --&gt; MQTT
+    MQTT -- "Realtime" --&gt; FE</code></pre>
+<h2 id="cac-thanh-phan">Các thành phần</h2>
+<table>
+<thead>
+<tr>
+<th>Thành phần</th>
+<th>Công nghệ</th>
+<th>Vai trò</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Frontend</strong></td>
+<td>Next.js, React, TypeScript, Tailwind CSS, Radix UI, Redux Toolkit</td>
+<td>Giao diện web</td>
+</tr>
+<tr>
+<td><strong>Backend API</strong></td>
+<td>FastAPI, Uvicorn</td>
+<td>REST API, xác thực, điều phối job. Chạy bằng <code>python -m src.main</code></td>
+</tr>
+<tr>
+<td><strong>Training Consumer</strong></td>
+<td>Python, aiokafka</td>
+<td>Nhận job từ Kafka, chạy pipeline AutoML. Chạy bằng <code>python -m src.kafka_consumer</code></td>
+</tr>
+<tr>
+<td><strong>PyMapReduce</strong></td>
+<td><code>pymapreduce-core</code></td>
+<td>Chạy các tác vụ huấn luyện song song, ở chế độ <code>local</code> hoặc <code>cluster</code> (head + worker)</td>
+</tr>
+<tr>
+<td><strong>MongoDB</strong></td>
+<td>PyMongo (async)</td>
+<td>Người dùng, siêu dữ liệu dataset, job, thông báo</td>
+</tr>
+<tr>
+<td><strong>MinIO</strong></td>
+<td>miniopy-async</td>
+<td>Dữ liệu dataset (Parquet) và model artifact</td>
+</tr>
+<tr>
+<td><strong>Backblaze B2</strong></td>
+<td>S3 API</td>
+<td>Ảnh đại diện người dùng, thumbnail dataset</td>
+</tr>
+<tr>
+<td><strong>Kafka</strong></td>
+<td>aiokafka</td>
+<td>Hàng đợi job huấn luyện, và lệnh hủy job</td>
+</tr>
+<tr>
+<td><strong>MQTT</strong></td>
+<td>Mosquitto, aiomqtt</td>
+<td>Đẩy thông báo realtime tới trình duyệt</td>
+</tr>
+<tr>
+<td><strong>Demo UI</strong></td>
+<td>Gradio</td>
+<td>Giao diện thử nghiệm độc lập (<code>python -m demo.app</code>, cổng 7860)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cau-truc-ma-nguon-backend">Cấu trúc mã nguồn backend</h2>
+<p>Backend theo kiến trúc <strong>module hóa</strong>; mỗi module nghiệp vụ tách thành các lớp <code>router</code> → <code>service</code> → <code>repository</code>, cùng <code>schemas</code> (Pydantic).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>src/backend/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── assets/                 # Cấu hình mô hình &amp; lưới siêu tham số (*.yml), mẫu email
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── deploy/                 # Dockerfile, docker-compose, script khởi động PyMapReduce
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── demo/                   # Demo UI (Gradio)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── tests/                  # unit/ và integration/
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>└── src/
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    ├── main.py             # FastAPI app, đăng ký router
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    ├── kafka_consumer.py   # Tiến trình huấn luyện nền
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    ├── config/             # settings (biến môi trường), databases, logging
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    ├── core/               # constants, dependencies, security (JWT), middlewares,
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    │                       # exceptions, responses, search_space
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    ├── adapters/           # Kết nối 12 loại CSDL ngoài
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    ├── shared/             # Client dùng chung: kafka, mqtt, minio, backblaze, email, mapreduce
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    └── modules/
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>        ├── auth/           # Đăng ký, đăng nhập, Google OAuth, OTP, đặt lại mật khẩu
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        ├── users/          # Hồ sơ, avatar, đổi mật khẩu
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        ├── datasets/       # Upload, import từ CSDL, tạo job huấn luyện
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>        ├── preprocessing/  # Tiền xử lý &amp; chọn chiến lược CV
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>        ├── hpo/            # 5 thuật toán tối ưu siêu tham số
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>        ├── models/         # Registry các lớp mô hình
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>        ├── trainings/      # Pipeline huấn luyện, executor, tác vụ phân tán
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>        ├── inference/      # Triển khai, dự đoán, xuất mô hình
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>        └── notifications/  # Thông báo (MongoDB + MQTT)
+</code></pre></div>
+<p>Các router được đăng ký trong <a href="https://github.com/optivisionlab/AutoML/blob/main/src/backend/src/main.py">main.py</a> dưới tiền tố <code>/api/v1</code>: <code>auth</code>, <code>users</code>, <code>notifications</code>, <code>datasets</code>, <code>inference</code>. Module <code>trainings</code> không có router vì chỉ chạy trong consumer.</p>
+<h3 id="bo-chuyen-oi-csdl-adapters">Bộ chuyển đổi CSDL (adapters)</h3>
+<p>Lớp <code>adapters</code> (<code>base.py</code>, <code>factory.py</code>) cung cấp giao diện chung để kết nối và đọc bảng từ CSDL ngoài. Hiện hỗ trợ: PostgreSQL, MySQL, SQLite, DuckDB, Snowflake, BigQuery, ClickHouse, MSSQL, Oracle, Trino, Hive và Redshift. Xem <a href="../backend_api/#ket-noi-csdl-ngoai">API datasets</a>.</p>
+<h2 id="luong-huan-luyen">Luồng huấn luyện</h2>
+<ol>
+<li>Người dùng gọi <code>POST /datasets/{id}/training</code>. API ghi một bản ghi job (<code>status = 0</code>) vào MongoDB.</li>
+<li>API gửi tin nhắn tới Kafka topic <code>train-job-topic</code> với <code>key = job_id</code>.</li>
+<li>Training Consumer nhận tin nhắn, tải dataset từ MinIO, tiền xử lý và chọn chiến lược CV.</li>
+<li>Mỗi mô hình ứng viên được gửi qua PyMapReduce như một tác vụ riêng; tác vụ chạy HPO và đánh giá mô hình.</li>
+<li>Consumer gom kết quả, chọn mô hình tốt nhất theo <code>metric_sort</code>, đóng gói artifact và lưu lên MinIO.</li>
+<li>Consumer cập nhật job (<code>status = 1</code> hoặc <code>-1</code>) và gửi thông báo.</li>
+</ol>
+<p>Để hủy job, <code>POST /inference/jobs/{id}/cancel</code> gửi lệnh <code>cancel</code> vào cùng topic; consumer sẽ hủy tác vụ đang chạy.</p>
+<h2 id="thong-bao-realtime-mqtt">Thông báo realtime (MQTT)</h2>
+<p>Với mỗi sự kiện của job, <code>NotificationService</code> lưu thông báo vào MongoDB rồi publish (QoS 1) lên topic riêng của người dùng:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>hautoml/users/{user_id}/notifications
+</code></pre></div>
+<p>Frontend subscribe topic này để cập nhật tức thời; danh sách thông báo cũ lấy qua <a href="../backend_api/#5-thong-bao-notifications-notifications">API notifications</a>.</p>
+<h2 id="xac-thuc-va-phan-quyen">Xác thực và phân quyền</h2>
 <ul>
-<li><strong>Frontend</strong>: Một ứng dụng Single Page Application (SPA) được xây dựng bằng <strong>Next.js (React)</strong> và <strong>TypeScript</strong>. Giao diện người dùng được thiết kế với <strong>Tailwind CSS</strong> và các thành phần từ <strong>Radix UI</strong>. Quản lý trạng thái bằng <strong>Redux Toolkit</strong>.</li>
-<li><strong>Backend</strong>: Một hệ thống API mạnh mẽ được xây dựng bằng <strong>Python</strong> với framework <strong>FastAPI</strong>. Backend chịu trách nhiệm xử lý logic nghiệp vụ, xác thực người dùng và điều phối các công việc AutoML.</li>
-<li><strong>Cơ sở dữ liệu</strong>: Sử dụng <strong>MongoDB</strong> để lưu trữ thông tin người dùng, siêu dữ liệu về các tập dữ liệu và các công việc huấn luyện.</li>
-<li><strong>Hàng đợi tin nhắn (Message Queue)</strong>: <strong>Apache Kafka</strong> được sử dụng để quản lý hàng đợi các công việc huấn luyện. Khi người dùng yêu cầu huấn luyện một mô hình, một tin nhắn sẽ được gửi đến Kafka.</li>
-<li><strong>Workers</strong>: Các tiến trình Python độc lập (consumers) lắng nghe các tin nhắn từ Kafka. Mỗi worker sẽ nhận một công việc huấn luyện, thực hiện nó, và cập nhật kết quả vào cơ sở dữ liệu.</li>
-<li><strong>Lưu trữ đối tượng (Object Storage)</strong>: <strong>Minio</strong> được sử dụng để lưu trữ các tệp dữ liệu lớn (datasets) và các mô hình đã được huấn luyện.</li>
+<li>JWT với <code>access_token</code> (mặc định 15 phút, <code>ACCESS_EXPIRE</code>) và <code>refresh_token</code> (mặc định 7 ngày, <code>REFRESH_EXPIRE</code>), refresh token đồng thời được đặt trong cookie <code>HttpOnly</code>.</li>
+<li>Đăng nhập bằng Google OAuth2.</li>
+<li>Xác thực email bằng liên kết hoặc OTP; đặt lại mật khẩu bằng OTP.</li>
+<li>Hai vai trò <code>user</code> và <code>admin</code>. Các dependency <code>require_admin</code> và <code>require_owner_or_admin</code> kiểm tra quyền ở tầng router.</li>
 </ul>
-<p><em>(Sơ đồ kiến trúc sẽ được cập nhật ở đây)</em></p>
 <h2 id="cong-nghe-su-dung">Công nghệ sử dụng</h2>
-<h3 id="backend-python">Backend (Python)</h3>
+<h3 id="backend-python-310">Backend (Python ≥ 3.10)</h3>
 <ul>
-<li><strong>Framework</strong>: FastAPI</li>
-<li><strong>Web Server</strong>: Uvicorn</li>
-<li><strong>Cơ sở dữ liệu</strong>: MongoDB (với Pymongo)</li>
-<li><strong>Học máy</strong>: Scikit-learn, Pandas, Numpy</li>
-<li><strong>Hàng đợi tin nhắn</strong>: Kafka (với kafka-python, aiokafka)</li>
-<li><strong>Lưu trữ đối tượng</strong>: Minio</li>
+<li><strong>Framework</strong>: FastAPI, Uvicorn, Pydantic</li>
+<li><strong>Cơ sở dữ liệu</strong>: MongoDB (PyMongo async)</li>
+<li><strong>Học máy</strong>: scikit-learn, XGBoost, pandas, NumPy</li>
+<li><strong>Tối ưu siêu tham số</strong>: scikit-optimize (Bayesian), Optuna (TPE), cài đặt riêng cho Grid, Random và Genetic Algorithm</li>
+<li><strong>Tính toán phân tán</strong>: PyMapReduce</li>
+<li><strong>Hàng đợi / thông báo</strong>: Kafka (aiokafka), MQTT (aiomqtt)</li>
+<li><strong>Lưu trữ</strong>: MinIO, Backblaze B2</li>
 <li><strong>Xác thực</strong>: Authlib, PyJWT</li>
-<li><strong>Containerization</strong>: Docker</li>
+<li><strong>Container</strong>: Docker, Docker Compose</li>
 </ul>
 <h3 id="frontend-typescript">Frontend (TypeScript)</h3>
 <ul>
-<li><strong>Framework</strong>: Next.js (v.15), React (v.18)</li>
-<li><strong>Ngôn ngữ</strong>: TypeScript</li>
+<li><strong>Framework</strong>: Next.js, React</li>
 <li><strong>Quản lý trạng thái</strong>: Redux Toolkit</li>
-<li><strong>Styling</strong>: Tailwind CSS, Sass</li>
-<li><strong>Thành phần UI</strong>: Radix UI, Lucide React</li>
+<li><strong>Giao diện</strong>: Tailwind CSS, Sass, Radix UI, Lucide React</li>
 <li><strong>Biểu đồ</strong>: Recharts</li>
-<li><strong>Xử lý biểu mẫu</strong>: React Hook Form, Zod</li>
+<li><strong>Biểu mẫu</strong>: React Hook Form, Zod</li>
 <li><strong>Client API</strong>: Axios</li>
 <li><strong>Xác thực</strong>: NextAuth.js</li>
-<li><strong>Containerization</strong>: Docker</li>
 </ul>
 
 
@@ -850,7 +1166,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "navigation.top", "search.suggest", "search.highlight", "content.tabs.link", "content.code.annotation", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "navigation.top", "search.suggest", "search.highlight", "content.tabs.link", "content.code.annotate", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
