@@ -1,136 +1,244 @@
-## Bắt đầu
+# Bắt đầu
+
+HAutoML có thể chạy bằng Docker Compose (khuyến nghị) hoặc chạy từng thành phần từ mã nguồn.
+
+## Yêu cầu hệ thống
+
+- **Python** ≥ 3.10 (backend)
+- **Node.js** (frontend)
+- **Hạ tầng**: MongoDB (27017), Apache Kafka (9092), MinIO (9000/9001), Mosquitto MQTT (1883/1884)
+- [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/) nếu dùng cách triển khai bằng Docker
+
 ---
 
-### Cách đơn giản nhất: Sử dụng Docker
+## 1. Tải mã nguồn
 
-Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.
-
-**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/)
-
----
-
-### Triển khai từ mã nguồn
-
-**1. Tải mã nguồn dự án**
 ```bash
 git clone https://github.com/optivisionlab/AutoML.git
 cd AutoML
 ```
 
-**2. Cấu hình môi trường**
+## 2. Cấu hình môi trường
+
 ```bash
-cp src/backend/temp.env src/backend/.env
-cp src/frontend/temp.env src/frontend/.env
+cp src/backend/.env.example src/backend/.env
+cp src/frontend/apps/web/temp.env src/frontend/apps/web/.env
 ```
 
-**3. Khởi chạy các thành phần hệ thống**
-> **Backend & Worker cluster**
-> 
-> Tại thư mục: AutoML/src/backend
-```bash
-pip install -r requirements.txt # Cài đặt các thư viện cần thiết
-
-python app.py # Khởi chạỵ API server
-python -m cluster.worker # Kích hoạt worker xử lý tác vụ
-```
-
-> **Frontend**
-> 
-> Tại thư mục: AutoML/src/frontend
-```bash
-npm install # Cài đặt các gói phụ thuộc
-npm run dev # Chạy ứng dụng ở chế độ phát triển
-```
-
-**4. Địa chỉ truy cập**
-- Giao diện người dùng: [http://localhost:3000](http://localhost:3000)
-
-- Backend API: [http://localhost:8000](http://localhost:8000)
+Giải thích các biến môi trường của backend ở [mục 5](#5-bien-moi-truong).
 
 ---
 
-### Triển khai qua docker
-> [!TIP]
->
-> Để tránh việc phải chỉnh sửa trực tiếp file ```docker-compose.yaml```, bạn chỉ cần clone mã nguồn, sau đó chỉnh sửa và đổi tên các file cầu hình mẫu từ ```temp.env``` thành ```.env``` ở cả thư mục backend và frontend.
+## 3. Chạy bằng Docker Compose (khuyến nghị)
 
-> **Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường**
-> 
-> **Tại thư mục: AutoML/**
+Compose của backend nằm ở `src/backend/deploy/` và khởi chạy cả API, training consumer, Demo UI cùng MongoDB, MinIO, Kafka và MQTT.
+
 ```bash
-docker-compose up -d --build
+cd src/backend/deploy
+docker compose up -d --build
 ```
 
-> **Để dừng hệ thống**
+Dừng hệ thống:
+
 ```bash
-docker-compose down
+docker compose down
 ```
 
-**5. Giải thích biến môi trường**
-> Hệ thống sử dụng các biến môi trường để linh hoạt giữa các chế độ chạy (local hoặc docker).
+| Dịch vụ | Container | Cổng |
+|---------|-----------|------|
+| Backend API | `hautoml_service` | `9999` (đổi bằng `PORT_BACK_END`) |
+| Training consumer | `hautoml_consumer` | – |
+| Demo UI (Gradio) | `hautoml_toolkit` | `7860` (đổi bằng `DEMO_PORT`) |
+| MQTT | `mqtt_broker` | `1883`, `1884` |
+| MinIO | – | `9000`, `9001` (console) |
+| Kafka | – | `9092`, `9093` |
+| MongoDB | – | `27017` |
 
-**A. Cấu hình hạ tầng (Infrastructure)**
-> Dành cho việc kết nối đến các dịch vụ lưu trữ và hàng đợi
-- ```MINIO_ENDPOINT```: Địa chỉ server MinIO (mặc định: ```localhost:9000```). Nếu chạy docker, hãy đổi thành ```minio:9000```.
+!!! important "Không dùng `localhost` giữa các container"
+    Trong Docker, các dịch vụ gọi nhau bằng tên dịch vụ, không phải `localhost`. File compose đã ghi đè sẵn `MONGODB_CONNECT`, `MINIO_ENDPOINT`, `KAFKA_SERVER` và `MQTT_HOSTNAME` cho container backend. Nếu tự thêm biến kết nối, hãy dùng tên dịch vụ trong `docker-compose.yml`.
 
-- ```KAFKA_SERVER```: Địa chỉ broker Kafka. Dùng ```kafka:9092``` trong môi trường docker.
-
-- ```MONGODB_CONNECT```: Chuỗi kết nối database. Nếu dùng docker thì dùng ```mongodb:27017```.
-
-**B. Cấu hình phân tán (Master - Worker)**
-> Đây là phần cốt lõi để hệ thống AutoML có thể chạy đa máy (Distributed).
-- ```HOST_BACK_END```: Địa chỉ API Server sẽ lắng nghe. Nên để ```0.0.0.0``` để chấp nhận kết nối từ các Worker bên ngoài.
-
-- ```WORKER_LIST```: Danh sách các địa chỉ Worker và Master quản lý.
-
-- ```TASK_TIMEOUT_SECONDS```: Thời gian tối đa (giây) chờ một tác vụ training. Sau thời gian này, Master sẽ coi Worker đã chết hoặc tác vụ bị treo.
-
-- ```MAX_TASK_SNOOZES```: Số lần cho phép thử lại (retry) một tác vụ trước khi đánh dấu là thất bại.
-
-**C. Bảo mật và xác thực (Security & Auth)**
-- ```SECRET_KEY```: Chuỗi ký tự dùng để mã hóa JWT Token. Nên tạo 1 chuỗi ngẫu nhiên dài để bảo mật.
-
-- ```GOOGLE_CLIENT_ID```/```GOOGLE_CLIENT_SECRET```: Thông tin định danh ứng dụng lấy từ Google Cloud Console để kích hoạt tính năng đăng nhập bằng Google.
-
-- ```ACCESS_EXPIRE```: Thời gian của Token đăng nhập (tính bằng phút).
-
-**D. Dịch vụ Email (Notification)**
-- ```MAIL_USERNAME```: Email dùng để gửi thông báo (ví dụ: gmail).
-
-- ```MAIL_PASSWORD```: Mật khẩu ứng dụng (app password) của Gmail, không phải mật khẩu tài khoản chính.
-
-> [!IMPORTANT]
->
-> **Quy tắc về localhost trong Docker**
-> 
-> Nếu chạy hệ thống bằng docker, tuyệt đối không sử dụng ```localhost``` cho các biến kết nối giữa các dịch vụ (như ```MONGODB_CONNECT``` hay ```KAFKA_SERVER```)
->
-> Thay vào đó, hãy sử dụng tên dịch vụ được định nghĩa trong file ```docker-compose.yaml``` (ví dụ: ```mongodb```, ```kafka```)
-
-**6. Kiểm tra trạng thái hệ thống**
-> Sau khi khởi chạy, bạn có thể kiểm tra xem các thành phần đã thông với nhau chưa bằng cách:
-> 
-> 1. Truy cập vào Dashboard tại: ```http://localhost:3000```
->
-> 2. Kiểm tra log của Master để xem các worker đã đăng ký thành công chưa: ```docker logs -f hautoml-toolkit```
+Frontend được đóng gói riêng, xem `src/frontend/run-fe.sh` và `src/frontend/docker-compose.yaml`.
 
 ---
 
-## Xem tài liệu trên máy Local
+## 4. Chạy từ mã nguồn
 
-Trước khi triển khai, bạn có thể xem trước trang web tài liệu trên máy tính của mình.
+### Backend
 
-1.  **Cài đặt các gói cần thiết (chỉ cần làm một lần):**
-    Mở terminal và chạy lệnh sau để cài đặt MkDocs và theme Material:
+Tại thư mục `src/backend`:
+
+```bash
+# Tạo môi trường ảo và cài thư viện
+python3 -m venv venv
+source venv/bin/activate        # Windows: .\venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Khởi động các dịch vụ hạ tầng nếu chưa có (MongoDB, MinIO, Kafka, MQTT):
+
+```bash
+cd deploy
+docker compose up -d mongo minio kafka mqtt
+cd ..
+```
+
+Backend gồm hai tiến trình chạy song song, mở hai terminal:
+
+```bash
+# Terminal 1: API server
+python -m src.main
+# hoặc: uvicorn src.main:app --host 0.0.0.0 --port 9996 --reload
+
+# Terminal 2: training consumer (nhận job từ Kafka)
+python -m src.kafka_consumer
+```
+
+!!! note
+    API chạy ở cổng `BACKEND_PORT` trong `.env` (mặc định `9996` theo `.env.example`). Swagger UI có tại `http://localhost:9996/docs`.
+
+### Demo UI (tùy chọn)
+
+Giao diện Gradio để thử nhanh tiền xử lý và tìm kiếm mô hình, không cần hạ tầng:
+
+```bash
+python -m demo.app      # http://localhost:7860
+```
+
+### Cụm PyMapReduce (tùy chọn, nhiều máy)
+
+Đặt `MAPREDUCE_MODE=cluster` và `MAPREDUCE_HEAD_ADDRESS` trong `.env`, sau đó:
+
+```bash
+# Máy chủ head
+./deploy/start_head.sh --port 7777 --scheduler Adaptive
+
+# Mỗi máy worker
+./deploy/start_worker.sh --head-addr <ip-head>:7777
+
+# Dừng cụm
+./deploy/stop_cluster.sh
+```
+
+Chế độ mặc định `MAPREDUCE_MODE=local` chạy tác vụ ngay trên máy hiện tại.
+
+### Frontend
+
+Tại thư mục `src/frontend`:
+
+```bash
+npm install
+npm run dev        # http://localhost:3000
+```
+
+Các biến chính trong `src/frontend/apps/web/.env`:
+
+| Biến | Mô tả |
+|------|-------|
+| `NEXT_PUBLIC_BASE_API` | URL backend, ví dụ `http://localhost:9996/api/v1` |
+| `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | Cấu hình NextAuth |
+| `NEXT_PUBLIC_MQTT_URL`, `NEXT_PUBLIC_MQTT_USERNAME`, `NEXT_PUBLIC_MQTT_PASSWORD` | Kết nối MQTT để nhận thông báo realtime |
+| `NEXT_PUBLIC_TIMEOUT_CAROUSEL` | Thời gian chuyển slide (ms) |
+
+### Địa chỉ truy cập
+
+- Giao diện người dùng: <http://localhost:3000>
+- Backend API: <http://localhost:9996> (chạy từ mã nguồn) hoặc <http://localhost:9999> (Docker)
+- Swagger UI: `<địa chỉ backend>/docs`
+
+---
+
+## 5. Biến môi trường { #5-bien-moi-truong }
+
+Backend đọc cấu hình từ `src/backend/.env` (xem [settings.py](https://github.com/optivisionlab/AutoML/blob/main/src/backend/src/config/settings.py)).
+
+**Lưu trữ và cơ sở dữ liệu**
+
+| Biến | Mặc định | Mô tả |
+|------|----------|-------|
+| `MONGODB_CONNECT` | `localhost:27017` | Địa chỉ MongoDB |
+| `MINIO_ENDPOINT` | `localhost:9000` | Địa chỉ MinIO (dataset, model) |
+| `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | `admin`, `password123` | Thông tin đăng nhập MinIO |
+| `BACKBLAZE_ACCESS_KEY_ID`, `BACKBLAZE_SECRET_ACCESS_KEY` | – | Khóa Backblaze B2 (avatar, thumbnail) |
+| `BACKBLAZE_ENDPOINT_URL`, `BACKBLAZE_BUCKET_NAME` | –, `hautoml-storage` | Endpoint và bucket |
+| `BACKBLAZE_MAX_FILE_SIZE_MB` | `10` | Kích thước tối đa của file tải lên |
+
+**Hàng đợi và thông báo**
+
+| Biến | Mặc định | Mô tả |
+|------|----------|-------|
+| `KAFKA_SERVER` | `localhost:9092` | Địa chỉ Kafka broker |
+| `KAFKA_TOPIC` | `train-job-topic` | Topic chứa job huấn luyện |
+| `MQTT_HOSTNAME`, `MQTT_PORT` | `localhost`, `1883` | Địa chỉ MQTT broker |
+| `MQTT_USERNAME`, `MQTT_PASSWORD` | `admin`, `Admin@123` | Thông tin đăng nhập MQTT |
+
+**Huấn luyện phân tán (PyMapReduce)**
+
+| Biến | Mặc định | Mô tả |
+|------|----------|-------|
+| `MAPREDUCE_MODE` | `local` | `local` hoặc `cluster` |
+| `MAPREDUCE_HEAD_ADDRESS` | `localhost:7777` | Địa chỉ head node (chế độ `cluster`) |
+| `MAPREDUCE_WORKER_IDLE_TIMEOUT` | `0` | Số giây tối đa một tiến trình worker rảnh trước khi bị thu hồi |
+| `MAPREDUCE_ACTOR_IDLE_TIMEOUT` | `0` | Số giây tối đa giữ mô hình trong RAM worker khi không có yêu cầu dự đoán |
+
+**Bảo mật và xác thực**
+
+| Biến | Mặc định | Mô tả |
+|------|----------|-------|
+| `SECRET_KEY` | – | Khóa ký JWT. Đặt một chuỗi ngẫu nhiên dài |
+| `ALGORITHM` | `HS256` | Thuật toán ký JWT |
+| `ACCESS_EXPIRE` | `15` | Thời hạn access token (phút) |
+| `REFRESH_EXPIRE` | `7` | Thời hạn refresh token (ngày) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | – | Thông tin ứng dụng từ Google Cloud Console |
+| `REDIRECT_URI` | `http://localhost:9996` | Gốc URL callback của Google OAuth |
+| `FRONTEND_URL` | `http://localhost:3000` | URL frontend để chuyển hướng sau khi xác thực |
+| `BACKEND_CORS_ORIGINS` | `localhost:3000, 5173` | Danh sách origin được phép gọi API |
+
+**Email**
+
+| Biến | Mô tả |
+|------|-------|
+| `MAIL_USERNAME` | Tài khoản email gửi thông báo (ví dụ Gmail) |
+| `MAIL_PASSWORD` | Mật khẩu ứng dụng (app password), không phải mật khẩu chính |
+| `MAIL_LOGO` | URL logo hiển thị trong email |
+
+**Địa chỉ backend**
+
+| Biến | Mặc định | Mô tả |
+|------|----------|-------|
+| `BACKEND_HOST` | `localhost` | Địa chỉ lắng nghe. Dùng `0.0.0.0` để nhận kết nối từ bên ngoài, `::` để nhận cả IPv4 và IPv6 |
+| `BACKEND_PORT` | `9999` | Cổng API (`.env.example` đặt `9996`) |
+
+---
+
+## 6. Kiểm tra hệ thống
+
+1. Gọi health check: `curl http://localhost:9996/` sẽ trả về `{"project": "HAutoML", "version": "...", "status": "Running"}`.
+2. Mở Swagger UI tại `/docs` và thử `POST /api/v1/auth/signup`.
+3. Xem log consumer để chắc chắn nó đã nhận job:
+
     ```bash
-    pip install mkdocs-material
+    docker logs -f hautoml_consumer
     ```
 
-2.  **Chạy máy chủ phát triển:**
-    Từ thư mục gốc của dự án, chạy lệnh:
-    ```bash
-    mkdocs serve
-    ```
+4. Mở giao diện tại <http://localhost:3000>.
 
-3.  **Xem trang tài liệu:**
-    Mở trình duyệt và truy cập vào địa chỉ `http://127.0.0.1:8000`. Máy chủ này có tính năng tự động tải lại (live-reloading), có nghĩa là bất kỳ khi nào bạn lưu một thay đổi trong các tệp Markdown, trang web trên trình duyệt sẽ tự động cập nhật.
+## 7. Chạy kiểm thử
+
+Tại thư mục `src/backend`:
+
+```bash
+pytest tests/unit
+pytest tests/integration
+```
+
+---
+
+## Xem tài liệu trên máy local
+
+```bash
+pip install mkdocs-material
+mkdocs serve
+```
+
+Mở `http://127.0.0.1:8000`. Máy chủ tự tải lại khi bạn lưu thay đổi trong các file Markdown.

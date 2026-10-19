@@ -25,6 +25,11 @@ class SortTimeEnum(str, Enum):
     OLDEST = "asc"
 
 
+class ProblemMetricsResponse(BaseModel):
+    problem_type: str
+    metrics: list[str]
+
+
 class DatasetResponse(BaseModel):
     id: str = Field(alias="_id")
     dataName: str

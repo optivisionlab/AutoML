@@ -79,6 +79,21 @@ class TestDatasetsAPI(unittest.TestCase):
         self.assertIn("metrics", data["data"])
         self.assertIn("rmse", data["data"]["metrics"])
 
+    def test_get_problem_metrics_default(self):
+        response = self.client.get("/api/v1/datasets/metrics")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["data"]["problem_type"], "classification")
+        self.assertIn("accuracy", data["data"]["metrics"])
+
+    def test_get_problem_metrics_fallback(self):
+        response = self.client.get("/api/v1/datasets/metrics?problem_type=unknown_type")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("accuracy", data["data"]["metrics"])
+
     def test_get_dataset_by_id_success(self):
         self.mock_dataset_service.get_dataset_detail.return_value = {
             "id": "dataset_1", 

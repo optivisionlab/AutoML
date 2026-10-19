@@ -32,115 +32,45 @@ HAutoML sử dụng các phương pháp khoa học hiện đại trong AutoML:
 - Pipeline xử lý để tránh data leakage
 
 ### Tìm kiếm siêu tham số
-- Grid Search và Random Search
-- Kiểm định chéo k-fold (k-fold cross-validation)
+- 5 thuật toán: Grid Search, Random Search, Bayesian Optimization, Genetic Algorithm và TPE
+- Dừng sớm (early stopping) và cắt tỉa (pruning) các tổ hợp kém
+- Kiểm định chéo 3 bậc, tự chọn theo kích thước dữ liệu
 - Đánh giá dựa trên multiple metrics
 
 ### Đánh giá mô hình
 - **Phân loại**: Accuracy, Precision, Recall, F1-Score, Balanced Accuracy
-- **Hồi quy**: MAE, MSE, RMSE, R²
+- **Hồi quy**: MAE, MSE, MAPE, R²
+- **Chuỗi thời gian**: MAE, MSE, RMSE, R²
 - Xác thực generalization để tránh overfitting
 
-Xem chi tiết tại [Phương pháp khoa học](scientific_approach.md).
+Xem chi tiết tại [Phương pháp khoa học](scientific_approach.md), [Tối ưu siêu tham số](hpo.md) và [Dự báo chuỗi thời gian](time_series.md).
 
 ## 🏗️ Kiến trúc hệ thống
 
 HAutoML sử dụng kiến trúc **microservices** hiện đại:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend (Next.js)                       │
-│                  Giao diện người dùng web                    │
-└────────────────────────────┬────────────────────────────────┘
-                             │ HTTP/REST
-┌────────────────────────────▼────────────────────────────────┐
-│                  Backend (FastAPI)                          │
-│              API, Business Logic, Orchestration              │
-└─┬────────────┬──────────────┬─────────────┬────────────────┘
-  │            │              │             │
-  │            │              │             │
-┌─▼─┐    ┌────▼────┐    ┌────▼─────┐  ┌──▼───────┐
-│   │    │ MongoDB  │    │ Apache    │  │  Minio   │
-│   │    │          │    │ Kafka     │  │ (Storage)│
-│   │    │(Database)│    │ (Queue)   │  │          │
-│   │    └──────────┘    └─────┬────┘  └──────────┘
-│   │                          │
-│   └──────────────────────────┼───────────────────┐
-│                              │                   │
-└──────────────────────────────┼───────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │      Workers       │
-                    │ (Process Training  │
-                    │   Jobs from Kafka) │
-                    └───────────────────┘
+```mermaid
+flowchart LR
+    FE["Frontend<br/>Next.js"] -- REST --> API["Backend<br/>FastAPI"]
+    API --> DB[("MongoDB")]
+    API --> MINIO[("MinIO")]
+    API --> KAFKA{{"Kafka"}}
+    KAFKA --> CONS["Training Consumer"]
+    CONS --> MR["PyMapReduce workers"]
+    CONS --> DB
+    CONS --> MQTT{{"MQTT"}}
+    MQTT -- realtime --> FE
 ```
 
 Xem chi tiết tại [Kiến trúc hệ thống](architecture.md).
 
 ## 🚀 Bắt đầu nhanh
 
-### Cách đơn giản nhất: Sử dụng Docker
-
-Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.
-
-**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/)
-
----
-
-### Triển khai từ mã nguồn
-
-**1. Tải mã nguồn dự án**
 ```bash
 git clone https://github.com/optivisionlab/AutoML.git
-cd AutoML
-```
-
-**2. Cấu hình môi trường**
-```bash
-cp src/backend/temp.env src/backend/.env
-cp src/frontend/temp.env src/frontend/.env
-```
-
-**3. Khởi chạy các thành phần hệ thống**
-> **Backend & Worker cluster**
-> 
-> Tại thư mục: AutoML/src/backend
-```bash
-pip install -r requirements.txt # Cài đặt các thư viện cần thiết
-
-python app.py # Khởi chạỵ API server
-python -m cluster.worker # Kích hoạt worker xử lý tác vụ
-```
-
-> **Frontend**
-> 
-> Tại thư mục: AutoML/src/frontend
-```bash
-npm install # Cài đặt các gói phụ thuộc
-npm run dev # Chạy ứng dụng ở chế độ phát triển
-```
-
-**4. Địa chỉ truy cập**
-
-- Giao diện người dùng: [http://localhost:3000](http://localhost:3000)
-
-- Backend API: [http://localhost:8000](http://localhost:8000)
-
-
----
-
-### Triển khai qua docker
-> **Tự động hóa việc thiết lập và khởi chạy toàn bộ môi trường**
-> 
-> Tại thư mục: AutoML/
-```bash
-docker-compose up -d --build
-```
-
-> **Để dừng hệ thống**
-```bash
-docker-compose down
+cd AutoML/src/backend
+cp .env.example .env
+cd deploy && docker compose up -d --build
 ```
 
 Chi tiết đầy đủ xem tại [Bắt đầu](getting_started.md).
@@ -165,6 +95,8 @@ Chi tiết đầy đủ xem tại [Bắt đầu](getting_started.md).
 | [Bắt đầu](getting_started.md) | Hướng dẫn cài đặt và chạy hệ thống |
 | [Kiến trúc](architecture.md) | Các thành phần hệ thống và công nghệ |
 | [Phương pháp khoa học](scientific_approach.md) | Chi tiết về quá trình AutoML, tiền xử lý, tuning, v.v. |
+| [Tối ưu siêu tham số](hpo.md) | Các thuật toán HPO, dừng sớm và cắt tỉa |
+| [Dự báo chuỗi thời gian](time_series.md) | Bài toán `time_series`: đặc trưng, đánh giá, dự đoán |
 | [Backend API](backend_api.md) | Tài liệu API endpoints |
 | [Lịch sử phát hành](releases.md) | Các phiên bản đã phát hành và hướng phát triển |
 | [Ghi nhận & Giấy phép](citation_license.md) | Cách trích dẫn và thông tin giấy phép |

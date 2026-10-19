@@ -18,10 +18,20 @@ import pyarrow.parquet as pq
 from fastapi import status, UploadFile
 
 # Local Libraries
-from src.core import exceptions, constants
+from src.core import exceptions, constants, search_space
 from src.shared import minio_service, backblaze_service
 from src.adapters import DatabaseAdapterError, DatabaseConfig, DatabaseAdapterFactory
-from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate, DatabaseConnection, TableInfoRequest, ImportTableRequest
+from src.modules.datasets.schemas import (
+    DatasetResponse,
+    DatasetAdminResponse,
+    DatasetCreate,
+    DataTypeEnum,
+    DatasetUpdate,
+    DatabaseConnection,
+    TableInfoRequest,
+    ImportTableRequest,
+    ProblemMetricsResponse
+)
 from src.modules.datasets.repository import DatasetRepository
 
 
@@ -743,3 +753,23 @@ class DatasetService:
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return inserted_doc["_id"]
+
+    """
+    Get metrics base on problem type
+    """
+    @staticmethod
+    def get_metrics_by_problem_type(problem_type: str = constants.ProblemType.CLASSIFICATION) -> ProblemMetricsResponse:
+        raw_type = problem_type.value if hasattr(problem_type, "value") else problem_type
+        clean_type = (raw_type or "").lower().strip()
+        match clean_type:
+            case constants.ProblemType.REGRESSION:
+                metrics = search_space.REGRESSION_METRIC_LIST
+            case constants.ProblemType.TIME_SERIES:
+                metrics = search_space.TIME_SERIES_METRIC_LIST
+            case _:
+                metrics = search_space.CLASSIFICATION_METRIC_LIST
+
+        return ProblemMetricsResponse(
+            problem_type=problem_type,
+            metrics=metrics
+        )

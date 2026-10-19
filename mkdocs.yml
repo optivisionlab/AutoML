@@ -26,11 +26,15 @@ theme:
     - search.suggest
     - search.highlight
     - content.tabs.link
-    - content.code.annotation
+    - content.code.annotate
     - content.code.copy
 
 plugins:
   - search
+
+exclude_docs: |
+  data_automl/
+  example/
 
 extra_css:
   - stylesheets/extra.css
@@ -47,7 +51,13 @@ markdown_extensions:
       generic: true
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - attr_list
+  - tables
   - pymdownx.tabbed:
       alternate_style: true
 
@@ -55,7 +65,10 @@ nav:
   - 'Trang chủ': 'index.md'
   - 'Bắt đầu': 'getting_started.md'
   - 'Kiến trúc': 'architecture.md'
-  - 'Phương pháp khoa học': 'scientific_approach.md'
+  - 'Phương pháp khoa học':
+    - 'Tổng quan': 'scientific_approach.md'
+    - 'Tối ưu siêu tham số': 'hpo.md'
+    - 'Dự báo chuỗi thời gian': 'time_series.md'
   - 'Tài liệu API':
     - 'Backend API': 'backend_api.md'
   - 'Lịch sử phát hành': 'releases.md'
