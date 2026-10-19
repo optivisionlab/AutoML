@@ -11,7 +11,7 @@
         <link rel="canonical" href="https://optivisionlab.github.io/AutoML/docs/backend_api/">
       
       
-        <link rel="prev" href="../scientific_approach/">
+        <link rel="prev" href="../architecture/">
       
       
         <link rel="next" href="../releases/">
@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -29,7 +29,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -282,7 +282,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../scientific_approach/" class="md-tabs__link">
+      <a href="../scientific_approach.md" class="md-tabs__link">
         
   
   
@@ -490,7 +490,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../scientific_approach/" class="md-nav__link">
+      <a href="../scientific_approach.md" class="md-nav__link">
         
   
   
@@ -910,6 +910,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#post-connect-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /connect-database
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-import-database-table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /import-database-table
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1143,6 +1165,40 @@
 <li><strong>Tham số truy vấn (Query Parameters)</strong>: <code>job_id</code> (string), <code>activate</code> (integer, 0 hoặc 1).</li>
 <li><strong>Response</strong>: Một thông báo xác nhận.</li>
 </ul>
+<h3 id="post-connect-database"><code>POST /connect-database</code></h3>
+<ul>
+<li><strong>Mô tả</strong>: Kiểm tra kết nối tới cơ sở dữ liệu (hỗ trợ 12 loại: PostgreSQL, MySQL, SQLite, DuckDB, Snowflake, BigQuery, ClickHouse, MSSQL, Oracle, Trino, Hive, Redshift) và lấy danh sách các bảng có sẵn.</li>
+<li><strong>Request Body</strong>: Đối tượng JSON chứa:<ul>
+<li><code>db_type</code> (string, bắt buộc): Loại CSDL (ví dụ: <code>"postgres"</code>, <code>"mysql"</code>, <code>"sqlite"</code>, <code>"duckdb"</code>, <code>"snowflake"</code>, <code>"mssql"</code>...).</li>
+<li><code>database</code> (string, bắt buộc): Tên cơ sở dữ liệu, file path hoặc <code>:memory:</code> (đối với SQLite/DuckDB).</li>
+<li><code>host</code> (string, tùy chọn): Địa chỉ IP hoặc tên miền máy chủ CSDL (mặc định: <code>"localhost"</code>).</li>
+<li><code>port</code> (int, tùy chọn): Cổng mạng (mặc định tự động điền theo từng CSDL, ví dụ 5432, 3306, 1433, 1521, 8123...).</li>
+<li><code>user</code> (string, tùy chọn): Tên đăng nhập CSDL.</li>
+<li><code>password</code> (string, tùy chọn): Mật khẩu truy cập CSDL.</li>
+<li><code>schema_name</code> (string, tùy chọn): Tên schema (ví dụ: <code>"public"</code>, <code>"analytics"</code>).</li>
+<li><code>extra_params</code> (object, tùy chọn): Các tham số đặc thù của từng hệ CSDL:<ul>
+<li>Snowflake: <code>account</code>, <code>warehouse</code>, <code>role</code>.</li>
+<li>MSSQL: <code>driver</code> (ODBC driver name), <code>trust_server_certificate</code>.</li>
+<li>Oracle: <code>service_name</code>, <code>sid</code>.</li>
+<li>BigQuery: <code>cred_file_path</code> (đường dẫn service account JSON).</li>
+<li>Hive: <code>auth</code>.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Đối tượng JSON chứa trạng thái kết nối và danh sách tên các bảng (<code>tables: [...]</code>).</li>
+</ul>
+<h3 id="post-import-database-table"><code>POST /import-database-table</code></h3>
+<ul>
+<li><strong>Mô tả</strong>: Trích xuất dữ liệu của một bảng từ CSDL đã kết nối, đóng gói thành định dạng Parquet và nạp vào hệ sinh thái AutoML (lưu trữ MinIO và đăng ký vào MongoDB).</li>
+<li><strong>Request Body</strong>: Đối tượng JSON chứa:<ul>
+<li>Các trường kết nối: <code>db_type</code>, <code>database</code>, <code>host</code> (tùy chọn), <code>port</code> (tùy chọn), <code>user</code> (tùy chọn), <code>password</code> (tùy chọn), <code>schema_name</code> (tùy chọn), <code>extra_params</code> (tùy chọn).</li>
+<li><code>table_name</code> (string, bắt buộc): Tên bảng người dùng chọn để trích xuất dữ liệu.</li>
+<li><code>data_name</code> (string, bắt buộc): Tên đặt cho bộ dữ liệu trên hệ thống AutoML.</li>
+</ul>
+</li>
+<li><strong>Response</strong>: Đối tượng JSON chứa siêu dữ liệu của tập dữ liệu mới được tạo trong hệ thống.</li>
+</ul>
 
 
 
@@ -1203,7 +1259,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "navigation.top", "search.suggest", "search.highlight", "content.tabs.link", "content.code.annotation", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
       
