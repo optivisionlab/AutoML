@@ -1,10 +1,10 @@
 """
 Cấu hình nhà cung cấp LLM.
 
-OpenRouter, Google AI Studio, OpenAI và Azure OpenAI đều nói chuẩn OpenAI Chat
-Completions, nên dùng chung một code path (agent_openai.py).
+OpenRouter, Google AI Studio, OpenAI, FPT AI và Azure OpenAI đều nói chuẩn
+OpenAI Chat Completions, nên dùng chung một code path (agent_openai.py).
 
-Ba provider đầu chỉ khác nhau base_url + tên biến chứa key. Azure là ngoại lệ:
+Các provider ngoài Azure chỉ khác nhau base_url + tên biến chứa key. Azure là ngoại lệ:
 xác thực bằng header `api-key`, cần `api-version`, và "model" thực chất là TÊN
 DEPLOYMENT do bạn đặt trên portal chứ không phải tên model. Vì vậy nó cần một
 class client riêng (`AzureOpenAI`) - xem build_client().
@@ -70,6 +70,16 @@ _PROVIDERS = {
         # Không có mặc định: tên deployment do bạn tự đặt, không đoán được.
         "default_model": None,
     },
+    # FPT AI Marketplace / AI Factory - cũng theo chuẩn OpenAI. URL đổi theo sản
+    # phẩm FPT bạn đăng ký, nên đặt FPT_BASE_URL đúng như trang lấy key ghi.
+    "fpt": {
+        "kind": "openai",
+        "base_url": "https://token-api.fpt.ai/v1",
+        "base_url_env": "FPT_BASE_URL",
+        "key_env": ("FPT_API_KEY",),
+        # Danh mục model FPT thay đổi theo gói, không đoán - đặt LLM_MODEL.
+        "default_model": None,
+    },
 }
 
 SUPPORTED = tuple(sorted(_PROVIDERS))
@@ -121,12 +131,18 @@ def resolve(provider: str | None = None, model: str | None = None) -> ProviderCo
     resolved_model = model or os.getenv("LLM_MODEL") or spec["default_model"]
 
     if spec["kind"] != "azure":
+        if not resolved_model:
+            raise RuntimeError(
+                f"Provider {name!r} không có model mặc định. Đặt LLM_MODEL "
+                "(hoặc truyền --model) bằng tên model trong trang quản lý của provider."
+            )
+        base_url = os.getenv(spec.get("base_url_env") or "") or spec["base_url"]
         return ProviderConfig(
             name=name,
             kind=spec["kind"],
             api_key=api_key,
             model=resolved_model,
-            base_url=spec["base_url"],
+            base_url=base_url,
         )
 
     # Azure cần thêm endpoint và tên deployment, không có giá trị mặc định hợp lý.
@@ -138,7 +154,7 @@ def resolve(provider: str | None = None, model: str | None = None) -> ProviderCo
         )
     endpoint = _azure_base(endpoint)
 
-    deployment =resolved_model or _first_env("AZURE_OPENAI_DEPLOYMENT")
+    deployment = resolved_model or _first_env("AZURE_OPENAI_DEPLOYMENT")
     if not deployment:
         raise RuntimeError(
             "Provider 'azure' cần tên deployment. Đặt AZURE_OPENAI_DEPLOYMENT "
