@@ -18,3 +18,14 @@ class CVStrategyConfig(BaseModel):
         "populate_by_name": True,
         "from_attributes": True
     }
+
+class TimeSeriesConfig(CVStrategyConfig):
+    """
+    Cross-validation strategy of one-step time series forecasting, plus the feature settings chosen from the data
+    """
+    time_column: str = Field(..., description="Datetime column of a single, regularly sampled series")
+    lags: list[int] = Field(..., description="Lags of the target used as features")
+    rolling_windows: list[int] = Field(..., description="Windows of rolling mean/std over past target values")
+    gap: int = Field(0, description="Samples skipped between train and validation of each chronological fold")
+    max_train_size: int | None = Field(None, description="Maximum train window of a chronological fold")
+    fold_test_size: int | None = Field(None, description="Validation window size of a chronological fold")

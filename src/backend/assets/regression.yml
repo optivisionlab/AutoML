@@ -3,7 +3,7 @@ metric_list:
   - mae
   - mape
   - r2
-Regression_models:
+models:
   0:
     model: LinearRegression
     params:

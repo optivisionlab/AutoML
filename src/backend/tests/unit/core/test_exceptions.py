@@ -3,7 +3,7 @@ from fastapi import status
 
 # Local Libraries
 from src.core.exceptions import CustomException
-from src.shared.constants import ErrorCode
+from src.core.constants import ErrorCode
 
 
 def test_custom_exception_initialization():

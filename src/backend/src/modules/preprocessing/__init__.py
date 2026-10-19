@@ -14,12 +14,20 @@ from src.modules.preprocessing.classification import (
     prepare_classification_data,
     determine_classification_cv_tier,
 )
+from src.modules.preprocessing.time_series import (
+    build_time_series_pipeline,
+    TimeSeriesForecaster,
+    MODEL_STEP,
+)
 
 
 __all__ = [
     "TabularPreprocessor",
     "FittedPreprocessor",
     "CVStrategyConfig",
+    "build_time_series_pipeline",
+    "TimeSeriesForecaster",
+    "MODEL_STEP",
     "preprocess_classification_data",
     "prepare_classification_data",
     "determine_classification_cv_tier",

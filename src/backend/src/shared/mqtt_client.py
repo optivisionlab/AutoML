@@ -1,7 +1,9 @@
 # Standard Libraries
 import json
-import aiomqtt
 import logging
+
+# Third-party Libraries
+import aiomqtt
 
 # Local Libraries
 from src.config import settings
@@ -44,11 +46,16 @@ class MQTTClient:
 
     async def publish(self, topic: str, payload: dict, qos: int = 1):
         if not self.is_connected or not self.client:
+            logger.info(f"MQTT Client is not connected. Attempting auto-reconnect before publishing to: {topic}")
+            await self.connect()
+
+        if not self.is_connected or not self.client:
             logger.warning(f"MQTT Client is not connected. Dropping message for topic: {topic}")
             return
 
         try:
             await self.client.publish(topic, payload=json.dumps(payload), qos=qos)
+            logger.info(f"Successfully published MQTT message to topic: {topic}")
         except Exception as e:
             logger.error(f"MQTT Publish Error on topic {topic}. Reason: {e}")
 

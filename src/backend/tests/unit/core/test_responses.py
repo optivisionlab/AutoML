@@ -4,7 +4,7 @@ from pydantic import ValidationError
 
 # Local Libraries
 from src.core.responses import BaseResponse, PaginatedResponse, OffsetPaginatedResponse
-from src.shared.constants import MessageResponse
+from src.core.constants import MessageResponse
 
 
 def test_base_response_default():

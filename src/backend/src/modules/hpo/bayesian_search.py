@@ -32,7 +32,7 @@ class BayesianSearch(BaseSearchCV):
         acq_func: str = "EI",
         patience: int | None = 10,
         min_delta: float = 1e-4,
-        enable_pruning: bool = False,
+        enable_pruning: bool = True,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
@@ -74,6 +74,15 @@ class BayesianSearch(BaseSearchCV):
 
         return dimensions
 
+    def _loss_from_scores(self, scores: dict[str, float]) -> float:
+        """
+        Computes finite loss for gp_minimize (negated score with strict finite bounds)
+        """
+        score = scores.get(self.refit, -1e6)
+        if not np.isfinite(score) or score <= -1e5:
+            return 1e6
+        return -float(score)
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> "BayesianSearch":
         """
         Executes Bayesian Optimization search
@@ -88,9 +97,7 @@ class BayesianSearch(BaseSearchCV):
         cache: dict[tuple, tuple[dict[str, float], dict[str, float], float, float]] = {}
 
         for grid_idx, grid in enumerate(param_grids, start=1):
-            dimensions = self._convert_grid_to_dimensions(grid) if grid else []
-
-            if not dimensions:
+            if not grid:
                 total_evaluated += 1
                 try:
                     mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
@@ -102,61 +109,110 @@ class BayesianSearch(BaseSearchCV):
                     )
                     self._record_trial({}, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                 except TrialPruned:
-                    self._record_trial({}, {m: 0.0 for m in self.scoring}, {m: 0.0 for m in self.scoring}, 0.0, 0.0, is_pruned=True)
+                    pruned_scores = {m: -1e6 for m in self.scoring}
+                    self._record_trial({}, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
                 continue
 
-            total_combos = np.prod([len(d.categories) for d in dimensions if hasattr(d, "categories")], dtype=int)
-            effective_calls = min(calls_per_grid, int(total_combos)) if total_combos > 0 else calls_per_grid
-            effective_initial = min(self.n_initial_points, max(1, effective_calls // 2))
+            # Separate fixed parameters (0 or 1 choice) from variable search dimensions
+            fixed_params: dict[str, Any] = {}
+            var_grid: dict[str, Any] = {}
+            for k, v in grid.items():
+                match v:
+                    case list() | tuple() | np.ndarray() if len(v) == 1:
+                        fixed_params[k] = v[0]
+                    case list() | tuple() | np.ndarray() if len(v) > 1:
+                        var_grid[k] = v
+                    case Dimension() if hasattr(v, "categories") and len(v.categories) == 1:
+                        fixed_params[k] = v.categories[0]
+                    case Dimension():
+                        var_grid[k] = v
+                    case _:
+                        fixed_params[k] = v
 
-            @use_named_args(dimensions)
-            def objective(**params) -> float:
-                nonlocal total_evaluated
-                param_key = tuple(sorted((k, str(v)) for k, v in params.items()))
+            dimensions = self._convert_grid_to_dimensions(var_grid) if var_grid else []
 
+            if not dimensions:
+                # Single fixed combination: evaluate directly without gp_minimize overhead
+                param_key = tuple(sorted((k, str(v)) for k, v in fixed_params.items()))
                 if param_key not in cache:
                     total_evaluated += 1
                     try:
                         mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
-                            candidate_params=params,
+                            candidate_params=fixed_params,
                             X=X,
                             y=y,
                             trial_num=total_evaluated,
                             total_trials=total_trials,
                         )
-                        self._record_trial(params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
+                        self._record_trial(fixed_params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                         cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
                     except TrialPruned:
-                        zero_scores = {m: 0.0 for m in self.scoring}
-                        self._record_trial(params, zero_scores, zero_scores, 0.0, 0.0, is_pruned=True)
-                        cache[param_key] = (zero_scores, zero_scores, 0.0, 0.0)
-                        return 1e6  # High loss penalty for pruned configurations
+                        pruned_scores = {m: -1e6 for m in self.scoring}
+                        self._record_trial(fixed_params, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
+                        cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
+                continue
 
-                return -float(cache[param_key][0].get(self.refit, 0.0))
+            total_combos = np.prod([len(d.categories) for d in dimensions if hasattr(d, "categories")], dtype=int)
+            effective_calls = min(calls_per_grid, int(total_combos)) if total_combos > 0 else calls_per_grid
+            effective_calls = max(1, effective_calls)
+            effective_initial = min(self.n_initial_points, max(1, effective_calls // 2))
+            if effective_calls > 1 and effective_initial >= effective_calls:
+                effective_initial = effective_calls - 1
+
+            @use_named_args(dimensions)
+            def objective(**params) -> float:
+                nonlocal total_evaluated
+                full_params = {**fixed_params, **params}
+                param_key = tuple(sorted((k, str(v)) for k, v in full_params.items()))
+
+                if param_key not in cache:
+                    total_evaluated += 1
+                    try:
+                        mean_scores, std_scores, fit_time, score_time = self._evaluate_candidate(
+                            candidate_params=full_params,
+                            X=X,
+                            y=y,
+                            trial_num=total_evaluated,
+                            total_trials=total_trials,
+                        )
+                        self._record_trial(full_params, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
+                        cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
+                    except TrialPruned:
+                        pruned_scores = {m: -1e6 for m in self.scoring}
+                        self._record_trial(full_params, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
+                        cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
+                        return 1e6  # Finite high loss penalty for pruned configurations
+
+                return self._loss_from_scores(cache[param_key][0])
 
             callbacks = []
             if self.patience is not None:
                 def early_stopping_callback(res):
-                    if hasattr(res, "fun"):
+                    if hasattr(res, "fun") and np.isfinite(res.fun):
                         current_best = -float(res.fun)
                         return self._check_early_stopping(current_best)
                     return False
 
                 callbacks.append(early_stopping_callback)
 
-            try:
-                gp_minimize(
-                    func=objective,
-                    dimensions=dimensions,
-                    n_calls=effective_calls,
-                    n_initial_points=effective_initial,
-                    acq_func=self.acq_func,
-                    random_state=self.random_state,
-                    n_jobs=self.n_jobs,
-                    callback=callbacks if callbacks else None,
-                )
-            except Exception as e:
-                logger.warning(f"[BayesianSearch] gp_minimize notice: {e}")
+            if effective_calls == 1:
+                sample_point = [d.categories[0] if hasattr(d, "categories") else 0 for d in dimensions]
+                param_dict = {d.name: val for d, val in zip(dimensions, sample_point)}
+                objective(**param_dict)
+            else:
+                try:
+                    gp_minimize(
+                        func=objective,
+                        dimensions=dimensions,
+                        n_calls=effective_calls,
+                        n_initial_points=effective_initial,
+                        acq_func=self.acq_func,
+                        random_state=self.random_state,
+                        n_jobs=self.n_jobs,
+                        callback=callbacks if callbacks else None,
+                    )
+                except Exception as e:
+                    logger.warning(f"[BayesianSearch] gp_minimize notice: {e}")
 
         self._finalize_search(X, y)
         return self

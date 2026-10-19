@@ -176,6 +176,50 @@ class TestHPOAlgorithms(unittest.TestCase):
         self.assertIn("max_depth", searcher.best_params_)
         self.assertGreaterEqual(len(searcher.trials_history_), 1)
 
+    def test_tpe_search_regression_mse_with_pruning(self):
+        searcher = TPESearch(
+            estimator=DecisionTreeRegressor(random_state=42),
+            param_grid=self.reg_param_grid,
+            n_trials=8,
+            patience=3,
+            enable_pruning=True,
+            cv=self.reg_cv,
+            scoring=self.reg_scoring,
+            refit="mse",
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+        )
+        searcher.fit(self.X_reg, self.y_reg)
+
+        self.assertIsNotNone(searcher.best_estimator_)
+        self.assertIn("max_depth", searcher.best_params_)
+        # Verify best score is a real negative MSE score, not 0.0 and not -inf
+        self.assertNotEqual(searcher.best_score_, 0.0)
+        self.assertNotEqual(searcher.best_score_, -float("inf"))
+        self.assertLess(searcher.best_score_, 0.0)
+
+    def test_random_search_regression_mae_pruning(self):
+        scoring = ModelService.build_scoring_dict(["mae", "mse"], problem_type="regression")
+        searcher = RandomSearch(
+            estimator=DecisionTreeRegressor(random_state=42),
+            param_grid=self.reg_param_grid,
+            n_iter=6,
+            enable_pruning=True,
+            cv=self.reg_cv,
+            scoring=scoring,
+            refit="mae",
+            random_state=42,
+            n_jobs=1,
+            verbose=0,
+        )
+        searcher.fit(self.X_reg, self.y_reg)
+
+        self.assertIsNotNone(searcher.best_estimator_)
+        self.assertNotEqual(searcher.best_score_, 0.0)
+        self.assertNotEqual(searcher.best_score_, -float("inf"))
+        self.assertLess(searcher.best_score_, 0.0)
+
     def test_empty_param_grid(self):
         searcher = GridSearch(
             estimator=DecisionTreeClassifier(random_state=42),

@@ -7,7 +7,7 @@ from bson.errors import InvalidId
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.shared import constants
+from src.core import constants
 from src.modules.trainings.schemas import JobSuccessPayload
 
 

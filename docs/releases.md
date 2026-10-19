@@ -231,7 +231,7 @@ Các tính năng dự kiến cho các phiên bản sắp tới:
 ### Sắp ra mắt (Planned)
 
 - [ ] Hỗ trợ Deep Learning (TensorFlow, PyTorch)
-- [ ] Time Series Forecasting
+- [x] Time Series Forecasting (dự báo một bước đơn biến bằng scikit-learn, xem [tài liệu](time_series.md)); các mô hình chuyên dụng cho chuỗi thời gian vẫn đang được xem xét
 - [ ] Ensemble Methods nâng cao
 - [ ] Auto Feature Engineering
 - [ ] Explainability tools (SHAP, LIME)

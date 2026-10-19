@@ -15,7 +15,7 @@ services:
       - pymapreduce_wal:/tmp
     command: >
       sh -c "
-      pip install --no-cache-dir pymapreduce-core==0.1.12 &&
+      pip install --no-cache-dir pymapreduce-core &&
       mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v -E 'Disaster Recovery|WAL|wal'
       "
     logging:
@@ -37,6 +37,7 @@ services:
       - PYTHONUNBUFFERED=1
       - HEAD_ADDR=${HEAD_ADDR:-headnode:7777}
       - WORKER_CPUS=${WORKER_CPUS:-}
+      - IDLE_TIMEOUT=${IDLE_TIMEOUT:-120}
     volumes:
       - ./requirements.txt:/app/requirements.txt:ro
     command: >
@@ -46,9 +47,9 @@ services:
       rm -rf /var/lib/apt/lists/* &&
       pip install --no-cache-dir -r /app/requirements.txt &&
       if [ -n \"\$$WORKER_CPUS\" ]; then
-        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS --idle-timeout $${IDLE_TIMEOUT:-120}
       else
-        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777}
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --idle-timeout $${IDLE_TIMEOUT:-120}
       fi
       "
     deploy:

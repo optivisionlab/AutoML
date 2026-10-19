@@ -4,11 +4,23 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from bson import ObjectId
 
+import numpy as np
 import pandas as pd
 from sklearn.datasets import load_iris, load_diabetes
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import KFold
 
+from src.core import constants
+from src.modules.preprocessing import TimeSeriesForecaster
 from src.modules.trainings.repository import TrainingRepository
 from src.modules.trainings.service import TrainingService
+from src.modules.trainings.executor import (
+    build_trainable_model,
+    tune_and_fit_model,
+    evaluate_trained_model,
+)
 
 
 class TestTrainingRepository(unittest.IsolatedAsyncioTestCase):
@@ -88,7 +100,6 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             df=df,
             target_col="target",
             metric_sort="accuracy",
-            models_to_train=["DecisionTreeClassifier", "GaussianNB"],
             problem_type="classification",
         )
 
@@ -136,7 +147,6 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             df=df,
             target_col="target",
             metric_sort="r2",
-            models_to_train=["LinearRegression", "DecisionTreeRegressor"],
             problem_type="regression",
         )
 
@@ -150,6 +160,49 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
         artifact = pickle.loads(result.best_model_bytes)
         self.assertEqual(artifact["problem_type"], "regression")
         self.assertIsNotNone(artifact["preprocessor"])
+
+    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
+    async def test_train_automl_pipeline_time_series(self, mock_dispatch, mock_driver):
+        mock_driver.return_value = AsyncMock()
+        from src.modules.models.service import ModelService
+        from src.modules.preprocessing import build_time_series_pipeline
+
+        pipe = build_time_series_pipeline(Ridge())
+        # Fit dummy data so pipe is fitted
+        pipe.fit(pd.DataFrame({"feat": [1.0, 2.0, 3.0]}), np.array([1.0, 2.0, 3.0]))
+
+        mock_dispatch.return_value = [
+            {
+                "model_name": "Ridge",
+                "scores": {"r2": 0.91, "mse": 5.0},
+                "best_params": {"alpha": 1.0},
+                "model_bytes": ModelService.serialize_model(pipe),
+            }
+        ]
+
+        dates = pd.date_range("2024-01-01", periods=30, freq="D")
+        df = pd.DataFrame({
+            "timestamp": dates,
+            "target": np.linspace(10, 20, 30),
+            "feat": np.linspace(20, 30, 30),
+        })
+
+        result = await TrainingService.train_automl_pipeline(
+            df=df,
+            target_col="target",
+            metric_sort="r2",
+            problem_type=constants.ProblemType.TIME_SERIES,
+        )
+
+        self.assertIsNotNone(result.best_model)
+        self.assertEqual(result.best_model, "Ridge")
+        self.assertEqual(result.best_score, 0.91)
+        self.assertIsNotNone(result.best_model_bytes)
+
+        artifact = pickle.loads(result.best_model_bytes)
+        self.assertEqual(artifact["problem_type"], constants.ProblemType.TIME_SERIES)
+        self.assertIsInstance(artifact["model"], TimeSeriesForecaster)
 
     @patch("src.modules.trainings.service.TrainingService.train_automl_pipeline")
     async def test_process_training_job_pipeline_flow(self, mock_pipeline):
@@ -196,7 +249,7 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
                     "problem_type": "classification",
                     "target": "target",
                     "metric_sort": "accuracy",
-                    "models": ["DecisionTreeClassifier", "GaussianNB"]
+                    "list_feature": ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"]
                 }
             )
 
@@ -206,6 +259,82 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
             mock_minio.upload_object.assert_called_once()
             mock_repo.update_success.assert_called_once()
             mock_notif.push_notification.assert_called_once()
+
+
+class TestTrainingExecutor(unittest.TestCase):
+    def test_build_trainable_model_classification(self):
+        param_grid = [{"max_depth": [3, 5]}]
+        model, grid = build_trainable_model(DecisionTreeClassifier, param_grid, constants.ProblemType.CLASSIFICATION)
+        self.assertIsInstance(model, DecisionTreeClassifier)
+        self.assertEqual(grid, param_grid)
+
+    def test_build_trainable_model_time_series(self):
+        param_grid = [{"alpha": [0.1, 1.0]}]
+        model, grid = build_trainable_model(Ridge, param_grid, constants.ProblemType.TIME_SERIES)
+        self.assertIsInstance(model, Pipeline)
+        self.assertEqual(grid, [{"model__alpha": [0.1, 1.0]}])
+
+    def test_evaluate_trained_model(self):
+        mock_search = MagicMock()
+        mock_search.cv_results_ = {"mean_test_r2": [0.85]}
+        mock_search.best_index_ = 0
+        mock_search.best_score_ = 0.85
+
+        scores, primary = evaluate_trained_model(
+            best_estimator=MagicMock(),
+            search=mock_search,
+            test_data_bytes=None,
+            metric_list=["r2"],
+            metric_sort="r2",
+        )
+        self.assertEqual(scores, {"r2": 0.85})
+        self.assertEqual(primary, 0.85)
+
+    def test_tune_and_fit_model_strips_pipeline_prefix(self):
+        from src.modules.preprocessing import build_time_series_pipeline
+        from src.modules.models.service import ModelService
+
+        pipe = build_time_series_pipeline(Ridge())
+        X = pd.DataFrame({"feat": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        cv = KFold(n_splits=2)
+        scoring = ModelService.build_scoring_dict(["r2"], problem_type=constants.ProblemType.REGRESSION)
+        param_grid = [{"model__alpha": [0.1, 1.0]}]
+
+        best_estimator, best_params, search = tune_and_fit_model(
+            estimator=pipe,
+            param_grid=param_grid,
+            cv=cv,
+            scoring=scoring,
+            metric_sort="r2",
+            X_train=X,
+            y_train=y,
+        )
+        self.assertIsNotNone(best_estimator)
+        self.assertIn("alpha", best_params)
+        self.assertNotIn("model__alpha", best_params)
+
+    def test_tune_and_fit_model_generic(self):
+        from src.modules.models.service import ModelService
+        X = np.array([[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]])
+        y = np.array([0, 0, 0, 1, 1, 1])
+        cv = KFold(n_splits=2)
+        scoring = ModelService.build_scoring_dict(["accuracy"], problem_type=constants.ProblemType.CLASSIFICATION)
+        param_grid = [{"max_depth": [2, 3]}]
+
+        best_estimator, best_params, search = tune_and_fit_model(
+            estimator=DecisionTreeClassifier(),
+            param_grid=param_grid,
+            cv=cv,
+            scoring=scoring,
+            metric_sort="accuracy",
+            X_train=X,
+            y_train=y,
+        )
+
+        self.assertIsNotNone(best_estimator)
+        self.assertIn("max_depth", best_params)
+        self.assertIsNotNone(search)
 
 
 if __name__ == "__main__":

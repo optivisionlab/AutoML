@@ -72,7 +72,7 @@ class JobItemResponse(BaseModel):
     best_score: float | None = None
     best_params: dict[str, Any] | None = None
     orther_model_scores: list[Any] | None = None
-    create_at: float | None = None
+    create_at: float | datetime | None = None
     infor: str | None = None
 
     model_config = {

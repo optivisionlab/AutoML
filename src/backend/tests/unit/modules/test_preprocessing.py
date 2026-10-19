@@ -12,7 +12,8 @@ from src.modules.preprocessing import (
     prepare_classification_data,
     prepare_regression_data,
 )
-from src.modules.models.service import ModelService, LOWER_IS_BETTER_METRICS
+from src.core import constants
+from src.modules.models.service import ModelService
 from src.modules.models.registry import MODEL_CLASS_MAP
 
 
@@ -86,7 +87,7 @@ class TestPreprocessingPipeline(unittest.TestCase):
         model = DummyRegressor(strategy="mean")
         model.fit(X, y)
         
-        metrics = ModelService.evaluate_holdout(model, X, y, metric_list=["r2", "mse", "mae", "rmse", "mape"], problem_type="regression")
+        metrics = ModelService.evaluate_holdout(model, X, y, metric_list=["r2", "mse", "mae", "rmse", "mape"])
         self.assertIn("r2", metrics)
         self.assertIn("mse", metrics)
         self.assertIn("mae", metrics)
@@ -94,7 +95,7 @@ class TestPreprocessingPipeline(unittest.TestCase):
         self.assertIn("mape", metrics)
         
         for metric in ["mse", "mae", "mape", "rmse"]:
-            self.assertIn(metric, LOWER_IS_BETTER_METRICS)
+            self.assertIn(metric, constants.LOWER_IS_BETTER_METRICS)
 
         # Classification metrics test
         X_cls = np.array([[1], [2], [3], [4]])
@@ -119,7 +120,7 @@ class TestPreprocessingPipeline(unittest.TestCase):
         for m in cls_metric_list:
             self.assertIn(m, scoring_dict)
 
-        cls_results = ModelService.evaluate_holdout(clf, X_cls, y_cls, metric_list=cls_metric_list, problem_type="classification")
+        cls_results = ModelService.evaluate_holdout(clf, X_cls, y_cls, metric_list=cls_metric_list)
         for m in cls_metric_list:
             self.assertIn(m, cls_results)
 

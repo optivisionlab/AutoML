@@ -4,22 +4,34 @@ import re
 import csv
 import uuid
 import math
-import base64
 import asyncio
 import pandas as pd
 from bson import ObjectId
-from bson.errors import InvalidId
+from typing import Any
 from datetime import datetime, timezone
+from bson.errors import InvalidId
 
 # Third-party Libraries
 import numpy as np
+import pyarrow.csv as pv
 import pyarrow.parquet as pq
 from fastapi import status, UploadFile
 
 # Local Libraries
-from src.core import exceptions
-from src.shared import constants, minio_service
-from src.modules.datasets.schemas import DatasetResponse, DatasetAdminResponse, DatasetCreate, DataTypeEnum, DatasetUpdate
+from src.core import exceptions, constants, search_space
+from src.shared import minio_service, backblaze_service
+from src.adapters import DatabaseAdapterError, DatabaseConfig, DatabaseAdapterFactory
+from src.modules.datasets.schemas import (
+    DatasetResponse,
+    DatasetAdminResponse,
+    DatasetCreate,
+    DataTypeEnum,
+    DatasetUpdate,
+    DatabaseConnection,
+    TableInfoRequest,
+    ImportTableRequest,
+    ProblemMetricsResponse
+)
 from src.modules.datasets.repository import DatasetRepository
 
 
@@ -82,6 +94,7 @@ class DatasetService:
         for doc in raw_datasets:
             if doc.get("userId") == "0":
                 doc["public"] = True
+            doc["_id"] = str(doc["_id"])
 
         formatted_datasets = [DatasetResponse(**doc) for doc in raw_datasets]
 
@@ -121,6 +134,7 @@ class DatasetService:
         for doc in raw_datasets:
             if doc.get("userId") == "0":
                 doc["public"] = True
+            doc["_id"] = str(doc["_id"])
 
         formatted_datasets = [DatasetAdminResponse(**doc) for doc in raw_datasets]
 
@@ -164,8 +178,15 @@ class DatasetService:
         return DatasetResponse(**dataset)
 
     @staticmethod
-    def _detect_csv_delimiter(file_bytes: bytes) -> str:
-        sample_str = file_bytes[:2048].decode('utf-8', errors='ignore')
+    def _detect_csv_delimiter(file_input: Any) -> str:
+        if isinstance(file_input, bytes):
+            sample_str = file_input[:4096].decode('utf-8', errors='ignore')
+        else:
+            current_pos = file_input.tell() if hasattr(file_input, "tell") else 0
+            sample_bytes = file_input.read(4096)
+            if hasattr(file_input, "seek"):
+                file_input.seek(current_pos)
+            sample_str = sample_bytes.decode('utf-8', errors='ignore') if isinstance(sample_bytes, bytes) else str(sample_bytes)
         try:
             sniffer = csv.Sniffer()
             dialect = sniffer.sniff(sample_str, delimiters=[',', ';', '\t', '|'])
@@ -174,33 +195,51 @@ class DatasetService:
             # Fallback
             return ','
 
-    def _process_dataframe_to_parquet(self, file_bytes: bytes, filename: str) -> io.BytesIO:
-        csv_stream = io.BytesIO(file_bytes)
+    def _process_stream_to_parquet(self, file_obj: Any, filename: str) -> io.BytesIO:
+        if isinstance(file_obj, bytes):
+            file_stream = io.BytesIO(file_obj)
+        else:
+            file_stream = file_obj
+            if hasattr(file_stream, "seek"):
+                file_stream.seek(0)
+
+        parquet_buffer = io.BytesIO()
 
         try:
             if filename.endswith(('.xls', '.xlsx')):
-                df = pd.read_excel(csv_stream)
+                df = pd.read_excel(file_stream)
+                df = df.loc[:, ~df.columns.str.contains('Unnamed')]
+                df.dropna(axis=1, how='all', inplace=True)
+                df.columns = df.columns.astype(str).str.strip()
+                df.to_parquet(parquet_buffer, index=False)
             else:
-                detected_delimiter = self._detect_csv_delimiter(file_bytes)
-                df = pd.read_csv(
-                    csv_stream,
-                    sep=detected_delimiter,
-                    engine='python',
-                    on_bad_lines='skip'
-                )
+                detected_delimiter = self._detect_csv_delimiter(file_stream)
+                try:
+                    # High performance & memory efficient PyArrow reading
+                    parse_options = pv.ParseOptions(delimiter=detected_delimiter)
+                    table = pv.read_csv(file_stream, parse_options=parse_options)
+                    clean_cols = [c for c in table.column_names if not c.startswith("Unnamed")]
+                    if clean_cols:
+                        table = table.select(clean_cols)
+                    pq.write_table(table, parquet_buffer)
+                except Exception:
+                    # Fallback to pandas
+                    if hasattr(file_stream, "seek"):
+                        file_stream.seek(0)
+                    df = pd.read_csv(
+                        file_stream,
+                        sep=detected_delimiter,
+                        engine='python',
+                        on_bad_lines='skip'
+                    )
+                    df = df.loc[:, ~df.columns.str.contains('Unnamed')]
+                    df.dropna(axis=1, how='all', inplace=True)
+                    df.columns = df.columns.astype(str).str.strip()
+                    df.to_parquet(parquet_buffer, index=False)
         except Exception as e:
             raise ValueError(f"Unable to read data file: {str(e)}")
 
-        # Clean data
-        df = df.loc[:, ~df.columns.str.contains('Unnamed')]
-        df.dropna(axis=1, how='all', inplace=True)
-        df.columns = df.columns.astype(str).str.strip()
-
-        # Convert parquet format
-        parquet_buffer = io.BytesIO()
-        df.to_parquet(parquet_buffer, index=False)
         parquet_buffer.seek(0)
-
         return parquet_buffer
 
     """
@@ -211,33 +250,27 @@ class DatasetService:
         role = current_user.get("role", "user")
         user_id = str(current_user["_id"])
 
-        try:
-            file_content_bytes = await file.read()
-        except Exception as e:
-            raise exceptions.CustomException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error when downloading file",
-                error_code=constants.ErrorCode.BAD_REQUEST
-            )
-
         # Handle thumbnail
-        thumbnail_base64 = None
+        thumbnail_url = None
         if thumbnail_file:
-            if not thumbnail_file.content_type.startswith("image/"):
+            if not thumbnail_file.content_type or not thumbnail_file.content_type.startswith("image/"):
                 raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only image file uploads are supported for thumbnail",
                     error_code=constants.ErrorCode.BAD_REQUEST
                 )
-            try:
-                thumbnail_data = await thumbnail_file.read()
-                thumbnail_base64 = base64.b64encode(thumbnail_data).decode('utf-8')
-            except Exception as e:
-                raise exceptions.CustomException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Error reading thumbnail file",
-                    error_code=constants.ErrorCode.BAD_REQUEST
-                )
+            thumb_ext = thumbnail_file.filename.split(".")[-1] if thumbnail_file.filename and "." in thumbnail_file.filename else "png"
+            thumb_object_name = f"thumbnails/{user_id}/{uuid.uuid4().hex[:8]}.{thumb_ext}"
+
+            if hasattr(thumbnail_file.file, "seek"):
+                thumbnail_file.file.seek(0)
+
+            await backblaze_service.upload_file_stream(
+                object_name=thumb_object_name,
+                file_obj=thumbnail_file.file,
+                content_type=thumbnail_file.content_type
+            )
+            thumbnail_url = await backblaze_service.get_url(thumb_object_name)
 
         storage_place = uuid.uuid4()
         bucket_name = "dataset"
@@ -245,9 +278,9 @@ class DatasetService:
         if payload.dataType == DataTypeEnum.TABLE:
             try:
                 parquet_buffer = await asyncio.to_thread(
-                    self._process_dataframe_to_parquet,
-                    file_bytes=file_content_bytes,
-                    filename=file.filename
+                    self._process_stream_to_parquet,
+                    file_obj=file.file,
+                    filename=file.filename or "data.csv"
                 )
             except ValueError as e:
                 raise exceptions.CustomException(
@@ -260,11 +293,18 @@ class DatasetService:
             object_name = f"{user_id}/{storage_place}.parquet"
             await minio_service.upload_dataset(bucket_name, object_name, parquet_buffer)
         else:
-            # Handle IMAGE or TEXT types
-            file_extension = file.filename.split(".")[-1] if "." in file.filename else "bin"
+            # Handle IMAGE or TEXT types with stream upload directly
+            file_extension = file.filename.split(".")[-1] if file.filename and "." in file.filename else "bin"
             object_name = f"{user_id}/{storage_place}.{file_extension}"
 
-            await minio_service.upload_object(bucket_name, object_name, file_content_bytes)
+            if hasattr(file.file, "seek"):
+                file.file.seek(0)
+            await minio_service.upload_file_stream(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                file_obj=file.file,
+                content_type=file.content_type or "application/octet-stream"
+            )
 
         # Save Database
         now = datetime.now(timezone.utc).timestamp()
@@ -282,7 +322,7 @@ class DatasetService:
             "username": username,
             "role": role,
             "activate": 1,
-            "thumbnail": thumbnail_base64,
+            "thumbnail": thumbnail_url,
             "description": payload.description
         }
 
@@ -322,21 +362,25 @@ class DatasetService:
         update_data = payload.model_dump(exclude_none=True)
 
         if thumbnail_file:
-            if not thumbnail_file.content_type.startswith("image/"):
+            if not thumbnail_file.content_type or not thumbnail_file.content_type.startswith("image/"):
                 raise exceptions.CustomException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only image file uploads are supported for thumbnail",
                     error_code=constants.ErrorCode.BAD_REQUEST
                 )
-            try:
-                thumbnail_data = await thumbnail_file.read()
-                update_data["thumbnail"] = base64.b64encode(thumbnail_data).decode('utf-8')
-            except Exception as e:
-                raise exceptions.CustomException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Error reading thumbnail file",
-                    error_code=constants.ErrorCode.BAD_REQUEST
-                )
+            user_id = str(dataset.get("userId", current_user["_id"]))
+            thumb_ext = thumbnail_file.filename.split(".")[-1] if thumbnail_file.filename and "." in thumbnail_file.filename else "png"
+            thumb_object_name = f"thumbnails/{user_id}/{uuid.uuid4().hex[:8]}.{thumb_ext}"
+
+            if hasattr(thumbnail_file.file, "seek"):
+                thumbnail_file.file.seek(0)
+
+            await backblaze_service.upload_file_stream(
+                object_name=thumb_object_name,
+                file_obj=thumbnail_file.file,
+                content_type=thumbnail_file.content_type
+            )
+            update_data["thumbnail"] = await backblaze_service.get_url(thumb_object_name)
 
         if not update_data:
             raise exceptions.CustomException(
@@ -459,7 +503,7 @@ class DatasetService:
                 detail="Dataset not found, access denied, or data link missing",
                 error_code=constants.ErrorCode.NOT_FOUND
             )
-            
+
         bucket_name = data_link.get("bucket_name")
         object_name = data_link.get("object_name")
 
@@ -481,7 +525,7 @@ class DatasetService:
                     continue
 
                 series = df_preview[col_name]
-    
+
                 if series.isnull().all() or series.nunique() <= 1:
                     features[col_name] = False
                     continue
@@ -493,7 +537,7 @@ class DatasetService:
                         features[col_name] = True
                     else:
                         features[col_name] = False
-                elif problem_type == constants.ProblemType.REGRESSION:
+                elif problem_type in (constants.ProblemType.REGRESSION, constants.ProblemType.TIME_SERIES):
                     if suggested_type in ["regression", "both"]:
                         features[col_name] = True
                     else:
@@ -562,6 +606,112 @@ class DatasetService:
             )
 
     """
+    External Database Import
+    """
+    @staticmethod
+    def _list_database_tables(config: DatabaseConfig) -> list[str]:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            adapter.test_connection()
+            return adapter.get_tables()
+
+    @staticmethod
+    def _read_database_table_info(config: DatabaseConfig, table_name: str, limit: int) -> dict[str, Any]:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            schema_info = adapter.get_table_schema(table_name)
+            df = adapter.fetch_table_to_dataframe(table_name=table_name, limit=limit)
+
+        # NaN / NaT / None are not JSON serializable
+        preview = [
+            {key: (None if pd.isna(value) else value) for key, value in row.items()}
+            for row in df.to_dict(orient="records")
+        ]
+        return {
+            "table_name": table_name,
+            "columns": schema_info.get("columns", []),
+            "preview_data": preview,
+            "preview_count": len(preview),
+        }
+
+    @staticmethod
+    def _read_database_table_to_parquet(config: DatabaseConfig, table_name: str, limit: int) -> io.BytesIO:
+        with DatabaseAdapterFactory.create(config) as adapter:
+            df = adapter.fetch_table_to_dataframe(table_name=table_name, limit=limit)
+
+        if df.empty:
+            raise ValueError(f"Table '{table_name}' is empty.")
+
+        df.columns = df.columns.astype(str).str.strip()
+        buffer = io.BytesIO()
+        df.to_parquet(buffer, index=False)
+        buffer.seek(0)
+        return buffer
+
+    @staticmethod
+    async def _run_database_call(func, *args) -> Any:
+        """
+        Run a blocking SQLAlchemy call off the event loop and map adapter errors to HTTP 400
+        """
+        try:
+            return await asyncio.to_thread(func, *args)
+        except (DatabaseAdapterError, ValueError) as e:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+                error_code=constants.ErrorCode.BAD_REQUEST
+            )
+
+    async def connect_database(self, payload: DatabaseConnection) -> list[str]:
+        return await self._run_database_call(
+            self._list_database_tables,
+            payload.to_config()
+        )
+
+    async def get_database_table_info(self, payload: TableInfoRequest) -> dict[str, Any]:
+        return await self._run_database_call(
+            self._read_database_table_info,
+            payload.to_config(),
+            payload.table_name,
+            payload.limit
+        )
+
+    async def import_database_table(self, current_user: dict, payload: ImportTableRequest, limit: int = 50000) -> DatasetResponse:
+        parquet_buffer = await self._run_database_call(
+            self._read_database_table_to_parquet,
+            payload.to_config(),
+            payload.table_name,
+            limit
+        )
+
+        user_id = str(current_user["_id"])
+        bucket_name = "dataset"
+        object_name = f"{user_id}/{uuid.uuid4()}.parquet"
+        await minio_service.upload_dataset(bucket_name, object_name, parquet_buffer)
+
+        now = datetime.now(timezone.utc).timestamp()
+        data_doc = {
+            "dataName": payload.data_name,
+            "dataType": DataTypeEnum.TABLE.value,
+            "public": payload.public,
+            "data_link": {
+                "bucket_name": bucket_name,
+                "object_name": object_name
+            },
+            "latestUpdate": now,
+            "createDate": now,
+            "userId": user_id,
+            "username": current_user.get("username", "unknown"),
+            "role": current_user.get("role", "user"),
+            "activate": 1,
+            "thumbnail": None,
+            "description": payload.description
+        }
+
+        inserted_doc = await self.repo.create_dataset(data_doc)
+        inserted_doc["_id"] = str(inserted_doc["_id"])
+
+        return DatasetResponse(**inserted_doc)
+
+    """
     Create Metadata Of Job
     """
     async def create_metadata_job(self, current_user: dict, dataset_id: str, config: dict) -> str:
@@ -603,3 +753,23 @@ class DatasetService:
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return inserted_doc["_id"]
+
+    """
+    Get metrics base on problem type
+    """
+    @staticmethod
+    def get_metrics_by_problem_type(problem_type: str = constants.ProblemType.CLASSIFICATION) -> ProblemMetricsResponse:
+        raw_type = problem_type.value if hasattr(problem_type, "value") else problem_type
+        clean_type = (raw_type or "").lower().strip()
+        match clean_type:
+            case constants.ProblemType.REGRESSION:
+                metrics = search_space.REGRESSION_METRIC_LIST
+            case constants.ProblemType.TIME_SERIES:
+                metrics = search_space.TIME_SERIES_METRIC_LIST
+            case _:
+                metrics = search_space.CLASSIFICATION_METRIC_LIST
+
+        return ProblemMetricsResponse(
+            problem_type=problem_type,
+            metrics=metrics
+        )

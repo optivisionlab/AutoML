@@ -54,13 +54,10 @@ class UserRepository:
     
         return user_delete_result.deleted_count > 0
 
-    async def update_avatar(self, user_id: ObjectId, avatar_base64: str) -> bool:
-        """
-        Update the avatar URL
-        """
+    async def update_avatar(self, user_id: ObjectId, avatar_link: str) -> bool:
         result = await self.user_collection.update_one(
             {'_id': user_id},
-            {'$set': {'avatar': avatar_base64}}
+            {'$set': {'avatar': avatar_link}}
         )
         return result.modified_count > 0
 

@@ -14,8 +14,8 @@ import pymapreduce
 from miniopy_async import Minio
 
 # Local Libraries
+from src.core import constants
 from src.config import settings
-from src.shared import constants
 
 
 # Logging

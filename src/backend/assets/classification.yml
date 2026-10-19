@@ -7,7 +7,7 @@ metric_list:
   - recall_weighted
   - f1_macro
   - f1_weighted
-Classification_models:
+models:
   0:
     model: DecisionTreeClassifier
     params:
@@ -29,8 +29,10 @@ Classification_models:
       - kernel: ["rbf"]
         C: [0.1, 1, 10]
         gamma: ["scale", "auto"]
+        max_iter: [2000]
       - kernel: ["linear"]
         C: [0.1, 1, 10]
+        max_iter: [2000]
   4:
     model: LogisticRegression
     params:

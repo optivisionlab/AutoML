@@ -5,7 +5,7 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel
 
 # Local Libraries
-from src.shared import constants
+from src.core.constants import MessageResponse
 
 
 # Declare Generic type T
@@ -16,7 +16,7 @@ class BaseResponse(BaseModel, Generic[T]):
     Standardized schema for APIs
     """
     success: bool = True
-    message: str = constants.MessageResponse.SUCCESS.value
+    message: str = MessageResponse.SUCCESS.value
     data: T | None = None
     meta: dict[str, Any] | None = None
 
@@ -36,7 +36,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     Normalized schema for APIs that return paginated lists
     """
     success: bool = True
-    message: str = constants.MessageResponse.SUCCESS.value
+    message: str = MessageResponse.SUCCESS.value
     data: list[T]
     meta: PaginationMeta
 
@@ -56,6 +56,6 @@ class OffsetPaginatedResponse(BaseModel, Generic[T]):
     Normalized schema for APIs that return lists using offset/limit
     """
     success: bool = True
-    message: str = constants.MessageResponse.SUCCESS.value
+    message: str = MessageResponse.SUCCESS.value
     data: list[T]
     meta: OffsetPaginationMeta

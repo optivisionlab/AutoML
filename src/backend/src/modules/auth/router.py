@@ -5,8 +5,7 @@ from authlib.integrations.starlette_client import OAuth
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.core import responses, exceptions, cookies, dependencies
-from src.shared import constants
+from src.core import responses, exceptions, cookies, dependencies, constants
 from src.config import databases, settings
 from src.modules.auth.schemas import (
     UserRegisterRequest,
@@ -31,7 +30,7 @@ def get_auth_service(db: AsyncDatabase = Depends(databases.get_db)) -> AuthServi
     return AuthService(AuthRepository(db))
 
 
-@router.post("/signup", response_model=responses.BaseResponse[UserResponse])
+@router.post("/signup", response_model=responses.BaseResponse[UserResponse], status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserRegisterRequest,
     background_tasks: BackgroundTasks,

@@ -32,7 +32,7 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         tournament_size: int = 3,
         patience: int | None = 2,
         min_delta: float = 1e-4,
-        enable_pruning: bool = False,
+        enable_pruning: bool = True,
         cv: BaseCrossValidator | int = 5,
         scoring: dict[str, Any] | None = None,
         refit: str = "accuracy",
@@ -114,7 +114,8 @@ class GeneticAlgorithmSearch(BaseSearchCV):
         Selects the best individual via tournament selection
         """
         contestants = rng.choice(len(population), size=self.tournament_size, replace=False)
-        winner_idx = contestants[np.argmax([fitness_scores[i] for i in contestants])]
+        scores_arr = np.nan_to_num([fitness_scores[i] for i in contestants], nan=-1e6, posinf=1e6, neginf=-1e6)
+        winner_idx = contestants[int(np.argmax(scores_arr))]
         return population[winner_idx].copy()
 
     def _evolve_generation(
@@ -131,7 +132,8 @@ class GeneticAlgorithmSearch(BaseSearchCV):
 
         # Elitism: preserve top performers
         if self.elite_size > 0:
-            elite_indices = np.argsort(fitness_scores)[::-1][: self.elite_size]
+            sanitized_fitness = np.nan_to_num(np.array(fitness_scores, dtype=float), nan=-1e6, posinf=1e6, neginf=-1e6)
+            elite_indices = np.argsort(sanitized_fitness)[::-1][: self.elite_size]
             next_population.extend(population[i].copy() for i in elite_indices)
 
         # Breed remaining individuals
@@ -182,15 +184,17 @@ class GeneticAlgorithmSearch(BaseSearchCV):
                             self._record_trial(individual, mean_scores, std_scores, fit_time, score_time, is_pruned=False)
                             cache[param_key] = (mean_scores, std_scores, fit_time, score_time)
                         except TrialPruned:
-                            zero_scores = {m: 0.0 for m in self.scoring}
-                            self._record_trial(individual, zero_scores, zero_scores, 0.0, 0.0, is_pruned=True)
-                            cache[param_key] = (zero_scores, zero_scores, 0.0, 0.0)
-                            mean_scores = zero_scores
+                            pruned_scores = {m: -1e6 for m in self.scoring}
+                            self._record_trial(individual, pruned_scores, pruned_scores, 0.0, 0.0, is_pruned=True)
+                            cache[param_key] = (pruned_scores, pruned_scores, 0.0, 0.0)
+                            mean_scores = pruned_scores
 
-                    fitness_scores.append(float(mean_scores.get(self.refit, 0.0)))
+                    raw_fit = mean_scores.get(self.refit, -1e6)
+                    fitness_scores.append(float(raw_fit) if np.isfinite(raw_fit) else -1e6)
 
                 best_fitness = max(fitness_scores)
-                mean_fitness = float(np.mean(fitness_scores))
+                finite_fitness = [f for f in fitness_scores if np.isfinite(f) and f > -1e5]
+                mean_fitness = float(np.mean(finite_fitness)) if finite_fitness else float(best_fitness)
 
                 if self.verbose > 0:
                     logger.info(

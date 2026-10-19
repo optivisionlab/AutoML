@@ -26,13 +26,14 @@ print_usage() {
     echo "Options:"
     echo "  -a, --head-addr <IP:PORT>     Head Node IP address and port (Default: 127.0.0.1:7777)"
     echo "  -c, --cpus <NUM_CPUS>         Number of CPU cores to allocate (Default: Auto-detect all cores)"
-    echo "  -t, --timeout <MINUTES>       Idle timeout in minutes before exit (Default: 0 - disabled)"
+    echo "  -t, --idle-timeout <SECONDS>  Idle timeout in seconds for worker processes before exit (Default: 0 - disabled)"
     echo "  -d, --daemon                  Run process in background (Daemon mode)"
     echo "  -h, --help                    Show this help message and exit"
     echo ""
     echo "Examples:"
     echo "  ./start_worker.sh -a 192.168.1.50:7777"
     echo "  ./start_worker.sh -a 192.168.1.50:7777 -c 4 -d"
+    echo "  ./start_worker.sh -a 192.168.1.50:7777 --idle-timeout 120"
 }
 
 # Parse Arguments
@@ -40,7 +41,7 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         -a|--head-addr) HEAD_ADDR="$2"; shift ;;
         -c|--cpus) CPUS="$2"; shift ;;
-        -t|--timeout) IDLE_TIMEOUT="$2"; shift ;;
+        -t|--idle-timeout|--timeout) IDLE_TIMEOUT="$2"; shift ;;
         -d|--daemon) BACKGROUND=true ;;
         -h|--help) print_usage; exit 0 ;;
         *) echo "Invalid parameter: $1"; print_usage; exit 1 ;;
@@ -56,6 +57,7 @@ if [ -n "$CPUS" ]; then
 else
     echo "  - CPU Cores: Auto-detected (all available cores)"
 fi
+echo "  - Worker Idle Timeout: $IDLE_TIMEOUT seconds"
 echo "============================================================"
 
 # Check Python installation

@@ -1,300 +1,94 @@
-# Phương pháp khoa học & Cách tiếp cận kỹ thuật
+# Phương pháp khoa học
 
-## Giới thiệu
+HAutoML tự động hóa toàn bộ quy trình học máy trên dữ liệu dạng bảng: tiền xử lý, chọn chiến lược kiểm định chéo, tối ưu siêu tham số cho nhiều mô hình song song, chọn mô hình tốt nhất và đóng gói để suy luận.
 
-HAutoML là một nền tảng **Automated Machine Learning (AutoML)** được thiết kế để tự động hóa toàn bộ quy trình xây dựng mô hình học máy. Tài liệu này mô tả các phương pháp khoa học, chiến lược kỹ thuật và cách tiếp cận được sử dụng trong hệ thống.
-
-## 1. Quá trình AutoML toàn quy trình
-
-### 1.1 Pipeline xử lý tự động
-
-HAutoML thực hiện tự động hóa các giai đoạn chính của pipeline học máy:
-
-```
-Dữ liệu thô → Tiền xử lý → Lựa chọn mô hình & Tuning → Mô hình tối ưu → Suy luận (Inference)
+```text
+Dataset ─► Tiền xử lý ─► Chọn chiến lược CV ─► Tối ưu siêu tham số (mỗi mô hình một tác vụ)
+                                                        │
+        Suy luận ◄─ Đóng gói artifact ◄─ Chọn mô hình tốt nhất ◄─ Đánh giá & xếp hạng
 ```
 
-#### Giai đoạn 1: Tiền xử lý dữ liệu (Data Preprocessing)
+## 1. Các loại bài toán
 
-**a) Phát hiện kiểu dữ liệu (Feature Type Detection)**
+| `problem_type` | Mô tả | Metric mặc định để xếp hạng |
+|----------------|-------|------------------------------|
+| `classification` | Phân loại | `accuracy` |
+| `regression` | Hồi quy | `r2` |
+| `time_series` | Dự báo chuỗi thời gian một bước | `rmse` |
 
-Hệ thống tự động phân loại từng cột dữ liệu thành các loại:
-- **Dữ liệu số (Numeric)**: Detects sử dụng `pd.api.types.is_numeric_dtype()`
-- **Dữ liệu phân loại (Categorical)**: Các cột có số lượng giá trị độc lập nhỏ
-- **Dữ liệu văn bản (Text)**: Các cột có số lượng giá trị độc lập lớn (vượt quá ngưỡng cardinality)
+Danh sách mô hình và lưới siêu tham số của từng loại bài toán được khai báo trong `src/backend/assets/*.yml`.
 
-**b) Xử lý giá trị thiếu (Missing Value Imputation)**
+## 2. Tiền xử lý dữ liệu
 
-- **Dữ liệu số**: Sử dụng trung vị (median) - phương pháp robust với outlier
-- **Dữ liệu phân loại**: Sử dụng giá trị xuất hiện nhiều nhất (mode)
+Hệ thống tự phát hiện kiểu cột (số, phân loại, văn bản) và dựng `ColumnTransformer` tương ứng. Các dòng thiếu giá trị mục tiêu bị loại bỏ trước khi huấn luyện.
 
-**c) Chuẩn hóa dữ liệu (Normalization & Scaling)**
+- **Phân loại**: nhãn mục tiêu được mã hóa bằng `LabelEncoder`.
+- **Hồi quy**: giá trị mục tiêu liên tục được chia thành các bin theo phân vị để phân tầng khi chia fold.
+- **Chuỗi thời gian**: không dùng bộ tiền xử lý chung. Việc điền khuyết, chuẩn hóa và mã hóa nằm trong `Pipeline` của mô hình và được fit riêng trên từng fold huấn luyện, nhằm tránh rò rỉ dữ liệu (data leakage). Xem [Dự báo chuỗi thời gian](time_series.md).
 
-- **Dữ liệu số**: Áp dụng `StandardScaler` để chuẩn hóa (mean=0, std=1)
-- **Dữ liệu phân loại**: Sử dụng `OneHotEncoder` với `sparse_output=True`
-- **Dữ liệu văn bản**: Sử dụng `TfidfVectorizer` để chuyển đổi thành vector số
+## 3. Chiến lược kiểm định chéo ba bậc (3-Tier CV) { #3-chien-luoc-kiem-dinh-cheo-ba-bac-3-tier-cv }
 
-**d) Pipeline xử lý (Preprocessing Pipeline)**
+Chiến lược kiểm định được chọn tự động theo số dòng dữ liệu, để cân bằng giữa độ tin cậy của ước lượng và chi phí tính toán.
 
-Hệ thống sử dụng `scikit-learn Pipeline` và `ColumnTransformer` để:
-- Áp dụng các phép biến đổi phù hợp cho từng loại dữ liệu
-- Đảm bảo tính nhất quán giữa dữ liệu huấn luyện và kiểm tra
-- Tránh data leakage bằng cách fit trên training set và transform trên cả training/test set
+=== "Phân loại"
 
-```python
-numeric_transformer = Pipeline([
-    ('imputer', SimpleImputer(strategy='median')),
-    ('scaler', StandardScaler())
-])
+    | Bậc | Số dòng | Chiến lược |
+    |-----|---------|-----------|
+    | 1 | ≤ 500 | `RepeatedStratifiedKFold` (5 lần lặp) |
+    | 2 | 501 – 10.000 | `StratifiedKFold` |
+    | 3 | > 10.000 | Tách holdout 80/20 + `StratifiedKFold` |
 
-categorical_transformer = Pipeline([
-    ('imputer', SimpleImputer(strategy='most_frequent')),
-    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=True))
-])
+    Số fold là `max(2, min(5, số mẫu của lớp nhỏ nhất))` để mỗi fold đều có đủ mẫu của mọi lớp.
 
-text_transformer = Pipeline([
-    ('tfidf', TfidfVectorizer(...))
-])
+=== "Hồi quy"
 
-preprocessor = ColumnTransformer(transformers=[
-    ('num', numeric_transformer, numeric_cols),
-    ('cat', categorical_transformer, categorical_cols),
-    ('text', text_transformer, text_cols)
-])
-```
+    | Bậc | Số dòng | Chiến lược |
+    |-----|---------|-----------|
+    | 1 | ≤ 500 | `ContinuousRepeatedStratifiedKFold` (5 lần lặp) |
+    | 2 | 501 – 10.000 | `ContinuousStratifiedKFold` |
+    | 3 | > 10.000 | Tách holdout 80/20 phân tầng + `ContinuousStratifiedKFold` |
 
-#### Giai đoạn 2: Lựa chọn mô hình & Tinh chỉnh siêu tham số (Hyperparameter Tuning)
+    Các fold được phân tầng trên giá trị mục tiêu đã chia bin. Số fold là 5 (hoặc `n_rows // 4` nếu dưới 20 dòng).
 
-**a) Chiến lược tìm kiếm siêu tham số**
+=== "Chuỗi thời gian"
 
-Hệ thống sử dụng các chiến lược khác nhau để tìm kiếm sự kết hợp siêu tham số tốt nhất:
-- **Grid Search**: Tìm kiếm toàn bộ không gian siêu tham số được xác định trước
-- **Random Search**: Lấy mẫu ngẫu nhiên từ không gian siêu tham số
-- **Hybrid approaches**: Kết hợp các phương pháp để cân bằng hiệu suất và thời gian
+    | Bậc | Số dòng khả dụng | Chiến lược |
+    |-----|------------------|-----------|
+    | 1 | < 200 | `TimeSeriesSplit` 3 fold, cửa sổ mở rộng |
+    | 2 | ≥ 200 | `TimeSeriesSplit` 5 fold, cửa sổ mở rộng |
 
-**b) Kiểm định chéo (Cross-Validation)**
+    Fold luôn theo thứ tự thời gian, không xáo trộn dữ liệu.
 
-Sử dụng k-fold cross-validation (mặc định k=5) để đánh giá hiệu suất mô hình trên từng fold:
-
-$$\text{CV Score} = \frac{1}{k} \sum_{i=1}^{k} \text{Score}_i$$
+Ở bậc 3 (dữ liệu lớn), tập holdout chỉ dùng để đánh giá cuối cùng các mô hình đã tối ưu, không tham gia chọn siêu tham số.
 
-Điều này giúp:
-- Giảm phương sai của đánh giá hiệu suất
-- Tận dụng tối đa dữ liệu có sẵn
-- Phát hiện overfitting
+## 4. Tối ưu siêu tham số (HPO)
 
-**c) Chỉ số đánh giá (Evaluation Metrics)**
+Mỗi mô hình ứng viên được tối ưu độc lập bằng một trong năm thuật toán: `grid_search`, `random_search`, `bayesian_search`, `genetic_algorithm`, `tpe_search` (mặc định). Tất cả cùng một lớp cơ sở nên có chung cơ chế **dừng sớm** (early stopping) và **cắt tỉa** (pruning). Chi tiết xem [Tối ưu siêu tham số](hpo.md).
 
-**Cho bài toán Phân loại (Classification):**
-- **Accuracy**: Tỷ lệ dự đoán đúng
-- **Precision**: Trong các dự đoán dương tính, bao nhiêu phần trăm là đúng
-- **Recall**: Trong các mẫu dương tính thực sự, bao nhiêu phần trăm được phát hiện
-- **F1 Score**: Trung bình hài hòa của Precision và Recall
-- **Balanced Accuracy**: Trung bình của recall cho từng lớp (hữu ích với dữ liệu mất cân bằng)
-
-$$\text{F1} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$$
+## 5. Huấn luyện phân tán
 
-$$\text{Balanced Accuracy} = \frac{1}{K} \sum_{i=1}^{K} \frac{TP_i}{TP_i + FN_i}$$
+Mỗi cặp (mô hình, lưới siêu tham số) là một tác vụ độc lập, nên có thể chạy song song trên nhiều tiến trình hoặc nhiều máy bằng **PyMapReduce**:
 
-**Cho bài toán Hồi quy (Regression):**
-- **MAE (Mean Absolute Error)**: Sai số tuyệt đối trung bình
-- **MSE (Mean Squared Error)**: Bình phương sai số trung bình
-- **RMSE (Root Mean Squared Error)**: Căn bậc hai của MSE
-- **R² (Coefficient of Determination)**: Phần trăm phương sai được giải thích
+- `MAPREDUCE_MODE=local`: chạy trên máy hiện tại.
+- `MAPREDUCE_MODE=cluster`: kết nối tới head node (`MAPREDUCE_HEAD_ADDRESS`) và phân phối tác vụ cho các worker.
 
-$$\text{MAE} = \frac{1}{n} \sum_{i=1}^{n} |y_i - \hat{y}_i|$$
-
-$$\text{R}^2 = 1 - \frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{\sum_{i=1}^{n} (y_i - \bar{y})^2}$$
-
-#### Giai đoạn 3: Lựa chọn mô hình tối ưu (Model Selection)
-
-Sau khi tìm kiếm, hệ thống:
-1. So sánh hiệu suất từ các cấu hình khác nhau
-2. Chọn mô hình có chỉ số đánh giá cao nhất
-3. Lưu trữ mô hình tối ưu và siêu tham số của nó
-4. Chuẩn bị cho triển khai và suy luận
-
-## 2. Kiến trúc xử lý bất đồng bộ
-
-### 2.1 Hàng đợi công việc với Apache Kafka
-
-Hệ thống sử dụng Apache Kafka để quản lý hàng đợi công việc huấn luyện:
-
-```
-Frontend → Backend → Kafka Queue → Workers → MongoDB (kết quả)
-```
-
-**Ưu điểm:**
-- **Scalability**: Có thể thêm workers để xử lý song song
-- **Reliability**: Nếu worker crash, công việc không bị mất
-- **Decoupling**: Frontend không phải chờ công việc huấn luyện hoàn thành
-- **Real-time monitoring**: Theo dõi trạng thái công việc real-time
-
-### 2.2 Các trạng thái công việc (Job States)
-
-```
-Submitted → Queued → Processing → Completed
-                          ↓
-                       Failed (retry)
-```
-
-**Trạng thái:**
-- **Submitted**: Công việc được submittted từ user
-- **Queued**: Chờ trong Kafka queue
-- **Processing**: Worker đang xử lý
-- **Completed**: Hoàn thành thành công
-- **Failed**: Có lỗi, có thể retry
-
-## 3. Cơ sở hạ tầng & Lưu trữ
-
-### 3.1 MongoDB - Lưu trữ Metadata
-
-Lưu trữ:
-- Thông tin người dùng (users)
-- Metadata datasets (tên, kích thước, loại task)
-- Kết quả huấn luyện (cấu hình mô hình, chỉ số hiệu suất, siêu tham số)
-- Lịch sử công việc
-
-**Schema ví dụ:**
-```json
-{
-  "_id": ObjectId("..."),
-  "userId": ObjectId("..."),
-  "dataName": "iris",
-  "taskType": "classification",
-  "models": [
-    {
-      "modelId": "model_123",
-      "algorithm": "RandomForest",
-      "hyperparameters": {...},
-      "metrics": {
-        "accuracy": 0.95,
-        "f1_score": 0.94
-      },
-      "timestamp": "2024-01-15T10:30:00Z"
-    }
-  ]
-}
-```
-
-### 3.2 Minio - Lưu trữ Objects
-
-Lưu trữ:
-- Datasets (CSV, JSON, v.v.)
-- Mô hình serialized (`.pickle`, `.joblib`)
-- Preprocessors (để sử dụng lại trong suy luận)
-
-**Cấu trúc bucket:**
-```
-/datasets/{user_id}/{dataset_id}.csv
-/models/{user_id}/{model_id}.pkl
-/preprocessors/{user_id}/{model_id}_preprocessor.pkl
-```
-
-## 4. Quy trình suy luận (Inference)
-
-Khi người dùng gửi dữ liệu mới để dự đoán:
-
-1. **Tải mô hình & preprocessor** từ Minio
-2. **Tiền xử lý dữ liệu mới** sử dụng cùng preprocessor (đảm bảo consistency)
-3. **Suy luận** bằng mô hình đã huấn luyện
-4. **Trả về kết quả** cho người dùng
-
-```python
-# Pseudocode
-def inference(model_id, new_data):
-    # Load model and preprocessor
-    model = load_from_minio(f"models/{user_id}/{model_id}.pkl")
-    preprocessor = load_from_minio(f"preprocessors/{user_id}/{model_id}_preprocessor.pkl")
-    
-    # Preprocess new data
-    processed_data = preprocessor.transform(new_data)
-    
-    # Make prediction
-    predictions = model.predict(processed_data)
-    
-    return predictions
-```
-
-## 5. Mở rộng & Hỗ trợ các loại bài toán
-
-### 5.1 Phân loại (Classification)
-
-HAutoML hỗ trợ các mô hình phân loại từ scikit-learn:
-- Logistic Regression
-- Decision Trees
-- Random Forests
-- Gradient Boosting
-- SVM
-- k-NN
-- v.v.
-
-### 5.2 Hồi quy (Regression)
-
-Hỗ trợ các mô hình hồi quy:
-- Linear Regression
-- Ridge/Lasso Regression
-- Decision Trees Regressor
-- Random Forests Regressor
-- Gradient Boosting Regressor
-- Support Vector Regression
-- v.v.
-
-## 6. Xử lý dữ liệu mất cân bằng
-
-Để xử lý các tập dữ liệu bị mất cân bằng (imbalanced datasets):
-
-- Sử dụng `balanced_accuracy_score` thay vì accuracy thông thường
-- Có thể áp dụng các kỹ thuật như SMOTE, undersampling, hoặc class weighting
-- Theo dõi precision, recall, và F1 score riêng cho từng lớp
-
-## 7. Đánh giá và Xác thực Mô hình
-
-### 7.1 Tránh Data Leakage
-
-Hệ thống đảm bảo:
-- Preprocessor được fit **chỉ** trên training data
-- Cross-validation được thực hiện chính xác (không mix train/test)
-- Siêu tham số hỏi được tìm kiếm dựa trên training/validation data, không test data
-
-### 7.2 Đánh giá Generalization
-
-- Sử dụng cross-validation để đánh giá hiệu suất generalization
-- Nếu có test set riêng, đánh giá thêm trên test set
-- Theo dõi sự khác biệt giữa train score và validation score (overfitting indicator)
-
-## 8. State-of-the-Art & Giới hạn
-
-### 8.1 Điểm mạnh
-
-- ✅ Tự động hóa toàn quy trình
-- ✅ Hỗ trợ đa loại dữ liệu (số, phân loại, văn bản)
-- ✅ Kiến trúc scalable với xử lý bất đồng bộ
-- ✅ Giao diện user-friendly
-- ✅ Mã nguồn mở, có thể customize
-
-### 8.2 Giới hạn hiện tại
-
-- 🔸 Chưa hỗ trợ deep learning trực tiếp (chỉ scikit-learn)
-- 🔸 Khiếm khuyết trong xử lý chuỗi thời gian (time series)
-- 🔸 Chưa hỗ trợ ensemble methods nâng cao
-- 🔸 Thời gian tìm kiếm siêu tham số có thể lâu với không gian tham số lớn
-
-### 8.3 Hướng phát triển tương lai
-
-- Tích hợp TensorFlow/PyTorch cho neural networks
-- Thêm hỗ trợ time series forecasting
-- Ensemble methods và stacking
-- Auto feature engineering
-- Explainability tools (SHAP, LIME)
-
-## Tài liệu tham khảo
-
-- **Scikit-learn Documentation**: https://scikit-learn.org/
-- **FastAPI Documentation**: https://fastapi.tiangolo.com/
-- **Apache Kafka**: https://kafka.apache.org/
-- **MongoDB Documentation**: https://docs.mongodb.com/
-
----
-
-*Tài liệu này được cập nhật cho phiên bản HAutoML v2.0.0*
+Kết quả của các tác vụ được gom về để xếp hạng. Xem luồng đầy đủ ở [Kiến trúc](architecture.md).
+
+## 6. Đánh giá và chọn mô hình
+
+| Loại bài toán | Metric |
+|---------------|--------|
+| Phân loại | `accuracy`, `balanced_accuracy`, `precision_macro`, `precision_weighted`, `recall_macro`, `recall_weighted`, `f1_macro`, `f1_weighted` |
+| Hồi quy | `mse`, `mae`, `mape`, `r2` |
+| Chuỗi thời gian | `mse`, `mae`, `rmse`, `r2` |
+
+Mô hình có điểm cao nhất theo `metric_sort` do người dùng chọn là **mô hình tốt nhất**. Điểm của toàn bộ mô hình còn lại được lưu lại thành bảng xếp hạng (`model_scores`) để so sánh.
+
+## 7. Đóng gói và suy luận
+
+Mô hình tốt nhất được đóng gói cùng bộ tiền xử lý, danh sách đặc trưng và cấu hình CV thành một artifact duy nhất, lưu trên MinIO. Từ artifact này, người dùng có thể:
+
+- gọi API dự đoán thời gian thực hoặc theo file,
+- xuất Jupyter Notebook, gói Docker microservice hoặc file `.pkl`.
+
+Xem [Tài liệu API](backend_api.md#4-suy-luan-trien-khai-mo-hinh-inference).
