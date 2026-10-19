@@ -1,0 +1,72 @@
+services:
+  # PyMapReduce Head Node (Runs on Master / Head Node host)
+  headnode:
+    image: python:3.10-slim
+    container_name: pymapreduce_headnode
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${HEAD_PORT:-7777}:7777"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEAD_PORT=${HEAD_PORT:-7777}
+      - SCHEDULER=${SCHEDULER:-Adaptive}
+    volumes:
+      - pymapreduce_wal:/tmp
+    command: >
+      sh -c "
+      pip install --no-cache-dir pymapreduce-core &&
+      mapreduce start --head --port 7777 --scheduler $${SCHEDULER:-Adaptive} 2>&1 | grep --line-buffered -v -E 'Disaster Recovery|WAL|wal'
+      "
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - pymapreduce_net
+
+  # PyMapReduce Worker Node (Can run on same host or remote physical worker machines)
+  workernode:
+    image: python:3.10-slim
+    container_name: pymapreduce_workernode
+    init: true
+    restart: unless-stopped
+    shm_size: '2gb'
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEAD_ADDR=${HEAD_ADDR:-headnode:7777}
+      - WORKER_CPUS=${WORKER_CPUS:-}
+      - IDLE_TIMEOUT=${IDLE_TIMEOUT:-120}
+    volumes:
+      - ./requirements.txt:/app/requirements.txt:ro
+    command: >
+      sh -c "
+      apt-get update &&
+      apt-get install -y --no-install-recommends libgomp1 &&
+      rm -rf /var/lib/apt/lists/* &&
+      pip install --no-cache-dir -r /app/requirements.txt &&
+      if [ -n \"\$$WORKER_CPUS\" ]; then
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --cpus \$$WORKER_CPUS --idle-timeout $${IDLE_TIMEOUT:-120}
+      else
+        exec mapreduce start --worker --head-addr $${HEAD_ADDR:-headnode:7777} --idle-timeout $${IDLE_TIMEOUT:-120}
+      fi
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - pymapreduce_net
+
+networks:
+  pymapreduce_net:
+    driver: bridge
+
+volumes:
+  pymapreduce_wal:
