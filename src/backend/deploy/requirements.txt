@@ -12,15 +12,15 @@ optuna==5.0.0
 
 openpyxl==3.1.5
 xlrd==2.0.2
-pyarrow==21.0.0
+pyarrow==23.0.1
 pyyaml==6.0.2
 
-authlib==1.5.2
-PyJWT==2.10.1
+authlib==1.6.12
+PyJWT==2.15.0
 argon2-cffi==23.1.0
 passlib==1.7.4
 
-pymongo==4.10.1
+pymongo==4.18.2
 aiokafka==0.12.0
 miniopy-async==1.23.5
 qrcode[pil]==8.2
