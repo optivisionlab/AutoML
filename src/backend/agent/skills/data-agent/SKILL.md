@@ -33,9 +33,10 @@ thẳng như vậy, đừng đoán là hệ thống lỗi.
 
 ## Đọc kết quả `get_dataset_schema`
 
-`can_be_target` chỉ nói cột đó có phù hợp làm **biến mục tiêu** hay không, với
-`problem_type` đang xét. `can_be_target: false` KHÔNG có nghĩa là cột vô dụng -
-phần lớn các cột như vậy chính là **đặc trưng đầu vào**.
+`target_for` cho biết cột làm **biến mục tiêu** được với loại bài toán nào
+(`classification`, `regression`, cả hai, hoặc rỗng). Dataset không ghi sẵn loại
+bài toán - nó suy ra từ cột mục tiêu. `target_for` rỗng KHÔNG có nghĩa là cột
+vô dụng - phần lớn các cột như vậy chính là **đặc trưng đầu vào**.
 
 Thống kê `distinct_in_preview` và `missing_in_preview` tính trên 50 dòng đầu,
 không phải toàn bộ dataset. Khi nói về chúng thì nêu rõ điều này.
@@ -44,8 +45,8 @@ không phải toàn bộ dataset. Khi nói về chúng thì nêu rõ điều nà
 
 Đây là "đặc điểm dữ liệu" Manager và Model Agent cần. Gồm:
 
-- Số dòng, số cột, loại bài toán.
-- `target_candidates`: những cột làm mục tiêu được.
+- Số dòng, số cột, loại bài toán (nếu người dùng đã nói hoặc suy được từ cột mục tiêu).
+- `target_candidates_by_type`: những cột làm mục tiêu được, theo từng loại bài toán.
 - Cột đặc trưng, và cột **nên loại** kèm lý do: trông như khoá định danh, hằng
   số, thiếu nhiều giá trị.
 - Điều bất thường đáng để ý (lớp mất cân bằng nhìn thấy trong preview, cột số

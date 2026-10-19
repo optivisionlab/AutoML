@@ -106,21 +106,25 @@ _sessions: dict[str, _Entry] = {}
 def _sweep() -> None:
     """Dọn phiên hết hạn. Gọi trước mỗi request, đủ cho quy mô hiện tại."""
     now = time.time()
+    # Phiên đang chạy một lượt chat thì không bao giờ dọn: close() giữa chừng
+    # làm đứt mọi lời gọi backend của lượt đó.
+    busy = {key for key, entry in _sessions.items() if entry.turn_lock.locked()}
     dead = [
         key
         for key, entry in _sessions.items()
-        if now - entry.touched > (
+        if key not in busy and now - entry.touched > (
             WATCHING_TTL_SECONDS if entry.session.watcher.active() else SESSION_TTL_SECONDS
         )
     ]
 
-    # Quá nhiều phiên thì bỏ những cái cũ nhất, chặn rò rỉ bộ nhớ.
+    # Quá nhiều phiên thì bỏ những cái cũ nhất, chặn rò rỉ bộ nhớ. Phiên đang
+    # theo dõi job bỏ sau cùng - dọn nó là watcher chết, người dùng không được báo.
     if len(_sessions) - len(dead) > MAX_SESSIONS:
         alive = sorted(
-            (k for k in _sessions if k not in dead),
-            key=lambda k: _sessions[k].touched,
+            (k for k in _sessions if k not in dead and k not in busy),
+            key=lambda k: (bool(_sessions[k].session.watcher.active()), _sessions[k].touched),
         )
-        dead.extend(alive[: len(alive) - MAX_SESSIONS])
+        dead.extend(alive[: max(0, len(_sessions) - len(dead) - MAX_SESSIONS)])
 
     for key in dead:
         _sessions.pop(key).session.close()
@@ -391,6 +395,32 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
 # dung đúng 20 MB.
 _MULTIPART_OVERHEAD = 64 * 1024
 _MAX_DATASET_NAME = 100
+_MAX_UPLOAD_BODY = uploads.MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD
+
+
+def _limit_body(receive, limit: int):
+    """
+    Bọc `receive` của ASGI để đếm byte NGAY KHI nhận từ socket.
+
+    request.form() của Starlette ghi cả file xuống file tạm trước khi trả về,
+    nên đếm byte sau đó là quá muộn: gửi không kèm Content-Length (chunked)
+    vẫn ghi được file vài GB xuống đĩa. Ở đây vượt trần là dừng đọc luôn.
+    """
+    received = 0
+
+    async def limited():
+        nonlocal received
+        message = await receive()
+        if message["type"] == "http.request":
+            received += len(message.get("body", b""))
+            if received > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File vượt giới hạn {uploads.MAX_UPLOAD_MB} MB.",
+                )
+        return message
+
+    return limited
 
 
 @app.post("/agent/upload")
@@ -404,20 +434,38 @@ async def upload(request: Request) -> dict:
     Giới hạn 20 MB được chặn HAI lớp, vì Starlette KHÔNG giới hạn dung lượng
     file (max_part_size của nó chỉ áp cho trường chữ):
       1. Content-Length, kiểm tra TRƯỚC khi đọc body - chặn sớm, rẻ.
-      2. Đếm byte thật sau khi đọc - chốt cuối, kể cả khi client không gửi
-         Content-Length hoặc gửi sai.
+      2. Đếm byte ngay khi nhận từ socket (_limit_body) - chặn cả khi client
+         không gửi Content-Length hoặc gửi sai, trước khi kịp ghi xuống đĩa.
     """
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > uploads.MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD:
+    if declared.isdigit() and int(declared) > _MAX_UPLOAD_BODY:
         raise HTTPException(
             status_code=413,
             detail=f"File vượt giới hạn {uploads.MAX_UPLOAD_MB} MB.",
         )
 
+    request = Request(request.scope, _limit_body(request.receive, _MAX_UPLOAD_BODY))
     try:
         form = await request.form(max_files=1, max_fields=10)
+    except HTTPException:
+        raise
     except Exception as error:  # noqa: BLE001 - form hỏng thì báo 400, đừng để 500
         raise HTTPException(status_code=400, detail=f"Không đọc được form tải lên: {error}")
+
+    try:
+        return await _store_upload(form)
+    finally:
+        # Starlette không tự đóng form của Request dựng lại ở trên: đóng để xoá
+        # file tạm ngay, kể cả khi trả lỗi giữa chừng.
+        await form.close()
+
+
+async def _store_upload(form) -> dict:
+    """Phần sau khi đã đọc form: xác thực, kiểm tra file, đưa vào kho dataset."""
+    # Xác thực TRƯỚC khi đọc và kiểm tra file: người chưa đăng nhập không được
+    # bắt server xử lý gì thêm. Token nằm trong form nên không kiểm sớm hơn được.
+    access_token = str(form.get("access_token") or "") or None
+    owner = await _resolve_owner(access_token)
 
     file = form.get("file")
     if not isinstance(file, UploadFile):
@@ -442,11 +490,12 @@ async def upload(request: Request) -> dict:
     data_name = str(form.get("data_name") or "").strip() or uploads.default_dataset_name(check.clean_name)
     data_name = data_name[:_MAX_DATASET_NAME]
 
-    access_token = str(form.get("access_token") or "") or None
-    owner = await _resolve_owner(access_token)
     session_id, session = _get_session(str(form.get("session_id") or "") or None, access_token, owner)
 
-    result = tools.upload_dataset_file(
+    # Gọi HTTP đồng bộ (tới 120 giây) - chạy trong thread để không chặn event
+    # loop, nếu không mọi request khác kể cả luồng SSE đều đứng chờ.
+    result = await asyncio.to_thread(
+        tools.upload_dataset_file,
         session.api,
         filename=check.clean_name,
         content=content,
@@ -465,7 +514,7 @@ async def upload(request: Request) -> dict:
     dataset = result["dataset"]
     session.add_event(
         f"Người dùng vừa tải lên dataset '{dataset['name']}' (id: {dataset['id']}, "
-        f"loại bài toán: {dataset['type']}, file: {check.clean_name}). Dataset này "
+        f"loại bài toán người dùng chọn khi tải lên: {dataset['type']}, file: {check.clean_name}). Dataset này "
         "đã nằm trong kho của họ. Dùng id này luôn nếu họ hỏi về nó, không cần "
         "liệt kê lại."
     )
@@ -483,7 +532,14 @@ async def reset(request: ChatRequest) -> dict:
     entry = _find_entry(request.session_id, owner)
     if entry is None:
         return {"ok": False, "detail": "Không tìm thấy phiên."}
-    entry.session.reset()
+    # Reset giữa lượt chat sẽ xoá dữ liệu chuyển giữa các agent ngay lúc chúng
+    # đang dùng (start_training mất config_id) và làm mất câu trả lời của lượt đó.
+    if not entry.turn_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Phiên đang xử lý một tin nhắn, thử lại sau khi xong.")
+    try:
+        entry.session.reset()
+    finally:
+        entry.turn_lock.release()
     return {"ok": True}
 
 

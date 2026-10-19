@@ -10,8 +10,8 @@ Hàm ở đây là thuần tuý: không mạng, không LLM, không đọc file. 
 """
 
 # Tên thuật toán tìm kiếm mà backend chấp nhận.
-# Nguồn: automl/search/factory/search_strategy_factory.py
-SEARCH_ALGORITHMS = ("grid_search", "genetic_algorithm", "bayesian_search")
+# Nguồn: src/shared/constants.py (SearchAlgorithm) của backend v1
+SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
 
 PROBLEM_TYPES = ("classification", "regression")
 

@@ -18,32 +18,34 @@ Không có tool. Một lượt LLM trả JSON, code soát lại bằng `team.nor
 
 ## data-agent
 
+Endpoint tính từ `/api/v1` của backend.
+
 | Tool | Endpoint | Ghi chú |
 |---|---|---|
-| `list_my_datasets` | `POST /get-list-data-by-userid` | Tự lấy `user_id` |
-| `get_dataset_info` | `GET /get-data-info` | Metadata, **không có tên cột** |
-| `get_dataset_schema` | `/get-data-info` + `/v2/auto/features` + `/v2/auto/data` | Gộp 3 lời gọi |
+| `list_my_datasets` | `GET /datasets` (lật hết các trang) | Backend tự lọc theo token |
+| `get_dataset_info` | `GET /datasets/{id}` | Metadata, **không có tên cột** |
+| `get_dataset_schema` | `/datasets/{id}` + `/datasets/{id}/data` + `/datasets/{id}/features` × 2 | Ứng viên target cho CẢ classification lẫn regression |
 | `read_reference` | — | Đọc file trong `references/`, tối đa 6000 ký tự |
 
 ## model-agent
 
 | Tool | Endpoint | Ghi chú |
 |---|---|---|
-| `list_metrics` | `GET /v2/auto/metrics` | |
-| `list_models` | — | Đọc `assets/classification.yml` / `regression.yml` |
-| `submit_config` | `/get-data-info` + `/v2/auto/features` + `/v2/auto/data` + `/v2/auto/metrics` | Kiểm bằng `validate_config.py`, KHÔNG train |
+| `list_metrics` | — | Đọc `metric_list` trong `assets/classification.yml` / `regression.yml` (backend v1 không có endpoint metric) |
+| `list_models` | — | Đọc cùng hai file yml |
+| `submit_config` | như `get_dataset_schema` | Kiểm bằng `validate_config.py`, KHÔNG train. Suy loại bài toán từ cột mục tiêu nếu chưa có |
 | `read_reference` | — | |
 
 ## operation-agent
 
 | Tool | Endpoint | Ghi chú |
 |---|---|---|
-| `start_training` | `POST /v2/auto/jobs/training` | Chỉ nhận `config_id`, tự bật watcher |
-| `watch_job` | `POST /get-list-job-by-userId` (định kỳ) | Theo dõi nền tới khi `status ≠ 0` |
-| `list_my_jobs` | `POST /get-list-job-by-userId` | Tự lấy `user_id` |
-| `get_job_info` | `POST /get-job-info` | Kiểm quyền sở hữu trước |
-| `activate_model` | `POST /activate-model` | Kiểm quyền sở hữu + job đã xong |
-| `predict` | `POST /inference-model` | ≤ 50 mẫu, soát đủ cột. Backend hiện luôn 403 với job v2 |
+| `start_training` | `POST /datasets/{id}/training` | Chỉ nhận `config_id`, tự bật watcher. `max_time` gửi đi dưới tên `timeout` |
+| `watch_job` | `GET /inference/jobs` (định kỳ) | Theo dõi nền tới khi `status ≠ 0` |
+| `list_my_jobs` | `GET /inference/jobs` | Bản tóm tắt từng job; lọc job của chính người dùng (admin nhận job của mọi người) |
+| `get_job_info` | `GET /inference/jobs` | Backend không có endpoint xem một job - tìm trong danh sách |
+| `activate_model` | `PUT /inference/models/{id}/activation` | Job của mình và đã xong |
+| `predict` | `POST /inference/models/{id}/predict` | ≤ 50 mẫu, soát đủ cột cho mọi mẫu |
 
 ## Không phơi cho LLM
 
@@ -56,6 +58,6 @@ Không có tool. Một lượt LLM trả JSON, code soát lại bằng `team.nor
 
 | Endpoint | Tool dự kiến | Thuộc agent |
 |---|---|---|
-| `DELETE /delete-dataset/{id}` | `delete_dataset` | data-agent |
-| `POST /get-data-from-uci` | `import_uci_dataset` | data-agent |
-| `POST /v2/auto/{job_id}/predictions` | `batch_predict` | operation-agent |
+| `POST /inference/jobs/{id}/cancel` | `cancel_job` | operation-agent |
+| `DELETE /datasets/{id}` | `delete_dataset` | data-agent |
+| `POST /inference/models/{id}/predict/file` | `batch_predict` | operation-agent |

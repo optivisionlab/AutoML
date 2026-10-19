@@ -37,6 +37,13 @@ Ngữ cảnh ghi "Không gắn dataset" thì chỉ tư vấn, KHÔNG `submit_con
 - Không có, và có nhiều ứng viên → **KHÔNG submit**. Báo Manager: cần người
   dùng chọn trong danh sách ứng viên. Train sai cột mục tiêu là mất hàng giờ.
 
+**B1b. Loại bài toán.** Dataset không ghi loại bài toán. `R.problem.type` có
+thì dùng. Không có thì xem `target_for` của cột mục tiêu: chỉ một loại → dùng
+loại đó (bỏ trống `problem_type` khi submit cũng được, code tự suy). Cả hai
+loại (cột số nguyên ít giá trị, vd điểm 1-10) → suy theo ý người dùng: dự
+đoán nhóm/nhãn là `classification`, dự đoán con số là `regression`; không rõ
+thì báo Manager hỏi người dùng.
+
 **B2. Đặc trưng.** Mọi cột còn lại, trừ: cột mục tiêu, cột trông như khoá
 định danh, cột hằng số hoặc thiếu gần hết. Tôn trọng `R.knowledge` (người dùng
 nói bỏ cột nào thì bỏ).
@@ -53,12 +60,13 @@ nhắc model ngoài danh sách (`R.model.preferred`) thì báo là engine không
 
 **B5. Thuật toán và thời gian.**
 - `search_algorithm`: `R.model.search_algorithm` nếu có, mặc định `grid_search`.
-  Dữ liệu lớn hoặc lưới tham số lớn mà `max_time` eo hẹp → `bayesian_search`.
+  Dữ liệu lớn hoặc lưới tham số lớn mà `max_time` eo hẹp → `tpe_search`.
 - `max_time`: `R.problem.max_time` nếu có, mặc định 900 giây. Dữ liệu lớn
   (hàng chục nghìn dòng trở lên) thì đề nghị tăng.
 
 **B6. `submit_config`** kèm `rationale` ngắn. Nếu `ok: false`, sửa đúng chỗ
-theo `errors` (đã kèm `valid_columns`, `target_candidates`, `valid_metrics`) rồi
+theo `errors` (đã kèm `valid_columns`, `target_candidates`, `valid_metrics`, hoặc
+`target_candidates_by_type` khi chưa rõ loại bài toán) rồi
 gửi lại - tối đa 2 lần. Đừng gửi lại y nguyên.
 
 ## Báo cáo cho Manager
@@ -66,4 +74,4 @@ gửi lại - tối đa 2 lần. Đừng gửi lại y nguyên.
 `config_id`, cột mục tiêu và lý do, số cột đặc trưng (và cột đã loại), metric,
 thuật toán, `max_time`, model dự đoán sẽ tốt, `warnings` nếu có.
 
-Chi tiết về ba thuật toán tìm kiếm: `model-agent/search_strategies`.
+Chi tiết về năm thuật toán tìm kiếm: `model-agent/search_strategies`.

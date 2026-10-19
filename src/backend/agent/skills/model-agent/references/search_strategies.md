@@ -1,55 +1,70 @@
-# Ba thuật toán tìm kiếm siêu tham số và cách chọn
+# Năm thuật toán tìm kiếm siêu tham số và cách chọn
 
 Chỉ đọc khi cần tư vấn sâu cho người dùng về việc chọn thuật toán.
 
-Nguồn: `automl/search/strategy/` và `automl/search/factory/search_strategy_factory.py`
+Nguồn: `src/modules/hpo/` và `SearchAlgorithm` trong `src/shared/constants.py`
+của backend. Không gian tham số là các lưới khai trong `assets/classification.yml`
+/ `regression.yml`; mọi thuật toán đều chỉ chọn TRONG lưới đó.
 
-## grid_search — mặc định
+## grid_search — mặc định của agent
 
-Duyệt **toàn bộ** tổ hợp tham số khai trong `assets/classification.yml` / `regression.yml`.
+Duyệt **toàn bộ** tổ hợp tham số của lưới.
 
-- **Ưu**: chắc chắn tìm được tổ hợp tốt nhất trong không gian đã khai. Kết quả
-  lặp lại được, dễ giải thích — hợp cho báo cáo và nghiên cứu.
-- **Nhược**: chi phí tăng theo cấp số nhân với số tham số. RandomForest có
-  `n_estimators` 3 giá trị × `max_features` 4 giá trị = 12 lần fit, mỗi lần còn
-  nhân với số fold cross-validation.
-- **Dùng khi**: không gian tham số nhỏ, hoặc cần kết quả tái lập được.
+- **Ưu**: chắc chắn tìm được tổ hợp tốt nhất trong lưới. Kết quả lặp lại được,
+  dễ giải thích — hợp cho báo cáo và nghiên cứu.
+- **Nhược**: chi phí bằng `grid_size` (xem `list_models`) nhân số fold
+  cross-validation. LogisticRegression có 1 × 2 × 4 × 2 = 16 tổ hợp.
+- **Dùng khi**: lưới nhỏ, hoặc cần kết quả tái lập được.
+
+## random_search
+
+Lấy ngẫu nhiên tối đa 20 tổ hợp trong lưới.
+
+- **Ưu**: rẻ và đoán trước được chi phí, dù lưới lớn tới đâu.
+- **Nhược**: có thể bỏ sót tổ hợp tốt nhất; hai lần chạy ra khác nhau.
+- **Dùng khi**: cần kết quả nhanh để so sánh sơ bộ.
+
+## tpe_search — mặc định của backend khi config không ghi thuật toán
+
+Tree-structured Parzen Estimator (Optuna), tối đa 30 lần thử: học từ các lần
+thử trước để chọn tổ hợp tiếp theo.
+
+- **Ưu**: thường đạt gần kết quả của grid với ít lần thử hơn nhiều.
+- **Nhược**: ngẫu nhiên; khó giải thích vì sao dừng ở tổ hợp đó.
+- **Dùng khi**: lưới lớn và thời gian eo hẹp - lựa chọn cân bằng nhất.
 
 ## bayesian_search
 
-Dùng `scikit-optimize`: xây mô hình thay thế từ các lần thử trước để đoán vùng
-tham số đáng thử tiếp.
+Gaussian Process (scikit-optimize), tối đa 25 lần thử.
 
-- **Ưu**: tìm được kết quả tốt với ít lần fit hơn hẳn grid. Hợp khi mỗi lần
-  huấn luyện tốn thời gian.
-- **Nhược**: có yếu tố ngẫu nhiên nên hai lần chạy có thể ra khác nhau. Khó giải
-  thích vì sao dừng ở tổ hợp đó.
-- **Dùng khi**: không gian tham số lớn, hoặc `max_time` eo hẹp so với dataset.
+- **Ưu / nhược**: giống tpe_search; mỗi lần thử tốn thêm thời gian dựng mô
+  hình thay thế nên thường chậm hơn tpe một chút.
+- **Dùng khi**: người dùng yêu cầu đích danh.
 
 ## genetic_algorithm
 
-Tiến hoá quần thể tổ hợp tham số qua các thế hệ: chọn lọc, lai ghép, đột biến.
+Tiến hoá quần thể 10 tổ hợp qua 5 thế hệ: chọn lọc, lai ghép, đột biến.
 
-- **Ưu**: xử lý tốt không gian tham số lớn và không liên tục.
-- **Nhược**: cần nhiều lần fit nhất trong ba cách, do phải duy trì cả quần thể
-  qua nhiều thế hệ. Cũng ngẫu nhiên như bayesian.
-- **Dùng khi**: không gian rất lớn và có nhiều thời gian.
+- **Ưu**: xử lý tốt lưới lớn và không liên tục.
+- **Nhược**: số lần fit nhiều nhất trong nhóm thuật toán thông minh; ngẫu nhiên.
+- **Dùng khi**: lưới rất lớn và có nhiều thời gian.
 
 ## Bảng chọn nhanh
 
 | Tình huống | Nên chọn |
 |---|---|
 | Dataset nhỏ, muốn kết quả tái lập | `grid_search` |
-| `max_time` dưới 15 phút, dataset vừa | `bayesian_search` |
-| Không gian tham số rất lớn, nhiều thời gian | `genetic_algorithm` |
+| `max_time` dưới 15 phút, dataset vừa hoặc lớn | `tpe_search` |
+| Chỉ cần so sánh sơ bộ thật nhanh | `random_search` |
+| Lưới rất lớn, nhiều thời gian | `genetic_algorithm` |
 | Người dùng không có ý kiến | `grid_search` |
 
 ## Về max_time
 
-`max_time` là ngân sách **toàn cục** cho cả job, không phải cho từng model.
-Backend kiểm tra trước mỗi model; hết giờ thì bỏ qua các model còn lại và đánh
-dấu `time_limit_reached`.
+`max_time` (backend gọi là `timeout`) là ngân sách **toàn cục** cho cả job.
+Các model được train **song song** trên các worker; hết giờ thì model nào chưa
+xong bị huỷ và không có trong kết quả. Không model nào xong kịp thì job thất bại.
 
-Hệ quả: `max_time` quá nhỏ thì job vẫn xong nhưng chỉ thử được vài model đầu,
-kết quả không phản ánh đủ. Khi thấy `time_limit_reached: true` trong kết quả
-job, hãy nêu cho người dùng biết và đề nghị tăng `max_time` rồi chạy lại.
+Hệ quả: `max_time` quá nhỏ thì bảng xếp hạng thiếu model (so số model trong
+`orther_model_scores` với `list_models`), hoặc job thất bại hẳn. Khi thấy vậy,
+nêu cho người dùng biết và đề nghị tăng `max_time` hoặc đổi sang `tpe_search`.

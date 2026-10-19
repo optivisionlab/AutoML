@@ -35,7 +35,7 @@ cảnh, rồi trả về **DUY NHẤT một object JSON**, không kèm chữ nà
   },
   "model": {
     "preferred": ["model người dùng nhắc tới"],
-    "search_algorithm": "grid_search | bayesian_search | genetic_algorithm | null"
+    "search_algorithm": "grid_search | random_search | bayesian_search | tpe_search | genetic_algorithm | null"
   },
   "knowledge": {"notes": ["tri thức miền người dùng cung cấp, vd 'cột X là mã khách hàng'"]},
   "service": {"deploy": false, "predict": false},

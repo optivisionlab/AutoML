@@ -38,9 +38,10 @@ def _grid_size(param_sets: list) -> int:
     return total
 
 
-def load_catalog(problem_type: str) -> list[dict]:
+def _load_yml(problem_type: str) -> tuple[str, dict]:
     """
-    Trả [{model, grid_size, params}], rỗng nếu không đọc được file.
+    (tên, nội dung) của classification.yml / regression.yml; nội dung rỗng nếu
+    không đọc được file.
 
     Agent chạy ở máy/container khác backend thì đặt HAUTOML_SYSTEM_MODELS_DIR
     trỏ tới thư mục chứa yml.
@@ -50,14 +51,28 @@ def load_catalog(problem_type: str) -> list[dict]:
     directories = (Path(override),) if override else _CANDIDATE_DIRS
     path = next((d / f"{name}.yml" for d in directories if (d / f"{name}.yml").is_file()), None)
     if path is None:
-        return []
+        return name, {}
 
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return name, yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError:
-        return []
+        return name, {}
 
-    models = data.get(f"{name.capitalize()}_models") or {}
+
+def load_metrics(problem_type: str) -> list[str]:
+    """
+    metric_list trong yml - đúng danh sách metric backend tính cho mỗi model
+    (src/shared/search_space.py đọc cùng khoá này). Rỗng nếu không đọc được.
+    """
+    _, data = _load_yml(problem_type)
+    metrics = data.get("metric_list") or []
+    return [str(m) for m in metrics] if isinstance(metrics, list) else []
+
+
+def load_catalog(problem_type: str) -> list[dict]:
+    """Trả [{model, grid_size, params}], rỗng nếu không đọc được file."""
+    name, data = _load_yml(problem_type)
+    models = data.get(f"{name.capitalize()}_models") or data.get("models") or {}
     catalog = []
     for info in models.values():
         param_sets = info.get("params") or [{}]

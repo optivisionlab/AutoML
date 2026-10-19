@@ -38,6 +38,7 @@ Muốn xem một job thì cần `job_id` thật: lấy từ việc được giao
 | `0` | Đang chạy - chưa có kết quả |
 | `1` | Xong - có `best_model`, `best_score`, `best_params`, và `orther_model_scores` |
 | `-1` | Thất bại - đọc trường `infor` để biết lý do |
+| `-2` | Đã bị huỷ |
 
 `best_score` chỉ là điểm theo `metric_sort`. Điểm ĐẦY ĐỦ (accuracy, precision,
 recall, f1, r2, mse...) của từng model nằm trong `orther_model_scores[].scores`

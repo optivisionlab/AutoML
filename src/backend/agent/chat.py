@@ -43,6 +43,9 @@ from agent.team import AgentTeam
 from agent.watcher import JobWatcher
 
 
+# Ranh giới giữa câu tóm tắt và JSON chi tiết trong một dòng sự kiện job.
+_EVENT_DETAIL = " Chi tiết: "
+
 class ChatSession:
     """
     Một phiên chat: lịch sử hội thoại của Agent Manager + mọi thứ sống xuyên suốt.
@@ -154,23 +157,47 @@ class ChatSession:
         return bool(self.api.access_token)
 
     def recent_user_messages(self, limit: int) -> list[str]:
-        return [m["content"] for m in self.messages if m.get("role") == "user"][-limit:]
+        """
+        Vài tin gần nhất của người dùng, cho sub-agent không thấy lịch sử.
+
+        Bỏ phần JSON chi tiết của sự kiện job: Manager cần nó để trả lời, còn
+        Prompt Agent chỉ cần câu tóm tắt - giữ lại thì mỗi lần gọi tốn thêm
+        hàng nghìn token cho dữ liệu nó không dùng.
+        """
+        recent = [m["content"] for m in self.messages if m.get("role") == "user"][-limit:]
+        return [
+            "\n".join(line.split(_EVENT_DETAIL)[0] for line in text.splitlines())
+            for text in recent
+        ]
 
     def _on_job_finished(self, summary: dict) -> None:
         """Watcher gọi khi job kết thúc: để lượt chat kế tiếp Manager biết kết quả."""
         job_id = summary.get("job_id")
         if summary.get("status") == 1:
-            verdict = (summary.get("verification") or {}).get("passed")
-            judged = {
-                True: "ĐẠT các ràng buộc người dùng đặt ra",
-                False: "KHÔNG đạt ràng buộc người dùng đặt ra",
-                None: "không có ràng buộc nào để kiểm",
-            }[verdict]
+            # watcher chỉ kèm "verification" khi người dùng CÓ đặt ràng buộc.
+            verification = summary.get("verification")
+            checks = (verification or {}).get("checks") or []
+            unchecked = [c["metric"] for c in checks if c.get("passed") is None]
+            if not verification:
+                judged = "người dùng không đặt ràng buộc nào"
+            elif verification.get("passed") is None:
+                judged = (
+                    "KHÔNG kiểm được - job không có điểm cho metric "
+                    f"{', '.join(unchecked)} mà người dùng đặt ràng buộc"
+                )
+            else:
+                judged = (
+                    "ĐẠT các ràng buộc người dùng đặt ra"
+                    if verification["passed"]
+                    else "KHÔNG đạt ràng buộc người dùng đặt ra"
+                )
+                if unchecked:
+                    judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
             text = (
                 f"Job {job_id} đã huấn luyện xong: model tốt nhất {summary.get('best_model')}, "
                 f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}. "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
-                f"model trong leaderboard. Chi tiết: {json.dumps(summary, ensure_ascii=False, default=str)}"
+                f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
             )
         else:
             text = f"Job {job_id} không hoàn tất: {summary.get('error') or 'không rõ lý do'}."

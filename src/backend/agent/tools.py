@@ -57,17 +57,24 @@ def _ensure_user_id(client: HAutoMLClient) -> str | None:
 
 
 def _need_login() -> dict:
-    return {"ok": False, "status_code": 401, "error": "Chưa đăng nhập. Gọi tool login trước."}
+    # Không có tool đăng nhập - xác thực do hệ thống lo. Báo để Manager nói lại
+    # với người dùng, đừng gợi ý LLM tự xử lý.
+    return {
+        "ok": False,
+        "status_code": 401,
+        "error": "Chưa đăng nhập hoặc phiên đăng nhập đã hết hạn. Người dùng cần đăng nhập lại trên web.",
+    }
+
+
+# Loại bài toán agent hỗ trợ. Backend có thêm time_series nhưng engine chưa có
+# model cho nó (không có time_series.yml).
+PROBLEM_TYPES = ("classification", "regression")
 
 
 def list_my_datasets(client: HAutoMLClient) -> dict:
-    """Liệt kê các dataset của tài khoản đang đăng nhập."""
-    user_id = _ensure_user_id(client)
-    if not user_id:
-        return _need_login()
-
+    """Liệt kê các dataset của tài khoản đang đăng nhập (backend tự lọc theo token)."""
     try:
-        datasets = client.list_datasets(user_id)
+        datasets = client.list_datasets()
     except ApiError as error:
         return _failure(error)
 
@@ -89,23 +96,26 @@ def get_dataset_info(client: HAutoMLClient, dataset_id: str) -> dict:
 _SAMPLE_VALUES_PER_COLUMN = 5
 
 
-def _summarize_columns(features: dict, rows: list) -> list:
+def _summarize_columns(names: list, by_type: dict, rows: list, problem_type: str | None) -> list:
     """
-    Gộp thông tin cột từ hai nguồn: cờ target của backend và các dòng preview.
+    Gộp thông tin cột từ hai nguồn: cờ target của backend (theo từng loại bài
+    toán) và các dòng preview.
 
     Tính bằng Python thuần, không dùng pandas, để venv của agent không phải cài
     thêm gì.
     """
     summary = []
 
-    for name, can_be_target in features.items():
+    for name in names:
         values = [row.get(name) for row in rows]
         present = [value for value in values if value is not None]
         distinct = {str(value) for value in present}
+        target_for = [kind for kind in PROBLEM_TYPES if (by_type.get(kind) or {}).get(name)]
 
         summary.append({
             "name": name,
-            "can_be_target": can_be_target,
+            "can_be_target": (problem_type in target_for) if problem_type else bool(target_for),
+            "target_for": target_for,
             "python_type": type(present[0]).__name__ if present else None,
             "distinct_in_preview": len(distinct),
             "missing_in_preview": len(values) - len(present),
@@ -124,26 +134,25 @@ def get_dataset_schema(
     """
     Lấy các thuộc tính (cột) của một dataset, kèm thống kê nhanh và vài dòng mẫu.
 
-    Gộp ba lời gọi API: metadata, danh sách cột (/v2/auto/features) và preview
-    (/v2/auto/data). Cố ý KHÔNG trả hết 50 dòng preview - chỉ vài dòng mẫu cộng
-    thống kê từng cột, để không làm phình context của LLM với dataset lớn.
+    Dataset không còn mang loại bài toán (dataType chỉ là "table"), nên luôn hỏi
+    backend cột nào làm target được cho CẢ classification lẫn regression -
+    Model Agent cần cả hai để suy ra loại bài toán từ cột mục tiêu.
 
-    problem_type bỏ trống thì lấy theo dataType của chính dataset.
+    Cố ý KHÔNG trả hết 50 dòng preview - chỉ vài dòng mẫu cộng thống kê từng
+    cột, để không làm phình context của LLM với dataset lớn.
+
+    problem_type: classification | regression thì target_candidates theo loại
+        đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
     """
     try:
         info = client.get_dataset_info(dataset_id)
-    except ApiError as error:
-        return _failure(error)
-
-    resolved_type = (problem_type or info.get("dataType") or "classification").strip().lower()
-
-    try:
-        features = client.get_dataset_features(dataset_id, resolved_type).get("features")
         preview = client.get_dataset_preview(dataset_id)
+        by_type = {kind: client.get_dataset_features(dataset_id, kind) or {} for kind in PROBLEM_TYPES}
     except ApiError as error:
         return _failure(error)
 
-    if not features:
+    names = list(by_type["classification"] or by_type["regression"])
+    if not names:
         return {
             "ok": False,
             "error": (
@@ -152,61 +161,120 @@ def get_dataset_schema(
             ),
         }
 
-    rows = preview.get("data") or []
-    columns = _summarize_columns(features, rows)
+    requested = (problem_type or "").strip().lower()
+    requested = requested if requested in PROBLEM_TYPES else None
+    rows = preview.get("records") or []
+    columns = _summarize_columns(names, by_type, rows, requested)
+    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in PROBLEM_TYPES}
 
     return {
         "ok": True,
         "dataset_id": dataset_id,
         "data_name": info.get("dataName"),
-        "problem_type": resolved_type,
+        "problem_type": requested,
         "total_rows": preview.get("rows"),
         "column_count": len(columns),
-        "target_candidates": [c["name"] for c in columns if c["can_be_target"]],
+        "target_candidates": by_kind[requested] if requested else [c["name"] for c in columns if c["target_for"]],
+        "target_candidates_by_type": by_kind,
         "columns": columns,
         "sample_rows": rows[:sample_rows],
         "note": (
-            "can_be_target chỉ nói cột đó có phù hợp làm BIẾN MỤC TIÊU với "
-            "problem_type này hay không. Nó KHÔNG có nghĩa là cột đó không dùng "
-            "được làm đặc trưng đầu vào. Thống kê distinct/missing tính trên "
-            "50 dòng preview, không phải toàn bộ dataset."
+            "target_for cho biết cột làm BIẾN MỤC TIÊU được với loại bài toán nào; "
+            "cột có ở cả hai thì phải chọn loại bài toán. can_be_target false KHÔNG "
+            "có nghĩa là cột đó không dùng được làm đặc trưng đầu vào. Thống kê "
+            "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset."
         ),
     }
 
 
-def list_my_jobs(client: HAutoMLClient) -> dict:
-    """Liệt kê các job huấn luyện của tài khoản đang đăng nhập."""
-    user_id = _ensure_user_id(client)
-    if not user_id:
-        return _need_login()
-
-    try:
-        jobs = client.list_jobs(user_id)
-    except ApiError as error:
-        return _failure(error)
-
-    return {"ok": True, "count": len(jobs), "jobs": jobs}
-
-
-def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict | None]:
+def infer_problem_type(schema: dict, target: str) -> str | None:
     """
-    Tìm job trong danh sách job CỦA người đang đăng nhập.
+    Loại bài toán suy ra từ cột mục tiêu: cột chỉ làm target được cho đúng một
+    loại thì là loại đó. Cột hợp cả hai (số nguyên ít giá trị) hoặc không hợp
+    loại nào -> None, phải để người dùng / Model Agent quyết định.
+    """
+    by_type = schema.get("target_candidates_by_type") or {}
+    kinds = [kind for kind in PROBLEM_TYPES if target in (by_type.get(kind) or [])]
+    return kinds[0] if len(kinds) == 1 else None
 
-    Trả (job, None) nếu thấy, (None, lỗi) nếu không. Phải tự kiểm vì backend
-    kiểm quyền rất lỏng: /get-job-info chỉ cần người gọi có MỘT job bất kỳ, còn
-    /activate-model không kiểm gì cả.
+
+# Trạng thái job của backend (src/shared/constants.py: JobStatus).
+JOB_RUNNING, JOB_SUCCESS, JOB_FAILED, JOB_CANCELLED = 0, 1, -1, -2
+JOB_FINISHED = (JOB_SUCCESS, JOB_FAILED, JOB_CANCELLED)
+
+
+def _normalize_job(job: dict) -> dict:
+    """Backend v1 trả ID job ở `_id`; agent và frontend dùng `job_id`."""
+    job = dict(job)
+    job["job_id"] = str(job.get("_id") or job.get("id") or job.get("job_id") or "")
+    return job
+
+
+def _own_jobs(client: HAutoMLClient) -> tuple[list | None, dict | None]:
+    """
+    Job CỦA người đang đăng nhập. Phải tự lọc: tài khoản admin nhận được job
+    của mọi người, mà agent chỉ được thao tác trên job của chính người dùng.
     """
     user_id = _ensure_user_id(client)
     if not user_id:
         return None, _need_login()
 
     try:
-        jobs = client.list_jobs(user_id)
+        jobs = client.list_jobs()
     except ApiError as error:
         return None, _failure(error)
 
-    for job in jobs or []:
-        if job.get("job_id") == job_id:
+    own = [
+        _normalize_job(job)
+        for job in jobs or []
+        if str((job.get("user") or {}).get("id") or "") == str(user_id)
+    ]
+    return own, None
+
+
+def _job_brief(job: dict) -> dict:
+    """Một dòng cho danh sách job - bỏ điểm từng model cho gọn context."""
+    config = job.get("config") or {}
+    return {
+        "job_id": job.get("job_id"),
+        "status": job.get("status"),
+        "dataset": (job.get("data") or {}).get("name"),
+        "target": config.get("target"),
+        "metric_sort": config.get("metric_sort"),
+        "best_model": job.get("best_model"),
+        "best_score": job.get("best_score"),
+        "activate": job.get("activate"),
+        "create_at": job.get("create_at"),
+    }
+
+
+def list_my_jobs(client: HAutoMLClient) -> dict:
+    """Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước."""
+    jobs, problem = _own_jobs(client)
+    if problem:
+        return problem
+
+    return {
+        "ok": True,
+        "count": len(jobs),
+        "jobs": [_job_brief(job) for job in jobs],
+        "note": "Điểm đầy đủ từng model của một job: get_job_info.",
+    }
+
+
+def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict | None]:
+    """
+    Tìm job trong danh sách job CỦA người đang đăng nhập.
+
+    Trả (job, None) nếu thấy, (None, lỗi) nếu không. Backend không có endpoint
+    xem một job, nên đây cũng là cách lấy chi tiết job.
+    """
+    jobs, problem = _own_jobs(client)
+    if problem:
+        return None, problem
+
+    for job in jobs:
+        if job["job_id"] == job_id:
             return job, None
 
     return None, {
@@ -218,15 +286,12 @@ def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict 
 
 def get_job_info(client: HAutoMLClient, job_id: str) -> dict:
     """Xem chi tiết một job huấn luyện theo job_id."""
-    _, problem = find_own_job(client, job_id)
+    job, problem = find_own_job(client, job_id)
     if problem:
         return problem
 
-    try:
-        job = client.get_job_info(job_id)
-    except ApiError as error:
-        return _failure(error)
-
+    # Vị trí file model trên MinIO không giúp gì cho LLM.
+    job.pop("model", None)
     return {"ok": True, "job": job}
 
 
@@ -234,14 +299,14 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
     """
     Bật (hoặc tắt) model của một job đã huấn luyện xong để dùng dự đoán.
 
-    Chỉ cho đổi job của chính người dùng và job đã xong (status = 1): job đang
-    chạy hoặc thất bại thì chưa có model để bật.
+    Kiểm trước job của chính người dùng và đã xong (status = 1) để báo lỗi rõ
+    ràng; backend cũng kiểm lại hai điều này.
     """
     job, problem = find_own_job(client, job_id)
     if problem:
         return problem
 
-    if job.get("status") != 1:
+    if job.get("status") != JOB_SUCCESS:
         return {
             "ok": False,
             "error": (
@@ -251,7 +316,7 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
         }
 
     try:
-        client.activate_model(job_id, activate)
+        deployment = client.activate_model(job_id, activate)
     except ApiError as error:
         return _failure(error)
 
@@ -260,6 +325,8 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
         "job_id": job_id,
         "activated": bool(activate),
         "best_model": job.get("best_model"),
+        "endpoint_url": (deployment or {}).get("endpoint_url"),
+        "features": (deployment or {}).get("features"),
     }
 
 
@@ -268,25 +335,12 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
 MAX_PREDICT_ROWS = 50
 
 
-def _rows_to_csv(rows: list, columns: list) -> bytes:
-    import csv
-    import io
-
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
-    writer.writeheader()
-    for row in rows:
-        writer.writerow({column: row.get(column) for column in columns})
-    return buffer.getvalue().encode("utf-8")
-
-
 def predict(client: HAutoMLClient, job_id: str, rows: list) -> dict:
     """
     Dự đoán cho vài mẫu dữ liệu bằng model của một job đã kích hoạt.
 
-    LLM không cầm được file, nên nhận mẫu dạng danh sách dict rồi tự dựng CSV
-    gửi lên /inference-model. Cột được soát với list_feature của job TRƯỚC khi
-    gửi, để thiếu cột thì báo rõ thiếu cột nào thay vì để backend trả 500.
+    Cột được soát với list_feature của job TRƯỚC khi gửi, cho MỌI mẫu - backend
+    chỉ kiểm mẫu đầu tiên - để thiếu cột thì báo rõ thiếu cột nào.
     """
     if not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
         return {"ok": False, "error": "rows phải là danh sách mẫu, mỗi mẫu là một object {cột: giá trị}."}
@@ -300,7 +354,7 @@ def predict(client: HAutoMLClient, job_id: str, rows: list) -> dict:
     if problem:
         return problem
 
-    if job.get("status") != 1:
+    if job.get("status") != JOB_SUCCESS:
         return {"ok": False, "error": f"Job '{job_id}' chưa huấn luyện xong, chưa dự đoán được."}
     if job.get("activate") != 1:
         return {
@@ -318,31 +372,18 @@ def predict(client: HAutoMLClient, job_id: str, rows: list) -> dict:
         }
 
     try:
-        result = client.inference_model(job_id, "agent_predict.csv", _rows_to_csv(rows, features))
+        result = client.predict(job_id, [{f: row.get(f) for f in features} if features else row for row in rows])
     except ApiError as error:
-        failure = _failure(error)
-        # /inference-model so job.get("user_id") với người gọi, nhưng job tạo
-        # bởi /v2/auto/jobs/training lưu chủ sở hữu ở user.id -> luôn 403.
-        if error.status_code == 403:
-            failure["note"] = (
-                "Backend từ chối dù job thuộc về bạn: /inference-model đang kiểm "
-                "trường user_id mà job v2 không có (chủ job lưu ở user.id). Đây là lỗi "
-                "phía backend, không phải do dữ liệu."
-            )
-        return failure
+        return _failure(error)
 
-    if isinstance(result, dict):
-        # Backend trả {"message": "model is deactivate"} thay vì mã lỗi.
-        return {"ok": False, "error": result.get("message") or result.get("detail") or str(result)[:300]}
-
-    target = (job.get("config") or {}).get("target")
     return {
         "ok": True,
         "job_id": job_id,
-        "target": target,
+        "target": (job.get("config") or {}).get("target"),
+        "model": (result or {}).get("model_name"),
         "predictions": [
-            {"row": index, "predict": record.get("predict")}
-            for index, record in enumerate(result or [])
+            {"row": index, "predict": value}
+            for index, value in enumerate((result or {}).get("predictions") or [])
         ],
     }
 
@@ -391,23 +432,33 @@ def read_reference(client: HAutoMLClient, ref_id: str) -> dict:
 DEFAULT_MAX_TIME = 900
 DEFAULT_SEARCH_ALGORITHM = "grid_search"
 
+# Metric backend tính được, dùng khi không đọc được metric_list trong
+# classification.yml / regression.yml (agent chạy tách khỏi backend).
+DEFAULT_METRICS = {
+    "classification": [
+        "accuracy", "balanced_accuracy", "precision_macro", "precision_weighted",
+        "recall_macro", "recall_weighted", "f1_macro", "f1_weighted",
+    ],
+    "regression": ["mse", "mae", "mape", "r2"],
+}
+
 
 def list_metrics(client: HAutoMLClient, problem_type: str) -> dict:
-    """Danh sách metric hợp lệ cho một loại bài toán, đọc từ cấu hình backend."""
+    """
+    Danh sách metric hợp lệ cho một loại bài toán.
+
+    Backend v1 không có endpoint metric: nó đọc metric_list trong file yml của
+    engine, nên ở đây đọc cùng file đó. Tham số client giữ cho đồng nhất chữ ký.
+    """
     normalized = (problem_type or "").strip().lower()
-    if normalized not in ("classification", "regression"):
+    if normalized not in PROBLEM_TYPES:
         return {
             "ok": False,
             "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
         }
 
-    try:
-        result = client.get_metrics(normalized)
-    except ApiError as error:
-        return _failure(error)
-
-    metrics = result.get("metrics") or []
-    return {"ok": True, "problem_type": normalized, "metrics": metrics}
+    metrics = _load_skill_script("model-agent", "model_catalog").load_metrics(normalized)
+    return {"ok": True, "problem_type": normalized, "metrics": metrics or DEFAULT_METRICS[normalized]}
 
 
 def list_models(client: HAutoMLClient, problem_type: str) -> dict:
@@ -418,7 +469,7 @@ def list_models(client: HAutoMLClient, problem_type: str) -> dict:
     Tham số client không dùng tới, giữ cho đồng nhất chữ ký với mọi tool khác.
     """
     normalized = (problem_type or "").strip().lower()
-    if normalized not in ("classification", "regression"):
+    if normalized not in PROBLEM_TYPES:
         return {
             "ok": False,
             "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
@@ -463,6 +514,8 @@ def prepare_training_config(
     nhầm cột mục tiêu thì train hàng giờ rồi vứt đi. Model Agent dùng hàm này để
     ra quyết định config; start_training gọi lại nó làm chốt cuối.
 
+    problem_type bỏ trống thì suy từ cột mục tiêu (xem infer_problem_type).
+
     Trả {"ok": True, "config", "warnings"} hoặc {"ok": False, "errors", ...} kèm
     sẵn valid_columns / target_candidates / valid_metrics để agent tự sửa.
     """
@@ -470,7 +523,29 @@ def prepare_training_config(
     if not schema.get("ok"):
         return schema
 
-    resolved_type = schema["problem_type"]
+    resolved_type = schema["problem_type"] or infer_problem_type(schema, target)
+    if resolved_type is None:
+        by_type = schema["target_candidates_by_type"]
+        both = all(target in by_type[kind] for kind in PROBLEM_TYPES)
+        return {
+            "ok": False,
+            "error": "Không xác định được loại bài toán.",
+            "errors": [
+                f"Cột '{target}' làm mục tiêu được cho cả classification lẫn regression - "
+                "truyền problem_type theo ý người dùng (dự đoán nhóm/nhãn hay giá trị số)."
+                if both else
+                f"Cột '{target}' không làm biến mục tiêu được cho loại bài toán nào."
+            ],
+            "valid_columns": [c["name"] for c in schema["columns"]],
+            "target_candidates_by_type": by_type,
+        }
+
+    # validate_config so target với target_candidates của ĐÚNG loại bài toán.
+    schema = {
+        **schema,
+        "problem_type": resolved_type,
+        "target_candidates": schema["target_candidates_by_type"][resolved_type],
+    }
 
     metrics = list_metrics(client, resolved_type)
     if not metrics.get("ok"):
@@ -501,6 +576,16 @@ def prepare_training_config(
     return {"ok": True, "config": config, "warnings": check["warnings"]}
 
 
+def _backend_training_config(config: dict) -> dict:
+    """
+    Config của agent -> TrainingConfig của backend. Agent gọi giới hạn thời
+    gian là max_time (cùng tên trong R và SKILL.md), backend gọi là timeout.
+    """
+    payload = {key: value for key, value in config.items() if key != "max_time"}
+    payload["timeout"] = config.get("max_time")
+    return payload
+
+
 def start_training(
     client: HAutoMLClient,
     dataset_id: str,
@@ -516,10 +601,6 @@ def start_training(
 
     Trả về ngay kèm job_id, KHÔNG chờ train xong.
     """
-    user_id = _ensure_user_id(client)
-    if not user_id:
-        return _need_login()
-
     prepared = prepare_training_config(
         client,
         dataset_id=dataset_id,
@@ -535,13 +616,13 @@ def start_training(
 
     config = prepared["config"]
     try:
-        result = client.start_training(dataset_id=dataset_id, user_id=user_id, config=config)
+        result = client.start_training(dataset_id=dataset_id, config=_backend_training_config(config))
     except ApiError as error:
         return _failure(error)
 
     return {
         "ok": True,
-        "job_id": result.get("job_id"),
+        "job_id": (result or {}).get("job_id"),
         "config": config,
         "warnings": prepared["warnings"],
         "note": (
@@ -624,16 +705,14 @@ def upload_dataset_file(
     KHÔNG phơi cho LLM: LLM không cầm được file. Hàm này được server.py gọi khi
     người dùng bấm nút tải lên trong khung chat. File phải được kiểm tra bằng
     agent.uploads.check_dataset_file TRƯỚC khi tới đây.
-    """
-    user_id = _ensure_user_id(client)
-    if not user_id:
-        return _need_login()
 
+    data_type là loại bài toán người dùng chọn lúc tải lên (classification /
+    regression). Backend v1 không lưu nó - dataset chỉ là "table" - nên chỉ trả
+    lại để báo cho Agent Manager biết ý định của người dùng.
+    """
     try:
         dataset = client.upload_dataset_content(
-            user_id=user_id,
             data_name=data_name,
-            data_type=data_type,
             filename=filename,
             content=content,
             mime_type=mime_type,
@@ -644,8 +723,8 @@ def upload_dataset_file(
     return {
         "ok": True,
         "dataset": {
-            "id": dataset.get("_id"),
+            "id": dataset.get("_id") or dataset.get("id"),
             "name": dataset.get("dataName"),
-            "type": dataset.get("dataType"),
+            "type": data_type,
         },
     }

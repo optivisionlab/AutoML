@@ -43,8 +43,32 @@ _log = logging.getLogger("agent.team")
 
 PROBLEM_TYPES = ("classification", "regression")
 REQUIREMENT_KEYS = ("user", "problem", "dataset", "model", "knowledge", "service")
-SEARCH_ALGORITHMS = ("grid_search", "genetic_algorithm", "bayesian_search")
+SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
 _CONSTRAINT_OPS = (">=", ">", "<=", "<")
+
+# Metric backend tính được - cùng danh sách trong skills/prompt-agent/SKILL.md.
+# Ràng buộc dùng tên khác thì watcher không tìm được điểm và không kiểm định được.
+VALID_METRICS = {kind: tuple(metrics) for kind, metrics in tools.DEFAULT_METRICS.items()}
+# Cách người dùng (và LLM) hay gọi -> tên metric thật.
+_METRIC_ALIASES = {
+    "acc": "accuracy",
+    "f1": "f1_macro",
+    "f1_score": "f1_macro",
+    "precision": "precision_macro",
+    "recall": "recall_macro",
+    "r2_score": "r2",
+    "r_squared": "r2",
+    "mean_squared_error": "mse",
+    "mean_absolute_error": "mae",
+}
+
+
+def normalize_metric(name, problem_type: str | None) -> str | None:
+    """Tên metric thật mà backend tính, hoặc None nếu hệ thống không có metric đó."""
+    metric = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
+    metric = _METRIC_ALIASES.get(metric, metric)
+    allowed = VALID_METRICS.get(problem_type or "") or tuple(m for ms in VALID_METRICS.values() for m in ms)
+    return metric if metric in allowed else None
 
 # Dataset rộng hàng trăm cột thì hồ sơ đầy đủ quá dài cho prompt Model Agent.
 _MAX_PROFILE_COLUMNS = 60
@@ -77,29 +101,40 @@ def parse_json(text: str) -> dict:
     return value
 
 
-def profile_brief(schema: dict) -> dict:
-    """Hồ sơ dữ liệu gọn cho prompt: bỏ sample_rows, cắt bớt giá trị mẫu và số cột."""
+def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
+    """
+    Hồ sơ dữ liệu gọn cho prompt: bỏ sample_rows, cắt bớt giá trị mẫu và số cột.
+
+    problem_type đã biết (từ R) thì target_candidates theo đúng loại đó; chưa
+    biết thì Model Agent tự suy từ target_candidates_by_type.
+    """
     columns = schema.get("columns") or []
+    by_type = schema.get("target_candidates_by_type") or {}
+    known = problem_type if problem_type in by_type else schema.get("problem_type")
     return {
         "dataset_id": schema.get("dataset_id"),
         "data_name": schema.get("data_name"),
-        "problem_type": schema.get("problem_type"),
+        "problem_type": known,
         "total_rows": schema.get("total_rows"),
         "column_count": schema.get("column_count"),
-        "target_candidates": schema.get("target_candidates"),
+        "target_candidates": by_type.get(known) if known else schema.get("target_candidates"),
+        "target_candidates_by_type": by_type,
         "columns": [
             {
                 "name": c.get("name"),
                 "type": c.get("python_type"),
                 "distinct": c.get("distinct_in_preview"),
                 "missing": c.get("missing_in_preview"),
-                "can_be_target": c.get("can_be_target"),
+                "target_for": c.get("target_for"),
                 "samples": (c.get("sample_values") or [])[:_SAMPLES_PER_COLUMN],
             }
             for c in columns[:_MAX_PROFILE_COLUMNS]
         ],
         "columns_truncated": len(columns) > _MAX_PROFILE_COLUMNS,
-        "note": "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset.",
+        "note": (
+            "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset. "
+            "target_for: loại bài toán mà cột đó làm biến mục tiêu được."
+        ),
     }
 
 
@@ -126,7 +161,14 @@ def normalize_requirements(raw: dict, datasets: list[dict]) -> tuple[dict, list,
         key: dict(raw.get(key)) if isinstance(raw.get(key), dict) else {}
         for key in REQUIREMENT_KEYS
     }
-    missing = [str(item).strip() for item in raw.get("missing") or [] if str(item).strip()]
+    # Model đôi khi trả "missing" là một câu thay vì danh sách - lặp thẳng qua
+    # chuỗi sẽ ra từng ký tự.
+    raw_missing = raw.get("missing") or []
+    if isinstance(raw_missing, str):
+        raw_missing = [raw_missing]
+    elif not isinstance(raw_missing, list):
+        raw_missing = []
+    missing = [str(item).strip() for item in raw_missing if str(item).strip()]
     notes: list[str] = []
 
     by_id = {d["id"]: d for d in datasets if d.get("id")}
@@ -158,33 +200,45 @@ def normalize_requirements(raw: dict, datasets: list[dict]) -> tuple[dict, list,
     known = by_id.get(dataset.get("id"))
     if known:
         dataset["name"] = known.get("name")
-        dataset.setdefault("type", known.get("type"))
 
     # --- problem ---
+    # Dataset không mang loại bài toán; không rõ thì để None, Model Agent suy
+    # từ cột mục tiêu.
     problem = requirements["problem"]
     problem_type = str(problem.get("type") or "").strip().lower()
-    if problem_type not in PROBLEM_TYPES:
-        fallback = (known or {}).get("type")
-        problem["type"] = fallback if fallback in PROBLEM_TYPES else None
-        if problem_type and problem["type"]:
-            notes.append(f"Loại bài toán '{problem_type}' không hỗ trợ, dùng '{problem['type']}' theo dataset.")
-    else:
-        problem["type"] = problem_type
+    problem["type"] = problem_type if problem_type in PROBLEM_TYPES else None
+    if problem_type and not problem["type"]:
+        notes.append(f"Loại bài toán '{problem_type}' không hỗ trợ, để Model Agent suy từ cột mục tiêu.")
 
+    preferred = problem.get("metric")
+    if preferred:
+        problem["metric"] = normalize_metric(preferred, problem["type"])
+        if problem["metric"] is None:
+            notes.append(f"Hệ thống không có metric '{preferred}', để Model Agent tự chọn.")
+        elif problem["metric"] != str(preferred).strip().lower():
+            notes.append(f"Hiểu metric '{preferred}' là '{problem['metric']}'.")
+
+    raw_constraints = problem.get("constraints") or []
     constraints = []
-    for item in problem.get("constraints") or []:
+    for item in raw_constraints if isinstance(raw_constraints, list) else []:
         if not isinstance(item, dict):
             continue
-        metric = str(item.get("metric") or "").strip().lower()
         op = str(item.get("op") or "").strip()
         try:
             value = float(item.get("value"))
         except (TypeError, ValueError):
             value = None
-        if metric and op in _CONSTRAINT_OPS and value is not None:
-            constraints.append({"metric": metric, "op": op, "value": value})
-        else:
+        if op not in _CONSTRAINT_OPS or value is None:
             notes.append(f"Bỏ ràng buộc không so sánh được: {item}.")
+            continue
+        metric = normalize_metric(item.get("metric"), problem["type"])
+        if metric is None:
+            notes.append(
+                f"Bỏ ràng buộc theo metric '{item.get('metric')}' vì hệ thống không tính metric "
+                "này - không kiểm định được."
+            )
+            continue
+        constraints.append({"metric": metric, "op": op, "value": value})
     problem["constraints"] = constraints
 
     max_time = _intish(problem.get("max_time"))
@@ -339,7 +393,7 @@ class AgentTeam:
         """① Prompt Agent: chuẩn hoá yêu cầu thành R. Không tool, một lượt JSON."""
         listing = tools.list_my_datasets(api)
         datasets = [
-            {"id": d.get("_id"), "name": d.get("dataName"), "type": d.get("dataType")}
+            {"id": d.get("_id"), "name": d.get("dataName")}
             for d in (listing.get("datasets") or [])
         ] if listing.get("ok") else []
 
@@ -406,7 +460,7 @@ class AgentTeam:
         if not listing.get("ok"):
             return None  # không kiểm được thì để bước sau tự báo lỗi
         datasets = [
-            {"id": d.get("_id"), "name": d.get("dataName"), "type": d.get("dataType")}
+            {"id": d.get("_id"), "name": d.get("dataName")}
             for d in listing.get("datasets") or []
         ]
         if any(d["id"] == dataset_id for d in datasets):
@@ -438,13 +492,13 @@ class AgentTeam:
                 return invalid
 
             profile = self.handoff.profiles.get(dataset_id)
-            # Chưa có hồ sơ (Manager bỏ qua Data Agent) hoặc hồ sơ đọc theo loại bài
-            # toán khác - target_candidates phụ thuộc loại bài toán nên phải đọc lại.
-            if profile is None or (wanted_type and profile.get("problem_type") != wanted_type):
+            # Chưa có hồ sơ khi Manager bỏ qua Data Agent. Hồ sơ đã có ứng viên
+            # target cho cả hai loại bài toán nên không phải đọc lại theo loại.
+            if profile is None:
                 profile = self.get_dataset_schema(api, dataset_id=dataset_id, problem_type=wanted_type)
                 if not profile.get("ok"):
                     return {"ok": False, "agent": MODEL_AGENT, "error": profile.get("error")}
-            data_section = json.dumps(profile_brief(profile), ensure_ascii=False, indent=1)
+            data_section = json.dumps(profile_brief(profile, wanted_type), ensure_ascii=False, indent=1)
             task = f"{task}\n\ndataset_id: {dataset_id}"
         else:
             data_section = (
@@ -480,6 +534,8 @@ class AgentTeam:
                 "already_started_job": entry.get("job_id"),
             }
             for entry in self.handoff.configs.values()
+            # Config đã bị thay thế thì không đưa vào, Operation Agent khỏi chọn nhầm.
+            if not entry.get("superseded_by")
         ]
         context = "\n\n".join([
             "## Config đã qua validate_config (chỉ chạy được các config_id này)",
@@ -550,6 +606,12 @@ class AgentTeam:
             return prepared
 
         config_id = f"cfg_{uuid.uuid4().hex[:6]}"
+        # Config mới thay thế config cũ CHƯA chạy của cùng dataset: Manager giao
+        # Model Agent hai lần thì chỉ quyết định mới nhất được chạy, tránh hai
+        # job trùng nhau chiếm worker hàng giờ.
+        for entry in self.handoff.configs.values():
+            if entry["dataset_id"] == dataset_id and not entry.get("job_id"):
+                entry["superseded_by"] = config_id
         self.handoff.configs[config_id] = {
             "config_id": config_id,
             "dataset_id": dataset_id,
@@ -585,6 +647,15 @@ class AgentTeam:
                 "ok": False,
                 "error": f"Config '{config_id}' đã chạy thành job {entry['job_id']}. Không chạy lại trùng.",
                 "job_id": entry["job_id"],
+            }
+        if entry.get("superseded_by"):
+            return {
+                "ok": False,
+                "error": (
+                    f"Config '{config_id}' đã bị thay bằng config mới hơn "
+                    f"'{entry['superseded_by']}' của cùng dataset. Chạy config mới đó."
+                ),
+                "config_id": entry["superseded_by"],
             }
 
         config = entry["config"]
@@ -638,7 +709,8 @@ class AgentTeam:
         requirements = self.handoff.requirements if job_id in self.handoff.jobs else None
         started = self.session.watcher.watch(
             job_id,
-            max_time=(job.get("config") or {}).get("max_time"),
+            # Backend lưu giới hạn thời gian trong config job dưới tên timeout.
+            max_time=(job.get("config") or {}).get("timeout"),
             requirements=requirements,
             trace_context=tracing.current_context(),
         )

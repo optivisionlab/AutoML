@@ -10,7 +10,7 @@ khi status ≠ 0 (mũi tên "theo dõi job" trong sơ đồ), rồi:
   2. Phát sự kiện ra frontend (SSE) và ghi vào phiên chat, để lượt chat kế tiếp
      Agent Manager biết job đã xong mà không phải hỏi lại backend.
 
-Mỗi lần hỏi chỉ một request (/get-list-job-by-userId) và không gọi LLM.
+Mỗi lần hỏi chỉ đọc danh sách job (GET /inference/jobs) và không gọi LLM.
 """
 
 # Standard libraries
@@ -23,12 +23,14 @@ from agent import tools, tracing
 
 
 DEFAULT_POLL_SECONDS = 20
-# Backend dùng 3600 giây khi config không có max_time (automl/v2/master.py).
-_BACKEND_DEFAULT_MAX_TIME = 3600
+# Config không có timeout thì backend chạy tới khi mọi model xong, không giới
+# hạn. Watcher vẫn phải có hạn để thread không sống mãi.
+_BACKEND_DEFAULT_MAX_TIME = 4 * 60 * 60
 # Ngoài max_time, job còn phải xếp hàng Kafka và gộp kết quả các worker.
 _GRACE_SECONDS = 15 * 60
 
-# Metric "càng nhỏ càng tốt". Nguồn: ERROR_METRICS trong automl/v2/master.py.
+# Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong
+# src/modules/models/service.py của backend.
 LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse", "log_loss"}
 
 _OPS = {
@@ -133,9 +135,9 @@ def summarize_job(job: dict, requirements: dict | None = None) -> dict:
                 {"model": e.get("model_name"), metric: round(e["scores"][metric], 4)} for e in ranked
             ],
             "best_params": job.get("best_params"),
-            "completed_models": job.get("completed_models"),
-            "total_models": job.get("total_models"),
-            "time_limit_reached": job.get("time_limit_reached"),
+            # Hết max_time thì model chưa xong bị huỷ: số model ít hơn danh mục
+            # nghĩa là bảng xếp hạng chưa đủ.
+            "models_scored": len(entries),
             "not_available": "Backend không lưu ma trận nhầm lẫn hay đường ROC - chỉ có các metric trong best_model_scores.",
         })
         # Chỉ kèm kiểm định khi người dùng có đặt ràng buộc - không thì agent
@@ -143,7 +145,10 @@ def summarize_job(job: dict, requirements: dict | None = None) -> dict:
         verification = verify_result(job, requirements)
         if verification["checks"]:
             summary["verification"] = verification
-    elif job.get("status") == -1:
+    elif job.get("status") == tools.JOB_CANCELLED:
+        summary["error"] = job.get("infor") or "Job đã bị huỷ."
+        summary["cancelled"] = True
+    elif job.get("status") == tools.JOB_FAILED:
         summary["error"] = job.get("infor")
     return summary
 
@@ -229,10 +234,10 @@ class JobWatcher:
                     )
                     last_status = status
 
-                if status in (1, -1):
+                if status in tools.JOB_FINISHED:
                     summary = summarize_job(job, requirements)
-                    failed = status != 1 or (summary.get("verification") or {}).get("passed") is False
-                    emit("job_done" if status == 1 else "job_failed", level="WARNING" if failed else None, **summary)
+                    failed = status != tools.JOB_SUCCESS or (summary.get("verification") or {}).get("passed") is False
+                    emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", level="WARNING" if failed else None, **summary)
                     self._on_finish(summary)
                     return
 

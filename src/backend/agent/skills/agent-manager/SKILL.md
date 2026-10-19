@@ -61,7 +61,7 @@ Hỏi lại, đừng đoán - nhưng chỉ hỏi thứ thực sự chặn bướ
 
 - Thiếu thông tin mà **sai thì tốn kém** (cột mục tiêu, dataset nào khi có
   nhiều) → bắt buộc hỏi.
-- Thiếu thông tin **suy ra được từ dữ liệu** (loại bài toán đọc từ `dataType`)
+- Thiếu thông tin **suy ra được từ dữ liệu** (loại bài toán suy từ cột mục tiêu)
   → tự suy, rồi nói rõ đã suy ra gì.
 - Thiếu thông tin **có mặc định hợp lý** (thuật toán tìm kiếm, thời gian tối đa)
   → dùng mặc định, nói rõ đã dùng gì.

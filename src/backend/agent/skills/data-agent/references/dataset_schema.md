@@ -9,7 +9,10 @@ Tài liệu này không nằm trong system prompt. Chỉ đọc khi cần chọn
 |---|---|
 | `total_rows` | Tổng số dòng của cả dataset |
 | `column_count` | Số cột |
-| `target_candidates` | Các cột làm biến mục tiêu được, với `problem_type` đang xét |
+| `problem_type` | Loại bài toán đã truyền vào, hoặc `null` nếu chưa rõ |
+| `target_candidates` | Các cột làm biến mục tiêu được (theo `problem_type`, hoặc cho ít nhất một loại nếu `null`) |
+| `target_candidates_by_type` | Ứng viên target tách theo `classification` / `regression` |
+| `columns[].target_for` | Loại bài toán mà cột này làm mục tiêu được |
 | `columns[].can_be_target` | Cột này có làm mục tiêu được không |
 | `columns[].python_type` | Kiểu suy ra từ dòng preview: `float`, `int`, `str` |
 | `columns[].distinct_in_preview` | Số giá trị khác nhau, **tính trên 50 dòng đầu** |
@@ -17,7 +20,10 @@ Tài liệu này không nằm trong system prompt. Chỉ đọc khi cần chọn
 | `columns[].sample_values` | Tối đa 5 giá trị mẫu |
 | `sample_rows` | 3 dòng dữ liệu đầu |
 
-## Hiểu đúng `can_be_target`
+## Hiểu đúng `target_for` / `can_be_target`
+
+Dataset KHÔNG ghi loại bài toán. Cột nằm trong `target_for` của cả hai loại
+(thường là số nguyên ít giá trị) thì loại bài toán tuỳ ý người dùng.
 
 `false` KHÔNG có nghĩa là cột vô dụng. Phần lớn cột `can_be_target: false`
 chính là **đặc trưng đầu vào** tốt.
@@ -49,7 +55,7 @@ Lưu ý quan trọng: cột bị đánh `false` vì **là ID** thì cũng không
 
 ## Vì sao thống kê chỉ tính trên 50 dòng
 
-Endpoint `/v2/auto/data` trả tối đa 50 dòng preview. Đọc cả dataset để thống kê
+Endpoint `GET /datasets/{id}/data` trả 50 dòng preview. Đọc cả dataset để thống kê
 sẽ chậm và tốn bộ nhớ. Hệ quả: `distinct_in_preview` của một dataset lớn có thể
 thấp hơn nhiều so với thực tế. Khi báo cáo con số này cho người dùng, luôn nói
 rõ là tính trên preview.

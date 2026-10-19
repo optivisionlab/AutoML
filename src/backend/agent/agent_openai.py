@@ -24,12 +24,15 @@ Chạy:
 
 # Standard libraries
 import json
+import logging
 import os
 
 # Local modules
 from agent import tools, tracing
 from agent.api_client import HAutoMLClient
 
+
+_log = logging.getLogger("agent.tools")
 
 # Số vòng lặp tối đa của Agent Manager, chặn model gọi tool luẩn quẩn.
 MAX_STEPS = 12
@@ -193,7 +196,9 @@ TOOL_SCHEMAS = [
             "dataset_id": _DATASET_ID,
             "problem_type": {
                 "type": "string",
-                "description": "classification hoặc regression. Bỏ trống thì lấy theo dataType của dataset.",
+                "description": (
+                    "classification hoặc regression. Bỏ trống thì trả ứng viên target cho cả hai loại."
+                ),
             },
         },
         ["dataset_id"],
@@ -231,10 +236,15 @@ TOOL_SCHEMAS = [
                 "description": "Các cột đặc trưng đầu vào. Không được chứa cột mục tiêu.",
             },
             "metric_sort": {"type": "string", "description": "Metric xếp hạng model, lấy từ list_metrics."},
-            "problem_type": {**_PROBLEM_TYPE, "description": "Bỏ trống thì lấy theo dataType của dataset."},
+            "problem_type": {
+                **_PROBLEM_TYPE,
+                "description": (
+                    "Bỏ trống thì suy từ cột mục tiêu; cột hợp cả hai loại thì BẮT BUỘC truyền."
+                ),
+            },
             "search_algorithm": {
                 "type": "string",
-                "enum": ["grid_search", "genetic_algorithm", "bayesian_search"],
+                "enum": ["grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm"],
                 "description": "Mặc định grid_search.",
             },
             "max_time": {
@@ -370,9 +380,20 @@ def _call_tool(api: HAutoMLClient, dispatch: dict, name: str, arguments: dict) -
         return {"ok": False, "error": f"Tool không tồn tại hoặc agent này không được dùng: {name}"}
 
     try:
-        return handler(api, **arguments)
+        result = handler(api, **arguments)
+    except TurnBudgetExceeded:
+        # Không phải lỗi của tool: lượt chat phải dừng hẳn.
+        raise
     except TypeError as error:
         return {"ok": False, "error": f"Tham số không hợp lệ cho {name}: {error}"}
+    except Exception as error:  # noqa: BLE001 - tool không được làm chết cả lượt chat
+        # Chi tiết vào log server; LLM chỉ nhận loại lỗi để tự quyết bước sau.
+        _log.exception("tool %s lỗi", name)
+        return {"ok": False, "error": f"Tool {name} gặp lỗi nội bộ ({type(error).__name__})."}
+
+    if not isinstance(result, dict):
+        return {"ok": False, "error": f"Tool {name} trả kết quả không đúng định dạng."}
+    return result
 
 
 def _assistant_message(message) -> dict:
@@ -567,7 +588,7 @@ def run_agent(
 
     Args:
         prompt: Yêu cầu của người dùng, bằng ngôn ngữ tự nhiên.
-        base_url: URL backend HAutoML. None = HAUTOML_BASE_URL hoặc localhost:9996.
+        base_url: URL backend HAutoML. None = HAUTOML_BASE_URL hoặc localhost:9999.
         provider: openrouter | google | openai | azure. None = LLM_PROVIDER.
         model: Slug model. None = LLM_MODEL hoặc mặc định của provider.
         verbose: In ra từng bước của các agent và tổng token đã dùng.

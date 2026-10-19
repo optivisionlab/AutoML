@@ -127,12 +127,15 @@ thật không bị commit.
 
 | Biến | Ý nghĩa |
 |---|---|
-| `LLM_PROVIDER` | `openrouter` (mặc định), `google`, `openai`, `azure` |
+| `LLM_PROVIDER` | `openrouter` (mặc định), `google`, `openai`, `fpt`, `azure` |
 | `LLM_MODEL` | Slug model, mặc định theo provider |
 | `OPENROUTER_API_KEY` | Key OpenRouter |
 | `GEMINI_API_KEY` | Key Google AI Studio (hoặc `GOOGLE_API_KEY`) |
+| `FPT_API_KEY` | Key FPT AI. Provider `fpt` không có model mặc định - bắt buộc đặt `LLM_MODEL` |
+| `FPT_BASE_URL` | URL API của FPT, mặc định `https://token-api.fpt.ai/v1`. Đặt đúng URL ghi ở trang lấy key nếu khác |
 | `ANTHROPIC_API_KEY` | Key Anthropic |
-| `HAUTOML_BASE_URL` | URL backend, mặc định `http://localhost:9996` |
+| `HAUTOML_BASE_URL` | URL backend v1 (không kèm `/api/v1`), mặc định `http://localhost:9999` |
+| `HAUTOML_API_PREFIX` | Tiền tố API, mặc định `/api/v1` |
 | `AGENT_USER` / `AGENT_PASSWORD` | Chỉ cho chat ở terminal (`agent.chat`, `agent.cli`): tài khoản agent tự đăng nhập. Server cho frontend KHÔNG dùng - luôn dùng token của người đang đăng nhập web |
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
@@ -188,7 +191,9 @@ docker compose up -d --build        # ở thư mục gốc repo
 ```
 
 Service `hautoml_agent` chạy agent server ở cổng 9500, gọi backend qua
-`http://hautoml-toolkit:9996`. Mở http://localhost:3000, đăng nhập, bấm nút
+`HAUTOML_BASE_URL`. Agent dùng API v1 (`/api/v1/...`, chạy bằng
+`src/backend/deploy/docker-compose.yml`, cổng 9999) - image cũ
+`optivisionlab/hautoml:v2.2` ở cổng 9996 KHÔNG còn tương thích. Mở http://localhost:3000, đăng nhập, bấm nút
 chat ở góc phải dưới. Khung chat chỉ hiện khi đã đăng nhập: agent thao tác bằng
 token của chính phiên web đó.
 
@@ -234,18 +239,18 @@ python -m agent.cli --provider google "..."
 |---|---|---|
 | Manager | `ask_prompt_agent` `ask_data_agent` `ask_model_agent` `ask_operation_agent` | Uỷ thác, không gọi API trực tiếp |
 | Prompt Agent | *(không tool)* | Một lượt LLM trả JSON R |
-| Data Agent | `list_my_datasets` | `POST /get-list-data-by-userid`, tự lấy `user_id` |
-| | `get_dataset_info` | `GET /get-data-info` - metadata, **không có tên cột** |
-| | `get_dataset_schema` | `/get-data-info` + `/v2/auto/features` + `/v2/auto/data`. Kết quả tự chuyển cho Model Agent |
-| Model Agent | `list_metrics` | `GET /v2/auto/metrics` |
+| Data Agent | `list_my_datasets` | `GET /datasets` (lật hết các trang) |
+| | `get_dataset_info` | `GET /datasets/{id}` - metadata, **không có tên cột** |
+| | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression. Kết quả tự chuyển cho Model Agent |
+| Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
 | | `list_models` | Đọc `assets/classification.yml` / `regression.yml` qua `scripts/model_catalog.py` |
 | | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. **Không train** |
-| Operation Agent | `start_training` | `POST /v2/auto/jobs/training`, chỉ nhận `config_id`. Tự bật watcher |
+| Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
-| | `list_my_jobs` | `POST /get-list-job-by-userId` |
-| | `get_job_info` | `POST /get-job-info`, có kiểm quyền sở hữu |
-| | `activate_model` | `POST /activate-model`, chỉ job của mình và đã xong |
-| | `predict` | `POST /inference-model`, tối đa 50 mẫu, soát đủ cột trước khi gửi |
+| | `list_my_jobs` | `GET /inference/jobs`, chỉ job của chính người dùng |
+| | `get_job_info` | Tìm trong `GET /inference/jobs` (không có endpoint xem một job) |
+| | `activate_model` | `PUT /inference/models/{id}/activation`, chỉ job của mình và đã xong |
+| | `predict` | `POST /inference/models/{id}/predict`, tối đa 50 mẫu, soát đủ cột trước khi gửi |
 | Data + Model | `read_reference` | Đọc `skills/<tên>/references/*.md` |
 
 ## HTTP API (`agent/server.py`, cổng 9500)
@@ -267,15 +272,16 @@ Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy th�
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request
 khác (kể cả SSE) đứng chờ.
 
-## Lỗi phía backend mà agent đang lách
+## Khác biệt của backend v1 mà agent phải xử lý
 
-Backend được giữ nguyên, nên agent phải tự che chắn:
-
-| Endpoint | Vấn đề | Agent xử lý |
-|---|---|---|
-| `POST /activate-model` | Không kiểm quyền sở hữu - ai đăng nhập cũng bật/tắt được job của người khác | `tools.activate_model` kiểm job thuộc người dùng trước |
-| `POST /get-job-info` | Chỉ kiểm người gọi có *một* job bất kỳ | `tools.get_job_info` kiểm job thuộc người dùng trước |
-| `POST /inference-model` | So `job.get("user_id")` nhưng job v2 lưu chủ ở `user.id` → **luôn 403** | `predict` trả lỗi kèm `note` giải thích. Sửa ở `app.py`: `job.get("user", {}).get("id")` |
+| Backend v1 | Agent xử lý |
+|---|---|
+| Dataset chỉ có `dataType = "table"`, không ghi loại bài toán | `get_dataset_schema` lấy ứng viên target cho cả hai loại; loại bài toán suy từ cột mục tiêu (`tools.infer_problem_type`) hoặc lấy từ lời người dùng |
+| Config train dùng `timeout`, không phải `max_time` | Agent vẫn gọi là `max_time`; đổi tên lúc gửi (`tools._backend_training_config`) |
+| Không có endpoint metric | Đọc `metric_list` trong yml, dự phòng bằng `tools.DEFAULT_METRICS` |
+| Không có endpoint xem một job | Tìm trong danh sách job |
+| Tài khoản admin nhận job của mọi người ở `GET /inference/jobs` | `tools._own_jobs` lọc theo `user.id` |
+| Mọi response bọc trong `{success, data, meta}` | `api_client` tự bóc và tự lật trang |
 
 ## Lỗi thường gặp
 
@@ -351,17 +357,18 @@ Langfuse thì không patch gì cả.
 
 ## `get_dataset_schema` - hai cái bẫy
 
-Tool này gộp ba endpoint vì không có endpoint nào trả đủ một mình: `/get-data-info`
-cho metadata, `/v2/auto/features` cho danh sách cột, `/v2/auto/data` cho preview.
+Tool này gộp bốn lời gọi vì không có endpoint nào trả đủ một mình:
+`/datasets/{id}` cho metadata, `/datasets/{id}/data` cho preview, và
+`/datasets/{id}/features` hai lần (classification, regression) cho danh sách cột.
 
-**Bẫy 1 - `features` không phải danh sách đặc trưng.** `/v2/auto/features` trả
+**Bẫy 1 - `features` không phải danh sách đặc trưng.** `/datasets/{id}/features` trả
 `{tên_cột: bool}` với key là *tất cả* cột, còn value là "cột này làm **biến mục
 tiêu** được không". Với `glass.csv` + classification, kết quả là
 `{"RI": false, ..., "Type": true}` - nghĩa là chỉ `Type` làm target được, chứ
 KHÔNG phải `RI` vô dụng. Đọc sai chỗ này là loại bỏ hết đặc trưng đầu vào. Vì
 thế output của tool có trường `note` nói rõ điều đó cho LLM.
 
-**Bẫy 2 - đừng đổ cả preview vào context.** `/v2/auto/data` trả 50 dòng. Dataset
+**Bẫy 2 - đừng đổ cả preview vào context.** `/datasets/{id}/data` trả 50 dòng. Dataset
 rộng vài trăm cột thì 50 dòng là quá nhiều token. Tool chỉ trả `sample_rows`
 (mặc định 3 dòng) cộng thống kê từng cột (kiểu, số giá trị khác nhau, số giá trị
 thiếu, 5 giá trị mẫu) - đủ để LLM chọn `target`/`list_feature` mà không phình

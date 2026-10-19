@@ -32,7 +32,7 @@ def main() -> None:
         ),
     )
     parser.add_argument("--model", default=None, help="Slug model, mặc định theo provider")
-    parser.add_argument("--base-url", default=None, help="URL backend, mặc định localhost:9996")
+    parser.add_argument("--base-url", default=None, help="URL backend, mặc định localhost:9999")
     parser.add_argument("--quiet", action="store_true", help="Không in các bước gọi tool")
     args = parser.parse_args()
 
