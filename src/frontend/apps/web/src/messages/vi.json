@@ -115,6 +115,7 @@
     "version": "v3.0.0 Open-Source"
   },
   "Sidebar": {
+    "agent": "Agent AI",
     "subtitle": "Nền tảng AutoML mở",
     "dashboard": "Bảng điều khiển",
     "publicDatasets": "Bộ dữ liệu có sẵn",
@@ -1042,6 +1043,317 @@
       "paperTitle": "HAutoML: Open-Source for Automated Machine Learning",
       "paperDesc": "Công trình nghiên cứu được xuất bản trong tuyển tập Springer Nature ISINC 2026 bởi nhóm tác giả OptiVisionLab, Trường CNTT&TT - ĐH Công nghiệp Hà Nội.",
       "contributorsDesc": "Chúng tôi xin chân thành cảm ơn tất cả những người đã đóng góp cho dự án HAutoML tại OptiVisionLab:"
+    }
+  },
+  "Agent": {
+    "title": "Agent",
+    "subtitle": "Mô tả bài toán bằng ngôn ngữ tự nhiên - agent chọn dữ liệu, tạo cấu hình và theo dõi huấn luyện.",
+    "authLoading": "Đang kiểm tra phiên đăng nhập…",
+    "authRequired": "Đăng nhập để dùng Agent.",
+    "sessionExpired": "Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục dùng Agent.",
+    "signIn": "Đăng nhập",
+    "status": {
+      "checking": "Đang kiểm tra kết nối…",
+      "ready": "Sẵn sàng",
+      "degraded": "Agent chưa cấu hình LLM",
+      "offline": "Không kết nối được agent",
+      "reconnecting": "Đang kết nối lại kênh theo dõi job…",
+      "restoring": "Đang khôi phục phiên trước…"
+    },
+    "header": {
+      "newChat": "Cuộc trò chuyện mới",
+      "waitBusy": "Chờ agent xử lý xong",
+      "showPanel": "Hiện panel ngữ cảnh",
+      "hidePanel": "Ẩn panel ngữ cảnh",
+      "openPanel": "Mở panel ngữ cảnh"
+    },
+    "welcome": {
+      "eyebrow": "HAutoML Agent",
+      "heading": "Bạn muốn xây dựng mô hình gì hôm nay?",
+      "subheading": "Mô tả mục tiêu của bạn. Agent sẽ hỗ trợ chọn dữ liệu, cấu hình và theo dõi huấn luyện.",
+      "note": "Tin nhắn chỉ hiển thị trong tab này. Tải lại trang thì agent vẫn nhớ ngữ cảnh và tiếp tục theo dõi job, nhưng tin nhắn cũ không hiện lại."
+    },
+    "suggestions": {
+      "train": {
+        "label": "Huấn luyện mô hình phân loại",
+        "prompt": "Tôi muốn huấn luyện một mô hình phân loại trên dataset của tôi"
+      },
+      "analyze": {
+        "label": "Phân tích dataset của tôi",
+        "prompt": "Tôi có những dataset nào? Phân tích giúp tôi các cột của chúng"
+      },
+      "jobs": {
+        "label": "Xem trạng thái job",
+        "prompt": "Các job huấn luyện gần đây của tôi đang thế nào?"
+      },
+      "metrics": {
+        "label": "Giải thích các metric",
+        "prompt": "Giải thích các metric đánh giá mô hình mà hệ thống hỗ trợ"
+      }
+    },
+    "composer": {
+      "label": "Yêu cầu gửi agent",
+      "placeholderHero": "Ví dụ: Huấn luyện mô hình phân loại cột churn trên dataset khách hàng, tối ưu F1…",
+      "placeholderDocked": "Nhắn cho agent…",
+      "dataset": "Dataset",
+      "datasetHint": "Tải dataset lên (CSV, Excel · tối đa {mb} MB)",
+      "send": "Gửi",
+      "sending": "Agent đang xử lý",
+      "shortcut": "Enter gửi · Shift+Enter xuống dòng",
+      "busyHint": "Chờ agent trả lời xong mới gửi được tin tiếp theo.",
+      "datasetName": "Tên dataset",
+      "problemType": "Loại bài toán",
+      "addToStore": "Thêm vào kho dataset",
+      "uploading": "Đang tải lên…",
+      "processing": "Đang xử lý dữ liệu…",
+      "removeFile": "Bỏ file",
+      "dismiss": "Đóng thông báo",
+      "activeDataset": "Dataset đang dùng: {name}",
+      "clearDataset": "Bỏ chọn dataset"
+    },
+    "problemTypes": {
+      "classification": "Phân loại",
+      "regression": "Hồi quy"
+    },
+    "drop": {
+      "title": "Thả file vào đây",
+      "hint": "CSV, Excel · tối đa {mb} MB"
+    },
+    "file": {
+      "unsupported": "Chỉ nhận file CSV hoặc Excel ({ext}). \"{name}\" không được hỗ trợ.",
+      "empty": "\"{name}\" là file rỗng.",
+      "tooLarge": "\"{name}\" nặng {size}, vượt giới hạn {mb} MB."
+    },
+    "errors": {
+      "busy": "Agent vẫn đang xử lý tin nhắn trước. Chờ xong rồi gửi lại.",
+      "auth": "Phiên đăng nhập đã hết hạn hoặc bạn không có quyền. Tải lại trang để đăng nhập lại.",
+      "server": "Agent gặp lỗi: {detail}",
+      "serverNoDetail": "Agent gặp lỗi.",
+      "disconnected": "Mất kết nối giữa chừng. Agent có thể vẫn đang xử lý trên server - hỏi lại trạng thái trước khi gửi lại yêu cầu huấn luyện.",
+      "network": "Không kết nối được tới agent API.",
+      "budget": "Lượt chat vượt trần token và đã dừng."
+    },
+    "thread": {
+      "agentName": "HAutoML Agent",
+      "you": "Bạn",
+      "copy": "Sao chép",
+      "copied": "Đã sao chép",
+      "retry": "Gửi lại",
+      "scrollToLatest": "Cuộn xuống tin mới nhất",
+      "restored": "Đã nối lại phiên trước. Agent vẫn nhớ ngữ cảnh cuộc trò chuyện, nhưng tin nhắn cũ không hiện lại được.",
+      "restoredJobs": "Các job của phiên này:"
+    },
+    "upload": {
+      "added": "Đã thêm <b>{name}</b> vào kho dataset của bạn",
+      "analyze": "Phân tích dataset này",
+      "train": "Huấn luyện mô hình",
+      "analyzePrompt": "Phân tích dataset \"{name}\" vừa tải lên: có những cột gì, cột nào làm biến mục tiêu được?",
+      "trainPrompt": "Huấn luyện mô hình trên dataset \"{name}\" vừa tải lên"
+    },
+    "activity": {
+      "title": "Hoạt động của agent",
+      "working": "Agent đang làm việc…",
+      "steps": "{count} bước",
+      "hasError": "có lỗi",
+      "needsInput": "cần thêm thông tin",
+      "managerThinking": "Manager đang phân tích yêu cầu…",
+      "nowTool": "{agent}: {tool}…",
+      "nowAgent": "{agent} đang xử lý…",
+      "validation": "Kiểm định cấu hình",
+      "valid": "Hợp lệ",
+      "invalid": "Không hợp lệ",
+      "toolFailed": "(lỗi)",
+      "stepStatus": {
+        "running": "Đang xử lý",
+        "success": "Xong",
+        "failed": "Lỗi",
+        "needs_input": "Cần thêm thông tin"
+      }
+    },
+    "agents": {
+      "manager": "Manager",
+      "prompt-agent": "Prompt Agent",
+      "data-agent": "Data Agent",
+      "model-agent": "Model Agent",
+      "operation-agent": "Operation Agent"
+    },
+    "tools": {
+      "list_my_datasets": "Liệt kê dataset",
+      "get_dataset_info": "Đọc thông tin dataset",
+      "get_dataset_schema": "Đọc schema dataset",
+      "list_models": "Tra danh mục model",
+      "list_metrics": "Tra danh sách metric",
+      "read_reference": "Đọc tài liệu tham khảo",
+      "submit_config": "Tạo cấu hình",
+      "start_training": "Gửi job huấn luyện",
+      "list_my_jobs": "Liệt kê job",
+      "get_job_info": "Đọc thông tin job",
+      "watch_job": "Theo dõi job",
+      "activate_model": "Kích hoạt model",
+      "predict": "Dự đoán"
+    },
+    "config": {
+      "title": "Cấu hình AutoML",
+      "verified": "Đã xác minh",
+      "invalid": "Không hợp lệ",
+      "unchecked": "Chưa kiểm tra",
+      "problemType": "Bài toán",
+      "target": "Target",
+      "metric": "Metric",
+      "featureCount": "Số feature",
+      "algorithm": "Thuật toán tìm",
+      "maxTime": "Thời gian tối đa",
+      "defaultTime": "Mặc định",
+      "details": "Chi tiết cấu hình",
+      "copy": "Sao chép",
+      "copied": "Đã sao chép",
+      "readOnly": "Chỉ đọc: agent gửi job ngay sau khi kiểm định qua, chưa có API sửa rồi chạy lại.",
+      "errorsTitle": "Lỗi cần sửa",
+      "fields": {
+        "general": "Chung",
+        "problem_type": "Loại bài toán",
+        "target": "Target",
+        "features": "Feature",
+        "metric": "Metric",
+        "algorithm": "Thuật toán tìm",
+        "max_time": "Thời gian tối đa"
+      }
+    },
+    "job": {
+      "title": "Job huấn luyện",
+      "label": "Job huấn luyện {id}",
+      "copyId": "Sao chép mã job {id}",
+      "status": {
+        "submitted": "Đã gửi",
+        "running": "Đang huấn luyện",
+        "completed": "Hoàn tất",
+        "failed": "Lỗi",
+        "cancelled": "Đã huỷ",
+        "unknown": "Không rõ"
+      },
+      "dataset": "Dataset",
+      "metric": "Metric",
+      "configId": "Cấu hình",
+      "submittedAt": "Gửi lúc",
+      "finishedAt": "Xong lúc",
+      "updatedAt": "Cập nhật lúc",
+      "sourceStream": "theo dõi trực tiếp",
+      "sourceApi": "lấy từ API",
+      "runningFor": "Đã chạy ~{duration}",
+      "indeterminate": "Đang huấn luyện, backend không báo % tiến độ",
+      "background": "Job chạy nền trên backend; bạn có thể tiếp tục chat. Kết quả sẽ hiện ở cuối hội thoại khi xong.",
+      "noReason": "Backend không trả lý do.",
+      "refresh": "Làm mới",
+      "refreshing": "Đang làm mới…",
+      "refreshFailed": "Không làm mới được: {detail}",
+      "notFound": "Không tìm thấy job này trong danh sách job của bạn.",
+      "details": "Xem chi tiết",
+      "best": "Model tốt nhất",
+      "lowerBetter": "Metric sai số: càng nhỏ càng tốt.",
+      "higherBetter": "Càng lớn càng tốt.",
+      "passed": "Đạt ràng buộc bạn đặt ra",
+      "notPassed": "Chưa đạt ràng buộc bạn đặt ra",
+      "checkLine": "{metric} {op} {value} - thực tế {score}",
+      "noScore": "không có",
+      "modelsScored": "{count} model có điểm.",
+      "leaderboardCaption": "Bảng xếp hạng model theo {metric}",
+      "rank": "Hạng",
+      "model": "Model",
+      "sortBy": "Sắp xếp theo {column}",
+      "explain": "Giải thích kết quả",
+      "whyFailed": "Hỏi agent nguyên nhân",
+      "explainPrompt": "Giải thích kết quả job {id}",
+      "whyFailedPrompt": "Vì sao job {id} không thành công và nên làm gì tiếp?",
+      "deployPage": "Trang triển khai",
+      "activate": "Kích hoạt model",
+      "activating": "Đang kích hoạt…",
+      "activated": "Model đang hoạt động",
+      "activateConfirmTitle": "Kích hoạt model của job {id}?",
+      "activateConfirmDesc": "Model sẽ được triển khai thành API dự đoán của backend. Bạn có thể tắt lại ở trang triển khai.",
+      "cancel": "Huỷ",
+      "confirm": "Kích hoạt",
+      "apiError": {
+        "403": "Bạn không có quyền với job này.",
+        "404": "Không tìm thấy job hoặc model.",
+        "409": "Trạng thái job không cho phép thao tác này (ví dụ job chưa hoàn tất).",
+        "other": "Backend báo lỗi: {detail}"
+      }
+    },
+    "predict": {
+      "title": "Thử dự đoán",
+      "hint": "Nhập giá trị cho từng feature của model. Số sẽ được gửi dạng số, còn lại dạng chữ.",
+      "needActivate": "Kích hoạt model trước để dùng dự đoán.",
+      "noFeatures": "Backend không trả danh sách feature của model này - không dựng được form.",
+      "loading": "Đang tải thông tin model…",
+      "missing": "Còn thiếu giá trị: {fields}",
+      "run": "Dự đoán",
+      "running": "Đang dự đoán…",
+      "result": "Kết quả",
+      "latency": "{ms} ms"
+    },
+    "duration": {
+      "seconds": "{n} giây",
+      "minutes": "{n} phút",
+      "hours": "{h} giờ {m} phút"
+    },
+    "panel": {
+      "label": "Ngữ cảnh",
+      "description": "Dataset, cấu hình, job và kết quả của cuộc trò chuyện",
+      "tabs": {
+        "overview": "Tổng quan",
+        "dataset": "Dataset",
+        "config": "Cấu hình",
+        "job": "Job",
+        "results": "Kết quả"
+      },
+      "empty": {
+        "dataset": "Chưa chọn dataset. Tải file lên, chọn từ kho của bạn, hoặc nhờ agent tìm.",
+        "config": "Chưa có cấu hình. Cấu hình xuất hiện khi Model Agent tạo và kiểm định xong.",
+        "job": "Chưa có job nào trong cuộc trò chuyện này. Các job cũ xem ở <link>Lịch sử huấn luyện</link>.",
+        "results": "Chưa có job nào hoàn tất trong cuộc trò chuyện này."
+      },
+      "overview": {
+        "dataset": "Dataset",
+        "config": "Cấu hình gần nhất",
+        "jobs": "Job",
+        "jobsSummary": "{active} đang chạy · {done} đã xong",
+        "latestResult": "Kết quả gần nhất",
+        "none": "Chưa có"
+      }
+    },
+    "dataset": {
+      "inUse": "Dataset đang dùng",
+      "loading": "Đang tải…",
+      "noPermission": "Không có quyền xem dataset này.",
+      "notFound": "Không tìm thấy dataset.",
+      "readingSchema": "Đang đọc schema…",
+      "noSchema": "Chưa có thông tin schema.",
+      "columns": "Số cột",
+      "rows": "Số dòng",
+      "targets": "Cột target được",
+      "problemType": "Loại bài toán",
+      "currentTarget": "Target hiện chọn",
+      "featureCount": "Số feature",
+      "notSet": "Chưa có",
+      "legend": "Cột tô màu: hệ thống xác nhận làm biến mục tiêu được với loại bài toán đang chọn.",
+      "preview": "Xem 10 dòng dữ liệu mẫu",
+      "previewLoading": "Đang tải dữ liệu mẫu…",
+      "previewError": "Không tải được dữ liệu mẫu.",
+      "previewEmpty": "Dataset không có dòng nào.",
+      "openPage": "Xem schema đầy đủ",
+      "change": "Đổi dataset",
+      "choose": "Chọn dataset",
+      "pickTitle": "Chọn dataset trong kho của bạn",
+      "pickLoading": "Đang tải danh sách…",
+      "pickEmpty": "Kho của bạn chưa có dataset nào.",
+      "pickError": "Không tải được danh sách dataset.",
+      "usePrompt": "Dùng dataset \"{name}\" (id: {id}) cho các yêu cầu tiếp theo."
+    },
+    "announce": {
+      "reply": "Agent đã trả lời.",
+      "jobStarted": "Đã gửi job huấn luyện {id}.",
+      "jobDone": "Job {id} đã hoàn tất.",
+      "jobFailed": "Job {id} không thành công."
     }
   }
 }

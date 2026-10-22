@@ -77,6 +77,20 @@ module.exports = {
     				lavender: 'hsl(var(--automl-lavender) / <alpha-value>)',
     				navy: 'hsl(var(--automl-navy) / <alpha-value>)',
     				'navy-soft': 'hsl(var(--automl-navy-soft) / <alpha-value>)'
+    			},
+    			agent: {
+    				primary: 'hsl(var(--agent-primary) / <alpha-value>)',
+    				'primary-fg': 'hsl(var(--agent-primary-fg) / <alpha-value>)',
+    				'primary-soft': 'hsl(var(--agent-primary-soft) / <alpha-value>)',
+    				'primary-strong': 'hsl(var(--agent-primary-strong) / <alpha-value>)',
+    				success: 'hsl(var(--agent-success) / <alpha-value>)',
+    				'success-soft': 'hsl(var(--agent-success-soft) / <alpha-value>)',
+    				warning: 'hsl(var(--agent-warning) / <alpha-value>)',
+    				'warning-soft': 'hsl(var(--agent-warning-soft) / <alpha-value>)',
+    				error: 'hsl(var(--agent-error) / <alpha-value>)',
+    				'error-soft': 'hsl(var(--agent-error-soft) / <alpha-value>)',
+    				info: 'hsl(var(--agent-info) / <alpha-value>)',
+    				'info-soft': 'hsl(var(--agent-info-soft) / <alpha-value>)'
     			}
     		}
     	}

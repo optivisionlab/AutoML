@@ -10,7 +10,7 @@ Hàm ở đây là thuần tuý: không mạng, không LLM, không đọc file. 
 """
 
 # Tên thuật toán tìm kiếm mà backend chấp nhận.
-# Nguồn: src/shared/constants.py (SearchAlgorithm) của backend v1
+# Nguồn: src/core/constants.py (SearchAlgorithm) của backend v1
 SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
 
 PROBLEM_TYPES = ("classification", "regression")
@@ -67,7 +67,12 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
             f"Cột mục tiêu '{target}' không có trong dataset. "
             f"Các cột có thật: {', '.join(sorted(columns))}"
         )
-    elif targets_allowed and target not in targets_allowed:
+    elif not targets_allowed:
+        errors.append(
+            f"Dataset không có cột nào dùng làm biến mục tiêu được với "
+            f"problem_type '{problem_type}'."
+        )
+    elif target not in targets_allowed:
         errors.append(
             f"Cột '{target}' không dùng làm biến mục tiêu được với "
             f"problem_type '{problem_type}'. Cột hợp lệ: {', '.join(sorted(targets_allowed))}"

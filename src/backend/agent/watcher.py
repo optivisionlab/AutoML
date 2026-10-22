@@ -30,8 +30,8 @@ _BACKEND_DEFAULT_MAX_TIME = 4 * 60 * 60
 _GRACE_SECONDS = 15 * 60
 
 # Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong
-# src/modules/models/service.py của backend.
-LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse", "log_loss"}
+# src/core/constants.py của backend.
+LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse"}
 
 _OPS = {
     ">=": lambda score, value: score >= value,

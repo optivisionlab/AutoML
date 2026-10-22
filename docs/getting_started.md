@@ -57,7 +57,7 @@ docker compose down
 !!! important "Không dùng `localhost` giữa các container"
     Trong Docker, các dịch vụ gọi nhau bằng tên dịch vụ, không phải `localhost`. File compose đã ghi đè sẵn `MONGODB_CONNECT`, `MINIO_ENDPOINT`, `KAFKA_SERVER` và `MQTT_HOSTNAME` cho container backend. Nếu tự thêm biến kết nối, hãy dùng tên dịch vụ trong `docker-compose.yml`.
 
-Frontend được đóng gói riêng, xem `src/frontend/run-fe.sh` và `src/frontend/docker-compose.yaml`.
+Muốn chạy cả frontend (cổng 3000) và agent (cổng 9500) cùng backend, dùng `docker-compose.yaml` ở thư mục gốc repo: `docker compose up -d --build`. Frontend build từ `src/frontend/Dockerfile`.
 
 ---
 

@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { jwtDecode } from "jwt-decode";
 
 const getBaseApiUrl = (): string => {
-  const base = process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+  const base = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
   return base.replace(/\/+$/, "");
 };
 
@@ -18,6 +18,8 @@ const getEndpoint = (path: string): string => {
   }
   return `${base}/${cleanPath}`;
 };
+
+const REFRESH_MARGIN_MS = 90 * 1000;
 
 async function refreshAccessToken(token: any) {
   try {
@@ -47,6 +49,8 @@ async function refreshAccessToken(token: any) {
       access_token: data.access_token,
       refresh_token: data.refresh_token || token.refresh_token,
       accessTokenExpires: decoded.exp * 1000, // ms
+      // Refresh lại thành công thì xoá lỗi của lần trước (nếu có).
+      error: undefined,
     };
   } catch {
     return {
@@ -186,8 +190,9 @@ export const authOptions: NextAuthOptions = {
         token.id = token.sub;
       }
 
-      // Token còn hạn
-      if (token.accessTokenExpires && Date.now() < Math.floor(Number(token.accessTokenExpires))) {
+      // Token còn hạn ít nhất REFRESH_MARGIN_MS: làm mới TRƯỚC khi hết hạn, vì
+      // client chỉ lấy session mới mỗi 60 giây (ClientSessionProvider).
+      if (token.accessTokenExpires && Date.now() < Math.floor(Number(token.accessTokenExpires)) - REFRESH_MARGIN_MS) {
         return token;
       }
 

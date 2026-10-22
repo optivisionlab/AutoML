@@ -239,14 +239,22 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict:
-    config = providers.resolve()
-    return {
+    # Liveness không phụ thuộc cấu hình LLM: upload vẫn dùng được khi thiếu key.
+    result = {
         "status": "ok",
-        "provider": config.name,
-        "model": config.model,
+        "llm_ready": False,
+        "provider": None,
+        "model": None,
         "sessions": len(_sessions),
         "watching_jobs": sum(len(e.session.watcher.active()) for e in _sessions.values()),
     }
+    try:
+        config = providers.resolve()
+    except (RuntimeError, ValueError) as error:
+        result.update(status="degraded", configuration_error=str(error))
+    else:
+        result.update(llm_ready=True, provider=config.name, model=config.model)
+    return result
 
 
 def _run_turn(session_id: str, entry: _Entry, message: str) -> ChatResponse:

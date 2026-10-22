@@ -337,9 +337,6 @@ const Profile = () => {
     return <AppLoading label={t("loading")} />;
   }
 
-  const initials = (user?.username || session?.user?.username || "HA")
-    .slice(0, 2)
-    .toUpperCase();
   const displayName = user?.fullName || user?.username || t("fallbackUser");
   const roleLabel =
     (user?.role || session?.user?.role) === "admin" ? t("roles.admin") : t("roles.user");

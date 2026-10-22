@@ -39,7 +39,7 @@ chép lại:
 
 ```
 agent/
-├── server.py          ← HTTP + SSE cho khung chat trên frontend
+├── server.py          ← HTTP + SSE cho trang /agent trên frontend
 ├── chat.py            ← ChatSession: Agent Manager + lịch sử + phiên đăng nhập
 ├── cli.py             ← chạy một lượt rồi thoát
 │      │
@@ -186,6 +186,12 @@ hoặc [ai.google.dev](https://ai.google.dev/gemini-api/docs/models). Nếu gặ
 
 ### Cách chính - cùng cả hệ thống bằng Docker
 
+Docker Compose cần hỗ trợ `include`. File ở thư mục gốc dùng lại stack API v1
+trong `src/backend/deploy/docker-compose.yml`: backend + training consumer,
+MongoDB, MinIO, Kafka và MQTT. Frontend được build từ workspace `apps/web`.
+Các biến kết nối của stack backend được nạp từ `src/backend/.env` để mật khẩu
+MinIO/MQTT khớp với backend. Gradio là tuỳ chọn (`--profile demo`).
+
 ```bash
 docker compose up -d --build        # ở thư mục gốc repo
 ```
@@ -193,9 +199,16 @@ docker compose up -d --build        # ở thư mục gốc repo
 Service `hautoml_agent` chạy agent server ở cổng 9500, gọi backend qua
 `HAUTOML_BASE_URL`. Agent dùng API v1 (`/api/v1/...`, chạy bằng
 `src/backend/deploy/docker-compose.yml`, cổng 9999) - image cũ
-`optivisionlab/hautoml:v2.2` ở cổng 9996 KHÔNG còn tương thích. Mở http://localhost:3000, đăng nhập, bấm nút
-chat ở góc phải dưới. Khung chat chỉ hiện khi đã đăng nhập: agent thao tác bằng
+`optivisionlab/hautoml:v2.2` ở cổng 9996 KHÔNG còn tương thích. Mở http://localhost:3000, đăng nhập, chọn
+**Agent AI** ở thanh bên trái (trang `/agent`). Trang chỉ dùng được khi đã đăng nhập: agent thao tác bằng
 token của chính phiên web đó.
+
+URL mặc định khi chạy Docker: frontend `http://localhost:3000`, backend
+`http://localhost:9999`, agent `http://localhost:9500`. Khi mở web từ máy khác,
+đặt `NEXT_PUBLIC_BASE_API`, `NEXT_PUBLIC_AGENT_API`, `NEXTAUTH_URL` theo địa chỉ
+mà trình duyệt truy cập được trước khi chạy Compose; đặt `AGENT_CORS_ORIGINS`
+trong `src/backend/.env` tương ứng với website đó. NextAuth trong container dùng `INTERNAL_API_URL` để đăng nhập và làm
+mới token; phiên web tự kiểm tra token mỗi 60 giây để watcher tiếp tục chạy.
 
 Code agent được mount vào container, sửa xong chỉ cần:
 
@@ -257,10 +270,11 @@ python -m agent.cli --provider google "..."
 
 | Endpoint | Dùng cho |
 |---|---|
+| `GET /health` | HTTP 200 khi server đang chạy; `llm_ready` cho biết cấu hình LLM đã đủ. Thiếu cấu hình trả `status: degraded` + `configuration_error`, không làm hỏng upload. Không gọi LLM để kiểm tra key/quota |
 | `POST /agent/chat` | Một lượt chat, trả JSON `{reply, agents, tools, watching, ...}` |
 | `POST /agent/chat/stream` | Như trên nhưng SSE: sự kiện tiến độ (`agent_start`, `tool_call`, `config_checked`, `job_started`...) rồi `reply` |
 | `POST /agent/events` | SSE sự kiện nền (`job_status`, `job_done`, `job_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới |
-| `POST /agent/upload` | Tải dataset từ khung chat (trang 4 của sơ đồ) |
+| `POST /agent/upload` | Tải dataset từ trang /agent (trang 4 của sơ đồ) |
 | `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi |
 
 SSE dùng POST thay vì `EventSource` để token nằm trong body, không lên URL.
@@ -271,6 +285,23 @@ mới được gán vào client mà watcher đang dùng.
 Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy thẳng trong
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request
 khác (kể cả SSE) đứng chờ.
+
+## Kiểm tra hồi quy
+
+Bộ test agent chạy độc lập, không cần cài thư viện ML của backend, không gọi
+LLM thật và không tạo job train:
+
+```bash
+cd src/backend
+python -m pip install -r agent/tests/requirements.txt
+python -m pytest -c agent/tests/pytest.ini agent/tests
+```
+
+Các ca kiểm tra gồm đăng ký tool/skill, Manager uỷ thác cho Data Agent, payload
+API v1, quyền sở hữu job, chặn target không hợp lệ (kể cả khi không có target
+nào hợp lệ), chặn target lọt vào feature, lưu câu trả lời khi hết số bước và
+HTTP health/auth. Kiểm tra trọn luồng train/predict vẫn cần backend, consumer,
+storage và tài khoản thật.
 
 ## Khác biệt của backend v1 mà agent phải xử lý
 

@@ -115,6 +115,7 @@
     "version": "v3.0.0 Open-Source"
   },
   "Sidebar": {
+    "agent": "AI Agent",
     "subtitle": "Open AutoML platform",
     "dashboard": "Dashboard",
     "publicDatasets": "Public datasets",
@@ -1042,6 +1043,317 @@
       "paperTitle": "HAutoML: Open-Source for Automated Machine Learning",
       "paperDesc": "Research published in Springer Nature ISINC 2026 by OptiVisionLab, School of ICT - Hanoi University of Industry.",
       "contributorsDesc": "We sincerely thank all contributors to the HAutoML project at OptiVisionLab:"
+    }
+  },
+  "Agent": {
+    "title": "Agent",
+    "subtitle": "Describe your problem in plain language - the agent picks data, builds the config and tracks training.",
+    "authLoading": "Checking your session…",
+    "authRequired": "Sign in to use the Agent.",
+    "sessionExpired": "Your session has expired. Sign in again to keep using the Agent.",
+    "signIn": "Sign in",
+    "status": {
+      "checking": "Checking connection…",
+      "ready": "Ready",
+      "degraded": "Agent has no LLM configured",
+      "offline": "Cannot reach the agent",
+      "reconnecting": "Reconnecting job updates…",
+      "restoring": "Restoring previous session…"
+    },
+    "header": {
+      "newChat": "New conversation",
+      "waitBusy": "Wait for the agent to finish",
+      "showPanel": "Show context panel",
+      "hidePanel": "Hide context panel",
+      "openPanel": "Open context panel"
+    },
+    "welcome": {
+      "eyebrow": "HAutoML Agent",
+      "heading": "What model do you want to build today?",
+      "subheading": "Describe your goal. The agent helps you choose data, configure AutoML and track training.",
+      "note": "Messages only live in this tab. After a reload the agent keeps its context and keeps tracking jobs, but earlier messages are not shown again."
+    },
+    "suggestions": {
+      "train": {
+        "label": "Train a classification model",
+        "prompt": "I want to train a classification model on my dataset"
+      },
+      "analyze": {
+        "label": "Analyze my datasets",
+        "prompt": "Which datasets do I have? Help me analyze their columns"
+      },
+      "jobs": {
+        "label": "Check job status",
+        "prompt": "How are my recent training jobs doing?"
+      },
+      "metrics": {
+        "label": "Explain the metrics",
+        "prompt": "Explain the evaluation metrics the system supports"
+      }
+    },
+    "composer": {
+      "label": "Message to the agent",
+      "placeholderHero": "e.g. Train a classifier for the churn column of my customer dataset, optimize F1…",
+      "placeholderDocked": "Message the agent…",
+      "dataset": "Dataset",
+      "datasetHint": "Upload a dataset (CSV, Excel · up to {mb} MB)",
+      "send": "Send",
+      "sending": "Agent is working",
+      "shortcut": "Enter to send · Shift+Enter for a new line",
+      "busyHint": "Wait for the agent's reply before sending the next message.",
+      "datasetName": "Dataset name",
+      "problemType": "Problem type",
+      "addToStore": "Add to my datasets",
+      "uploading": "Uploading…",
+      "processing": "Processing data…",
+      "removeFile": "Remove file",
+      "dismiss": "Dismiss",
+      "activeDataset": "Using dataset: {name}",
+      "clearDataset": "Clear dataset"
+    },
+    "problemTypes": {
+      "classification": "Classification",
+      "regression": "Regression"
+    },
+    "drop": {
+      "title": "Drop the file here",
+      "hint": "CSV, Excel · up to {mb} MB"
+    },
+    "file": {
+      "unsupported": "Only CSV or Excel files ({ext}) are accepted. \"{name}\" is not supported.",
+      "empty": "\"{name}\" is empty.",
+      "tooLarge": "\"{name}\" is {size}, over the {mb} MB limit."
+    },
+    "errors": {
+      "busy": "The agent is still handling your previous message. Wait until it finishes.",
+      "auth": "Your session has expired or you lack permission. Reload the page to sign in again.",
+      "server": "The agent hit an error: {detail}",
+      "serverNoDetail": "The agent hit an error.",
+      "disconnected": "Connection lost midway. The agent may still be working on the server - ask for the status before resending a training request.",
+      "network": "Cannot reach the agent API.",
+      "budget": "This turn exceeded its token budget and was stopped."
+    },
+    "thread": {
+      "agentName": "HAutoML Agent",
+      "you": "You",
+      "copy": "Copy",
+      "copied": "Copied",
+      "retry": "Resend",
+      "scrollToLatest": "Scroll to latest message",
+      "restored": "Reconnected to your previous session. The agent still remembers the conversation, but earlier messages cannot be shown again.",
+      "restoredJobs": "Jobs in this session:"
+    },
+    "upload": {
+      "added": "Added <b>{name}</b> to your datasets",
+      "analyze": "Analyze this dataset",
+      "train": "Train a model",
+      "analyzePrompt": "Analyze the dataset \"{name}\" I just uploaded: what columns does it have and which can be the target?",
+      "trainPrompt": "Train a model on the dataset \"{name}\" I just uploaded"
+    },
+    "activity": {
+      "title": "Agent activity",
+      "working": "The agent is working…",
+      "steps": "{count, plural, one {# step} other {# steps}}",
+      "hasError": "has errors",
+      "needsInput": "needs more information",
+      "managerThinking": "The manager is reading your request…",
+      "nowTool": "{agent}: {tool}…",
+      "nowAgent": "{agent} is working…",
+      "validation": "Config validation",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "toolFailed": "(failed)",
+      "stepStatus": {
+        "running": "Running",
+        "success": "Done",
+        "failed": "Failed",
+        "needs_input": "Needs more information"
+      }
+    },
+    "agents": {
+      "manager": "Manager",
+      "prompt-agent": "Prompt Agent",
+      "data-agent": "Data Agent",
+      "model-agent": "Model Agent",
+      "operation-agent": "Operation Agent"
+    },
+    "tools": {
+      "list_my_datasets": "List datasets",
+      "get_dataset_info": "Read dataset info",
+      "get_dataset_schema": "Read dataset schema",
+      "list_models": "Look up model catalog",
+      "list_metrics": "Look up metrics",
+      "read_reference": "Read reference",
+      "submit_config": "Create config",
+      "start_training": "Submit training job",
+      "list_my_jobs": "List jobs",
+      "get_job_info": "Read job info",
+      "watch_job": "Watch job",
+      "activate_model": "Activate model",
+      "predict": "Predict"
+    },
+    "config": {
+      "title": "AutoML configuration",
+      "verified": "Verified",
+      "invalid": "Invalid",
+      "unchecked": "Not checked",
+      "problemType": "Problem",
+      "target": "Target",
+      "metric": "Metric",
+      "featureCount": "Features",
+      "algorithm": "Search algorithm",
+      "maxTime": "Max time",
+      "defaultTime": "Default",
+      "details": "Config details",
+      "copy": "Copy",
+      "copied": "Copied",
+      "readOnly": "Read-only: the agent submits the job right after validation; there is no edit-and-rerun API yet.",
+      "errorsTitle": "Errors to fix",
+      "fields": {
+        "general": "General",
+        "problem_type": "Problem type",
+        "target": "Target",
+        "features": "Features",
+        "metric": "Metric",
+        "algorithm": "Search algorithm",
+        "max_time": "Max time"
+      }
+    },
+    "job": {
+      "title": "Training job",
+      "label": "Training job {id}",
+      "copyId": "Copy job ID {id}",
+      "status": {
+        "submitted": "Submitted",
+        "running": "Training",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "unknown": "Unknown"
+      },
+      "dataset": "Dataset",
+      "metric": "Metric",
+      "configId": "Config",
+      "submittedAt": "Submitted",
+      "finishedAt": "Finished",
+      "updatedAt": "Updated",
+      "sourceStream": "live",
+      "sourceApi": "from API",
+      "runningFor": "Running for ~{duration}",
+      "indeterminate": "Training; the backend does not report progress percentage",
+      "background": "The job runs in the background; you can keep chatting. Results appear at the end of the conversation.",
+      "noReason": "The backend gave no reason.",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "refreshFailed": "Could not refresh: {detail}",
+      "notFound": "This job is not in your job list.",
+      "details": "View details",
+      "best": "Best model",
+      "lowerBetter": "Error metric: lower is better.",
+      "higherBetter": "Higher is better.",
+      "passed": "Meets your constraints",
+      "notPassed": "Does not meet your constraints",
+      "checkLine": "{metric} {op} {value} - actual {score}",
+      "noScore": "none",
+      "modelsScored": "{count, plural, one {# model scored.} other {# models scored.}}",
+      "leaderboardCaption": "Model leaderboard by {metric}",
+      "rank": "Rank",
+      "model": "Model",
+      "sortBy": "Sort by {column}",
+      "explain": "Explain results",
+      "whyFailed": "Ask the agent why",
+      "explainPrompt": "Explain the results of job {id}",
+      "whyFailedPrompt": "Why did job {id} not succeed and what should I do next?",
+      "deployPage": "Deployment page",
+      "activate": "Activate model",
+      "activating": "Activating…",
+      "activated": "Model is active",
+      "activateConfirmTitle": "Activate the model of job {id}?",
+      "activateConfirmDesc": "The model will be deployed as a prediction API on the backend. You can turn it off on the deployment page.",
+      "cancel": "Cancel",
+      "confirm": "Activate",
+      "apiError": {
+        "403": "You do not have permission for this job.",
+        "404": "Job or model not found.",
+        "409": "The job's state does not allow this (e.g. it has not completed).",
+        "other": "The backend returned an error: {detail}"
+      }
+    },
+    "predict": {
+      "title": "Try a prediction",
+      "hint": "Enter a value for each model feature. Numbers are sent as numbers, everything else as text.",
+      "needActivate": "Activate the model first to make predictions.",
+      "noFeatures": "The backend returned no feature list for this model, so no form can be built.",
+      "loading": "Loading model info…",
+      "missing": "Missing values: {fields}",
+      "run": "Predict",
+      "running": "Predicting…",
+      "result": "Result",
+      "latency": "{ms} ms"
+    },
+    "duration": {
+      "seconds": "{n} s",
+      "minutes": "{n} min",
+      "hours": "{h} h {m} min"
+    },
+    "panel": {
+      "label": "Context",
+      "description": "Dataset, config, jobs and results of this conversation",
+      "tabs": {
+        "overview": "Overview",
+        "dataset": "Dataset",
+        "config": "Config",
+        "job": "Jobs",
+        "results": "Results"
+      },
+      "empty": {
+        "dataset": "No dataset selected. Upload a file, pick one from your datasets, or ask the agent to find one.",
+        "config": "No config yet. It appears once the Model Agent has built and validated one.",
+        "job": "No jobs in this conversation yet. See older jobs in <link>Training history</link>.",
+        "results": "No job has completed in this conversation yet."
+      },
+      "overview": {
+        "dataset": "Dataset",
+        "config": "Latest config",
+        "jobs": "Jobs",
+        "jobsSummary": "{active} running · {done} finished",
+        "latestResult": "Latest result",
+        "none": "None yet"
+      }
+    },
+    "dataset": {
+      "inUse": "Dataset in use",
+      "loading": "Loading…",
+      "noPermission": "You do not have permission to view this dataset.",
+      "notFound": "Dataset not found.",
+      "readingSchema": "Reading schema…",
+      "noSchema": "No schema information yet.",
+      "columns": "Columns",
+      "rows": "Rows",
+      "targets": "Target-capable columns",
+      "problemType": "Problem type",
+      "currentTarget": "Current target",
+      "featureCount": "Features",
+      "notSet": "Not set",
+      "legend": "Highlighted columns are confirmed by the system as valid targets for the selected problem type.",
+      "preview": "Preview 10 rows",
+      "previewLoading": "Loading preview…",
+      "previewError": "Could not load the preview.",
+      "previewEmpty": "The dataset has no rows.",
+      "openPage": "Open full schema",
+      "change": "Change dataset",
+      "choose": "Choose dataset",
+      "pickTitle": "Pick one of your datasets",
+      "pickLoading": "Loading list…",
+      "pickEmpty": "You have no datasets yet.",
+      "pickError": "Could not load your datasets.",
+      "usePrompt": "Use the dataset \"{name}\" (id: {id}) for my next requests."
+    },
+    "announce": {
+      "reply": "The agent replied.",
+      "jobStarted": "Training job {id} submitted.",
+      "jobDone": "Job {id} completed.",
+      "jobFailed": "Job {id} did not succeed."
     }
   }
 }

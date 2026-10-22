@@ -46,11 +46,11 @@ Tài liệu chi tiết về dự án, bao gồm kiến trúc, hướng dẫn cà
 
 Cách được khuyến nghị nhất để chạy toàn bộ hệ thống là sử dụng Docker và Docker Compose.
 
-**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/)
+**Yêu cầu**: [Docker](https://www.docker.com/get-started) và [Docker Compose](https://docs.docker.com/compose/install/) có hỗ trợ `include` (`docker compose`).
 
 ---
 
-**Xác thực tài khoản**:  docker exec mongodb mongosh -u root -p password123 --authenticationDatabase admin --quiet \
+**Xác thực tài khoản trong môi trường phát triển**:  docker exec mongodb mongosh --quiet \
   --eval 'db.getSiblingDB("AutoML").tbl_User.updateOne({email:"example@gmail.com"},{$set:{is_verified:true}})'
 ;
 
@@ -64,8 +64,8 @@ cd AutoML
 
 **2. Cấu hình môi trường**
 ```bash
-cp src/backend/temp.env src/backend/.env
-cp src/frontend/temp.env src/frontend/.env
+cp src/backend/.env.example src/backend/.env
+cp src/frontend/apps/web/temp.env src/frontend/apps/web/.env.local
 ```
 
 **3. Khởi chạy các thành phần hệ thống**
@@ -75,8 +75,8 @@ cp src/frontend/temp.env src/frontend/.env
 ```bash
 pip install -r requirements.txt # Cài đặt các thư viện cần thiết
 
-python app.py # Khởi chạỵ API server
-python -m cluster.worker # Kích hoạt worker xử lý tác vụ
+python -m src.main # Khởi chạy API v1, mặc định cổng 9999
+python -m src.kafka_consumer # Chạy ở terminal khác để nhận job huấn luyện
 ```
 
 > **Frontend**
@@ -89,7 +89,8 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 
 **4. Địa chỉ truy cập**
 - Giao diện người dùng: http://localhost:3000
-- Backend API: http://localhost:8000
+- Backend API: http://localhost:9999/api/v1
+- Agent API (khi chạy Docker): http://localhost:9500
 
 
 ---
@@ -99,17 +100,19 @@ npm run dev # Chạy ứng dụng ở chế độ phát triển
 > 
 > Tại thư mục: AutoML/
 ```bash
-# Nạp image MinIO từ file nén có sẵn trong repo (do MinIO đã ngừng phát hành public image trên Docker Hub / Quay.io)
-docker load -i minio.tar.gz
-
-# Khởi chạy hệ thống (lưu ý thông tin tài khoản mật khẩu MinIO đồng nhất giữa .env và docker-compose.yaml)
-docker-compose up -d --build
+# Tạo src/backend/.env theo bước cấu hình ở trên, điền cấu hình LLM nếu dùng agent.
+# Build backend API v1, training consumer, frontend apps/web và agent từ source.
+docker compose up -d --build
 ```
 
 > **Để dừng hệ thống**
 ```bash
-docker-compose down
+docker compose down
 ```
+
+Agent là trang riêng: đăng nhập rồi chọn **Agent AI** ở thanh bên trái (`/agent`). Hướng dẫn cấu hình LLM và
+kiểm tra agent: [agent/README.md](src/backend/agent/README.md).
+Gradio demo là tuỳ chọn: `docker compose --profile demo up -d --build toolkit`.
 
 Chi tiết đầy đủ xem tại [Hướng dẫn bắt đầu](https://optivisionlab.github.io/AutoML/docs/getting_started/) trong tài liệu.
 

@@ -2,7 +2,7 @@
 
 Chỉ đọc khi cần tư vấn sâu cho người dùng về việc chọn thuật toán.
 
-Nguồn: `src/modules/hpo/` và `SearchAlgorithm` trong `src/shared/constants.py`
+Nguồn: `src/modules/hpo/` và `SearchAlgorithm` trong `src/core/constants.py`
 của backend. Không gian tham số là các lưới khai trong `assets/classification.yml`
 / `regression.yml`; mọi thuật toán đều chỉ chọn TRONG lưới đó.
 

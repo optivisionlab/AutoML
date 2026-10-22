@@ -66,8 +66,34 @@
     --chart-4: 262 83% 66%;
     --chart-5: 192 81.8% 45%;
     --radius: 0.875rem;
+
+    /* Agent: màu ngữ nghĩa cho trạng thái (trang /agent). Trung tính dùng --automl-*. */
+    --agent-primary: 247 89% 66%; /* #6D5EF5 */
+    --agent-primary-fg: 0 0% 100%;
+    --agent-primary-soft: 247 100% 97%;
+    --agent-primary-strong: 247 60% 48%;
+    --agent-success: 142 72% 29%; /* #15803D */
+    --agent-success-soft: 142 76% 95%;
+    --agent-warning: 26 90% 37%; /* #B45309 */
+    --agent-warning-soft: 48 100% 95%;
+    --agent-error: 0 73% 42%; /* #B91C1C */
+    --agent-error-soft: 0 86% 97%;
+    --agent-info: 201 90% 32%;
+    --agent-info-soft: 204 100% 96%;
   }
   .dark {
+    --agent-primary: 247 100% 80%; /* #A59BFF */
+    --agent-primary-fg: 247 50% 12%;
+    --agent-primary-soft: 247 35% 20%;
+    --agent-primary-strong: 247 100% 86%;
+    --agent-success: 142 69% 58%; /* #4ADE80 */
+    --agent-success-soft: 142 40% 13%;
+    --agent-warning: 45 96% 56%; /* #FBBF24 */
+    --agent-warning-soft: 38 50% 13%;
+    --agent-error: 0 91% 71%; /* #F87171 */
+    --agent-error-soft: 0 45% 15%;
+    --agent-info: 199 89% 66%;
+    --agent-info-soft: 200 45% 14%;
     --automl-canvas: 228 25% 7.8%;
     --automl-surface: 221 27.5% 15.7%;
     --automl-surface-muted: 222 24% 20%;
@@ -2472,3 +2498,16 @@
   background-color: rgba(255, 255, 255, 0.3);
 }
 
+
+/* Agent: thanh "đang chạy" không có % (backend không báo tiến độ huấn luyện). */
+@keyframes agent-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+@layer components {
+  /* Focus ring rõ ràng cho mọi control của trang Agent. */
+  .agent-focus {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-agent-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-automl-surface;
+  }
+}

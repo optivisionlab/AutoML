@@ -251,6 +251,7 @@ class ChatSession:
                         f"(Tôi đã chạy quá {MAX_STEPS} bước mà chưa xong. "
                         "Thử hỏi lại theo cách cụ thể hơn.)"
                     )
+                    self.messages.append({"role": "assistant", "content": answer})
                 tracing.end(observation, output=answer)
         except TurnBudgetExceeded as error:
             # Lịch sử vẫn hợp lệ (dừng ở đầu vòng lặp), chỉ cần thêm câu trả lời.

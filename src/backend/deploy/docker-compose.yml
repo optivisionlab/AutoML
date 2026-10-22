@@ -3,6 +3,7 @@ services:
   # 1. HAutoML Toolkit Service (Standalone Demo UI)
   # ==========================================
   toolkit:
+    profiles: ["demo"]
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -33,15 +34,21 @@ services:
     env_file:
       - ../.env
     environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=9999
       - MONGODB_CONNECT=mongodb://mongodb:27017
       - MINIO_ENDPOINT=minio:9000
       - KAFKA_SERVER=kafka:9092
       - MQTT_HOSTNAME=mqtt_broker
     depends_on:
-      - mongo
-      - minio
-      - kafka
-      - mqtt
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
     networks:
       - hautoml_net
 
@@ -64,9 +71,14 @@ services:
       - KAFKA_SERVER=kafka:9092
       - MQTT_HOSTNAME=mqtt_broker
     depends_on:
-      - kafka
-      - mongo
-      - minio
+      kafka:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      mqtt:
+        condition: service_started
     networks:
       - hautoml_net
 
@@ -82,7 +94,7 @@ services:
       - "1884:1884"
     environment:
       - MQTT_USERNAME=${MQTT_USERNAME:-admin}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-password123}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-Admin@123}
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mqtt_data:/mosquitto/data
@@ -101,7 +113,10 @@ services:
   # 5. MinIO Object Storage (S3-compatible)
   # ==========================================
   minio:
-    image: quay.io/minio/minio:latest
+    # MinIO đã ngừng phát hành image công khai (quay.io trả 401, Docker Hub đã
+    # gỡ minio/minio). pgsty/minio build từ mã nguồn MinIO gốc, cùng entrypoint
+    # và biến MINIO_ROOT_* nên dùng thay trực tiếp. Ghim phiên bản cho ổn định.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     pull_policy: if_not_present
     container_name: minio
     restart: unless-stopped
@@ -110,7 +125,7 @@ services:
       - "9001:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-password123456}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-password123}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -143,6 +158,12 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 15s
+      start_period: 20s
+      retries: 10
     networks:
       - hautoml_net
 
@@ -157,6 +178,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
     networks:
       - hautoml_net
 

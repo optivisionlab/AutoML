@@ -198,7 +198,7 @@ def infer_problem_type(schema: dict, target: str) -> str | None:
     return kinds[0] if len(kinds) == 1 else None
 
 
-# Trạng thái job của backend (src/shared/constants.py: JobStatus).
+# Trạng thái job của backend (src/core/constants.py: JobStatus).
 JOB_RUNNING, JOB_SUCCESS, JOB_FAILED, JOB_CANCELLED = 0, 1, -1, -2
 JOB_FINISHED = (JOB_SUCCESS, JOB_FAILED, JOB_CANCELLED)
 
