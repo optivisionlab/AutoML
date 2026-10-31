@@ -210,3 +210,6 @@ next-env.d.ts
 .gradio
 *.swp
 src/frontend/components.json
+
+# benchmark: dữ liệu chia, cấu hình, log lượt chạy và báo cáo (sinh ra khi chạy)
+benchmark_artifacts/

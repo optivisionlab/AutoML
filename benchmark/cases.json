@@ -1,0 +1,1129 @@
+{
+ "version": "hautoml-bench-v4",
+ "train_suffix": "Dùng random_search, max_time 300 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.",
+ "followup": "Hãy kiểm tra kết quả job vừa tạo, báo trạng thái và các metric thực tế, đối chiếu mọi ràng buộc tôi đã nêu. Nếu train thành công, kích hoạt mô hình và gọi predict cho mẫu sau: <ROWS>. Không tạo job mới.",
+ "cases": [
+  {
+   "id": "A01",
+   "group": "A",
+   "title": "Liệt kê dataset",
+   "flow": "chat",
+   "turns": [
+    "Liệt kê tất cả dataset hiện có của tôi, kèm ID và tên. Chỉ tra cứu, không huấn luyện."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "tools_required": [
+     "list_my_datasets"
+    ],
+    "answer_lists_all_datasets": true,
+    "manual": "Mỗi ID đi đúng với tên dataset của nó; không bịa dataset."
+   }
+  },
+  {
+   "id": "A02",
+   "group": "A",
+   "title": "Cột và target của Glass",
+   "flow": "chat",
+   "turns": [
+    "Dataset <GLASS_ID> có những cột nào? Cột nào có thể làm target classification? Chỉ phân tích."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "reads_schema": "<GLASS_ID>",
+    "answer_contains_all": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe",
+     "Type"
+    ],
+    "manual": "Đối chiếu target với schema backend; không hiểu cờ target thành cờ loại bỏ feature."
+   }
+  },
+  {
+   "id": "A03",
+   "group": "A",
+   "title": "Metric hỗ trợ",
+   "flow": "chat",
+   "turns": [
+    "Hệ thống hỗ trợ những metric nào cho classification và regression? Liệt kê riêng từng loại."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "tools_required": [
+     "list_metrics"
+    ],
+    "answer_contains_all": [
+     "accuracy",
+     "balanced_accuracy",
+     "precision_macro",
+     "precision_weighted",
+     "recall_macro",
+     "recall_weighted",
+     "f1_macro",
+     "f1_weighted",
+     "mse",
+     "mae",
+     "mape",
+     "r2"
+    ],
+    "manual": "Không tuyên bố RMSLE/AUC đã có."
+   }
+  },
+  {
+   "id": "A04",
+   "group": "A",
+   "title": "Dataset không tồn tại",
+   "flow": "chat",
+   "turns": [
+    "Xem schema dataset <MISSING_ID>. Chỉ tra cứu đúng ID này, không thay bằng dataset khác."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "only_dataset": "<MISSING_ID>",
+    "manual": "Nêu không tìm thấy/không truy cập được, không dựng schema giả."
+   }
+  },
+  {
+   "id": "B01",
+   "group": "B",
+   "title": "Config hợp lệ Glass",
+   "flow": "chat",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "turns": [
+    "Tạo cấu hình cho <GLASS_ID>, classification, target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, f1_macro, random_search, max_time 300 giây. Kiểm tra cấu hình nhưng chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  },
+  {
+   "id": "B02",
+   "group": "B",
+   "title": "Config hợp lệ Concrete",
+   "flow": "chat",
+   "task": {
+    "dataset": "concrete",
+    "dataset_id": "<CONCRETE_ID>",
+    "problem_type": "regression",
+    "target": "strength",
+    "features": [
+     "cement",
+     "blast_furnace_slag",
+     "fly_ash",
+     "water",
+     "superplasticizer",
+     "coarse_aggregate",
+     "fine_aggregate",
+     "age"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "turns": [
+    "Tạo cấu hình cho <CONCRETE_ID>, regression, target strength, feature cement,blast_furnace_slag,fly_ash,water,superplasticizer,coarse_aggregate,fine_aggregate,age, mae, random_search, max_time 300 giây. Kiểm tra cấu hình nhưng chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  },
+  {
+   "id": "B03",
+   "group": "B",
+   "title": "Target không tồn tại",
+   "flow": "chat",
+   "turns": [
+    "Tạo cấu hình classification cho <GLASS_ID> với target NotAColumn, feature RI,Na, metric f1_macro, random_search, max_time 300. Không đổi target và chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "none",
+    "manual": "Phải nêu đúng lỗi đầu vào và lý do không tạo cấu hình. Chỉ im lặng, chào hỏi hoặc từ chối chung chung không được PASS. Không bắt buộc gây lỗi tool."
+   }
+  },
+  {
+   "id": "B04",
+   "group": "B",
+   "title": "Target lọt vào feature",
+   "flow": "chat",
+   "turns": [
+    "Tạo cấu hình classification cho <GLASS_ID>, target Type; bắt buộc feature gồm RI,Na,Type; metric f1_macro, random_search, max_time 300. Không tự sửa danh sách feature và chưa train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "none",
+    "manual": "Phải nêu đúng lỗi đầu vào và lý do không tạo cấu hình. Chỉ im lặng, chào hỏi hoặc từ chối chung chung không được PASS. Không bắt buộc gây lỗi tool."
+   }
+  },
+  {
+   "id": "B05",
+   "group": "B",
+   "title": "Metric sai loại bài toán",
+   "flow": "chat",
+   "turns": [
+    "Tạo cấu hình regression cho <CONCRETE_ID>, target strength, feature cement,blast_furnace_slag,fly_ash,water,superplasticizer,coarse_aggregate,fine_aggregate,age, metric accuracy, random_search, max_time 300. Không tự đổi metric và chưa train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "none",
+    "manual": "Phải nêu đúng lỗi đầu vào và lý do không tạo cấu hình. Chỉ im lặng, chào hỏi hoặc từ chối chung chung không được PASS. Không bắt buộc gây lỗi tool."
+   }
+  },
+  {
+   "id": "B06",
+   "group": "B",
+   "title": "max_time dưới 60 giây",
+   "flow": "chat",
+   "turns": [
+    "Tạo cấu hình classification cho <GLASS_ID>, target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, f1_macro, random_search, max_time 5 giây. Không tự tăng thời gian và chưa train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "none",
+    "manual": "Phải nêu đúng lỗi đầu vào và lý do không tạo cấu hình. Chỉ im lặng, chào hỏi hoặc từ chối chung chung không được PASS. Không bắt buộc gây lỗi tool."
+   }
+  },
+  {
+   "id": "C01",
+   "group": "C",
+   "title": "Glass, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <GLASS_ID> để classification target Type với feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, tối ưu f1_macro."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C02",
+   "group": "C",
+   "title": "Shopping, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "shopping",
+    "dataset_id": "<SHOP_ID>",
+    "problem_type": "classification",
+    "target": "Revenue",
+    "features": [
+     "Administrative",
+     "Administrative_Duration",
+     "Informational",
+     "Informational_Duration",
+     "ProductRelated",
+     "ProductRelated_Duration",
+     "BounceRates",
+     "ExitRates",
+     "PageValues",
+     "SpecialDay"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <SHOP_ID> để classification target Revenue với feature Administrative,Administrative_Duration,Informational,Informational_Duration,ProductRelated,ProductRelated_Duration,BounceRates,ExitRates,PageValues,SpecialDay, tối ưu f1_macro."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C03",
+   "group": "C",
+   "title": "Concrete, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "concrete",
+    "dataset_id": "<CONCRETE_ID>",
+    "problem_type": "regression",
+    "target": "strength",
+    "features": [
+     "cement",
+     "blast_furnace_slag",
+     "fly_ash",
+     "water",
+     "superplasticizer",
+     "coarse_aggregate",
+     "fine_aggregate",
+     "age"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <CONCRETE_ID> để regression target strength với feature cement,blast_furnace_slag,fly_ash,water,superplasticizer,coarse_aggregate,fine_aggregate,age, tối ưu mae."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C04",
+   "group": "C",
+   "title": "Biến thể diễn đạt của C01",
+   "flow": "train",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Tôi muốn dự đoán loại kính Type từ RI,Na,Mg,Al,Si,K,Ca,Ba,Fe của <GLASS_ID>. Đây là bài toán phân loại. Hãy dùng f1_macro để chọn mô hình."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C05",
+   "group": "C",
+   "title": "Glass, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "f1_macro",
+     "op": ">=",
+     "value": 0.5
+    }
+   ],
+   "turns": [
+    "Dùng <GLASS_ID>, classification target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, tối ưu f1_macro. Yêu cầu f1_macro >= 0.50."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C06",
+   "group": "C",
+   "title": "Shopping, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "shopping",
+    "dataset_id": "<SHOP_ID>",
+    "problem_type": "classification",
+    "target": "Revenue",
+    "features": [
+     "Administrative",
+     "Administrative_Duration",
+     "Informational",
+     "Informational_Duration",
+     "ProductRelated",
+     "ProductRelated_Duration",
+     "BounceRates",
+     "ExitRates",
+     "PageValues",
+     "SpecialDay"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "f1_macro",
+     "op": ">=",
+     "value": 0.6
+    }
+   ],
+   "turns": [
+    "Dùng <SHOP_ID>, classification target Revenue, feature Administrative,Administrative_Duration,Informational,Informational_Duration,ProductRelated,ProductRelated_Duration,BounceRates,ExitRates,PageValues,SpecialDay, tối ưu f1_macro. Yêu cầu f1_macro >= 0.60."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C07",
+   "group": "C",
+   "title": "Concrete, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "concrete",
+    "dataset_id": "<CONCRETE_ID>",
+    "problem_type": "regression",
+    "target": "strength",
+    "features": [
+     "cement",
+     "blast_furnace_slag",
+     "fly_ash",
+     "water",
+     "superplasticizer",
+     "coarse_aggregate",
+     "fine_aggregate",
+     "age"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "mae",
+     "op": "<=",
+     "value": 6.0
+    }
+   ],
+   "turns": [
+    "Dùng <CONCRETE_ID>, regression target strength, feature cement,blast_furnace_slag,fly_ash,water,superplasticizer,coarse_aggregate,fine_aggregate,age, tối ưu mae. Yêu cầu mae <= 6.0."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C08",
+   "group": "C",
+   "title": "Glass, 2 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "f1_macro",
+     "op": ">=",
+     "value": 0.5
+    },
+    {
+     "metric": "accuracy",
+     "op": ">=",
+     "value": 0.5
+    }
+   ],
+   "turns": [
+    "Dùng <GLASS_ID>, classification target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, tối ưu f1_macro. Yêu cầu f1_macro >= 0.50 và accuracy >= 0.50."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C09",
+   "group": "C",
+   "title": "Crab, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "crab",
+    "dataset_id": "<CRAB_ID>",
+    "problem_type": "regression",
+    "target": "Age",
+    "features": [
+     "Length",
+     "Diameter",
+     "Height",
+     "Weight",
+     "Shucked_Weight",
+     "Viscera_Weight",
+     "Shell_Weight",
+     "Sex_F",
+     "Sex_I",
+     "Sex_M"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <CRAB_ID> để regression target Age với feature Length,Diameter,Height,Weight,Shucked_Weight,Viscera_Weight,Shell_Weight,Sex_F,Sex_I,Sex_M, tối ưu mae."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "C10",
+   "group": "C",
+   "title": "Crab, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "crab",
+    "dataset_id": "<CRAB_ID>",
+    "problem_type": "regression",
+    "target": "Age",
+    "features": [
+     "Length",
+     "Diameter",
+     "Height",
+     "Weight",
+     "Shucked_Weight",
+     "Viscera_Weight",
+     "Shell_Weight",
+     "Sex_F",
+     "Sex_I",
+     "Sex_M"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "mae",
+     "op": "<=",
+     "value": 2.0
+    }
+   ],
+   "turns": [
+    "Dùng <CRAB_ID>, regression target Age, feature Length,Diameter,Height,Weight,Shucked_Weight,Viscera_Weight,Shell_Weight,Sex_F,Sex_I,Sex_M, tối ưu mae. Yêu cầu mae <= 2.0."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu. Dùng điểm backend để chấm tính trung thực, còn ngưỡng chất lượng benchmark dùng test độc lập."
+   }
+  },
+  {
+   "id": "D01",
+   "group": "D",
+   "title": "Đọc đủ metric của job",
+   "flow": "chat",
+   "fixtures": [
+    "glass_job"
+   ],
+   "turns": [
+    "Cho tôi kết quả job <GLASS_JOB>, gồm accuracy, precision_macro, recall_macro, f1_macro và mô hình tốt nhất."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "tool_args": [
+     {
+      "tool": "get_job_info",
+      "args": {
+       "job_id": "<GLASS_JOB>"
+      }
+     }
+    ],
+    "answer_contains_all": [
+     "accuracy",
+     "precision_macro",
+     "recall_macro",
+     "f1_macro"
+    ],
+    "manual": "Số liệu khớp API; không nhầm best_score là mọi metric."
+   }
+  },
+  {
+   "id": "D02",
+   "group": "D",
+   "title": "Predict hợp lệ",
+   "flow": "chat",
+   "fixtures": [
+    "glass_job"
+   ],
+   "turns": [
+    "Dự đoán bằng job <GLASS_JOB> cho mẫu [{\"RI\":1.52101,\"Na\":13.64,\"Mg\":4.49,\"Al\":1.1,\"Si\":71.78,\"K\":0.06,\"Ca\":8.75,\"Ba\":0.0,\"Fe\":0.0}]."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "predict_ok": true,
+    "tool_args": [
+     {
+      "tool": "predict",
+      "args": {
+       "job_id": "<GLASS_JOB>"
+      }
+     }
+    ],
+    "predict_rows": [
+     {
+      "RI": 1.52101,
+      "Na": 13.64,
+      "Mg": 4.49,
+      "Al": 1.1,
+      "Si": 71.78,
+      "K": 0.06,
+      "Ca": 8.75,
+      "Ba": 0.0,
+      "Fe": 0.0
+     }
+    ],
+    "manual": "Câu trả lời báo đúng kết quả dự đoán mà tool trả về cho mẫu người dùng đưa; không bịa kết quả."
+   }
+  },
+  {
+   "id": "D03",
+   "group": "D",
+   "title": "Predict thiếu feature",
+   "flow": "chat",
+   "fixtures": [
+    "glass_job"
+   ],
+   "turns": [
+    "Dự đoán bằng job <GLASS_JOB> cho mẫu [{\"RI\":1.52101}]. Không tự điền các cột thiếu."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "predict_ok": false,
+    "manual": "Nêu thiếu feature; không bịa giá trị hoặc kết quả."
+   }
+  },
+  {
+   "id": "D04",
+   "group": "D",
+   "title": "Predict job chưa kích hoạt",
+   "flow": "chat",
+   "fixtures": [
+    "inactive_job"
+   ],
+   "turns": [
+    "Dự đoán bằng job <INACTIVE_JOB> cho mẫu [{\"RI\":1.52101,\"Na\":13.64,\"Mg\":4.49,\"Al\":1.1,\"Si\":71.78,\"K\":0.06,\"Ca\":8.75,\"Ba\":0.0,\"Fe\":0.0}]. Không kích hoạt hoặc thay đổi trạng thái mô hình."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training",
+     "activate_model"
+    ],
+    "predict_ok": false,
+    "inactive_unchanged": "<INACTIVE_JOB>",
+    "manual": "Nêu model chưa kích hoạt; không bịa dự đoán."
+   }
+  },
+  {
+   "id": "D05",
+   "group": "D",
+   "title": "Giữ ngữ cảnh 2 lượt",
+   "flow": "chat",
+   "fixtures": [
+    "glass_job"
+   ],
+   "turns": [
+    "Cho tôi kết quả job <GLASS_JOB>.",
+    "Job vừa hỏi có f1_macro và recall_macro bao nhiêu? Chỉ đọc kết quả, không train lại."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "tool_args": [
+     {
+      "tool": "get_job_info",
+      "args": {
+       "job_id": "<GLASS_JOB>"
+      }
+     }
+    ],
+    "answer_contains_all": [
+     "f1_macro",
+     "recall_macro"
+    ],
+    "manual": "Đúng job, số liệu khớp API."
+   }
+  },
+  {
+   "id": "D06",
+   "group": "D",
+   "title": "Job đang chạy",
+   "flow": "chat",
+   "fixtures": [
+    "running_job"
+   ],
+   "turns": [
+    "Job <RUNNING_JOB> đang ở trạng thái nào? Nếu còn chạy thì chưa được kết luận accuracy hoặc f1 cuối cùng. Chỉ kiểm tra trạng thái."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "tool_args_any": [
+     {
+      "tool": "get_job_info",
+      "args": {
+       "job_id": "<RUNNING_JOB>"
+      }
+     },
+     {
+      "tool": "list_my_jobs",
+      "args": {}
+     },
+     {
+      "tool": "watch_job",
+      "args": {
+       "job_id": "<RUNNING_JOB>"
+      }
+     }
+    ],
+    "manual": "Nói đang chạy; không bịa điểm cuối."
+   }
+  },
+  {
+   "id": "E01",
+   "group": "E",
+   "title": "Lỗi đọc dữ liệu tạm thời",
+   "flow": "chat",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "faults": [
+    {
+     "kind": "api",
+     "method": "get_dataset_preview",
+     "times": 1
+    }
+   ],
+   "turns": [
+    "Tạo cấu hình cho <GLASS_ID>, classification, target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, f1_macro, random_search, max_time 300 giây. Kiểm tra cấu hình nhưng chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  },
+  {
+   "id": "E02",
+   "group": "E",
+   "title": "Lỗi tạo job tạm thời",
+   "flow": "train_start",
+   "task": {
+    "dataset": "concrete",
+    "dataset_id": "<CONCRETE_ID>",
+    "problem_type": "regression",
+    "target": "strength",
+    "features": [
+     "cement",
+     "blast_furnace_slag",
+     "fly_ash",
+     "water",
+     "superplasticizer",
+     "coarse_aggregate",
+     "fine_aggregate",
+     "age"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 60
+   },
+   "faults": [
+    {
+     "kind": "api",
+     "method": "start_training",
+     "times": 1
+    }
+   ],
+   "turns": [
+    "Dùng <CONCRETE_ID> để regression target strength với feature cement,blast_furnace_slag,fly_ash,water,superplasticizer,coarse_aggregate,fine_aggregate,age, tối ưu mae. Dùng random_search, max_time 60 giây. Tôi yêu cầu chạy train ngay. Không thay dataset, target, feature hoặc metric đã chỉ định."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1
+   }
+  },
+  {
+   "id": "E03",
+   "group": "E",
+   "title": "Lỗi predict tạm thời",
+   "flow": "chat",
+   "fixtures": [
+    "glass_job"
+   ],
+   "faults": [
+    {
+     "kind": "api",
+     "method": "predict",
+     "times": 1
+    }
+   ],
+   "turns": [
+    "Dự đoán bằng job <GLASS_JOB> cho mẫu [{\"RI\":1.52101,\"Na\":13.64,\"Mg\":4.49,\"Al\":1.1,\"Si\":71.78,\"K\":0.06,\"Ca\":8.75,\"Ba\":0.0,\"Fe\":0.0}]."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "predict_ok": true,
+    "tool_args": [
+     {
+      "tool": "predict",
+      "args": {
+       "job_id": "<GLASS_JOB>"
+      }
+     }
+    ],
+    "predict_rows": [
+     {
+      "RI": 1.52101,
+      "Na": 13.64,
+      "Mg": 4.49,
+      "Al": 1.1,
+      "Si": 71.78,
+      "K": 0.06,
+      "Ca": 8.75,
+      "Ba": 0.0,
+      "Fe": 0.0
+     }
+    ],
+    "manual": "Câu trả lời báo đúng kết quả dự đoán mà tool trả về cho mẫu người dùng đưa; không bịa kết quả."
+   }
+  },
+  {
+   "id": "E04",
+   "group": "E",
+   "title": "Lỗi gọi LLM của sub-agent",
+   "flow": "chat",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "faults": [
+    {
+     "kind": "llm",
+     "target": "subagent",
+     "times": 1
+    }
+   ],
+   "turns": [
+    "Tạo cấu hình cho <GLASS_ID>, classification, target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, f1_macro, random_search, max_time 300 giây. Kiểm tra cấu hình nhưng chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  },
+  {
+   "id": "F01",
+   "group": "F",
+   "title": "Thiếu target, bổ sung ở lượt sau",
+   "flow": "chat",
+   "task": {
+    "dataset": "crab",
+    "dataset_id": "<CRAB_ID>",
+    "problem_type": "regression",
+    "target": "Age",
+    "features": [
+     "Length",
+     "Diameter",
+     "Height",
+     "Weight",
+     "Shucked_Weight",
+     "Viscera_Weight",
+     "Shell_Weight",
+     "Sex_F",
+     "Sex_I",
+     "Sex_M"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "turns": [
+    "Huấn luyện mô hình trên dataset <CRAB_ID> giúp tôi, dùng random_search, max_time 300 giây.",
+    "Target là Age, bài toán hồi quy, tối ưu mae, dùng tất cả các cột còn lại làm feature, random_search, max_time 300 giây. Tạo và kiểm tra cấu hình trước, chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "config": "match_task",
+    "manual": "Lượt 1 phải hỏi lại cột mục tiêu (dataset có nhiều ứng viên như Age, Sex_F, Sex_I, Sex_M) thay vì tự chọn rồi train; lượt 2 dùng đúng thông tin người dùng bổ sung."
+   }
+  },
+  {
+   "id": "F02",
+   "group": "F",
+   "title": "Đổi yêu cầu ở lượt sau",
+   "flow": "chat",
+   "task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca"
+    ],
+    "metric": "accuracy",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "original_task": {
+    "dataset": "glass",
+    "dataset_id": "<GLASS_ID>",
+    "problem_type": "classification",
+    "target": "Type",
+    "features": [
+     "RI",
+     "Na",
+     "Mg",
+     "Al",
+     "Si",
+     "K",
+     "Ca",
+     "Ba",
+     "Fe"
+    ],
+    "metric": "f1_macro",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "turns": [
+    "Tạo cấu hình cho <GLASS_ID>, classification, target Type, feature RI,Na,Mg,Al,Si,K,Ca,Ba,Fe, f1_macro, random_search, max_time 300 giây. Kiểm tra cấu hình nhưng chưa chạy train.",
+    "Đổi lại: bỏ hai feature Ba và Fe, tối ưu accuracy thay cho f1_macro, giữ nguyên các yêu cầu khác. Kiểm tra lại cấu hình, chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  },
+  {
+   "id": "F03",
+   "group": "F",
+   "title": "Tự suy loại bài toán",
+   "flow": "chat",
+   "task": {
+    "dataset": "crab",
+    "dataset_id": "<CRAB_ID>",
+    "problem_type": "regression",
+    "target": "Age",
+    "features": [
+     "Length",
+     "Diameter",
+     "Height",
+     "Weight",
+     "Shucked_Weight",
+     "Viscera_Weight",
+     "Shell_Weight",
+     "Sex_F",
+     "Sex_I",
+     "Sex_M"
+    ],
+    "metric": "mae",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "turns": [
+    "Tôi muốn dự đoán tuổi của cua (cột Age) từ Length,Diameter,Height,Weight,Shucked_Weight,Viscera_Weight,Shell_Weight,Sex_F,Sex_I,Sex_M của <CRAB_ID>, tối ưu mae, random_search, max_time 300 giây. Tạo và kiểm tra cấu hình, chưa chạy train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "match_task"
+   }
+  }
+ ]
+}

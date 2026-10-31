@@ -1,0 +1,122 @@
+{
+ "experiment_id": "hautoml-v4-01",
+ "placeholders": {
+  "GLASS_ID": null,
+  "SHOP_ID": null,
+  "CONCRETE_ID": null,
+  "CRAB_ID": null,
+  "MISSING_ID": null,
+  "GLASS_JOB": null,
+  "INACTIVE_JOB": null
+ },
+ "running_job_fixture": {
+  "dataset": "SHOP_ID",
+  "target": "Revenue",
+  "features": [
+   "Administrative",
+   "Administrative_Duration",
+   "Informational",
+   "Informational_Duration",
+   "ProductRelated",
+   "ProductRelated_Duration",
+   "BounceRates",
+   "ExitRates",
+   "PageValues",
+   "SpecialDay"
+  ],
+  "metric": "f1_macro",
+  "problem_type": "classification",
+  "search_algorithm": "random_search",
+  "max_time": 300
+ },
+ "predict_rows": {
+  "glass": [
+   {
+    "RI": 1.52101,
+    "Na": 13.64,
+    "Mg": 4.49,
+    "Al": 1.1,
+    "Si": 71.78,
+    "K": 0.06,
+    "Ca": 8.75,
+    "Ba": 0.0,
+    "Fe": 0.0
+   }
+  ],
+  "shopping": [
+   {
+    "Administrative": 0,
+    "Administrative_Duration": 0,
+    "Informational": 0,
+    "Informational_Duration": 0,
+    "ProductRelated": 1,
+    "ProductRelated_Duration": 0,
+    "BounceRates": 0.2,
+    "ExitRates": 0.2,
+    "PageValues": 0,
+    "SpecialDay": 0
+   }
+  ],
+  "concrete": [
+   {
+    "cement": 540.0,
+    "blast_furnace_slag": 0.0,
+    "fly_ash": 0.0,
+    "water": 162.0,
+    "superplasticizer": 2.5,
+    "coarse_aggregate": 1040.0,
+    "fine_aggregate": 676.0,
+    "age": 28
+   }
+  ],
+  "crab": [
+   {
+    "Length": 1.5,
+    "Diameter": 1.2,
+    "Height": 0.4,
+    "Weight": 30.0,
+    "Shucked_Weight": 12.0,
+    "Viscera_Weight": 6.0,
+    "Shell_Weight": 9.0,
+    "Sex_F": 0,
+    "Sex_I": 0,
+    "Sex_M": 1
+   }
+  ]
+ },
+ "test_sets": {
+  "glass": "benchmark_artifacts/datasets/glass_test.csv",
+  "shopping": "benchmark_artifacts/datasets/shopping_test.csv",
+  "concrete": "benchmark_artifacts/datasets/concrete_test.csv",
+  "crab": "benchmark_artifacts/datasets/crab_test.csv"
+ },
+ "provider": null,
+ "model": null,
+ "repeats": 5,
+ "max_wait_seconds": 600,
+ "ablation": {
+  "variants": [
+   "single-agent",
+   "no-prompt-agent",
+   "no-data-agent",
+   "no-validate",
+   "no-verify"
+  ],
+  "cases": [
+   "A02",
+   "B01",
+   "B03",
+   "B04",
+   "B05",
+   "C01",
+   "C03",
+   "C05",
+   "C07",
+   "C08",
+   "F01",
+   "F03"
+  ],
+  "repeats": 3,
+  "enabled": true
+ }
+}
