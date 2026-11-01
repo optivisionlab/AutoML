@@ -549,7 +549,7 @@ def test_answer_terms_match_whole_tokens():
     assert _mentions("- Accuracy: 0.8", "accuracy")
     # Tên cột có chữ hoa so đúng hoa thường; cách viết metric phổ biến vẫn được nhận.
     assert not _mentions("Dataset có ba cột số", "Ba")
-    for text in ("F1-macro", "f1\\_macro", "f1 macro"):
+    for text in ("F1-macro", "f1\\_macro", "f1 macro", "F1 (macro)"):
         assert _mentions(text, "f1_macro"), text
     assert _mentions("R² = 0.91", "r2") and _mentions("balanced accuracy", "balanced_accuracy")
     assert not _mentions("balanced accuracy, f1 macro", "accuracy")

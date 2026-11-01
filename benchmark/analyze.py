@@ -58,11 +58,11 @@ def _mentions(text: str, word: str) -> bool:
     word đứng thành token riêng: "K" không khớp "Kết", "accuracy" không khớp "balanced_accuracy".
 
     Tên có chữ hoa (tên cột) so đúng hoa thường để "Ba" không khớp chữ "ba"; tên viết
-    thường (metric) thì không phân biệt. "_" khớp cả "\\_" của markdown, dấu cách và
-    "-" (F1-macro), "²" tính như "2" (R²).
+    thường (metric) thì không phân biệt. "_" khớp cả "\\_" của markdown, dấu cách,
+    "-" (F1-macro) và ngoặc (Precision (macro)), "²" tính như "2" (R²).
     """
     text = text.replace("\\_", "_").replace("²", "2")
-    body = r"[_\s-]".join(re.escape(part) for part in word.split("_"))
+    body = r"(?:[_\s-]|\s*\()".join(re.escape(part) for part in word.split("_"))
     flags = 0 if any(c.isupper() for c in word) else re.IGNORECASE
     # "balanced accuracy" viết cách vẫn là balanced_accuracy, không phải accuracy.
     return re.search(rf"(?<!\w)(?<!balanced[_\s-]){body}(?!\w)", text, flags) is not None
