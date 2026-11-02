@@ -52,6 +52,8 @@ Lưu ý quan trọng: cột bị đánh `false` vì **là ID** thì cũng không
 2. Bỏ thêm cột có `missing_in_preview` cao — thiếu quá nửa số dòng preview thì
    nêu cho người dùng biết trước khi dùng.
 3. Không bao giờ đưa `target` vào `list_feature`.
+4. Người dùng đã chỉ định đặc trưng (liệt kê cột, hoặc "tất cả các cột còn lại")
+   → dùng đúng như vậy. Bộ cột one-hot giữ đủ, không bỏ bớt một cột.
 
 ## Vì sao thống kê chỉ tính trên 50 dòng
 

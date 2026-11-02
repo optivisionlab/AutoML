@@ -51,6 +51,11 @@ thì báo Manager hỏi người dùng.
 **B2. Đặc trưng.** Mọi cột còn lại, trừ: cột mục tiêu, cột trông như khoá
 định danh, cột hằng số hoặc thiếu gần hết. Tôn trọng `R.knowledge` (người dùng
 nói bỏ cột nào thì bỏ).
+- Người dùng đã chỉ định đặc trưng (liệt kê cột, hoặc "dùng tất cả các cột còn
+  lại") → dùng ĐÚNG như vậy. Không tự bỏ cột vì lý do kỹ thuật, kể cả bộ cột
+  one-hot (vd `Sex_F/Sex_I/Sex_M` giữ đủ cả 3): mọi model trong `list_models`
+  (cây, SVM, KNN, hồi quy tuyến tính/logistic của sklearn) đều chạy được với đủ
+  cột. Muốn khuyên thì ghi trong báo cáo, không sửa config.
 
 **B3. Metric.** Gọi `list_metrics`. Ưu tiên `R.problem.metric`, rồi metric của
 ràng buộc đầu tiên trong `R.problem.constraints`. Không có thì: classification

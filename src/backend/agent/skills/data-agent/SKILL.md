@@ -50,7 +50,8 @@ không phải toàn bộ dataset. Khi nói về chúng thì nêu rõ điều nà
   Người dùng chưa nói cột mục tiêu thì ghi rõ "người dùng chưa chọn"; muốn gợi ý
   cột nào thì nêu là gợi ý cần người dùng xác nhận, không viết như đã chốt.
 - Cột đặc trưng, và cột **nên loại** kèm lý do: trông như khoá định danh, hằng
-  số, thiếu nhiều giá trị.
+  số, thiếu nhiều giá trị. Bộ cột one-hot (vd `Sex_F/Sex_I/Sex_M`) KHÔNG phải
+  lý do loại cột - đừng khuyên bỏ một cột "để tránh đa cộng tuyến".
 - Điều bất thường đáng để ý (lớp mất cân bằng nhìn thấy trong preview, cột số
   lưu dạng chuỗi...).
 
