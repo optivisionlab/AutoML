@@ -555,6 +555,24 @@ def test_answer_terms_match_whole_tokens():
     assert not _mentions("balanced accuracy, f1 macro", "accuracy")
 
 
+def test_metric_name_variants():
+    """Cách agent viết tên metric cho người đọc vẫn được nhận (D01: "Precision (macro)" từng bị chấm trượt)."""
+    from benchmark.analyze import _mentions
+    for text in ("- Precision (macro): **0.7823**", "| **Precision** (macro) | 0.78 |", "precision_macro / precision_weighted",
+                 "Precision: 0.7823 (macro)", "Các chỉ số macro: precision 0.78, recall 0.73, F1 0.74",
+                 "Macro precision = 0.78", "macro-averaged precision 0.78", "Precision-score (macro avg)"):
+        assert _mentions(text, "precision_macro"), text
+    for text in ("F1-score (macro avg): 0.74", "Macro-F1 = 0.74", "F1‑macro", "macro F1-score 0.74", "`f1_macro`"):
+        assert _mentions(text, "f1_macro"), text
+    assert _mentions("Mean Absolute Error (MAE): 3.5", "mae") and _mentions("Mean absolute error 3.5", "mae")
+    assert _mentions("R-squared 0.91", "r2") and _mentions("R^2 = 0.91", "r2")
+    # Kiểu trung bình khác, metric khác hay chữ macro thuộc metric khác thì không tính.
+    for text in ("F1 (weighted): 0.77", "F1: 0.74", "precision macro 0.78, f1_weighted 0.77"):
+        assert not _mentions(text, "f1_macro"), text
+    assert not _mentions("f1 macro precision weighted", "precision_macro")
+    assert not _mentions("Mean absolute percentage error 0.1", "mae") and not _mentions("RMSE 4.2", "mse")
+
+
 def test_harness_read_failure_is_invalid_not_agent_failure(bench):
     folder = bench.run("full", "C01")
     path = folder / "run.json"

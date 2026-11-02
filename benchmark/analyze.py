@@ -53,19 +53,67 @@ def _finite_number(value) -> bool:
         return False
 
 
+# Gạch nối Unicode LLM hay sinh (‐ ‑ ‒ – —) tính như "-".
+_DASHES = str.maketrans({c: "-" for c in "‐‑‒–—"})
+_AVERAGING = ("macro", "micro", "weighted")
+_AVG_SUFFIX = r"(?:[\s_-]*(?:avg|average|averaged))?"
+_AVG_BASES = r"(?:precision|recall|f1|roc[\s_-]*auc|jaccard)(?:[\s_-]*score)?"
+# Tên đầy đủ hay gặp của metric viết tắt.
+_METRIC_ALIASES = {
+    "mae": ("mean absolute error",),
+    "mse": ("mean squared error",),
+    "rmse": ("root mean squared error",),
+    "mape": ("mean absolute percentage error",),
+    "r2": ("r^2", "r-squared", "r squared", "coefficient of determination"),
+}
+
+
+def _token(pattern: str) -> str:
+    """pattern đứng riêng: không dính chữ/số hai bên ("_" tính là dấu ngăn)."""
+    return rf"(?<![^\W_]){pattern}(?![^\W_])"
+
+
 def _mentions(text: str, word: str) -> bool:
     """
     word đứng thành token riêng: "K" không khớp "Kết", "accuracy" không khớp "balanced_accuracy".
 
     Tên có chữ hoa (tên cột) so đúng hoa thường để "Ba" không khớp chữ "ba"; tên viết
     thường (metric) thì không phân biệt. "_" khớp cả "\\_" của markdown, dấu cách,
-    "-" (F1-macro) và ngoặc (Precision (macro)), "²" tính như "2" (R²).
+    "-" (F1-macro) và ngoặc (Precision (macro)), "²" tính như "2" (R²); metric viết
+    tắt nhận cả tên đầy đủ (MAE = mean absolute error).
     """
-    text = text.replace("\\_", "_").replace("²", "2")
-    body = r"(?:[_\s-]|\s*\()".join(re.escape(part) for part in word.split("_"))
+    text = text.replace("\\_", "_").replace("²", "2").translate(_DASHES)
+    parts = word.split("_")
+    if len(parts) == 2 and parts[1] in _AVERAGING:
+        return _mentions_averaged(text, *parts)
+    body = r"(?:[_\s-]|\s*\()".join(re.escape(part) for part in parts)
+    forms = [body] + [r"[\s_-]+".join(map(re.escape, alias.split())) for alias in _METRIC_ALIASES.get(word, ())]
     flags = 0 if any(c.isupper() for c in word) else re.IGNORECASE
     # "balanced accuracy" viết cách vẫn là balanced_accuracy, không phải accuracy.
-    return re.search(rf"(?<!\w)(?<!balanced[_\s-]){body}(?!\w)", text, flags) is not None
+    return any(re.search(rf"(?<!\w)(?<!balanced[_\s-]){form}(?!\w)", text, flags) for form in forms)
+
+
+def _mentions_averaged(text: str, base: str, avg: str) -> bool:
+    """
+    Metric có kiểu lấy trung bình (precision_macro, f1_weighted...). Nhận precision_macro,
+    "F1 macro", "**Precision** (macro)", "F1-score (macro avg)", "Macro-F1",
+    "macro-averaged recall", và một dòng có tên metric cùng chữ macro nhưng không có
+    kiểu trung bình khác ("Precision: 0.78 (macro)", "Các chỉ số macro: precision ...").
+    """
+    text = text.replace("*", "").replace("`", "")
+    b, a = re.escape(base), re.escape(avg)
+    if re.search(_token(rf"{b}(?:[\s_-]*score)?(?:[_\s-]|\s*\()\s*{a}{_AVG_SUFFIX}"), text, re.IGNORECASE):
+        return True
+    for match in re.finditer(_token(rf"{a}{_AVG_SUFFIX}[\s_-]+{b}"), text, re.IGNORECASE):
+        # "f1 macro precision weighted": chữ macro này thuộc f1, không phải precision.
+        if not re.search(rf"{_AVG_BASES}[\s_(-]*$", text[:match.start()], re.IGNORECASE):
+            return True
+    others = [o for o in _AVERAGING if o != avg]
+    return any(
+        re.search(_token(b), line, re.IGNORECASE) and re.search(_token(a), line, re.IGNORECASE)
+        and not any(re.search(_token(o), line, re.IGNORECASE) for o in others)
+        for line in text.splitlines()
+    )
 
 
 def _same_rows(sent: list, expected: list) -> bool:
