@@ -66,4 +66,6 @@ cảnh, rồi trả về **DUY NHẤT một object JSON**, không kèm chữ nà
   hỏi, bỏ qua ràng buộc đó.
 - **Không** đưa cột mục tiêu vào `missing`: Model Agent sẽ xét theo dữ liệu
   thật (một ứng viên thì dùng luôn, nhiều thì nó sẽ báo).
+- **Không** đưa mẫu cần dự đoán vào `missing` khi người dùng muốn train: mẫu
+  chỉ cần khi job đã xong, người dùng gửi sau được.
 - Yêu cầu tra cứu (`intent: query`) thường không thiếu gì.

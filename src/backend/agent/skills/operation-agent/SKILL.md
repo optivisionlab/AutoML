@@ -33,6 +33,11 @@ xong và báo cho người dùng. Bạn **không có kết quả ngay** - đừn
 Muốn xem một job thì cần `job_id` thật: lấy từ việc được giao, hoặc gọi
 `list_my_jobs`. Không tự bịa `job_id`.
 
+Việc giao nói "job vừa tạo", "job vừa chạy" → CHỈ là job trong mục "Job do
+chính phiên chat này tạo" của Ngữ cảnh. Mục đó trống thì báo Manager: phiên này
+chưa tạo job nào. KHÔNG lấy job trong `list_my_jobs` thay vào, kể cả job trùng
+dataset và config - đó là job cũ hoặc của phiên khác.
+
 | `status` | Nghĩa |
 |---|---|
 | `0` | Đang chạy - chưa có kết quả |

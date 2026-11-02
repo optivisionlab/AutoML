@@ -73,6 +73,27 @@ def describe_error(error: Exception) -> str:
     return f"{name} (HTTP {status})" if status else name
 
 
+def create_completion(llm, **request):
+    """
+    Gọi LLM, thử lại MỘT lần với lỗi mà SDK chưa tự thử lại.
+
+    SDK đã thử lại lỗi mạng, 429 và 5xx (max_retries trong providers.build_client);
+    các lỗi HTTP khác (sai key, sai tham số) gọi lại vẫn hỏng. Còn lại là lỗi
+    ngoài HTTP (provider trả dữ liệu hỏng, lỗi giữa chừng): trước đây một lần như
+    vậy ở sub-agent làm hỏng cả việc được giao, Manager chỉ báo lỗi cho người dùng.
+    """
+    try:
+        return llm.chat.completions.create(**request)
+    except Exception as error:  # noqa: BLE001 - lọc bên dưới, không hợp thì raise lại
+        handled_by_sdk = getattr(error, "status_code", None) is not None or type(error).__name__ in (
+            "APIConnectionError", "APITimeoutError",
+        )
+        if handled_by_sdk or isinstance(error, TurnBudgetExceeded):
+            raise
+        _log.warning("Gọi LLM lỗi (%s), thử lại một lần", describe_error(error))
+        return llm.chat.completions.create(**request)
+
+
 def turn_token_budget() -> int:
     """AGENT_TURN_TOKEN_BUDGET trong .env, không đặt hoặc sai thì dùng mặc định."""
     raw = os.getenv("AGENT_TURN_TOKEN_BUDGET", "").strip()
@@ -512,7 +533,7 @@ def run_tool_loop(
         if tool_schemas:
             request.update(tools=tool_schemas, tool_choice="auto")
 
-        response = llm.chat.completions.create(**request)
+        response = create_completion(llm, **request)
         _accumulate_usage(usage, response.usage)
         if response.usage is not None:
             emit(

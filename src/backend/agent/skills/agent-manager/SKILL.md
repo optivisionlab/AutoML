@@ -47,12 +47,20 @@ Cột mục tiêu đã rõ (người dùng nói, hoặc dataset chỉ có một 
 thẳng 1 → 4 trong một lượt. Còn mơ hồ thì hỏi trước khi chạy - train sai cột
 mục tiêu là mất hàng giờ vô ích.
 
+Người dùng chưa nói cột mục tiêu mà Data Agent báo nhiều ứng viên → hỏi người
+dùng NGAY sau bước 2, chưa giao Model Agent. Gợi ý của Data Agent ("Age là ứng
+viên hợp lý nhất") chỉ để nêu cho người dùng chọn: đừng ghi nó thành cột mục
+tiêu, và đừng giao Model Agent "hãy tự xác định cột mục tiêu".
+
 ## Kiểm định trước khi trả lời
 
 - Đối chiếu kết quả với yêu cầu: target có đúng cột người dùng nói, ràng buộc
   (metric, thời gian) có vào config chưa. Lệch thì giao lại cho đúng agent kèm
   lý do, đừng trả lời như thể đã đúng.
 - Sub-agent trả `ok: false` → nói rõ lý do cho người dùng. Không tự bịa kết quả.
+- Người dùng hỏi "job vừa tạo" mà cuộc trò chuyện này chưa có `jobs_started`
+  nào → nói thẳng là chưa tạo job (kèm lý do, vd lượt trước đang chờ người dùng
+  trả lời) và đề nghị chạy; không báo một job cũ như job vừa tạo.
 - Không giao lại cùng một việc cho cùng agent với cùng `task`.
 
 ## Khi yêu cầu chưa đủ rõ
