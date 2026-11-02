@@ -86,7 +86,7 @@ def build_trainable_model(
     return model, param_grid
 
 
-def _clean_best_params(params: dict[str, Any]) -> dict[str, Any]:
+def clean_best_params(params: dict[str, Any]) -> dict[str, Any]:
     return {
         k.removeprefix(f"{MODEL_STEP}__"): v
         for k, v in params.items()
@@ -152,7 +152,7 @@ def tune_and_fit_model(
 
     searcher.fit(X_train, y_train)
 
-    return searcher.best_estimator_, _clean_best_params(searcher.best_params_), searcher
+    return searcher.best_estimator_, clean_best_params(searcher.best_params_), searcher
 
 
 def evaluate_trained_model(
@@ -205,6 +205,8 @@ def package_task_result(
     primary_score: float,
     metric_sort: str,
     start_time: float,
+    trials: list[dict[str, Any]] | None = None,
+    best_trial: int | None = None,
 ) -> ModelTaskResult:
     model_bytes = ModelService.serialize_model(best_estimator)
     latency = time.time() - start_time
@@ -217,4 +219,6 @@ def package_task_result(
         metric_sort=metric_sort,
         model_bytes=model_bytes,
         latency=round(latency, 4),
+        trials=trials or [],
+        best_trial=best_trial,
     )

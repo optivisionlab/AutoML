@@ -119,6 +119,17 @@ class TrainingRepository:
         }
         await self.__job_collection.update_one(query, update_data)
 
+    async def update_pipeline(self, job_id: str, pipeline: dict[str, Any]) -> None:
+        """
+        Store the training pipeline JSON (node states and per-model trials) on the job
+        """
+        try:
+            query = {"_id": ObjectId(job_id)}
+        except (InvalidId, TypeError):
+            query = {"_id": job_id}
+
+        await self.__job_collection.update_one(query, {"$set": {"pipeline": pipeline}})
+
     async def update_activation(self, job_id: str, activate: int) -> bool:
         """
         Update job model deployment activation status (1 for active, 0 for inactive)

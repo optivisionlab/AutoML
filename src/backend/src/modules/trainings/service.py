@@ -3,7 +3,7 @@ import io
 import pickle
 import logging
 import asyncio
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 # Third-party Libraries
 import pandas as pd
@@ -22,10 +22,27 @@ from src.modules.trainings.schemas import (
     ModelStorageInfo,
 )
 from src.modules.trainings.repository import TrainingRepository
+from src.modules.trainings.pipeline import PipelineTracker
 
 
 # Logging
 logger = logging.getLogger(__name__)
+
+
+def _column_types(preprocessor: FittedPreprocessor) -> dict[str, list[str]]:
+    """
+    Feature columns per transformer group (num / cat / text_<col>) of the fitted ColumnTransformer
+    """
+    column_types: dict[str, list[str]] = {"numeric": [], "categorical": [], "text": []}
+    transformer = getattr(preprocessor, "preprocessor", None)
+    for name, _, columns in getattr(transformer, "transformers_", []):
+        if name == "num":
+            column_types["numeric"] += [str(c) for c in columns]
+        elif name == "cat":
+            column_types["categorical"] += [str(c) for c in columns]
+        elif name.startswith("text_"):
+            column_types["text"] += [str(c) for c in columns]
+    return column_types
 
 
 class TrainingService:
@@ -39,7 +56,7 @@ class TrainingService:
         target_col: str,
         feature_cols: list[str] | None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
-    ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor]:
+    ) -> tuple[bytes, bytes | None, CVStrategyConfig, list[str], FittedPreprocessor, dict[str, Any]]:
         (X_train, y_train), test_data, cv_config, feature_names, preprocessor = TabularPreprocessor.prepare_data(
             df=df,
             target_col=target_col,
@@ -51,7 +68,21 @@ class TrainingService:
         train_bytes = pickle.dumps((X_train, y_train))
         test_bytes = pickle.dumps(test_data) if test_data is not None else None
 
-        return train_bytes, test_bytes, cv_config, feature_names, preprocessor
+        holdout_rows = len(test_data[1]) if test_data is not None else 0
+        data_summary = {
+            "train_rows": int(len(y_train)),
+            "holdout_rows": int(holdout_rows),
+            "dropped_rows": int(len(df) - len(y_train) - holdout_rows),
+            "n_features": int(X_train.shape[1]) if getattr(X_train, "ndim", 0) == 2 else None,
+            "column_types": _column_types(preprocessor),
+            "class_distribution": None,
+        }
+        if problem_type == constants.ProblemType.CLASSIFICATION:
+            # Labels as encoded by the classification preprocessor (rows without a target are dropped)
+            class_counts = df[target_col].dropna().astype(str).value_counts()
+            data_summary["class_distribution"] = {str(label): int(count) for label, count in class_counts.items()}
+
+        return train_bytes, test_bytes, cv_config, feature_names, preprocessor, data_summary
 
     @staticmethod
     async def _dispatch_and_collect_tasks(
@@ -165,8 +196,14 @@ class TrainingService:
         metric_sort: str | None = None,
         problem_type: str = constants.ProblemType.CLASSIFICATION,
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
-        timeout: int | None = None
+        timeout: int | None = None,
+        tracker: PipelineTracker | None = None,
+        on_progress: Callable[[], Awaitable[None]] | None = None,
     ) -> AutoMLPipelineResult:
+        async def progress() -> None:
+            if on_progress is not None:
+                await on_progress()
+
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
 
@@ -186,12 +223,49 @@ class TrainingService:
             metric_list = search_space.CLASSIFICATION_METRIC_LIST
             metric_sort = metric_sort or "accuracy"
 
-        train_bytes, test_bytes, cv_config, feature_names, preprocessor = cls._prepare_pipeline_inputs(
+        if tracker:
+            # Validation, splitting and encoding run in one call: only preprocessing is marked running so a
+            # failure is reported on a single node; the split node is recorded once the CV strategy is known
+            tracker.start("preprocessing")
+            await progress()
+
+        train_bytes, test_bytes, cv_config, feature_names, preprocessor, data_summary = cls._prepare_pipeline_inputs(
             df=df,
             target_col=target_col,
             feature_cols=feature_cols,
             problem_type=problem_type,
         )
+
+        if tracker:
+            split_output = {"train_rows": data_summary["train_rows"], "holdout_rows": data_summary["holdout_rows"]}
+            tracker.start("split_holdout_data")
+            if cv_config.has_holdout:
+                tracker.node("split_holdout_data")["params"] = {"method": "train_test_split", "test_size": cv_config.test_size}
+                tracker.finish("split_holdout_data", split_output)
+            else:
+                tracker.skip("split_holdout_data", split_output)
+            tracker.node("preprocessing")["params"].update({"target": target_col, "list_feature": feature_names})
+            tracker.finish("preprocessing", {
+                "dropped_rows": data_summary["dropped_rows"],
+                "n_features": data_summary["n_features"],
+                "column_types": data_summary["column_types"],
+                "class_distribution": data_summary["class_distribution"],
+            })
+
+            tracker.start("model_selection")
+            tracker.set_models(metric_list, list(space_models), metric_sort)
+            tracker.node("model_selection")["params"]["cv"] = {
+                "name": cv_config.name,
+                "n_splits": cv_config.n_splits,
+                "n_repeats": cv_config.n_repeats,
+                "description": cv_config.description,
+            }
+            tracker.finish("model_selection")
+
+            tracker.start("train")
+            for model_name in space_models:
+                tracker.set_model_status(model_name, "running")
+            await progress()
 
         valid_results = await cls._dispatch_and_collect_tasks(
             driver=driver,
@@ -206,10 +280,32 @@ class TrainingService:
             timeout=timeout,
         )
 
+        if tracker:
+            returned = {result_data.get("model_name") for result_data in valid_results}
+            for result_data in valid_results:
+                tracker.set_model_result(
+                    model_name=result_data.get("model_name", ""),
+                    trials=result_data.get("trials") or [],
+                    best_trial=result_data.get("best_trial"),
+                    holdout_scores=result_data.get("scores") if cv_config.has_holdout else None,
+                )
+            for model_name in space_models:
+                if model_name not in returned:
+                    tracker.set_model_error(model_name, "Training task failed or exceeded the timeout.")
+            tracker.finish("train")
+            tracker.start("select_best")
+
         best_entry, best_raw, best_score, model_scores = cls._evaluate_and_select_best_model(
             valid_results=valid_results,
             metric_sort=metric_sort
         )
+
+        if tracker:
+            tracker.finish("select_best", {
+                "best_model": best_entry.model_name,
+                "score_source": "holdout" if cv_config.has_holdout else "cv",
+            })
+            await progress()
 
         best_estimator = pickle.loads(best_raw["model_bytes"])
         artifact_bytes = cls._package_serving_artifact(
@@ -263,7 +359,7 @@ class TrainingService:
         }
         return pickle.dumps(artifact)
 
-    async def _load_dataset_df(self, dataset_id: str) -> tuple[pd.DataFrame, str]:
+    async def _load_dataset_df(self, dataset_id: str) -> tuple[pd.DataFrame, str, str]:
         dataset_doc = await self.repo.get_dataset_info(dataset_id)
         if not dataset_doc or not dataset_doc.get("data_link"):
             raise ValueError(f"Dataset '{dataset_id}' not found or missing storage link.")
@@ -278,7 +374,7 @@ class TrainingService:
         df = pd.read_parquet(
             parquet_data if isinstance(parquet_data, io.BytesIO) else io.BytesIO(parquet_data)
         )
-        return df, dataset_name
+        return df, dataset_name, f"{bucket_name}/{object_name}"
 
     @staticmethod
     async def _save_best_model_artifact(
@@ -296,6 +392,13 @@ class TrainingService:
         )
         storage_info = ModelStorageInfo(bucket_name="models", object_name=dest_model_path)
         return dest_model_path, storage_info
+
+    async def _save_pipeline(self, job_id: str, tracker: PipelineTracker) -> None:
+        # Pipeline JSON is progress reporting only: a storage error must not fail the training job
+        try:
+            await self.repo.update_pipeline(job_id, tracker.to_dict())
+        except Exception as exc:
+            logger.warning(f"Failed to save pipeline state for job {job_id}: {exc}")
 
     async def _on_job_success(
         self,
@@ -360,20 +463,37 @@ class TrainingService:
         config: dict[str, Any],
     ) -> dict[str, Any]:
         dataset_name = "Unknown"
+        if "config" in config and isinstance(config["config"], dict):
+            config = config["config"]
+
+        problem_type = config.get("problem_type") or constants.ProblemType.CLASSIFICATION
+        target_col = config.get("target")
+        feature_cols = config.get("list_feature")
+        metric_sort = config.get("metric_sort")
+        search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
+        timeout = config.get("timeout") or None
+
+        tracker = PipelineTracker(
+            job_id=job_id,
+            dataset_id=dataset_id,
+            problem_type=problem_type,
+            search_algorithm=search_algorithm,
+            metric_sort=metric_sort,
+            target=target_col,
+            feature_cols=feature_cols,
+            timeout=timeout,
+        )
+
+        async def save_pipeline() -> None:
+            await self._save_pipeline(job_id, tracker)
+
         try:
             logger.info(f"Processing AutoML Job: ID={job_id}, Dataset={dataset_id}, User={user_id}")
 
-            df, dataset_name = await self._load_dataset_df(dataset_id)
-
-            if "config" in config and isinstance(config["config"], dict):
-                config = config["config"]
-
-            problem_type = config.get("problem_type") or constants.ProblemType.CLASSIFICATION
-            target_col = config.get("target")
-            feature_cols = config.get("list_feature")
-            metric_sort = config.get("metric_sort")
-            search_algorithm = config.get("search_algorithm") or constants.SearchAlgorithm.TPESEARCH
-            timeout = config.get("timeout") or None
+            tracker.start("read_dataset")
+            await save_pipeline()
+            df, dataset_name, data_url = await self._load_dataset_df(dataset_id)
+            tracker.finish("read_dataset", {"data_url": data_url, "n_rows": len(df), "n_columns": len(df.columns)})
 
             pipeline_result = await self.train_automl_pipeline(
                 df=df,
@@ -382,15 +502,21 @@ class TrainingService:
                 metric_sort=metric_sort,
                 problem_type=problem_type,
                 search_algorithm=search_algorithm,
-                timeout=timeout
+                timeout=timeout,
+                tracker=tracker,
+                on_progress=save_pipeline,
             )
 
+            tracker.start("save_result")
             _, storage_info = await self._save_best_model_artifact(
                 user_id=user_id,
                 job_id=job_id,
                 best_model_name=pipeline_result.best_model,
                 model_bytes=pipeline_result.best_model_bytes,
             )
+            tracker.finish("save_result", {"object_name": storage_info.object_name})
+            tracker.complete()
+            await save_pipeline()
 
             return await self._on_job_success(
                 job_id=job_id,
@@ -403,6 +529,8 @@ class TrainingService:
         except asyncio.CancelledError:
             error_msg = "Training job was cancelled by user."
             logger.info(f"AutoML Job {job_id} cancelled.")
+            tracker.abort(error_msg, status="cancelled")
+            await save_pipeline()
             await self._on_job_failure(
                 job_id=job_id,
                 user_id=user_id,
@@ -413,6 +541,8 @@ class TrainingService:
         except Exception as e:
             error_msg = f"Training failure: {str(e)}"
             logger.error(f"AutoML Job {job_id} failed: {error_msg}", exc_info=True)
+            tracker.abort(error_msg)
+            await save_pipeline()
             await self._on_job_failure(
                 job_id=job_id,
                 user_id=user_id,

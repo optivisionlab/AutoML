@@ -1,0 +1,129 @@
+{
+  "http_status": 200,
+  "body": {
+    "success": true,
+    "message": "Training pipeline retrieved successfully",
+    "data": {
+      "job_id": "6ae5a5402ebdf7162486abf7",
+      "version": "2.0.0",
+      "mode": "automl",
+      "source": "tracked",
+      "status": "failed",
+      "error": {
+        "message": "Training failure: Target column 'no_such_column' not found in dataset columns: ['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)', 'petal width (cm)', 'species']"
+      },
+      "updated_at": "2026-10-31T08:22:24Z",
+      "read_dataset": {
+        "name": "Read dataset",
+        "kind": "data_loading",
+        "depends_on": [],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": null,
+        "params": {
+          "id_data": "6ae5a5402ebdf7162486abf4",
+          "format": "parquet"
+        },
+        "output": {
+          "data_url": "dataset/6ae5a53d2ebdf7162486abef/158b47a4-41db-4b35-999c-cca12a56b961.parquet",
+          "n_rows": 150,
+          "n_columns": 5
+        }
+      },
+      "split_holdout_data": {
+        "name": "Split holdout data",
+        "kind": "data_splitting",
+        "depends_on": [
+          "read_dataset"
+        ],
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "preprocessing": {
+        "name": "Preprocessing",
+        "kind": "preprocessing",
+        "depends_on": [
+          "split_holdout_data"
+        ],
+        "status": "failed",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": {
+          "message": "Training failure: Target column 'no_such_column' not found in dataset columns: ['sepal length (cm)', 'sepal width (cm)', 'petal length (cm)', 'petal width (cm)', 'species']"
+        },
+        "params": {
+          "target": "no_such_column",
+          "list_feature": []
+        },
+        "output": {}
+      },
+      "model_selection": {
+        "name": "Model selection",
+        "kind": "model_selection",
+        "depends_on": [
+          "preprocessing"
+        ],
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "problem_type": "classification",
+          "search_algorithm": "grid_search",
+          "metric_sort": "accuracy",
+          "timeout": 600
+        },
+        "output": {}
+      },
+      "train": {
+        "name": "Train models",
+        "kind": "model_training",
+        "depends_on": [
+          "model_selection"
+        ],
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {
+          "models": {}
+        }
+      },
+      "select_best": {
+        "name": "Select best model",
+        "kind": "model_selection",
+        "depends_on": [
+          "train"
+        ],
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "save_result": {
+        "name": "Save result",
+        "kind": "result_storage",
+        "depends_on": [
+          "select_best"
+        ],
+        "status": "skipped",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "bucket_name": "models"
+        },
+        "output": {}
+      }
+    },
+    "meta": null
+  }
+}

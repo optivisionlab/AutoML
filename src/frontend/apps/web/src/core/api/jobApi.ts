@@ -3,8 +3,7 @@ import {
   type JobConfig,
   type OtherModelScore,
   type GetJobsOffsetParams,
-  type GetPipelineSamplePayload,
-  type PipelineSampleResponse,
+  type PipelineData,
   type JobsListParams,
   type JobsListResponse,
 } from "@automl/domain";
@@ -15,8 +14,7 @@ export type {
   JobConfig,
   OtherModelScore,
   GetJobsOffsetParams,
-  GetPipelineSamplePayload,
-  PipelineSampleResponse,
+  PipelineData,
   JobsListParams,
   JobsListResponse,
 };
@@ -63,18 +61,13 @@ export const jobApi = baseApi.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: "Job", id }],
     }),
 
-    getPipelineSample: builder.query<
-      PipelineSampleResponse,
-      GetPipelineSamplePayload
-    >({
-      query: (payload) => ({
-        url: "/get-pipeline-sample",
-        method: "POST",
-        data: payload,
+    // GET /api/v1/inference/jobs/{id}/pipeline (404 when the job has no pipeline yet)
+    getJobPipeline: builder.query<PipelineData, string>({
+      query: (id) => ({
+        url: `/api/v1/inference/jobs/${id}/pipeline`,
       }),
-      providesTags: (_result, _error, arg) => [
-        { type: "Job", id: arg.job_id || arg.problem_type },
-      ],
+      transformResponse: (response: any) => response?.data,
+      providesTags: (_result, _error, id) => [{ type: "Job", id }],
     }),
   }),
 });
@@ -84,9 +77,9 @@ export const {
   useGetJobsOffsetQuery,
   useGetJobsQuery,
   useGetLegacyJobsByUserIdQuery,
-  useGetPipelineSampleQuery,
+  useGetJobPipelineQuery,
   useLazyGetJobInfoQuery,
   useLazyGetJobsQuery,
   useLazyGetLegacyJobsByUserIdQuery,
-  useLazyGetPipelineSampleQuery,
+  useLazyGetJobPipelineQuery,
 } = jobApi;

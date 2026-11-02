@@ -1,0 +1,9 @@
+{
+  "http_status": 403,
+  "body": {
+    "success": false,
+    "error_code": "FORBIDDEN",
+    "detail": "You do not have permission to access this job.",
+    "extra": {}
+  }
+}
