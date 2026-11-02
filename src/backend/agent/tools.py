@@ -14,20 +14,61 @@ Các hàm ở đây là Python thuần nên gọi trực tiếp được mà kh�
 """
 
 # Standard libraries
+import logging
 import os
+import time
 
 # Local modules
 from agent.api_client import ApiError, HAutoMLClient
 
 
+_log = logging.getLogger("agent.tools")
+
+
+# Lỗi tạm thời của backend: mất kết nối (0), quá tải (429), proxy báo backend
+# chưa sẵn sàng (502-504). Gọi lại sau vài giây thường được.
+_TRANSIENT_STATUS = (0, 429, 502, 503, 504)
+# Backend tự nó không trả 429/502/503 - các mã này đến từ proxy khi request
+# chưa tới được backend. Lệnh TẠO (job, dataset) chỉ thử lại với các mã này:
+# timeout (0, 504) có thể backend đã nhận, gọi lại là sinh bản trùng.
+_NOT_RECEIVED_STATUS = (429, 502, 503)
+_RETRY_DELAYS = (1.0, 3.0)
+
+
 def _failure(error: ApiError) -> dict:
-    return {"ok": False, "status_code": error.status_code, "error": error.detail}
+    return {
+        "ok": False,
+        "status_code": error.status_code,
+        "error": error.detail,
+        # Lỗi tạm thời đã được _call thử lại mà vẫn hỏng.
+        "retryable": error.status_code in _TRANSIENT_STATUS,
+    }
+
+
+def _call(method, *args, retry_on: tuple = _TRANSIENT_STATUS, **kwargs):
+    """
+    Gọi một method của client, tự thử lại khi backend lỗi tạm thời.
+
+    Thử lại ở đây thay vì để LLM tự gọi lại: LLM hay bỏ cuộc ngay lần lỗi đầu
+    (benchmark v4-02 nhóm E chỉ phục hồi được 6/20 lượt) hoặc ngược lại gọi lại
+    liên tục. Hết lượt thử thì raise ApiError như cũ để tool trả _failure.
+    """
+    for delay in _RETRY_DELAYS:
+        try:
+            return method(*args, **kwargs)
+        except ApiError as error:
+            if error.status_code not in retry_on:
+                raise
+            name = getattr(method, "__name__", "API")
+            _log.warning("%s lỗi tạm thời (HTTP %s), thử lại sau %.0fs", name, error.status_code, delay)
+            time.sleep(delay)
+    return method(*args, **kwargs)
 
 
 def login(client: HAutoMLClient, username: str, password: str) -> dict:
     """Đăng nhập. Token được giữ trong client, không trả ra ngoài."""
     try:
-        client.login(username=username, password=password)
+        _call(client.login, username=username, password=password)
     except ApiError as error:
         return _failure(error)
 
@@ -49,7 +90,7 @@ def _ensure_user_id(client: HAutoMLClient) -> str | None:
         return client.user_id
 
     try:
-        client.get_me()
+        _call(client.get_me)
     except ApiError:
         return None
 
@@ -74,7 +115,7 @@ PROBLEM_TYPES = ("classification", "regression")
 def list_my_datasets(client: HAutoMLClient) -> dict:
     """Liệt kê các dataset của tài khoản đang đăng nhập (backend tự lọc theo token)."""
     try:
-        datasets = client.list_datasets()
+        datasets = _call(client.list_datasets)
     except ApiError as error:
         return _failure(error)
 
@@ -84,7 +125,7 @@ def list_my_datasets(client: HAutoMLClient) -> dict:
 def get_dataset_info(client: HAutoMLClient, dataset_id: str) -> dict:
     """Xem metadata một dataset theo ID. Không có tên cột - dùng get_dataset_schema."""
     try:
-        dataset = client.get_dataset_info(dataset_id)
+        dataset = _call(client.get_dataset_info, dataset_id)
     except ApiError as error:
         return _failure(error)
 
@@ -145,9 +186,9 @@ def get_dataset_schema(
         đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
     """
     try:
-        info = client.get_dataset_info(dataset_id)
-        preview = client.get_dataset_preview(dataset_id)
-        by_type = {kind: client.get_dataset_features(dataset_id, kind) or {} for kind in PROBLEM_TYPES}
+        info = _call(client.get_dataset_info, dataset_id)
+        preview = _call(client.get_dataset_preview, dataset_id)
+        by_type = {kind: _call(client.get_dataset_features, dataset_id, kind) or {} for kind in PROBLEM_TYPES}
     except ApiError as error:
         return _failure(error)
 
@@ -220,7 +261,7 @@ def _own_jobs(client: HAutoMLClient) -> tuple[list | None, dict | None]:
         return None, _need_login()
 
     try:
-        jobs = client.list_jobs()
+        jobs = _call(client.list_jobs)
     except ApiError as error:
         return None, _failure(error)
 
@@ -316,7 +357,7 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
         }
 
     try:
-        deployment = client.activate_model(job_id, activate)
+        deployment = _call(client.activate_model, job_id, activate)
     except ApiError as error:
         return _failure(error)
 
@@ -372,7 +413,7 @@ def predict(client: HAutoMLClient, job_id: str, rows: list) -> dict:
         }
 
     try:
-        result = client.predict(job_id, [{f: row.get(f) for f in features} if features else row for row in rows])
+        result = _call(client.predict, job_id, [{f: row.get(f) for f in features} if features else row for row in rows])
     except ApiError as error:
         return _failure(error)
 
@@ -616,7 +657,12 @@ def start_training(
 
     config = prepared["config"]
     try:
-        result = client.start_training(dataset_id=dataset_id, config=_backend_training_config(config))
+        result = _call(
+            client.start_training,
+            dataset_id=dataset_id,
+            config=_backend_training_config(config),
+            retry_on=_NOT_RECEIVED_STATUS,
+        )
     except ApiError as error:
         return _failure(error)
 
@@ -711,11 +757,13 @@ def upload_dataset_file(
     lại để báo cho Agent Manager biết ý định của người dùng.
     """
     try:
-        dataset = client.upload_dataset_content(
+        dataset = _call(
+            client.upload_dataset_content,
             data_name=data_name,
             filename=filename,
             content=content,
             mime_type=mime_type,
+            retry_on=_NOT_RECEIVED_STATUS,
         )
     except ApiError as error:
         return _failure(error)

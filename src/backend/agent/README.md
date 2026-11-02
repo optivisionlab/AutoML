@@ -33,8 +33,8 @@ chép lại:
 |---|---|---|
 | Prompt Agent → Manager | R: `user, problem, dataset, model, knowledge, service` + `missing` | `normalize_requirements`: chỉ giữ dataset ID có thật, ràng buộc so sánh được |
 | Data Agent → Model Agent | kết quả `get_dataset_schema` | tự đọc lại nếu Manager bỏ qua Data Agent |
-| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py` |
-| Operation Agent → backend | `start_training(config_id)` | không nhận config tự điền, không chạy trùng |
+| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py`, và cột mục tiêu do người dùng nói (trong R hoặc tin nhắn) hoặc là ứng viên duy nhất |
+| Operation Agent → backend | `start_training(config_id)` | không nhận config tự điền, không chạy trùng; mọi tool tự thử lại lỗi tạm thời của backend (`tools._call`) |
 | Watcher → Manager | `[Sự kiện] Job ... đã huấn luyện xong` + kiểm định | so `best_score` với ràng buộc trong R |
 
 ```
@@ -257,7 +257,7 @@ python -m agent.cli --provider google "..."
 | | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression. Kết quả tự chuyển cho Model Agent |
 | Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
 | | `list_models` | Đọc `assets/classification.yml` / `regression.yml` qua `scripts/model_catalog.py` |
-| | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. **Không train** |
+| | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. Chặn cột mục tiêu người dùng chưa chọn khi có nhiều ứng viên. **Không train** |
 | Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
 | | `list_my_jobs` | `GET /inference/jobs`, chỉ job của chính người dùng |

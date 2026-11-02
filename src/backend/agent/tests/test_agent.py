@@ -8,8 +8,9 @@ import httpx
 import pytest
 
 from agent import agent_openai, providers, server, skills, tools
-from agent.api_client import HAutoMLClient
+from agent.api_client import ApiError, HAutoMLClient
 from agent.chat import ChatSession
+from agent.team import normalize_requirements
 
 
 class Backend:
@@ -143,6 +144,55 @@ def test_target_leakage_blocks_training():
     assert backend.training_calls == []
 
 
+def failing_once(method, status):
+    calls = []
+
+    def call(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            raise ApiError(status, "tạm thời")
+        return method(*args, **kwargs)
+    return call, calls
+
+
+def test_transient_backend_error_is_retried(monkeypatch):
+    monkeypatch.setattr(tools, "_RETRY_DELAYS", (0, 0))
+    backend = Backend()
+    backend.get_dataset_preview, calls = failing_once(backend.get_dataset_preview, 503)
+    assert tools.get_dataset_schema(backend, "dataset-1")["ok"]
+    assert len(calls) == 2
+
+
+def test_persistent_or_permanent_backend_error_is_reported(monkeypatch):
+    monkeypatch.setattr(tools, "_RETRY_DELAYS", (0, 0))
+    backend = Backend()
+    calls = []
+
+    def down(*args):
+        calls.append(args)
+        raise ApiError(503, "Service Unavailable")
+    backend.get_dataset_preview = down
+    result = tools.get_dataset_schema(backend, "dataset-1")
+    assert result["ok"] is False and result["retryable"] is True
+    assert len(calls) == 3
+
+    backend.get_dataset_preview, calls = failing_once(backend.get_dataset_preview, 404)
+    result = tools.get_dataset_schema(backend, "dataset-1")
+    assert result["ok"] is False and result["retryable"] is False
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("status,retried", [(503, True), (504, False)])
+def test_training_is_retried_only_when_backend_never_got_it(monkeypatch, status, retried):
+    monkeypatch.setattr(tools, "_RETRY_DELAYS", (0, 0))
+    backend = Backend()
+    backend.start_training, calls = failing_once(backend.start_training, status)
+    result = tools.start_training(backend, "dataset-1", "y", ["x"], "accuracy", "classification")
+    assert result["ok"] is retried
+    assert len(calls) == (2 if retried else 1)
+    assert len(backend.training_calls) == (1 if retried else 0)
+
+
 def test_jobs_are_filtered_by_owner():
     result = tools.list_my_jobs(Backend())
     assert result["ok"]
@@ -187,6 +237,88 @@ def test_invalid_config_never_enters_handoff(session):
     assert prepared["ok"] is False
     assert session.team.handoff.configs == {}
     assert session.api.training_calls == []
+
+
+def test_unchosen_target_is_blocked_when_dataset_has_several(session):
+    session.api.get_dataset_features = lambda _id, kind: {"x": True, "y": kind == "classification"}
+    # Tên cột chỉ nằm trong dòng sự kiện hệ thống chèn vào, người dùng chưa nói.
+    session.messages.append({
+        "role": "user",
+        "content": "[Sự kiện] Người dùng vừa tải lên dataset y (id: dataset-1)\n\nHuấn luyện giúp tôi.",
+    })
+    prepared = session.team.submit_config(
+        session.api, "dataset-1", "y", ["x"], "accuracy", "classification",
+    )
+    assert prepared["ok"] is False
+    assert prepared["target_candidates"] == ["x", "y"]
+    assert session.team.handoff.configs == {}
+
+
+@pytest.mark.parametrize("said", [
+    {"message": "Target là y, bài toán phân loại."},
+    {"requirements": {"problem": {"target": "Y", "type": "classification"}}},
+])
+def test_target_named_by_user_passes(session, said):
+    session.api.get_dataset_features = lambda _id, kind: {"x": True, "y": kind == "classification"}
+    if "message" in said:
+        session.messages.append({"role": "user", "content": said["message"]})
+    session.team.handoff.requirements = said.get("requirements")
+    prepared = session.team.submit_config(
+        session.api, "dataset-1", "y", ["x"], "accuracy", "classification",
+    )
+    assert prepared["ok"]
+    assert prepared["config"]["target"] == "y"
+
+
+def test_subagent_survives_one_failed_llm_call(session):
+    create = Mock(side_effect=[
+        response(tool="ask_data_agent", arguments={"task": "Liệt kê dataset"}),
+        RuntimeError("provider trả dữ liệu hỏng"),
+        response(tool="list_my_datasets"),
+        response("Có dataset demo"),
+        response("Bạn có dataset demo"),
+    ])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert session.send("Tôi có dataset nào?") == "Bạn có dataset demo"
+
+
+def test_llm_error_already_retried_by_sdk_is_not_retried_again():
+    error = RuntimeError("HTTP 401")
+    error.status_code = 401
+    create = Mock(side_effect=[error, response("không được gọi")])
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with pytest.raises(RuntimeError):
+        agent_openai.create_completion(llm, model="m", messages=[])
+    assert create.call_count == 1
+
+
+@pytest.mark.parametrize("intent,blocks", [("train", False), ("predict", True)])
+def test_missing_predict_rows_do_not_block_training(intent, blocks):
+    raw = {
+        "user": {"intent": intent},
+        "dataset": {"id": "dataset-1"},
+        "missing": ["Mẫu dữ liệu cần dự đoán chưa được cung cấp"],
+    }
+    _, missing, _ = normalize_requirements(raw, [{"id": "dataset-1", "name": "demo"}])
+    assert bool(missing) is blocks
+
+
+def test_operation_agent_knows_which_jobs_this_session_created(session, monkeypatch):
+    monkeypatch.setattr(session.watcher, "watch", Mock(return_value=True))
+    create = Mock(return_value=response("Đã kiểm tra"))
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+    none_yet = "Chưa có - phiên chat này chưa tạo job nào."
+    session.team.ask_operation_agent(session.api, "Kiểm tra job vừa tạo")
+    assert none_yet in create.call_args.kwargs["messages"][0]["content"]
+
+    config_id = session.team.submit_config(
+        session.api, "dataset-1", "y", ["x"], "accuracy", "classification",
+    )["config_id"]
+    session.team.start_training(session.api, config_id)
+    session.team.ask_operation_agent(session.api, "Kiểm tra job vừa tạo")
+    system = create.call_args.kwargs["messages"][0]["content"]
+    assert '"job_id": "job-1"' in system and none_yet not in system
 
 
 def test_step_limit_reply_is_retained_for_next_turn(session, monkeypatch):

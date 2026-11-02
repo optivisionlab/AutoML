@@ -25,7 +25,10 @@ SUBAGENTS = (PROMPT_AGENT, DATA_AGENT, MODEL_AGENT, OPERATION_AGENT)
 BASE_PROMPT = """Quy tắc chung, đúng với mọi tình huống:
 
 - Chỉ dựa vào kết quả tool. Không bịa ra phản hồi của API, không bịa số liệu.
-- Khi một tool trả về {"ok": false}, đọc trường "error" để xử lý. Không gọi lại
+- Khi một tool trả về {"ok": false}, đọc trường "error" để xử lý. Lỗi có
+  "retryable": true là lỗi tạm thời của backend mà hệ thống ĐÃ tự thử lại vài
+  lần: báo rõ là lỗi tạm thời và đề nghị thử lại sau, đừng tự gọi lại liên tục.
+  Lỗi khác (sai tham số, không tìm thấy...) thì sửa theo "error"; không gọi lại
   cùng một tool với cùng tham số.
 - Không bịa ID. ID phải lấy từ kết quả một tool khác hoặc từ việc được giao.
 - Danh sách rỗng là câu trả lời hợp lệ. Đừng suy diễn thành lỗi hệ thống.

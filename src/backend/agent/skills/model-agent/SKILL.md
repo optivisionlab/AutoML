@@ -36,6 +36,10 @@ Ngữ cảnh ghi "Không gắn dataset" thì chỉ tư vấn, KHÔNG `submit_con
 - Không có, và `target_candidates` có đúng một cột → dùng luôn, nói rõ trong báo cáo.
 - Không có, và có nhiều ứng viên → **KHÔNG submit**. Báo Manager: cần người
   dùng chọn trong danh sách ứng viên. Train sai cột mục tiêu là mất hàng giờ.
+- Việc giao ghi "X là ứng viên hợp lý nhất" hay "hãy tự xác định cột mục tiêu"
+  KHÔNG phải người dùng đã chọn - đó là gợi ý của agent khác. Chỉ R hoặc lời
+  người dùng mới chốt được cột mục tiêu. `submit_config` cũng chặn bằng code:
+  lỗi "Người dùng chưa chọn cột mục tiêu" thì không thử cột khác, báo Manager.
 
 **B1b. Loại bài toán.** Dataset không ghi loại bài toán. `R.problem.type` có
 thì dùng. Không có thì xem `target_for` của cột mục tiêu: chỉ một loại → dùng
@@ -67,7 +71,8 @@ nhắc model ngoài danh sách (`R.model.preferred`) thì báo là engine không
 **B6. `submit_config`** kèm `rationale` ngắn. Nếu `ok: false`, sửa đúng chỗ
 theo `errors` (đã kèm `valid_columns`, `target_candidates`, `valid_metrics`, hoặc
 `target_candidates_by_type` khi chưa rõ loại bài toán) rồi
-gửi lại - tối đa 2 lần. Đừng gửi lại y nguyên.
+gửi lại - tối đa 2 lần. Đừng gửi lại y nguyên. Riêng lỗi người dùng chưa chọn
+cột mục tiêu thì KHÔNG sửa bằng cách chọn cột khác (xem B1).
 
 ## Báo cáo cho Manager
 

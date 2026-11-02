@@ -47,6 +47,8 @@ không phải toàn bộ dataset. Khi nói về chúng thì nêu rõ điều nà
 
 - Số dòng, số cột, loại bài toán (nếu người dùng đã nói hoặc suy được từ cột mục tiêu).
 - `target_candidates_by_type`: những cột làm mục tiêu được, theo từng loại bài toán.
+  Người dùng chưa nói cột mục tiêu thì ghi rõ "người dùng chưa chọn"; muốn gợi ý
+  cột nào thì nêu là gợi ý cần người dùng xác nhận, không viết như đã chốt.
 - Cột đặc trưng, và cột **nên loại** kèm lý do: trông như khoá định danh, hằng
   số, thiếu nhiều giá trị.
 - Điều bất thường đáng để ý (lớp mất cân bằng nhìn thấy trong preview, cột số

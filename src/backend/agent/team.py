@@ -22,6 +22,7 @@ chạy được config đã qua validate_config (nó chỉ cầm config_id, khô
 # Standard libraries
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from agent import prompts, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     SUBAGENT_MAX_STEPS,
+    create_completion,
     describe_error,
     _DISPATCH,
     _accumulate_usage,
@@ -76,6 +78,10 @@ _SAMPLES_PER_COLUMN = 3
 # Prompt Agent không thấy lịch sử, chỉ thấy vài câu gần nhất của người dùng -
 # đủ để không mất chi tiết như "target là cột Type" nói ở lượt trước.
 _RECENT_USER_MESSAGES = 6
+# Dòng do hệ thống chèn vào tin người dùng (chat.py), không phải người dùng gõ.
+_EVENT_PREFIX = "[Sự kiện]"
+# Câu trong missing chỉ xin mẫu để dự đoán (xem normalize_requirements).
+_ASKS_FOR_PREDICT_ROWS = re.compile(r"mẫu.*dự đoán|dự đoán.*mẫu", re.IGNORECASE)
 
 
 class AgentOutputError(RuntimeError):
@@ -174,6 +180,15 @@ def normalize_requirements(raw: dict, datasets: list[dict]) -> tuple[dict, list,
     by_id = {d["id"]: d for d in datasets if d.get("id")}
     dataset = requirements["dataset"]
     intent = str(requirements["user"].get("intent") or "").lower()
+
+    # Mẫu cần dự đoán gửi sau khi train xong cũng được, không chặn việc train.
+    # Đã gặp: Prompt Agent ghi "Mẫu dữ liệu cần dự đoán chưa được cung cấp" vào
+    # missing, Manager dừng lại hỏi nên lượt đó không train.
+    if intent == "train":
+        blocking = [item for item in missing if not _ASKS_FOR_PREDICT_ROWS.search(item)]
+        if len(blocking) < len(missing):
+            notes.append("Chưa có mẫu cần dự đoán: vẫn train trước, xin mẫu khi job xong.")
+            missing = blocking
 
     # --- dataset: chỉ nhận ID có thật ---
     dataset_id = dataset.get("id")
@@ -359,8 +374,8 @@ class AgentTeam:
 
         for attempt in range(2):
             self.session.check_budget(agent)
-            response = self.session.llm.chat.completions.create(
-                model=self.session.config.model, messages=messages,
+            response = create_completion(
+                self.session.llm, model=self.session.config.model, messages=messages,
             )
             _accumulate_usage(self.session.usage, response.usage)
             if response.usage is not None:
@@ -537,9 +552,23 @@ class AgentTeam:
             # Config đã bị thay thế thì không đưa vào, Operation Agent khỏi chọn nhầm.
             if not entry.get("superseded_by")
         ]
+        # list_my_jobs trả cả job cũ và job của phiên khác cùng tài khoản. Đã gặp:
+        # phiên chưa tạo job nào mà người dùng hỏi "job vừa tạo", Operation Agent
+        # lấy một job cũ trùng dataset và báo như job vừa chạy.
+        own_jobs = [
+            {
+                "job_id": job_id,
+                "config_id": config_id,
+                "dataset_id": (self.handoff.configs.get(config_id) or {}).get("dataset_id"),
+            }
+            for job_id, config_id in self.handoff.jobs.items()
+        ]
         context = "\n\n".join([
             "## Config đã qua validate_config (chỉ chạy được các config_id này)",
             json.dumps(ready, ensure_ascii=False, indent=1) if ready else "Chưa có config nào.",
+            '## Job do chính phiên chat này tạo ("job vừa tạo" chỉ là các job này)',
+            json.dumps(own_jobs, ensure_ascii=False, indent=1) if own_jobs
+            else "Chưa có - phiên chat này chưa tạo job nào.",
             "## Job đang được theo dõi nền",
             ", ".join(self.session.watcher.active()) or "Không có.",
         ])
@@ -581,7 +610,7 @@ class AgentTeam:
             input={"dataset_id": dataset_id, "target": target, "list_feature": list_feature,
                    "metric_sort": metric_sort, "search_algorithm": search_algorithm, "max_time": max_time},
         ) as observation:
-            prepared = tools.prepare_training_config(
+            prepared = self._unconfirmed_target(api, dataset_id, target) or tools.prepare_training_config(
                 api,
                 dataset_id=dataset_id,
                 target=target,
@@ -628,6 +657,51 @@ class AgentTeam:
                 "Config đã qua validate_config. Báo config_id này cho Manager để chuyển "
                 "Operation Agent chạy - bạn KHÔNG bấm chạy."
             ),
+        }
+
+    def _unconfirmed_target(self, api, dataset_id: str, target: str) -> dict | None:
+        """
+        Chặn tự chọn cột mục tiêu: người dùng phải nói ra, hoặc dataset chỉ có một ứng viên.
+
+        SKILL.md đã dặn "nhiều ứng viên thì hỏi" nhưng LLM vẫn có lúc bỏ qua (đã
+        gặp: Data Agent gợi ý "Age hợp lý nhất", Manager chép thành việc giao,
+        Model Agent submit Age và job chạy dù người dùng chưa chọn). Người dùng
+        nói ra = có trong R, hoặc tên cột có trong tin gần đây của người dùng
+        (lượt sau mới bổ sung "target là Age" thì R có thể chưa cập nhật).
+
+        Returns:
+            None nếu được dùng cột này, ngược lại là lỗi trả cho Model Agent.
+        """
+        target = (target or "").strip()
+        if not target:
+            return None  # validate_config tự báo thiếu target
+        problem = (self.handoff.requirements or {}).get("problem") or {}
+        if str(problem.get("target") or "").strip().lower() == target.lower():
+            return None
+
+        said = re.compile(rf"(?<!\w){re.escape(target)}(?!\w)", re.IGNORECASE)
+        for message in self.session.recent_user_messages(_RECENT_USER_MESSAGES):
+            if any(said.search(line) for line in message.splitlines() if not line.startswith(_EVENT_PREFIX)):
+                return None
+
+        schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
+        if not schema.get("ok"):
+            return None  # không đọc được dữ liệu thì để validate_config báo lỗi
+        by_type = schema.get("target_candidates_by_type") or {}
+        kind = problem.get("type")
+        candidates = by_type[kind] if kind in by_type else list(dict.fromkeys(
+            name for names in by_type.values() for name in names
+        ))
+        if len(candidates) <= 1:
+            return None
+        return {
+            "ok": False,
+            "error": (
+                f"Người dùng chưa chọn cột mục tiêu, dataset có {len(candidates)} cột làm mục tiêu "
+                f"được. KHÔNG submit lại với cột khác: dừng và báo Manager hỏi người dùng chọn một "
+                "cột trong target_candidates. Có cột đáng gợi ý thì nêu là gợi ý, không phải đã chốt."
+            ),
+            "target_candidates": candidates,
         }
 
     def start_training(self, api, config_id: str) -> dict:
