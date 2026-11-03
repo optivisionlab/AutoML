@@ -83,6 +83,36 @@ _RECENT_USER_MESSAGES = 6
 _EVENT_PREFIX = "[Sự kiện]"
 # Câu trong missing chỉ xin mẫu để dự đoán (xem normalize_requirements).
 _ASKS_FOR_PREDICT_ROWS = re.compile(r"mẫu.*dự đoán|dự đoán.*mẫu", re.IGNORECASE)
+# Cụm báo cột NGAY SAU nó là cột cần dự đoán ("target Type", "dự báo load_kwh"),
+# và cụm đứng SAU tên cột ("Age là target"). Xem _named_targets.
+_TARGET_CUE = re.compile(r"target|mục tiêu|dự đoán|dự báo|predict|forecast|nhãn|label", re.IGNORECASE)
+_TARGET_CUE_AFTER = re.compile(r"\s*(?:là|làm)\s+(?:cột\s+)?(?:target|mục tiêu|nhãn|label)", re.IGNORECASE)
+_CLAUSE_END = re.compile(r"[.!?;\n]")
+
+
+def _named_targets(text: str, columns: list[str]) -> set[str]:
+    """
+    Cột người dùng nói là cột cần dự đoán: cột ĐẦU TIÊN sau một cụm như "target",
+    "dự báo" trong cùng mệnh đề, hoặc cột ngay trước "là target".
+
+    Chỉ nhắc tên cột thì không tính: "bỏ cột age, dự đoán giúp tôi" hay "feature
+    Length,Diameter" không chọn age hay Diameter làm mục tiêu.
+    """
+    patterns = {c: re.compile(rf"(?<!\w){re.escape(c)}(?!\w)", re.IGNORECASE) for c in columns}
+    chosen = set()
+    for cue in _TARGET_CUE.finditer(text):
+        tail = text[cue.end():cue.end() + 60]
+        stop = _CLAUSE_END.search(tail)
+        tail = tail[:stop.start()] if stop else tail
+        hits = [(m.start(), c) for c, p in patterns.items() if (m := p.search(tail))]
+        if hits:
+            chosen.add(min(hits)[1])
+    for cue in _TARGET_CUE_AFTER.finditer(text):
+        head = text[max(0, cue.start() - 40):cue.start()]
+        hits = [(m.end(), c) for c, p in patterns.items() for m in p.finditer(head)]
+        if hits:
+            chosen.add(max(hits)[1])
+    return chosen
 
 
 class AgentOutputError(RuntimeError):
@@ -629,13 +659,13 @@ class AgentTeam:
                 output={k: prepared.get(k) for k in ("ok", "config", "errors", "warnings")},
                 warning=None if prepared.get("ok") else "Config bị chặn",
             )
-        self._emit(
-            "config_checked",
-            agent=MODEL_AGENT,
-            ok=bool(prepared.get("ok")),
-            errors=prepared.get("errors") or ([prepared.get("error")] if not prepared.get("ok") else []),
-        )
         if not prepared.get("ok"):
+            self._emit(
+                "config_checked",
+                agent=MODEL_AGENT,
+                ok=False,
+                errors=prepared.get("errors") or [prepared.get("error")],
+            )
             return prepared
 
         config_id = f"cfg_{uuid.uuid4().hex[:6]}"
@@ -651,7 +681,20 @@ class AgentTeam:
             "config": prepared["config"],
             "warnings": prepared["warnings"],
             "rationale": rationale,
+            # R lúc chốt config: watcher kiểm định job theo đúng R này, không theo R
+            # mới hơn của một yêu cầu khác trong cùng phiên.
+            "requirements": self.handoff.requirements,
         }
+        # Kèm config để frontend hiện được thẻ cấu hình cả khi job chưa chạy được.
+        self._emit(
+            "config_checked",
+            agent=MODEL_AGENT,
+            ok=True,
+            errors=[],
+            config_id=config_id,
+            config=prepared["config"],
+            warnings=prepared["warnings"],
+        )
         return {
             "ok": True,
             "config_id": config_id,
@@ -670,8 +713,9 @@ class AgentTeam:
         SKILL.md đã dặn "nhiều ứng viên thì hỏi" nhưng LLM vẫn có lúc bỏ qua (đã
         gặp: Data Agent gợi ý "Age hợp lý nhất", Manager chép thành việc giao,
         Model Agent submit Age và job chạy dù người dùng chưa chọn). Người dùng
-        nói ra = có trong R, hoặc tên cột có trong tin gần đây của người dùng
-        (lượt sau mới bổ sung "target là Age" thì R có thể chưa cập nhật).
+        nói ra = có trong R, hoặc tin gần đây của người dùng nói rõ cột đó là cột
+        cần dự đoán (lượt sau mới bổ sung "target là Age" thì R có thể chưa cập
+        nhật) - chỉ nhắc tên cột thì không tính, xem _named_targets.
 
         Returns:
             None nếu được dùng cột này, ngược lại là lỗi trả cho Model Agent.
@@ -683,11 +727,6 @@ class AgentTeam:
         if str(problem.get("target") or "").strip().lower() == target.lower():
             return None
 
-        said = re.compile(rf"(?<!\w){re.escape(target)}(?!\w)", re.IGNORECASE)
-        for message in self.session.recent_user_messages(_RECENT_USER_MESSAGES):
-            if any(said.search(line) for line in message.splitlines() if not line.startswith(_EVENT_PREFIX)):
-                return None
-
         schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
         if not schema.get("ok"):
             return None  # không đọc được dữ liệu thì để validate_config báo lỗi
@@ -698,6 +737,14 @@ class AgentTeam:
         ))
         if len(candidates) <= 1:
             return None
+
+        columns = [c["name"] for c in schema.get("columns") or []]
+        if target.lower() not in {name.lower() for name in columns}:
+            return None  # cột không có thật: validate_config báo đúng lỗi đó
+        for message in self.session.recent_user_messages(_RECENT_USER_MESSAGES):
+            text = "\n".join(line for line in message.splitlines() if not line.startswith(_EVENT_PREFIX))
+            if target.lower() in {name.lower() for name in _named_targets(text, columns)}:
+                return None
         return {
             "ok": False,
             "error": (
@@ -757,7 +804,7 @@ class AgentTeam:
         self.session.watcher.watch(
             job_id,
             max_time=config.get("max_time"),
-            requirements=self.handoff.requirements,
+            requirements=entry.get("requirements"),
             trace_context=tracing.current_context(),
         )
 
@@ -783,8 +830,9 @@ class AgentTeam:
                 "note": "Job đã kết thúc, không cần theo dõi. Dùng get_job_info để xem kết quả.",
             }
 
-        # Ràng buộc trong R chỉ áp cho job do chính phiên này khởi tạo.
-        requirements = self.handoff.requirements if job_id in self.handoff.jobs else None
+        # Ràng buộc chỉ áp cho job do chính phiên này khởi tạo, theo R lúc chốt config của job.
+        config_id = self.handoff.jobs.get(job_id)
+        requirements = (self.handoff.configs.get(config_id) or {}).get("requirements") if config_id else None
         started = self.session.watcher.watch(
             job_id,
             # Backend lưu giới hạn thời gian trong config job dưới tên timeout.

@@ -142,6 +142,8 @@ export function useAgentSession(token: string, userKey: string) {
   // sự kiện trong khoảng trước khi effect kịp đóng nó - sự kiện đó không được
   // lọt vào phiên mới (sẽ làm seq.last nhảy vọt và bỏ sót sự kiện của phiên mới).
   const generation = useRef(0);
+  // session_id đang dùng, đọc được ngay trong callback SSE (state sessionId thì chưa kịp đổi).
+  const sessionRef = useRef<string | null>(null);
 
   const uploading = uploadProgress !== null;
   const busy = sending || uploading || restoring;
@@ -152,6 +154,23 @@ export function useAgentSession(token: string, userKey: string) {
 
   const announce = useCallback((code: Announcement["code"], values?: Record<string, string>) => {
     setAnnouncement((prev) => ({ code, values, n: (prev?.n ?? 0) + 1 }));
+  }, []);
+
+  /**
+   * Nhận session_id server trả về. Khác phiên đang dùng nghĩa là server đã cấp
+   * phiên mới (phiên cũ quá hạn, bị dọn, hoặc agent khởi động lại): seq của phiên
+   * mới bắt đầu lại từ 1, nên phải quên seq cũ - không thì mọi sự kiện mới bị coi
+   * là trùng. Job của phiên cũ cũng không còn ai theo dõi trên server.
+   */
+  const adoptSession = useCallback((id: string) => {
+    if (!id) return;
+    if (sessionRef.current && id !== sessionRef.current) {
+      generation.current += 1;
+      seq.current.reset();
+      setWatching([]);
+    }
+    sessionRef.current = id;
+    setSessionId(id);
   }, []);
 
   /** Điểm vào DUY NHẤT cho mọi sự kiện có seq, bất kể tới từ luồng nào. */
@@ -171,9 +190,10 @@ export function useAgentSession(token: string, userKey: string) {
 
       const jobId = event.job_id ? String(event.job_id) : null;
       if (!jobId) return;
-      if (event.type === "job_started") {
+      // job_watch: job có sẵn được watch_job theo dõi - cũng phải mở kênh nền, kể cả khi phát lại sau tải lại trang.
+      if (event.type === "job_started" || event.type === "job_watch") {
         setWatching((prev) => (prev.includes(jobId) ? prev : [...prev, jobId]));
-        if (!replaying.current) announce("jobStarted", { id: jobId.slice(0, 8) });
+        if (event.type === "job_started" && !replaying.current) announce("jobStarted", { id: jobId.slice(0, 8) });
       } else if (event.type && END_EVENTS.has(event.type)) {
         setWatching((prev) => prev.filter((id) => id !== jobId));
         if (!finishedJobs.current.has(jobId)) {
@@ -232,7 +252,7 @@ export function useAgentSession(token: string, userKey: string) {
         if (!cancelled) setRestoring(false);
       }
       if (cancelled) return;
-      setSessionId(stored);
+      adoptSession(stored);
       push({ kind: "restored", jobIds: [...replayed] });
     })();
 
@@ -242,7 +262,7 @@ export function useAgentSession(token: string, userKey: string) {
       controller.abort();
       setRestoring(false);
     };
-  }, [ingest, push, userKey]);
+  }, [adoptSession, ingest, push, userKey]);
 
   // Trạng thái agent server. Upload vẫn chạy được khi LLM chưa cấu hình.
   useEffect(() => {
@@ -350,7 +370,7 @@ export function useAgentSession(token: string, userKey: string) {
         let reply: ChatReply | null = null;
         let failure: AgentHttpError | null = null;
         await readSSE(res, (name, data) => {
-          if (name === "session") setSessionId(data.session_id);
+          if (name === "session") adoptSession(data.session_id);
           else if (name === "reply") reply = data as ChatReply;
           else if (name === "error") failure = new AgentHttpError(data.status_code ?? 502, data.detail || "");
           else ingest(data);
@@ -359,7 +379,7 @@ export function useAgentSession(token: string, userKey: string) {
         if (failure) throw failure;
         if (!reply) throw new Error("disconnected");
         const done = reply as ChatReply;
-        if (done.session_id) setSessionId(done.session_id);
+        if (done.session_id) adoptSession(done.session_id);
         push({ kind: "agent", text: done.reply, trace: traceRef.current, agents: done.agents ?? [] });
         announce("reply");
         if (Array.isArray(done.watching)) setWatching(done.watching);
@@ -384,7 +404,7 @@ export function useAgentSession(token: string, userKey: string) {
         setLiveTrace(null);
       }
     },
-    [announce, busy, ingest, push, sessionId, token],
+    [adoptSession, announce, busy, ingest, push, sessionId, token],
   );
 
   /** Trả về lỗi, hoặc null nếu tải lên thành công. */
@@ -405,7 +425,7 @@ export function useAgentSession(token: string, userKey: string) {
         if (status === 401 || status === 403) return { code: "auth" };
         if (status !== 200) return { code: "server", detail: typeof body?.detail === "string" ? body.detail : `HTTP ${status}` };
         const dataset = body.dataset as UploadedDataset;
-        setSessionId(body.session_id);
+        adoptSession(body.session_id);
         push({ kind: "upload", dataset });
         setActiveDataset({ id: dataset.id, name: dataset.name, problemType: dataset.type });
         return null;
@@ -415,22 +435,31 @@ export function useAgentSession(token: string, userKey: string) {
         setUploadProgress(null);
       }
     },
-    [busy, push, sessionId, token],
+    [adoptSession, busy, push, sessionId, token],
   );
 
   const reset = useCallback(async () => {
     if (busy) return;
+    // /agent/reset xoá lịch sử nhưng GIỮ phiên và job đang theo dõi. Dùng tiếp phiên
+    // đó: job đang chạy vẫn báo về, và token mới vẫn tới watcher qua /agent/token.
+    // Bỏ phiên đi thì watcher của nó chạy tiếp tới 26 giờ với token đã hết hạn.
+    let kept = false;
     if (sessionId) {
-      await postJson("/agent/reset", { message: "reset", session_id: sessionId, access_token: token }).catch(() => undefined);
+      const res = await postJson("/agent/reset", { message: "reset", session_id: sessionId, access_token: token }).catch(() => null);
+      const body = res?.ok ? await res.json().catch(() => null) : null;
+      kept = body?.ok === true;
     }
+    setItems([]);
+    setActiveDataset(null);
+    if (kept) return;
+
+    // Server không còn phiên này: tin nhắn sau tạo phiên mới.
     generation.current += 1;
     writeStoredSession(userKey, null);
-    setItems([]);
+    sessionRef.current = null;
     setSessionId(null);
-    // Job vẫn chạy trên backend, chỉ là cuộc trò chuyện mới không theo dõi nữa.
     setWatching([]);
     setJobs({});
-    setActiveDataset(null);
     seq.current.reset();
     finishedJobs.current.clear();
   }, [busy, sessionId, token, userKey]);

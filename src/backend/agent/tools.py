@@ -43,7 +43,7 @@ def _failure(error: ApiError) -> dict:
         "status_code": error.status_code,
         "error": error.detail,
         # Lỗi tạm thời đã được _call thử lại mà vẫn hỏng.
-        "retryable": error.status_code in _TRANSIENT_STATUS,
+        "retryable": error.status_code in _TRANSIENT_STATUS and not error.timed_out,
     }
 
 
@@ -59,7 +59,8 @@ def _call(method, *args, retry_on: tuple = _TRANSIENT_STATUS, **kwargs):
         try:
             return method(*args, **kwargs)
         except ApiError as error:
-            if error.status_code not in retry_on:
+            # Backend đã nhận request nhưng treo: gọi lại chỉ nhân thời gian chờ lên.
+            if error.status_code not in retry_on or error.timed_out:
                 raise
             name = getattr(method, "__name__", "API")
             _log.warning("%s lỗi tạm thời (HTTP %s), thử lại sau %.0fs", name, error.status_code, delay)
@@ -155,7 +156,7 @@ def _summarize_columns(names: list, by_type: dict, rows: list, problem_type: str
         values = [row.get(name) for row in rows]
         present = [value for value in values if value is not None]
         distinct = {str(value) for value in present}
-        target_for = [kind for kind in INFERABLE_TYPES if (by_type.get(kind) or {}).get(name)]
+        target_for = [kind for kind in PROBLEM_TYPES if (by_type.get(kind) or {}).get(name)]
 
         summary.append({
             "name": name,
@@ -218,7 +219,10 @@ def _time_columns(names: list, rows: list, total_rows) -> list[dict]:
         }
         # Đúng khi file sắp theo thời gian và không hở mốc (backend vốn đòi cách đều).
         if info["regular_in_preview"] and step and isinstance(total_rows, int):
-            info["estimated_last"] = (times[0] + step * (total_rows - 1)).isoformat(sep=" ")
+            try:
+                info["estimated_last"] = (times[0] + step * (total_rows - 1)).isoformat(sep=" ")
+            except OverflowError:
+                pass  # mốc cuối vượt năm 9999 - bỏ trường ước tính, không làm hỏng cả schema
         found.append(info)
     return found
 
@@ -263,13 +267,14 @@ def get_dataset_schema(
     requested = (problem_type or "").strip().lower()
     requested = requested if requested in PROBLEM_TYPES else None
     rows = preview.get("records") or []
-    columns = _summarize_columns(names, by_type, rows, requested)
-    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in INFERABLE_TYPES}
     time_columns = _time_columns(names, rows, preview.get("rows"))
     if time_columns:
         # Backend chọn target time_series theo đúng luật của regression (datasets/service.py).
+        # Gắn vào by_type để target_for / can_be_target của từng cột khớp target_candidates.
         times = {t["name"] for t in time_columns}
-        by_kind["time_series"] = [name for name in by_kind["regression"] if name not in times]
+        by_type["time_series"] = {name: bool(ok) and name not in times for name, ok in by_type["regression"].items()}
+    columns = _summarize_columns(names, by_type, rows, requested)
+    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in by_type}
 
     schema = {
         "ok": True,

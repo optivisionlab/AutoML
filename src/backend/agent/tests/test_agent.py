@@ -182,6 +182,21 @@ def test_persistent_or_permanent_backend_error_is_reported(monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize("timed_out,calls", [(True, 1), (False, 3)])
+def test_backend_that_hangs_is_not_retried(monkeypatch, timed_out, calls):
+    monkeypatch.setattr(tools, "_RETRY_DELAYS", (0, 0))
+    backend = Backend()
+    made = []
+
+    def unreachable(*args):
+        made.append(args)
+        raise ApiError(0, "timeout" if timed_out else "connection refused", timed_out=timed_out)
+    backend.get_dataset_preview = unreachable
+    result = tools.get_dataset_schema(backend, "dataset-1")
+    assert result["ok"] is False and result["retryable"] is (not timed_out)
+    assert len(made) == calls
+
+
 @pytest.mark.parametrize("status,retried", [(503, True), (504, False)])
 def test_training_is_retried_only_when_backend_never_got_it(monkeypatch, status, retried):
     monkeypatch.setattr(tools, "_RETRY_DELAYS", (0, 0))
@@ -224,6 +239,21 @@ def test_dataset_without_time_column_has_no_time_series_keys():
     schema = tools.get_dataset_schema(Backend(), "dataset-1")
     assert "time_columns" not in schema
     assert "time_series" not in schema["target_candidates_by_type"]
+    assert all("time_series" not in c["target_for"] for c in schema["columns"])
+
+
+def test_time_series_columns_agree_with_candidates():
+    schema = tools.get_dataset_schema(SeriesBackend(), "dataset-1", problem_type="time_series")
+    by_name = {c["name"]: c for c in schema["columns"]}
+    assert schema["target_candidates"] == ["sales"]
+    assert by_name["sales"]["can_be_target"] and "time_series" in by_name["sales"]["target_for"]
+    assert not by_name["date"]["can_be_target"]
+
+
+def test_estimated_last_past_year_9999_is_dropped_not_fatal():
+    rows = [{"date": "2024-01-01"}, {"date": "2024-01-02"}]
+    [info] = tools._time_columns(["date"], rows, 10**7)
+    assert info["regular_in_preview"] and "estimated_last" not in info
 
 
 @pytest.mark.parametrize("features,error", [
@@ -297,6 +327,29 @@ def test_validated_config_handoff_starts_only_once(session, monkeypatch):
     assert len(session.api.training_calls) == 1
 
 
+def test_job_is_judged_by_the_requirements_its_config_was_built_from(session, monkeypatch):
+    watch = Mock(return_value=True)
+    monkeypatch.setattr(session.watcher, "watch", watch)
+    events = []
+    session.events.subscribe(events.append)
+    first = {"problem": {"constraints": [{"metric": "accuracy", "op": ">=", "value": 0.9}]}}
+    session.team.handoff.requirements = first
+    prepared = session.team.submit_config(session.api, "dataset-1", "y", ["x"], "accuracy", "classification")
+
+    checked = [e for e in events if e["type"] == "config_checked"]
+    assert checked[-1]["ok"] and checked[-1]["config_id"] == prepared["config_id"]
+    assert checked[-1]["config"]["target"] == "y"
+
+    # Yêu cầu khác trong cùng phiên thay R trước khi config cũ được chạy.
+    session.team.handoff.requirements = {"problem": {"constraints": [{"metric": "accuracy", "op": ">=", "value": 0.95}]}}
+    session.team.start_training(session.api, prepared["config_id"])
+    assert watch.call_args.kwargs["requirements"] is first
+
+    session.api.list_jobs = lambda: [{"_id": "job-1", "user": {"id": "user-1"}, "status": 0}]
+    session.team.watch_job(session.api, "job-1")
+    assert watch.call_args.kwargs["requirements"] is first
+
+
 def test_invalid_config_never_enters_handoff(session):
     session.api.get_dataset_features = lambda *_: {"x": False, "y": False}
     prepared = session.team.submit_config(
@@ -322,8 +375,19 @@ def test_unchosen_target_is_blocked_when_dataset_has_several(session):
     assert session.team.handoff.configs == {}
 
 
+@pytest.mark.parametrize("message", ["Bỏ cột y, huấn luyện giúp tôi.", "Dùng feature x, y để train."])
+def test_mentioning_a_column_is_not_choosing_it_as_target(session, message):
+    session.api.get_dataset_features = lambda _id, kind: {"x": True, "y": kind == "classification"}
+    session.messages.append({"role": "user", "content": message})
+    prepared = session.team.submit_config(
+        session.api, "dataset-1", "y", ["x"], "accuracy", "classification",
+    )
+    assert prepared["ok"] is False and "chưa chọn cột mục tiêu" in prepared["error"]
+
+
 @pytest.mark.parametrize("said", [
     {"message": "Target là y, bài toán phân loại."},
+    {"message": "Tôi muốn dự đoán y từ x."},
     {"requirements": {"problem": {"target": "Y", "type": "classification"}}},
 ])
 def test_target_named_by_user_passes(session, said):

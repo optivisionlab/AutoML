@@ -33,7 +33,7 @@ chép lại:
 |---|---|---|
 | Prompt Agent → Manager | R: `user, problem, dataset, model, knowledge, service` + `missing` | `normalize_requirements`: chỉ giữ dataset ID có thật, ràng buộc so sánh được |
 | Data Agent → Model Agent | kết quả `get_dataset_schema` | tự đọc lại nếu Manager bỏ qua Data Agent |
-| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py`, và cột mục tiêu do người dùng nói (trong R hoặc tin nhắn) hoặc là ứng viên duy nhất |
+| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py`, và cột mục tiêu do người dùng chọn (trong R, hoặc tin nhắn nói rõ "target X" / "dự đoán X" - chỉ nhắc tên cột thì không tính) hoặc là ứng viên duy nhất |
 | Operation Agent → backend | `start_training(config_id)` | không nhận config tự điền, không chạy trùng; mọi tool tự thử lại lỗi tạm thời của backend (`tools._call`) |
 | Watcher → Manager | `[Sự kiện] Job ... đã huấn luyện xong` + kiểm định | so `best_score` với ràng buộc trong R |
 

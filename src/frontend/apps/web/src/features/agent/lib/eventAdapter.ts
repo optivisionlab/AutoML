@@ -184,18 +184,18 @@ export function applyTurnEvent(trace: TurnTrace, event: AgentEvent): TurnTrace {
         startedAt: event.time,
         endedAt: event.time,
       };
-      return {
-        ...trace,
-        steps: [...trace.steps, validation],
-        configs: [...trace.configs, { valid: Boolean(event.ok), errors, datasetId: trace.datasetId }],
-      };
+      // Config hợp lệ đi kèm config_id và nội dung, để thẻ cấu hình hiện đủ cả khi job chưa chạy được.
+      const view: ConfigView = { valid: Boolean(event.ok), errors, datasetId: trace.datasetId };
+      if (event.ok && event.config_id) Object.assign(view, { configId: event.config_id, config: event.config });
+      return { ...trace, steps: [...trace.steps, validation], configs: [...trace.configs, view] };
     }
 
     case "job_started": {
       const jobId = String(event.job_id);
       const view: ConfigView = { valid: true, errors: [], configId: event.config_id, config: event.config, jobId };
-      // Gắn vào lần kiểm định hợp lệ gần nhất chưa có job.
-      const index = trace.configs.map((c) => c.valid === true && !c.jobId).lastIndexOf(true);
+      // Gắn vào đúng config_id; sự kiện kiểu cũ không có config_id thì vào lần kiểm định hợp lệ gần nhất chưa có job.
+      const byId = trace.configs.map((c) => Boolean(event.config_id) && c.configId === event.config_id).lastIndexOf(true);
+      const index = byId >= 0 ? byId : trace.configs.map((c) => c.valid === true && !c.jobId).lastIndexOf(true);
       const configs =
         index >= 0
           ? trace.configs.map((c, i) => (i === index ? { ...c, ...view } : c))

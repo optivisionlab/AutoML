@@ -85,6 +85,23 @@ test("kiểm định lỗi không thành thành công và không có config_id",
   assert.equal(valid.datasetId, "ds1");
 });
 
+test("config hợp lệ có nội dung ngay cả khi chưa chạy được job, job gắn đúng config_id", () => {
+  const config = { problem_type: "regression", target: "load", metric_sort: "rmse", list_feature: ["date"] };
+  const { trace } = run([
+    { seq: 1, type: "turn_start", agent: "agent-manager", time: 1 },
+    { seq: 2, type: "config_checked", agent: "model-agent", ok: true, errors: [], config_id: "cfg_a", config, time: 2 },
+    { seq: 3, type: "config_checked", agent: "model-agent", ok: true, errors: [], config_id: "cfg_b", config, time: 3 },
+  ]);
+  assert.equal(trace.configs[0].configId, "cfg_a");
+  assert.equal(trace.configs[0].config?.target, "load");
+  assert.equal(trace.configs[0].jobId, undefined);
+
+  // Job của config cũ hơn (cfg_a) gắn đúng vào cfg_a, không vào config hợp lệ gần nhất.
+  const after = applyTurnEvent(trace, { seq: 4, type: "job_started", agent: "operation-agent", job_id: "J9", config_id: "cfg_a", config, time: 4 });
+  assert.equal(after.configs[0].jobId, "J9");
+  assert.equal(after.configs[1].jobId, undefined);
+});
+
 test("start_training xong chỉ là 'đã gửi', không phải 'hoàn tất'", () => {
   const { jobs } = run(TRAINING_TURN);
   assert.equal(jobs.J1.status, "submitted");

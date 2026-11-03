@@ -37,11 +37,17 @@ TABLE_DATA_TYPE = "table"
 
 
 class ApiError(Exception):
-    """Lỗi từ backend. status_code = 0 nghĩa là không gọi được tới server."""
+    """
+    Lỗi từ backend. status_code = 0 nghĩa là không gọi được tới server.
 
-    def __init__(self, status_code: int, detail: str) -> None:
+    timed_out: request ĐÃ gửi đi nhưng backend không trả lời kịp. Gọi lại thường
+    cũng treo hết thời gian chờ, và lệnh tạo (job, dataset) có thể đã chạy.
+    """
+
+    def __init__(self, status_code: int, detail: str, timed_out: bool = False) -> None:
         self.status_code = status_code
         self.detail = detail
+        self.timed_out = timed_out
         super().__init__(f"HTTP {status_code}: {detail}")
 
 
@@ -97,6 +103,9 @@ class HAutoMLClient:
 
         try:
             response = self._http.request(method, path, headers=headers, **kwargs)
+        except (httpx.ReadTimeout, httpx.WriteTimeout) as error:
+            # ConnectTimeout / PoolTimeout không vào đây: request chưa đi, gọi lại an toàn.
+            raise ApiError(0, f"Backend không trả lời trong thời gian chờ ({error})", timed_out=True) from error
         except httpx.RequestError as error:
             raise ApiError(0, f"Không kết nối được tới {self.base_url} ({error})") from error
 
