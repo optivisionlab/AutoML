@@ -10,7 +10,8 @@ chạy - phải build lại ảnh. Chạy tách ra thì không đụng gì tới
 
 Xác thực: frontend đã đăng nhập bằng NextAuth và có sẵn access_token, nên nó
 gửi kèm token đó xuống đây. Agent dùng luôn token ấy, KHÔNG tự đăng nhập lại -
-agent thao tác đúng với quyền của người đang dùng web.
+agent thao tác đúng với quyền của người đang dùng web. NextAuth làm mới token
+thì frontend gửi token mới qua POST /agent/token, kể cả giữa một lượt chat.
 
 Báo tiến độ (SSE): một lượt chat có thể gọi LLM hàng chục lần qua 5 agent, và
 job huấn luyện chạy nền hàng giờ. Hai luồng sự kiện:
@@ -86,6 +87,11 @@ class EventsRequest(BaseModel):
     access_token: str | None = None
     # seq của sự kiện cuối frontend đã nhận.
     after: int = 0
+
+
+class TokenRequest(BaseModel):
+    session_id: str
+    access_token: str | None = None
 
 
 class _Entry:
@@ -532,6 +538,25 @@ async def _store_upload(form) -> dict:
         "session_id": session_id,
         "dataset": {**dataset, "filename": check.clean_name, "size_bytes": len(content)},
     }
+
+
+@app.post("/agent/token")
+async def update_token(request: TokenRequest) -> dict:
+    """
+    Nhận access token mới ngay khi frontend vừa làm mới phiên đăng nhập.
+
+    Token chỉ tới agent theo request: lượt chat kéo dài qua lúc token hết hạn
+    (15 phút) mà chưa có job nào được theo dõi - nên /agent/events chưa mở - thì
+    agent cứ dùng token cũ và nhận 401 giữa lượt. Không chờ turn_lock: thay token
+    giữa lượt chính là mục đích; lượt chat đọc token mỗi lần gọi API.
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    entry.session.api.access_token = request.access_token
+    return {"ok": True}
 
 
 @app.post("/agent/reset")

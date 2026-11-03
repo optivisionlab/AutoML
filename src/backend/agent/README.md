@@ -276,11 +276,14 @@ python -m agent.cli --provider google "..."
 | `POST /agent/events` | SSE sự kiện nền (`job_status`, `job_done`, `job_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới |
 | `POST /agent/upload` | Tải dataset từ trang /agent (trang 4 của sơ đồ) |
 | `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi |
+| `POST /agent/token` | Frontend gửi access token mới ngay khi NextAuth làm mới, kể cả giữa một lượt chat |
 
 SSE dùng POST thay vì `EventSource` để token nằm trong body, không lên URL.
 `/agent/events` đóng định kỳ có chủ đích: token người dùng chỉ sống 15 phút
 (`ACCESS_EXPIRE`) trong khi job chạy hàng giờ - mỗi lần frontend mở lại, token
-mới được gán vào client mà watcher đang dùng.
+mới được gán vào client mà watcher đang dùng. Nhưng kênh này chỉ mở khi có job
+được theo dõi, nên token mới còn đi qua `/agent/token`: thiếu nó, một lượt chat
+dài qua lúc token hết hạn sẽ nhận 401 giữa lượt.
 
 Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy thẳng trong
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request

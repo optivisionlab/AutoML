@@ -430,3 +430,21 @@ def test_health_survives_invalid_llm_configuration(monkeypatch, error):
 
 def test_chat_rejects_missing_token():
     assert request("POST", "/agent/chat", json={"message": "Xin chào"}).status_code == 401
+
+
+def test_refreshed_token_reaches_session_mid_turn(session, monkeypatch):
+    owners = {"old": "user-1", "new": "user-1", "intruder": "user-2"}
+    monkeypatch.setattr(server, "_owner_of", owners.get)
+    entry = server._Entry(session, "user-1")
+    monkeypatch.setitem(server._sessions, "s1", entry)
+    session.api.access_token = "old"
+
+    assert request("POST", "/agent/token", json={"session_id": "s1"}).status_code == 401
+    assert request("POST", "/agent/token", json={"session_id": "s1", "access_token": "intruder"}).status_code == 404
+    assert session.api.access_token == "old"
+
+    # Đang giữa một lượt chat (turn_lock bị giữ) vẫn phải nhận token mới.
+    with entry.turn_lock:
+        result = request("POST", "/agent/token", json={"session_id": "s1", "access_token": "new"})
+    assert result.status_code == 200
+    assert session.api.access_token == "new"

@@ -315,6 +315,16 @@ export function useAgentSession(token: string, userKey: string) {
     };
   }, [sessionId, hasWatching, ingest]);
 
+  // NextAuth làm mới access token (sống 15 phút) khi gần hết hạn. Báo ngay cho
+  // agent: token chỉ tới agent theo request, nên một lượt chat dài qua lúc hết
+  // hạn mà kênh nền chưa mở sẽ dùng token cũ và nhận 401 giữa lượt.
+  const sentToken = useRef(token);
+  useEffect(() => {
+    if (!sessionId || !token || token === sentToken.current) return;
+    sentToken.current = token;
+    postJson("/agent/token", { session_id: sessionId, access_token: token }).catch(() => undefined);
+  }, [sessionId, token]);
+
   const send = useCallback(
     async (text: string) => {
       const content = text.trim();
