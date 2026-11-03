@@ -61,6 +61,7 @@ services:
     command: >
       sh -c "
       printf 'listener 1883\nprotocol mqtt\nlistener 1884\nprotocol websockets\nallow_anonymous false\npassword_file /mosquitto/config/passwd\nlog_dest stdout\n' > /mosquitto/config/mosquitto.conf &&
+      rm -f /mosquitto/config/passwd &&
       mosquitto_passwd -c -b /mosquitto/config/passwd $$MQTT_USERNAME $$MQTT_PASSWORD &&
       chown mosquitto:mosquitto /mosquitto/config/passwd &&
       exec mosquitto -c /mosquitto/config/mosquitto.conf
