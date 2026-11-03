@@ -645,6 +645,16 @@ class TestTrainingPipelineTracking(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pipeline["read_dataset"]["output"]["data_url"], "datasets/iris.parquet")
         self.assertEqual(pipeline["save_result"]["output"]["object_name"], "user_1/job_1/DecisionTreeClassifier_1.pkl")
 
+    async def test_pipeline_write_error_still_marks_job_failed(self):
+        mock_repo = AsyncMock()
+        mock_repo.update_pipeline.side_effect = RuntimeError("write failed")
+        service = TrainingService(repo=mock_repo, notif_service=AsyncMock())
+
+        with self.assertRaises(RuntimeError):
+            await service.process_training_job("job_1", "ds_1", "user_1", {"problem_type": "classification", "target": "target"})
+
+        mock_repo.update_failure.assert_awaited_once()
+
     async def test_process_training_job_saves_failed_pipeline(self):
         pipeline = await self._run_job(ValueError("no results"))
 

@@ -10,7 +10,7 @@ Code: [`src/modules/trainings/pipeline.py`](../src/modules/trainings/pipeline.py
 ## API
 
 ```
-GET /api/v1/inference/jobs/{job_id}/pipeline
+GET /api/v1/inference/jobs/{job_id}
 Authorization: Bearer <token>
 ```
 

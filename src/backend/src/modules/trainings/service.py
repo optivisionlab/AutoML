@@ -393,13 +393,6 @@ class TrainingService:
         storage_info = ModelStorageInfo(bucket_name="models", object_name=dest_model_path)
         return dest_model_path, storage_info
 
-    async def _save_pipeline(self, job_id: str, tracker: PipelineTracker) -> None:
-        # Pipeline JSON is progress reporting only: a storage error must not fail the training job
-        try:
-            await self.repo.update_pipeline(job_id, tracker.to_dict())
-        except Exception as exc:
-            logger.warning(f"Failed to save pipeline state for job {job_id}: {exc}")
-
     async def _on_job_success(
         self,
         job_id: str,
@@ -484,14 +477,11 @@ class TrainingService:
             timeout=timeout,
         )
 
-        async def save_pipeline() -> None:
-            await self._save_pipeline(job_id, tracker)
-
         try:
             logger.info(f"Processing AutoML Job: ID={job_id}, Dataset={dataset_id}, User={user_id}")
 
             tracker.start("read_dataset")
-            await save_pipeline()
+            await self.repo.update_pipeline(job_id, tracker.to_dict())
             df, dataset_name, data_url = await self._load_dataset_df(dataset_id)
             tracker.finish("read_dataset", {"data_url": data_url, "n_rows": len(df), "n_columns": len(df.columns)})
 
@@ -504,7 +494,7 @@ class TrainingService:
                 search_algorithm=search_algorithm,
                 timeout=timeout,
                 tracker=tracker,
-                on_progress=save_pipeline,
+                on_progress=lambda: self.repo.update_pipeline(job_id, tracker.to_dict()),
             )
 
             tracker.start("save_result")
@@ -516,7 +506,7 @@ class TrainingService:
             )
             tracker.finish("save_result", {"object_name": storage_info.object_name})
             tracker.complete()
-            await save_pipeline()
+            await self.repo.update_pipeline(job_id, tracker.to_dict())
 
             return await self._on_job_success(
                 job_id=job_id,
@@ -530,23 +520,25 @@ class TrainingService:
             error_msg = "Training job was cancelled by user."
             logger.info(f"AutoML Job {job_id} cancelled.")
             tracker.abort(error_msg, status="cancelled")
-            await save_pipeline()
+            # Job status first: a pipeline write error here must not leave the job stuck as running
             await self._on_job_failure(
                 job_id=job_id,
                 user_id=user_id,
                 dataset_name=dataset_name,
                 error_msg=error_msg,
             )
+            await self.repo.update_pipeline(job_id, tracker.to_dict())
             raise
         except Exception as e:
             error_msg = f"Training failure: {str(e)}"
             logger.error(f"AutoML Job {job_id} failed: {error_msg}", exc_info=True)
             tracker.abort(error_msg)
-            await save_pipeline()
+            # Job status first: a pipeline write error here must not leave the job stuck as running
             await self._on_job_failure(
                 job_id=job_id,
                 user_id=user_id,
                 dataset_name=dataset_name,
                 error_msg=error_msg,
             )
+            await self.repo.update_pipeline(job_id, tracker.to_dict())
             raise e

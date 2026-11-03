@@ -1,6 +1,6 @@
 # Ví dụ phản hồi API pipeline JSON (dữ liệu thật)
 
-Mọi phản hồi trong tài liệu này được gọi thật tới `GET /api/v1/inference/jobs/{job_id}/pipeline` trên image `dutamoi/hautoml-backend:pipeline-json` (Docker Hub), DB trống, huấn luyện trên bộ dữ liệu thật của scikit-learn. Bảng và đoạn JSON được sinh tự động từ phản hồi, không chỉnh tay.
+Mọi phản hồi trong tài liệu này được gọi thật tới `GET /api/v1/inference/jobs/{job_id}` trên image `dutamoi/hautoml-backend:pipeline-json` (Docker Hub), DB trống, huấn luyện trên bộ dữ liệu thật của scikit-learn. Bảng và đoạn JSON được sinh tự động từ phản hồi, không chỉnh tay.
 
 Định nghĩa từng trường: [training-pipeline.md](training-pipeline.md). Phản hồi đầy đủ của từng trường hợp: thư mục [`examples/pipeline/`](examples/pipeline/).
 
