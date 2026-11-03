@@ -5,12 +5,16 @@ import {
   AlertCircle,
   Award,
   BarChart3,
+  CheckCircle2,
+  Clock3,
   Cpu,
+  Database,
   Eye,
   Layers,
   Sparkles,
   Table as TableIcon,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { Switch } from "@/shared/components/ui/switch";
 import { Label } from "@/shared/components/ui/label";
@@ -32,12 +36,17 @@ import {
   type ModelDetailData,
 } from "@/features/training/components/modal/ModelDetailModal";
 import {
+  MOCK_PIPELINE_COMPLETED,
+  MOCK_PIPELINE_EMPTY,
+  MOCK_PIPELINE_FAILED,
+  MOCK_PIPELINE_RUNNING,
+} from "@/features/training/constants/pipelineFixtures";
+import {
   buildProgressMapFromPipeline,
   formatPipelineValue,
   GraphViewMode,
 } from "@/features/training/utils/pipelineGraphBuilder";
-import { adaptJobPipeline } from "@/features/training/utils/pipelineAdapter";
-import { useGetJobPipelineQuery } from "@/core/api/jobApi";
+import { useGetJobInfoQuery, useGetPipelineSampleQuery } from "@/core/api/jobApi";
 
 import {
   Table,
@@ -51,7 +60,6 @@ import { PipelineData } from "@automl/domain";
 import { cn } from "@/shared/lib/utils";
 
 const CHART_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
-const PIPELINE_POLLING_MS = 3000;
 
 type Props = {
   params: Promise<{
@@ -59,10 +67,13 @@ type Props = {
   }>;
 };
 
+type PresetKey = "live" | "completed" | "running" | "empty" | "failed";
+
 const ResultPage = ({ params }: Props) => {
   const [datasetID, setDatasetID] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
   const [openUpload, setOpenUpload] = useState(false);
+  const [activePreset, setActivePreset] = useState<PresetKey>("live");
   const [graphViewMode, setGraphViewMode] = useState<GraphViewMode>("expanded");
   const [selectedModalModel, setSelectedModalModel] = useState<ModelDetailData | null>(null);
 
@@ -76,26 +87,126 @@ const ResultPage = ({ params }: Props) => {
   }, [params]);
 
 
-  // Pipeline thật của job (GET /api/v1/inference/jobs/{id}/pipeline), gọi lại định kỳ khi job chưa kết thúc
-  const [shouldPollPipeline, setShouldPollPipeline] = useState(false);
+  // Query API Pipeline Mẫu từ backend / mock_api (/get-pipeline-sample)
   const {
-    data: jobPipelineRaw,
-    isLoading,
-    isError: isPipelineError,
-  } = useGetJobPipelineQuery(datasetID ?? "", {
+    data: sampleApiRes,
+    isLoading: isSampleLoading,
+    isError: isSampleError,
+  } = useGetPipelineSampleQuery(
+    {
+      problem_type: "regression",
+      job_id: datasetID || "job-001",
+    },
+    {
+      skip: !datasetID,
+    },
+  );
+
+  // Query API Job truyền thống (nếu có)
+  const {
+    data: legacyJobResult,
+    isLoading: isLegacyLoading,
+  } = useGetJobInfoQuery(datasetID ?? "", {
     skip: !datasetID,
-    pollingInterval: shouldPollPipeline ? PIPELINE_POLLING_MS : 0,
   });
 
-  useEffect(() => {
-    setShouldPollPipeline(jobPipelineRaw?.status === "queued" || jobPipelineRaw?.status === "running");
-  }, [jobPipelineRaw?.status]);
+  // Xác định dữ liệu Pipeline hiện tại dựa trên preset hoặc API
+  const activePipeline: PipelineData = useMemo(() => {
+    if (activePreset === "empty") return MOCK_PIPELINE_EMPTY;
+    if (activePreset === "running") return MOCK_PIPELINE_RUNNING;
+    if (activePreset === "completed") return MOCK_PIPELINE_COMPLETED;
+    if (activePreset === "failed") return MOCK_PIPELINE_FAILED;
 
-  const activePipeline: PipelineData = useMemo(
-    () => (jobPipelineRaw ? adaptJobPipeline(jobPipelineRaw) : { job_id: datasetID }),
-    [jobPipelineRaw, datasetID],
-  );
-  const pipelineError = (jobPipelineRaw?.error as { message?: string } | null | undefined)?.message;
+    // Chế độ "live"
+    if (sampleApiRes?.pipeline) {
+      return sampleApiRes.pipeline;
+    }
+
+    if (legacyJobResult?.pipeline) {
+      return legacyJobResult.pipeline;
+    }
+
+    // Nếu API job truyền thống có dữ liệu model scores, biến đổi thành pipeline
+    if (legacyJobResult && legacyJobResult.orther_model_scores) {
+      const bestModel = legacyJobResult.best_model || "BestModel";
+      const metricSort = legacyJobResult.config?.metric_sort || "accuracy";
+
+      const modelsRecord: Record<string, any> = {};
+      legacyJobResult.orther_model_scores.forEach((m) => {
+        if (!m.model_name) return;
+        modelsRecord[m.model_name] = {
+          status: "done",
+          error: null,
+          best_params: m.model_name === bestModel ? legacyJobResult.best_params : null,
+          scores: m.scores || {},
+        };
+      });
+
+      return {
+        job_id: legacyJobResult.job_id || datasetID,
+        version: "1.0.0",
+        mode: legacyJobResult.config?.choose || "automl",
+        status: legacyJobResult.status === 1 ? "done" : legacyJobResult.status === 0 ? "running" : "failed",
+        read_dataset: {
+          name: "Read dataset",
+          kind: "data_loading",
+          depends_on: [],
+          status: "done",
+          params: { id_data: legacyJobResult.data?.name || datasetID, format: "csv" },
+          output: { data_url: "loaded" },
+        },
+        preprocessing: {
+          name: "Preprocessing",
+          kind: "preprocessing",
+          depends_on: ["read_dataset"],
+          status: "done",
+          params: {
+            list_feature: legacyJobResult.config?.list_feature || [],
+            target: legacyJobResult.config?.target || null,
+          },
+          output: {},
+        },
+        model_selection: {
+          name: "Model selection",
+          kind: "model_selection",
+          depends_on: ["preprocessing"],
+          status: "done",
+          params: {
+            problem_type: legacyJobResult.config?.problem_type || "regression",
+            model_names: legacyJobResult.orther_model_scores
+              .map((m) => m.model_name)
+              .filter((name): name is string => Boolean(name)),
+            metric_sort: metricSort,
+            metrics: { [metricSort]: "maximize" },
+          },
+          output: {},
+        },
+        train: {
+          name: "Train models",
+          kind: "model_training",
+          depends_on: ["model_selection"],
+          status: "done",
+          params: {},
+          output: {
+            models: modelsRecord,
+          },
+        },
+        select_best: {
+          name: "Select best model",
+          kind: "model_selection",
+          depends_on: ["train"],
+          status: "done",
+          params: { dependency_policy: "all_terminal" },
+          output: {
+            best_model: bestModel,
+          },
+        },
+      };
+    }
+
+    // Mặc định ban đầu nếu live chưa có phản hồi hoặc đang chạy mock_api
+    return MOCK_PIPELINE_COMPLETED;
+  }, [activePreset, sampleApiRes, legacyJobResult, datasetID]);
 
   // Xây dựng DAG pipeline trực tiếp từ activePipeline (dựa vào depends_on)
   const progressMapPipeline = useMemo(() => {
@@ -103,18 +214,29 @@ const ResultPage = ({ params }: Props) => {
   }, [activePipeline, graphViewMode]);
 
   // Trích xuất thông tin chung về Pipeline
-  const bestModelName = activePipeline.select_best?.output?.best_model || null;
+  const bestModelName =
+    activePipeline.select_best?.output?.best_model ||
+    legacyJobResult?.best_model ||
+    null;
 
   const metricSort =
     activePipeline.model_selection?.params?.metric_sort ||
+    legacyJobResult?.config?.metric_sort ||
     "r2";
 
-  const targetColumn = activePipeline.preprocessing?.params?.target || null;
+  const targetColumn =
+    activePipeline.preprocessing?.params?.target ||
+    legacyJobResult?.config?.target ||
+    null;
 
-  const featureList = activePipeline.preprocessing?.params?.list_feature || [];
+  const featureList =
+    activePipeline.preprocessing?.params?.list_feature ||
+    legacyJobResult?.config?.list_feature ||
+    [];
 
   const problemType =
     activePipeline.model_selection?.params?.problem_type ||
+    legacyJobResult?.config?.problem_type ||
     "regression";
 
   // Lấy danh sách metrics được cấu hình
@@ -132,8 +254,11 @@ const ResultPage = ({ params }: Props) => {
   const bestScoreVal = useMemo(() => {
     if (!bestModelName) return null;
     const modelDetail = activePipeline.train?.output?.models?.[bestModelName];
-    return modelDetail?.scores?.[metricSort] ?? null;
-  }, [bestModelName, activePipeline.train?.output?.models, metricSort]);
+    if (modelDetail?.scores && modelDetail.scores[metricSort] !== undefined) {
+      return modelDetail.scores[metricSort];
+    }
+    return legacyJobResult?.best_score ?? null;
+  }, [bestModelName, activePipeline.train?.output?.models, metricSort, legacyJobResult?.best_score]);
 
   // Trích xuất danh sách mô hình từ pipeline.train.output.models
   const leaderboardModels = useMemo(() => {
@@ -160,8 +285,17 @@ const ResultPage = ({ params }: Props) => {
       });
     }
 
+    // Fallback sang orther_model_scores nếu có
+    if (legacyJobResult?.orther_model_scores) {
+      return [...legacyJobResult.orther_model_scores].sort((a, b) => {
+        const scoreA = a.scores?.[metricSort] ?? 0;
+        const scoreB = b.scores?.[metricSort] ?? 0;
+        return scoreB - scoreA;
+      });
+    }
+
     return [];
-  }, [activePipeline.train?.output?.models, metricSort, metricsConfig]);
+  }, [activePipeline.train?.output?.models, legacyJobResult?.orther_model_scores, metricSort, metricsConfig]);
 
   // Cấu hình Recharts BarChart
   const chartConfig = useMemo(() => {
@@ -191,6 +325,8 @@ const ResultPage = ({ params }: Props) => {
     });
   }, [leaderboardModels, metricsConfig]);
 
+  const isLoading = (isSampleLoading || isLegacyLoading) && activePreset === "live";
+
   return (
     <div className="min-h-[calc(100vh-96px)] space-y-6 rounded-[24px] bg-[var(--automl-workspace-bg)] p-4 text-[var(--automl-data-text)] sm:p-6">
       {/* Top Header & Breadcrumbs */}
@@ -206,12 +342,99 @@ const ResultPage = ({ params }: Props) => {
         </div>
       </div>
 
-      {(isPipelineError || pipelineError) && (
-        <div className="flex items-center gap-2 rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] px-4 py-3 text-xs font-semibold text-amber-500 shadow-xs dark:text-amber-400">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          {pipelineError || "Không tải được dữ liệu pipeline của job này."}
+      {/* Preset & Data Source Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] px-4 py-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-wider text-[var(--automl-data-muted)] mr-1">
+            Nguồn dữ liệu thử nghiệm:
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant={activePreset === "live" ? "default" : "outline"}
+            className={cn(
+              "h-8 rounded-xl px-3 text-xs font-bold transition-all",
+              activePreset === "live"
+                ? "bg-automl-blue text-white shadow-xs"
+                : "border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]",
+            )}
+            onClick={() => setActivePreset("live")}
+          >
+            <Database className="mr-1.5 h-3.5 w-3.5" />
+            Live API (/get-pipeline-sample)
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={activePreset === "completed" ? "default" : "outline"}
+            className={cn(
+              "h-8 rounded-xl px-3 text-xs font-bold transition-all",
+              activePreset === "completed"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]",
+            )}
+            onClick={() => setActivePreset("completed")}
+          >
+            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 text-emerald-300" />
+            Mẫu: Hoàn thành (Full Data)
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={activePreset === "running" ? "default" : "outline"}
+            className={cn(
+              "h-8 rounded-xl px-3 text-xs font-bold transition-all",
+              activePreset === "running"
+                ? "bg-cyan-600 text-white shadow-xs"
+                : "border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]",
+            )}
+            onClick={() => setActivePreset("running")}
+          >
+            <Clock3 className="mr-1.5 h-3.5 w-3.5 text-cyan-300 animate-spin" />
+            Mẫu: Đang chạy (Running)
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={activePreset === "empty" ? "default" : "outline"}
+            className={cn(
+              "h-8 rounded-xl px-3 text-xs font-bold transition-all",
+              activePreset === "empty"
+                ? "bg-slate-700 text-white shadow-xs"
+                : "border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]",
+            )}
+            onClick={() => setActivePreset("empty")}
+          >
+            Mẫu: Rỗng (Toàn bộ null)
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={activePreset === "failed" ? "default" : "outline"}
+            className={cn(
+              "h-8 rounded-xl px-3 text-xs font-bold transition-all",
+              activePreset === "failed"
+                ? "bg-red-600 text-white shadow-xs"
+                : "border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] text-[var(--automl-data-text)]",
+            )}
+            onClick={() => setActivePreset("failed")}
+          >
+            <XCircle className="mr-1.5 h-3.5 w-3.5 text-red-300" />
+            Mẫu: Bị lỗi (Failed)
+          </Button>
         </div>
-      )}
+
+        {activePreset === "live" && isSampleError && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-500 dark:text-amber-400">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Chưa kết nối được mock_api (:8001), hiển thị mẫu dự phòng
+          </span>
+        )}
+      </div>
 
       {isLoading && <AppLoading variant="overlay" label="Đang tải dữ liệu pipeline..." />}
 

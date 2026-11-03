@@ -1,8 +1,4 @@
-// queued/succeeded/skipped/cancelled: trạng thái do backend trả về (pipeline v2)
-export type PipelineNodeStatus =
-  | "pending" | "running" | "success" | "done" | "completed" | "failed" | "error"
-  | "queued" | "succeeded" | "skipped" | "cancelled"
-  | null;
+export type PipelineNodeStatus = "pending" | "running" | "success" | "done" | "completed" | "failed" | "error" | null;
 
 export interface PipelineBaseNode<TParams = Record<string, unknown>, TOutput = Record<string, unknown>> {
   name: string;
@@ -95,21 +91,11 @@ export interface ModelSelectionParams {
   [key: string]: unknown;
 }
 
-export interface PipelineTrial {
-  params: Record<string, unknown>;
-  status: "succeeded" | "pruned";
-  scores: Record<string, number | null>;
-}
-
 export interface ModelScoreDetail {
   status: PipelineNodeStatus;
   error?: string | null;
   best_params?: Record<string, unknown> | null;
-  scores?: Record<string, number | null> | null;
-  // Pipeline v2: every evaluated parameter set and the index of the best one
-  trials?: PipelineTrial[] | null;
-  best_trial?: number | null;
-  holdout_scores?: Record<string, number | null> | null;
+  scores?: Record<string, number> | null;
 }
 
 export interface TrainOutput {
@@ -153,4 +139,15 @@ export interface PipelineData {
   select_best?: PipelineBaseNode<SelectBestParams, SelectBestOutput>;
   save_result?: PipelineBaseNode<SaveResultParams, SaveResultOutput>;
   [customNodeKey: string]: unknown;
+}
+
+export interface GetPipelineSamplePayload {
+  problem_type: string;
+  job_id?: string;
+}
+
+export interface PipelineSampleResponse {
+  success: boolean;
+  message: string;
+  pipeline: PipelineData;
 }

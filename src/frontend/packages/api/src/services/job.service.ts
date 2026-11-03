@@ -3,7 +3,8 @@ import {
   JobsListParams,
   JobsListResponse,
   TrainingJob,
-  PipelineData,
+  GetPipelineSamplePayload,
+  PipelineSampleResponse,
 } from "@automl/domain";
 
 export const createJobService = (client: AxiosInstance) => ({
@@ -38,9 +39,13 @@ export const createJobService = (client: AxiosInstance) => ({
     return (res.data?.data || []) as TrainingJob[];
   },
 
-  // GET /api/v1/inference/jobs/{id}/pipeline
-  getJobPipeline: async (id: string): Promise<PipelineData> => {
-    const res = await client.get<any>(`/api/v1/inference/jobs/${id}/pipeline`);
-    return res.data?.data;
+  getPipelineSample: async (
+    payload: GetPipelineSamplePayload,
+  ): Promise<PipelineSampleResponse> => {
+    const res = await client.post<PipelineSampleResponse>(
+      "/get-pipeline-sample",
+      payload,
+    );
+    return res.data;
   },
 });
