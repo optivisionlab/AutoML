@@ -55,6 +55,26 @@ Lưu ý quan trọng: cột bị đánh `false` vì **là ID** thì cũng không
 4. Người dùng đã chỉ định đặc trưng (liệt kê cột, hoặc "tất cả các cột còn lại")
    → dùng đúng như vậy. Bộ cột one-hot giữ đủ, không bỏ bớt một cột.
 
+## Dữ liệu chuỗi thời gian (time_series)
+
+Kết quả có `time_columns` khi có cột mà mọi giá trị preview đọc được thành ngày
+giờ. Mỗi phần tử gồm `name`, `first_in_preview`, `step` (bước thời gian phổ biến
+nhất), `duplicated_in_preview`, `regular_in_preview`, và `estimated_last` (mốc cuối
+ước tính = mốc đầu + bước × (số dòng − 1), đúng khi file sắp theo thời gian).
+`target_candidates_by_type.time_series` là các cột số làm được mục tiêu, trừ cột
+thời gian.
+
+Điều kiện của backend (src/modules/preprocessing/time_series.py):
+- Một chuỗi duy nhất: mỗi mốc thời gian một dòng, không trùng.
+- Các mốc cách đều. Dữ liệu theo tháng (28–31 ngày) không đạt điều kiện này.
+- `list_feature` có ĐÚNG MỘT cột thời gian. Backend tự tạo lag, trung bình trượt,
+  thứ trong tuần và tháng từ cột mục tiêu và cột thời gian.
+- Cột khác trong `list_feature` là biến ngoài: khi dự báo phải biết trước giá trị
+  của nó ở tương lai.
+
+Dự báo: mỗi mẫu là một mốc thời gian SAU mốc cuối của dữ liệu train, đúng bước
+thời gian, tối đa 365 bước; model tự giữ phần lịch sử cần cho lag.
+
 ## Vì sao thống kê chỉ tính trên 50 dòng
 
 Endpoint `GET /datasets/{id}/data` trả 50 dòng preview. Đọc cả dataset để thống kê

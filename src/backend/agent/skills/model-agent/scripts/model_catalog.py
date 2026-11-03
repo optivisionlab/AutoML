@@ -1,6 +1,6 @@
 """
 Danh mục model mà engine HAutoML sẽ huấn luyện, đọc từ classification.yml /
-regression.yml của backend.
+regression.yml / time_series.yml của backend.
 
 Gọi từ pipeline (Model Agent và RAP), KHÔNG phải LLM tự chạy. Lý do cần nó:
 LLM không biết engine có model nào, sẽ đề xuất "LSTM" hay "LightGBM" mà engine
@@ -40,13 +40,13 @@ def _grid_size(param_sets: list) -> int:
 
 def _load_yml(problem_type: str) -> tuple[str, dict]:
     """
-    (tên, nội dung) của classification.yml / regression.yml; nội dung rỗng nếu
-    không đọc được file.
+    (tên, nội dung) của classification.yml / regression.yml / time_series.yml;
+    nội dung rỗng nếu không đọc được file.
 
     Agent chạy ở máy/container khác backend thì đặt HAUTOML_SYSTEM_MODELS_DIR
     trỏ tới thư mục chứa yml.
     """
-    name = "regression" if problem_type == "regression" else "classification"
+    name = problem_type if problem_type in ("regression", "time_series") else "classification"
     override = os.getenv("HAUTOML_SYSTEM_MODELS_DIR")
     directories = (Path(override),) if override else _CANDIDATE_DIRS
     path = next((d / f"{name}.yml" for d in directories if (d / f"{name}.yml").is_file()), None)

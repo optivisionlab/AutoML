@@ -437,7 +437,7 @@ async def upload(request: Request) -> dict:
     Nhận file dataset từ khung chat và đưa vào kho dataset của người dùng.
 
     Form (multipart): file, access_token, session_id (tuỳ chọn),
-                      data_name (tuỳ chọn), data_type = classification | regression
+                      data_name (tuỳ chọn), data_type = classification | regression | time_series
 
     Giới hạn 20 MB được chặn HAI lớp, vì Starlette KHÔNG giới hạn dung lượng
     file (max_part_size của nó chỉ áp cho trường chữ):

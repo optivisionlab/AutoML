@@ -6,7 +6,7 @@ import { AlertCircle, ArrowUp, Database, FileSpreadsheet, Loader2, Paperclip, Up
 import { cn } from "@/shared/lib/utils";
 import { ACCEPT_ATTR, MAX_UPLOAD_MB, defaultDatasetName, formatSize, validateFile, type FileProblem } from "../lib/agentApi";
 import { input, pillButton } from "../lib/ui";
-import type { ActiveDataset, AgentError, PendingUpload, ProblemType } from "../hooks/useAgentSession";
+import { PROBLEM_TYPES, type ActiveDataset, type AgentError, type PendingUpload, type ProblemType } from "../hooks/useAgentSession";
 import DatasetPicker from "./DatasetPicker";
 
 export type ComposerError = { kind: "file"; problem: FileProblem } | { kind: "upload"; error: AgentError };
@@ -193,8 +193,9 @@ const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptCo
                   onChange={(event) => onPendingChange({ ...pending, dataType: event.target.value as ProblemType })}
                   className={input}
                 >
-                  <option value="classification">{tTypes("classification")}</option>
-                  <option value="regression">{tTypes("regression")}</option>
+                  {PROBLEM_TYPES.map((type) => (
+                    <option key={type} value={type}>{tTypes(type)}</option>
+                  ))}
                 </select>
                 <button
                   type="button"

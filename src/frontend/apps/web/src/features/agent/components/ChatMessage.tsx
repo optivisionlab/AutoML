@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertCircle, Bot, Check, CheckCircle2, Copy, History, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import type { AgentError, ChatItem } from "../hooks/useAgentSession";
+import { isProblemType, type AgentError, type ChatItem } from "../hooks/useAgentSession";
 import { formatSize } from "../lib/agentApi";
 import type { JobView, TurnTrace } from "../lib/eventAdapter";
 import { formatTime } from "../lib/format";
@@ -127,7 +127,7 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
             <div className="min-w-0 text-sm">
               <p className="font-semibold">{tUpload.rich("added", { name: item.dataset.name, b: (chunks) => <strong>{chunks}</strong> })}</p>
               <p className="mt-0.5 truncate text-xs opacity-80">
-                {item.dataset.filename} · {formatSize(item.dataset.size_bytes)} · {tTypes(item.dataset.type === "regression" ? "regression" : "classification")}
+                {item.dataset.filename} · {formatSize(item.dataset.size_bytes)} · {tTypes(isProblemType(item.dataset.type) ? item.dataset.type : "classification")}
               </p>
             </div>
           </div>

@@ -47,6 +47,12 @@ Cột mục tiêu đã rõ (người dùng nói, hoặc dataset chỉ có một 
 thẳng 1 → 4 trong một lượt. Còn mơ hồ thì hỏi trước khi chạy - train sai cột
 mục tiêu là mất hàng giờ vô ích.
 
+Dự báo theo thời gian (time_series) đi cùng luồng 1 → 4. Khi dự báo bằng job
+time_series, Operation Agent cần mốc thời gian cụ thể: ghi vào `task` các mốc
+người dùng nói, hoặc mốc cuối (`estimated_last`) và bước thời gian (`step`) lấy
+từ báo cáo của Data Agent / Model Agent. Chưa có thì giao Data Agent đọc lại
+dataset, đừng để Operation Agent tự đoán ngày.
+
 Người dùng chưa nói cột mục tiêu mà Data Agent báo nhiều ứng viên → hỏi người
 dùng NGAY sau bước 2, chưa giao Model Agent. Gợi ý của Data Agent ("Age là ứng
 viên hợp lý nhất") chỉ để nêu cho người dùng chọn: đừng ghi nó thành cột mục

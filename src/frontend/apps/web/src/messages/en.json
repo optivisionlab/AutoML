@@ -1113,7 +1113,8 @@
     },
     "problemTypes": {
       "classification": "Classification",
-      "regression": "Regression"
+      "regression": "Regression",
+      "time_series": "Time series"
     },
     "drop": {
       "title": "Drop the file here",

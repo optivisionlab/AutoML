@@ -140,7 +140,7 @@ thật không bị commit.
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
 | `AGENT_JOB_POLL_SECONDS` | Chu kỳ watcher hỏi trạng thái job, mặc định 20 giây |
-| `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
+| `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` / `time_series.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
 
 ### Azure OpenAI
 
@@ -254,9 +254,9 @@ python -m agent.cli --provider google "..."
 | Prompt Agent | *(không tool)* | Một lượt LLM trả JSON R |
 | Data Agent | `list_my_datasets` | `GET /datasets` (lật hết các trang) |
 | | `get_dataset_info` | `GET /datasets/{id}` - metadata, **không có tên cột** |
-| | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression. Kết quả tự chuyển cho Model Agent |
+| | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression; cột ngày giờ đọc được thì thêm `time_columns` và ứng viên target time_series. Kết quả tự chuyển cho Model Agent |
 | Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
-| | `list_models` | Đọc `assets/classification.yml` / `regression.yml` qua `scripts/model_catalog.py` |
+| | `list_models` | Đọc `assets/classification.yml` / `regression.yml` / `time_series.yml` qua `scripts/model_catalog.py` |
 | | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. Chặn cột mục tiêu người dùng chưa chọn khi có nhiều ứng viên. **Không train** |
 | Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
@@ -391,6 +391,8 @@ Langfuse thì không patch gì cả.
 Tool này gộp bốn lời gọi vì không có endpoint nào trả đủ một mình:
 `/datasets/{id}` cho metadata, `/datasets/{id}/data` cho preview, và
 `/datasets/{id}/features` hai lần (classification, regression) cho danh sách cột.
+Không gọi lần thứ ba cho time_series: backend chọn target time_series theo đúng
+luật của regression, nên ứng viên được suy từ regression trừ cột thời gian.
 
 **Bẫy 1 - `features` không phải danh sách đặc trưng.** `/datasets/{id}/features` trả
 `{tên_cột: bool}` với key là *tất cả* cột, còn value là "cột này làm **biến mục

@@ -26,7 +26,7 @@ ALLOWED_EXTENSIONS = (".csv", ".xlsx", ".xls")
 _XLSX_MAGIC = b"PK\x03\x04"                          # .xlsx là file zip
 _XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"     # .xls là file OLE2 cũ
 
-DATA_TYPES = ("classification", "regression")
+DATA_TYPES = ("classification", "regression", "time_series")
 
 _MIME = {
     ".csv": "text/csv",

@@ -20,7 +20,11 @@ import {
 } from "../lib/eventAdapter";
 import type { AgentEvent, ChatReply, HealthInfo, UploadedDataset } from "../lib/events";
 
-export type ProblemType = "classification" | "regression";
+// Cùng danh sách PROBLEM_TYPES của agent (src/backend/agent/tools.py).
+export const PROBLEM_TYPES = ["classification", "regression", "time_series"] as const;
+export type ProblemType = (typeof PROBLEM_TYPES)[number];
+export const isProblemType = (value: unknown): value is ProblemType =>
+  typeof value === "string" && (PROBLEM_TYPES as readonly string[]).includes(value);
 
 export interface PendingUpload {
   file: File;

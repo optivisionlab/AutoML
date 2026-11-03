@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { Check, ChevronDown, Copy, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { isProblemType } from "../hooks/useAgentSession";
 import { groupConfigErrors, type ConfigField, type ConfigView } from "../lib/eventAdapter";
 import { formatDuration, shortId } from "../lib/format";
 import { card, ghostButton } from "../lib/ui";
@@ -94,7 +95,7 @@ export default function ConfigSummaryCard({ view }: { view: ConfigView }) {
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
             <Field
               label={t("problemType")}
-              value={problemType === "classification" || problemType === "regression" ? tTypes(problemType) : problemType ?? "—"}
+              value={isProblemType(problemType) ? tTypes(problemType) : problemType ?? "—"}
               errors={byField.get("problem_type")}
             />
             <Field label={t("target")} value={config.target ?? "—"} errors={byField.get("target")} />

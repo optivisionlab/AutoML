@@ -1113,7 +1113,8 @@
     },
     "problemTypes": {
       "classification": "Phân loại",
-      "regression": "Hồi quy"
+      "regression": "Hồi quy",
+      "time_series": "Chuỗi thời gian"
     },
     "drop": {
       "title": "Thả file vào đây",

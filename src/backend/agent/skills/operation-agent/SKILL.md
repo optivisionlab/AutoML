@@ -64,6 +64,12 @@ huấn luyện nào**. Không bịa chỉ số.
   job (`config.list_feature` trong `get_job_info`). Thiếu cột thì báo thiếu cột
   nào, đừng tự điền giá trị.
 - `predict` trả lỗi kèm `note` về lỗi backend → báo nguyên văn cho Manager.
+- Job time_series (`config.problem_type = time_series`): mỗi mẫu là MỘT mốc thời
+  gian tương lai - cột thời gian (sau mốc cuối của dữ liệu train, đúng bước thời
+  gian) cộng giá trị các cột khác trong `list_feature` nếu có. Tối đa 365 bước;
+  model tự giữ phần lịch sử để tính lag. Việc giao có mốc cuối và bước thời gian
+  thì tự tính các mốc tiếp theo; không có thì báo Manager cần mốc cụ thể, đừng
+  bịa ngày. Backend báo mốc không hợp lệ thì nêu nguyên văn lỗi đó.
 
 ## Báo cáo cho Manager
 

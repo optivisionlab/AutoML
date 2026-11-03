@@ -17,6 +17,8 @@ Các hàm ở đây là Python thuần nên gọi trực tiếp được mà kh�
 import logging
 import os
 import time
+from collections import Counter
+from datetime import datetime
 
 # Local modules
 from agent.api_client import ApiError, HAutoMLClient
@@ -107,9 +109,11 @@ def _need_login() -> dict:
     }
 
 
-# Loại bài toán agent hỗ trợ. Backend có thêm time_series nhưng engine chưa có
-# model cho nó (không có time_series.yml).
-PROBLEM_TYPES = ("classification", "regression")
+# Loại bài toán agent hỗ trợ (src/core/constants.py: ProblemType của backend).
+PROBLEM_TYPES = ("classification", "regression", "time_series")
+# Loại suy được từ cột mục tiêu. time_series có cùng ứng viên target với
+# regression nên không bao giờ tự suy: người dùng phải muốn dự báo theo thời gian.
+INFERABLE_TYPES = ("classification", "regression")
 
 
 def list_my_datasets(client: HAutoMLClient) -> dict:
@@ -151,7 +155,7 @@ def _summarize_columns(names: list, by_type: dict, rows: list, problem_type: str
         values = [row.get(name) for row in rows]
         present = [value for value in values if value is not None]
         distinct = {str(value) for value in present}
-        target_for = [kind for kind in PROBLEM_TYPES if (by_type.get(kind) or {}).get(name)]
+        target_for = [kind for kind in INFERABLE_TYPES if (by_type.get(kind) or {}).get(name)]
 
         summary.append({
             "name": name,
@@ -166,6 +170,59 @@ def _summarize_columns(names: list, by_type: dict, rows: list, problem_type: str
     return summary
 
 
+# Định dạng ngày giờ hay gặp ngoài ISO 8601 (datetime.fromisoformat đã đọc được ISO).
+_DATE_FORMATS = ("%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y %H:%M", "%Y-%m")
+
+
+def _parse_time(value) -> datetime | None:
+    """Đọc một giá trị ngày giờ dạng chuỗi. Số thuần không tính là ngày giờ."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    except ValueError:
+        pass
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _time_columns(names: list, rows: list, total_rows) -> list[dict]:
+    """
+    Cột ngày giờ trong preview kèm bước thời gian - thứ Model Agent cần cho bài
+    toán time_series (backend: src/modules/preprocessing/time_series.py).
+
+    Như _find_time_column của backend, cột chỉ tính là ngày giờ khi MỌI giá trị
+    đọc được thành ngày giờ. Backend còn đòi các mốc cách đều và không trùng;
+    preview chỉ là 50 dòng đầu nên chỉ báo được dấu hiệu, không khẳng định.
+    """
+    found = []
+    for name in names:
+        values = [row.get(name) for row in rows if row.get(name) is not None]
+        times = [_parse_time(value) for value in values]
+        if len(times) < 2 or any(t is None for t in times):
+            continue
+        times.sort()
+        steps = [b - a for a, b in zip(times, times[1:])]
+        step = Counter(steps).most_common(1)[0][0]
+        info = {
+            "name": name,
+            "first_in_preview": times[0].isoformat(sep=" "),
+            "step": str(step),
+            "duplicated_in_preview": len(set(times)) < len(times),
+            "regular_in_preview": len(set(steps)) == 1,
+        }
+        # Đúng khi file sắp theo thời gian và không hở mốc (backend vốn đòi cách đều).
+        if info["regular_in_preview"] and step and isinstance(total_rows, int):
+            info["estimated_last"] = (times[0] + step * (total_rows - 1)).isoformat(sep=" ")
+        found.append(info)
+    return found
+
+
 def get_dataset_schema(
     client: HAutoMLClient,
     dataset_id: str,
@@ -177,18 +234,19 @@ def get_dataset_schema(
 
     Dataset không còn mang loại bài toán (dataType chỉ là "table"), nên luôn hỏi
     backend cột nào làm target được cho CẢ classification lẫn regression -
-    Model Agent cần cả hai để suy ra loại bài toán từ cột mục tiêu.
+    Model Agent cần cả hai để suy ra loại bài toán từ cột mục tiêu. Dataset có
+    cột ngày giờ thì thêm time_columns và ứng viên target cho time_series.
 
     Cố ý KHÔNG trả hết 50 dòng preview - chỉ vài dòng mẫu cộng thống kê từng
     cột, để không làm phình context của LLM với dataset lớn.
 
-    problem_type: classification | regression thì target_candidates theo loại
-        đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
+    problem_type: classification | regression | time_series thì target_candidates
+        theo loại đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
     """
     try:
         info = _call(client.get_dataset_info, dataset_id)
         preview = _call(client.get_dataset_preview, dataset_id)
-        by_type = {kind: _call(client.get_dataset_features, dataset_id, kind) or {} for kind in PROBLEM_TYPES}
+        by_type = {kind: _call(client.get_dataset_features, dataset_id, kind) or {} for kind in INFERABLE_TYPES}
     except ApiError as error:
         return _failure(error)
 
@@ -206,16 +264,21 @@ def get_dataset_schema(
     requested = requested if requested in PROBLEM_TYPES else None
     rows = preview.get("records") or []
     columns = _summarize_columns(names, by_type, rows, requested)
-    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in PROBLEM_TYPES}
+    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in INFERABLE_TYPES}
+    time_columns = _time_columns(names, rows, preview.get("rows"))
+    if time_columns:
+        # Backend chọn target time_series theo đúng luật của regression (datasets/service.py).
+        times = {t["name"] for t in time_columns}
+        by_kind["time_series"] = [name for name in by_kind["regression"] if name not in times]
 
-    return {
+    schema = {
         "ok": True,
         "dataset_id": dataset_id,
         "data_name": info.get("dataName"),
         "problem_type": requested,
         "total_rows": preview.get("rows"),
         "column_count": len(columns),
-        "target_candidates": by_kind[requested] if requested else [c["name"] for c in columns if c["target_for"]],
+        "target_candidates": by_kind.get(requested, []) if requested else [c["name"] for c in columns if c["target_for"]],
         "target_candidates_by_type": by_kind,
         "columns": columns,
         "sample_rows": rows[:sample_rows],
@@ -226,16 +289,26 @@ def get_dataset_schema(
             "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset."
         ),
     }
+    if time_columns:
+        schema["time_columns"] = time_columns
+        schema["time_series_note"] = (
+            "Có cột ngày giờ: làm được time_series (dự báo theo thời gian) nếu người dùng muốn "
+            "dự báo. list_feature phải chứa ĐÚNG MỘT cột thời gian; các cột khác chỉ dùng được khi "
+            "biết trước giá trị của chúng ở tương lai. estimated_last là mốc cuối ước tính, giả định "
+            "file sắp theo thời gian."
+        )
+    return schema
 
 
 def infer_problem_type(schema: dict, target: str) -> str | None:
     """
     Loại bài toán suy ra từ cột mục tiêu: cột chỉ làm target được cho đúng một
     loại thì là loại đó. Cột hợp cả hai (số nguyên ít giá trị) hoặc không hợp
-    loại nào -> None, phải để người dùng / Model Agent quyết định.
+    loại nào -> None, phải để người dùng / Model Agent quyết định. time_series
+    không bao giờ được suy ra, phải truyền problem_type.
     """
     by_type = schema.get("target_candidates_by_type") or {}
-    kinds = [kind for kind in PROBLEM_TYPES if target in (by_type.get(kind) or [])]
+    kinds = [kind for kind in INFERABLE_TYPES if target in (by_type.get(kind) or [])]
     return kinds[0] if len(kinds) == 1 else None
 
 
@@ -474,14 +547,16 @@ DEFAULT_MAX_TIME = 900
 DEFAULT_SEARCH_ALGORITHM = "grid_search"
 
 # Metric backend tính được, dùng khi không đọc được metric_list trong
-# classification.yml / regression.yml (agent chạy tách khỏi backend).
+# classification.yml / regression.yml / time_series.yml (agent chạy tách khỏi backend).
 DEFAULT_METRICS = {
     "classification": [
         "accuracy", "balanced_accuracy", "precision_macro", "precision_weighted",
         "recall_macro", "recall_weighted", "f1_macro", "f1_weighted",
     ],
     "regression": ["mse", "mae", "mape", "r2"],
+    "time_series": ["mse", "mae", "rmse", "r2"],
 }
+_BAD_PROBLEM_TYPE = "problem_type '{}' không hợp lệ. Chọn classification, regression hoặc time_series."
 
 
 def list_metrics(client: HAutoMLClient, problem_type: str) -> dict:
@@ -493,10 +568,7 @@ def list_metrics(client: HAutoMLClient, problem_type: str) -> dict:
     """
     normalized = (problem_type or "").strip().lower()
     if normalized not in PROBLEM_TYPES:
-        return {
-            "ok": False,
-            "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
-        }
+        return {"ok": False, "error": _BAD_PROBLEM_TYPE.format(problem_type)}
 
     metrics = _load_skill_script("model-agent", "model_catalog").load_metrics(normalized)
     return {"ok": True, "problem_type": normalized, "metrics": metrics or DEFAULT_METRICS[normalized]}
@@ -506,22 +578,20 @@ def list_models(client: HAutoMLClient, problem_type: str) -> dict:
     """
     Các model engine sẽ huấn luyện cho một loại bài toán, kèm kích thước lưới tham số.
 
-    Đọc classification.yml / regression.yml của backend qua scripts/model_catalog.py.
-    Tham số client không dùng tới, giữ cho đồng nhất chữ ký với mọi tool khác.
+    Đọc classification.yml / regression.yml / time_series.yml của backend qua
+    scripts/model_catalog.py. Tham số client không dùng tới, giữ cho đồng nhất
+    chữ ký với mọi tool khác.
     """
     normalized = (problem_type or "").strip().lower()
     if normalized not in PROBLEM_TYPES:
-        return {
-            "ok": False,
-            "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
-        }
+        return {"ok": False, "error": _BAD_PROBLEM_TYPE.format(problem_type)}
 
     catalog = _load_skill_script("model-agent", "model_catalog").load_catalog(normalized)
     if not catalog:
         return {
             "ok": False,
             "error": (
-                "Không tìm thấy classification.yml / regression.yml trong src/backend/assets. "
+                f"Không tìm thấy {normalized}.yml trong src/backend/assets. "
                 "Agent chạy tách khỏi backend thì đặt HAUTOML_SYSTEM_MODELS_DIR."
             ),
         }
@@ -567,7 +637,7 @@ def prepare_training_config(
     resolved_type = schema["problem_type"] or infer_problem_type(schema, target)
     if resolved_type is None:
         by_type = schema["target_candidates_by_type"]
-        both = all(target in by_type[kind] for kind in PROBLEM_TYPES)
+        both = all(target in by_type[kind] for kind in INFERABLE_TYPES)
         return {
             "ok": False,
             "error": "Không xác định được loại bài toán.",
@@ -582,10 +652,11 @@ def prepare_training_config(
         }
 
     # validate_config so target với target_candidates của ĐÚNG loại bài toán.
+    # Không có cột ngày giờ thì không có ứng viên time_series: validate_config báo lý do.
     schema = {
         **schema,
         "problem_type": resolved_type,
-        "target_candidates": schema["target_candidates_by_type"][resolved_type],
+        "target_candidates": schema["target_candidates_by_type"].get(resolved_type, []),
     }
 
     metrics = list_metrics(client, resolved_type)
@@ -753,8 +824,8 @@ def upload_dataset_file(
     agent.uploads.check_dataset_file TRƯỚC khi tới đây.
 
     data_type là loại bài toán người dùng chọn lúc tải lên (classification /
-    regression). Backend v1 không lưu nó - dataset chỉ là "table" - nên chỉ trả
-    lại để báo cho Agent Manager biết ý định của người dùng.
+    regression / time_series). Backend v1 không lưu nó - dataset chỉ là "table" -
+    nên chỉ trả lại để báo cho Agent Manager biết ý định của người dùng.
     """
     try:
         dataset = _call(

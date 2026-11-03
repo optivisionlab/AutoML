@@ -108,8 +108,8 @@ _DATASET_ID = {
 }
 _PROBLEM_TYPE = {
     "type": "string",
-    "enum": ["classification", "regression"],
-    "description": "Loại bài toán của dataset.",
+    "enum": list(tools.PROBLEM_TYPES),
+    "description": "Loại bài toán: time_series là dự báo giá trị số theo thời gian.",
 }
 _JOB_ID = {"type": "string", "description": "job_id, lấy từ list_my_jobs hoặc start_training."}
 _TASK = {
@@ -218,7 +218,8 @@ TOOL_SCHEMAS = [
             "problem_type": {
                 "type": "string",
                 "description": (
-                    "classification hoặc regression. Bỏ trống thì trả ứng viên target cho cả hai loại."
+                    "classification, regression hoặc time_series. Bỏ trống thì trả ứng viên target cho "
+                    "mọi loại; dataset có cột ngày giờ thì có thêm time_columns."
                 ),
             },
         },
@@ -235,7 +236,7 @@ TOOL_SCHEMAS = [
     _tool(
         "list_models",
         (
-            "Các model engine sẽ huấn luyện (đọc từ classification.yml / regression.yml), kèm số tổ hợp tham "
+            "Các model engine sẽ huấn luyện (đọc từ file yml của loại bài toán), kèm số tổ hợp tham "
             "số. Engine luôn train TẤT CẢ các model này rồi xếp hạng."
         ),
         {"problem_type": _PROBLEM_TYPE},
@@ -260,7 +261,8 @@ TOOL_SCHEMAS = [
             "problem_type": {
                 **_PROBLEM_TYPE,
                 "description": (
-                    "Bỏ trống thì suy từ cột mục tiêu; cột hợp cả hai loại thì BẮT BUỘC truyền."
+                    "Bỏ trống thì suy từ cột mục tiêu; cột hợp cả hai loại thì BẮT BUỘC truyền. "
+                    "time_series không bao giờ được suy ra, phải truyền."
                 ),
             },
             "search_algorithm": {

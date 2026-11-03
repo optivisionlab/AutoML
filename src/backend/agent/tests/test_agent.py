@@ -193,6 +193,74 @@ def test_training_is_retried_only_when_backend_never_got_it(monkeypatch, status,
     assert len(backend.training_calls) == (1 if retried else 0)
 
 
+class SeriesBackend(Backend):
+    """Một chuỗi doanh số theo ngày: cột date (chuỗi ISO), sales (số), promo (0/1)."""
+
+    def __init__(self, dates=None):
+        super().__init__()
+        self.dates = dates or [f"2024-01-{day:02d}" for day in range(1, 31)]
+
+    def get_dataset_preview(self, dataset_id):
+        records = [{"date": d, "sales": 100.0 + i, "promo": i % 2} for i, d in enumerate(self.dates)]
+        return {"rows": 365, "records": records}
+
+    def get_dataset_features(self, dataset_id, problem_type):
+        return {"date": False, "sales": problem_type == "regression", "promo": problem_type == "classification"}
+
+
+def test_schema_reports_time_column_without_changing_inference():
+    schema = tools.get_dataset_schema(SeriesBackend(), "dataset-1")
+    assert schema["ok"]
+    [time_column] = schema["time_columns"]
+    assert time_column["name"] == "date" and time_column["regular_in_preview"]
+    assert time_column["step"] == "1 day, 0:00:00"
+    assert time_column["estimated_last"] == "2024-12-30 00:00:00"
+    assert schema["target_candidates_by_type"]["time_series"] == ["sales"]
+    # time_series có cùng ứng viên với regression nhưng không bao giờ tự suy ra.
+    assert tools.infer_problem_type(schema, "sales") == "regression"
+
+
+def test_dataset_without_time_column_has_no_time_series_keys():
+    schema = tools.get_dataset_schema(Backend(), "dataset-1")
+    assert "time_columns" not in schema
+    assert "time_series" not in schema["target_candidates_by_type"]
+
+
+@pytest.mark.parametrize("features,error", [
+    (["promo"], "ĐÚNG MỘT cột thời gian"),
+    (["date", "promo"], None),
+])
+def test_time_series_config_needs_the_time_column(features, error):
+    result = tools.prepare_training_config(SeriesBackend(), "dataset-1", "sales", features, "rmse", "time_series")
+    if error:
+        assert result["ok"] is False and any(error in e for e in result["errors"])
+    else:
+        assert result["ok"], result
+        assert result["config"]["problem_type"] == "time_series"
+        assert any("promo" in w for w in result["warnings"])
+
+
+def test_time_series_rejects_duplicate_timestamps_and_missing_time_column():
+    duplicated = SeriesBackend(dates=["2024-01-01", "2024-01-01", "2024-01-02"])
+    result = tools.prepare_training_config(duplicated, "dataset-1", "sales", ["date"], "rmse", "time_series")
+    assert result["ok"] is False and any("trùng" in e for e in result["errors"])
+
+    result = tools.prepare_training_config(Backend(), "dataset-1", "y", ["x"], "rmse", "time_series")
+    assert result["ok"] is False and any("cột ngày giờ" in e for e in result["errors"])
+
+
+def test_time_series_metrics_models_and_requirements():
+    assert tools.list_metrics(None, "time_series")["metrics"] == ["mse", "mae", "rmse", "r2"]
+    assert {m["model"] for m in tools.list_models(None, "time_series")["models"]} == {
+        "Ridge", "RandomForestRegressor", "GradientBoostingRegressor",
+    }
+    raw = {"user": {"intent": "train"}, "dataset": {"id": "dataset-1"},
+           "problem": {"type": "time_series", "metric": "root_mean_squared_error"}}
+    requirements, _, _ = normalize_requirements(raw, [{"id": "dataset-1", "name": "demo"}])
+    assert requirements["problem"]["type"] == "time_series"
+    assert requirements["problem"]["metric"] == "rmse"
+
+
 def test_jobs_are_filtered_by_owner():
     result = tools.list_my_jobs(Backend())
     assert result["ok"]

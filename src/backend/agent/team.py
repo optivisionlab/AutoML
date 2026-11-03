@@ -43,7 +43,7 @@ from agent.prompts import DATA_AGENT, MANAGER, MODEL_AGENT, OPERATION_AGENT, PRO
 # Chi tiết lỗi đầy đủ chỉ vào log phía server, không vào prompt hay Langfuse.
 _log = logging.getLogger("agent.team")
 
-PROBLEM_TYPES = ("classification", "regression")
+PROBLEM_TYPES = tools.PROBLEM_TYPES
 REQUIREMENT_KEYS = ("user", "problem", "dataset", "model", "knowledge", "service")
 SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
 _CONSTRAINT_OPS = (">=", ">", "<=", "<")
@@ -62,6 +62,7 @@ _METRIC_ALIASES = {
     "r_squared": "r2",
     "mean_squared_error": "mse",
     "mean_absolute_error": "mae",
+    "root_mean_squared_error": "rmse",
 }
 
 
@@ -117,6 +118,8 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
     columns = schema.get("columns") or []
     by_type = schema.get("target_candidates_by_type") or {}
     known = problem_type if problem_type in by_type else schema.get("problem_type")
+    # Chỉ dataset có cột ngày giờ mới có khoá này - hồ sơ của dataset khác giữ nguyên.
+    extra = {key: schema[key] for key in ("time_columns", "time_series_note") if schema.get(key)}
     return {
         "dataset_id": schema.get("dataset_id"),
         "data_name": schema.get("data_name"),
@@ -141,6 +144,7 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
             "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset. "
             "target_for: loại bài toán mà cột đó làm biến mục tiêu được."
         ),
+        **extra,
     }
 
 
