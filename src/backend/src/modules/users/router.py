@@ -84,7 +84,7 @@ async def get_avatar(
     avatar_bytes = await service.get_user_avatar(id)
 
     return StreamingResponse(
-        io.BytesIO(avatar_bytes), 
+        io.BytesIO(avatar_bytes),
         media_type="image/png"
     )
 

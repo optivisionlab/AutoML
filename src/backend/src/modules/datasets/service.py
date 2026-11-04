@@ -175,6 +175,9 @@ class DatasetService:
 
         dataset['_id'] = str(dataset['_id'])
 
+        if dataset.get("thumbnail"):
+            dataset["thumbnail"] = await backblaze_service.get_url(dataset.get("thumbnail"))
+
         return DatasetResponse(**dataset)
 
     @staticmethod
