@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from pymongo.asynchronous.database import AsyncDatabase
 
 # Local Libraries
-from src.config import databases
+from src.config import databases, settings
 from src.core.security import jwt_service
 from src.core.constants import ErrorCode
 from src.core.exceptions import CustomException
@@ -49,6 +49,12 @@ async def get_current_user(
 
     # Standardize IDs
     user['_id'] = str(user['_id'])
+
+    if user.get('avatar'):
+        user['avatar'] = f"{settings.REDIRECT_URI}/api/v1/users/{user['_id']}/avatar"
+    else:
+        user['avatar'] = None
+
     return user
 
 
