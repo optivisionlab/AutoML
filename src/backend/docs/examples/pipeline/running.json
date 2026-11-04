@@ -1,0 +1,238 @@
+{
+  "http_status": 200,
+  "body": {
+    "success": true,
+    "message": "Training pipeline retrieved successfully",
+    "data": {
+      "job_id": "6ae5b7cab92061eaa3f0a4fc",
+      "version": "2.0.0",
+      "mode": "automl",
+      "source": "tracked",
+      "status": "running",
+      "error": null,
+      "updated_at": "2026-10-31T09:41:30Z",
+      "read_dataset": {
+        "name": "Read dataset",
+        "kind": "data_loading",
+        "depends_on": [],
+        "status": "succeeded",
+        "started_at": "2026-10-31T09:41:30Z",
+        "finished_at": "2026-10-31T09:41:30Z",
+        "error": null,
+        "params": {
+          "id_data": "6ae5a5402ebdf7162486abf3",
+          "format": "parquet"
+        },
+        "output": {
+          "data_url": "dataset/6ae5a53d2ebdf7162486abef/91158fe9-9f15-41f7-a5d4-bfc1b18ffbbf.parquet",
+          "n_rows": 442,
+          "n_columns": 11
+        }
+      },
+      "split_holdout_data": {
+        "name": "Split holdout data",
+        "kind": "data_splitting",
+        "depends_on": [
+          "read_dataset"
+        ],
+        "status": "skipped",
+        "started_at": "2026-10-31T09:41:30Z",
+        "finished_at": "2026-10-31T09:41:30Z",
+        "error": null,
+        "params": {},
+        "output": {
+          "train_rows": 442,
+          "holdout_rows": 0
+        }
+      },
+      "preprocessing": {
+        "name": "Preprocessing",
+        "kind": "preprocessing",
+        "depends_on": [
+          "split_holdout_data"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T09:41:30Z",
+        "finished_at": "2026-10-31T09:41:30Z",
+        "error": null,
+        "params": {
+          "target": "target",
+          "list_feature": [
+            "age",
+            "sex",
+            "bmi",
+            "bp",
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6"
+          ]
+        },
+        "output": {
+          "dropped_rows": 0,
+          "n_features": 10,
+          "column_types": {
+            "numeric": [
+              "age",
+              "sex",
+              "bmi",
+              "bp",
+              "s1",
+              "s2",
+              "s3",
+              "s4",
+              "s5",
+              "s6"
+            ],
+            "categorical": [],
+            "text": []
+          },
+          "class_distribution": null
+        }
+      },
+      "model_selection": {
+        "name": "Model selection",
+        "kind": "model_selection",
+        "depends_on": [
+          "preprocessing"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T09:41:30Z",
+        "finished_at": "2026-10-31T09:41:30Z",
+        "error": null,
+        "params": {
+          "problem_type": "regression",
+          "search_algorithm": "grid_search",
+          "metric_sort": "r2",
+          "timeout": 600,
+          "model_names": [
+            "LinearRegression",
+            "DecisionTreeRegressor",
+            "RandomForestRegressor",
+            "GradientBoostingRegressor",
+            "KNeighborsRegressor",
+            "Ridge",
+            "Lasso",
+            "SVR"
+          ],
+          "metrics": {
+            "mse": "minimize",
+            "mae": "minimize",
+            "mape": "minimize",
+            "r2": "maximize"
+          },
+          "cv": {
+            "name": "ContinuousRepeatedStratifiedKFold",
+            "n_splits": 5,
+            "n_repeats": 5,
+            "description": "Tier 1 (<= 500 rows): Continuous Repeated Stratified K-Fold (5 splits, 5 repeats)"
+          }
+        },
+        "output": {}
+      },
+      "train": {
+        "name": "Train models",
+        "kind": "model_training",
+        "depends_on": [
+          "model_selection"
+        ],
+        "status": "running",
+        "started_at": "2026-10-31T09:41:30Z",
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {
+          "models": {
+            "LinearRegression": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "DecisionTreeRegressor": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "RandomForestRegressor": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "GradientBoostingRegressor": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "KNeighborsRegressor": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "Ridge": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "Lasso": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            },
+            "SVR": {
+              "status": "running",
+              "error": null,
+              "best_trial": null,
+              "trials": null,
+              "holdout_scores": null
+            }
+          }
+        }
+      },
+      "select_best": {
+        "name": "Select best model",
+        "kind": "model_selection",
+        "depends_on": [
+          "train"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "save_result": {
+        "name": "Save result",
+        "kind": "result_storage",
+        "depends_on": [
+          "select_best"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "bucket_name": "models"
+        },
+        "output": {}
+      }
+    },
+    "meta": null
+  }
+}

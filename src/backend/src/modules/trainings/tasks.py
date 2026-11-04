@@ -19,7 +19,9 @@ from src.modules.trainings.executor import (
     tune_and_fit_model,
     evaluate_trained_model,
     package_task_result,
+    clean_best_params,
 )
+from src.modules.trainings.pipeline import build_trials
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -82,6 +84,14 @@ def train_single_model_task(
         metric_sort=metric_sort,
     )
 
+    # Every evaluated parameter set with its CV scores, for the pipeline JSON
+    trials, best_trial = build_trials(
+        trials_history=search.trials_history_,
+        best_index=search.best_index_,
+        metric_list=metric_list,
+        clean_params=clean_best_params,
+    )
+
     task_result = package_task_result(
         model_name=model_name,
         best_estimator=best_estimator,
@@ -90,6 +100,8 @@ def train_single_model_task(
         primary_score=primary_score,
         metric_sort=metric_sort,
         start_time=start_time,
+        trials=trials,
+        best_trial=best_trial,
     )
 
     return task_result.model_dump()

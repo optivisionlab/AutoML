@@ -16,6 +16,7 @@ from src.core import exceptions, constants, utils
 from src.config import settings
 from src.shared import minio_service, MapReduceManager, kafka_service
 from src.modules.trainings import TrainingRepository
+from src.modules.trainings.pipeline import pipeline_from_job
 from src.modules.inference.schemas import (
     DeploymentInfoResponse,
     FeatureSchemaItem,
@@ -391,6 +392,28 @@ class InferenceService:
         }
 
         return formatted_jobs, meta
+
+    async def get_job_pipeline(self, current_user: dict, job_id: str) -> dict[str, Any]:
+        job_doc = await self.repo.get_job_by_id(job_id)
+        if not job_doc:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model training job '{job_id}' not found.",
+                error_code=constants.ErrorCode.NOT_FOUND,
+            )
+
+        user_id = str(current_user.get("_id", ""))
+        user_role = current_user.get("role", "user")
+        job_user_id = str(job_doc.get("user", {}).get("id", ""))
+
+        if user_role != "admin" and user_id != job_user_id:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to access this job.",
+                error_code=constants.ErrorCode.FORBIDDEN,
+            )
+
+        return job_doc.get("pipeline") or pipeline_from_job(job_doc)
 
     async def cancel_job(self, current_user: dict, job_id: str) -> dict[str, Any]:
         job_doc = await self.repo.get_job_by_id(job_id)
