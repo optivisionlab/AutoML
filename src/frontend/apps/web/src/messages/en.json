@@ -1142,7 +1142,9 @@
       "retry": "Resend",
       "scrollToLatest": "Scroll to latest message",
       "restored": "Reconnected to your previous session. The agent still remembers the conversation, but earlier messages cannot be shown again.",
-      "restoredJobs": "Jobs in this session:"
+      "restoredJobs": "Jobs in this session:",
+      "sessionLost": "The agent server started a new session (it restarted or the old session expired). The agent no longer remembers the conversation above. Jobs keep running on the system - use Refresh on a job card to see its real status.",
+      "jobAlreadyRunning": "This turn already started a training job, which keeps running in the background. Resending would start a duplicate job - ask the agent about the job's status instead."
     },
     "upload": {
       "added": "Added <b>{name}</b> to your datasets",
@@ -1218,7 +1220,8 @@
         "metric": "Metric",
         "algorithm": "Search algorithm",
         "max_time": "Max time"
-      }
+      },
+      "warningsTitle": "Validation warnings"
     },
     "job": {
       "title": "Training job",
@@ -1278,7 +1281,10 @@
         "404": "Job or model not found.",
         "409": "The job's state does not allow this (e.g. it has not completed).",
         "other": "The backend returned an error: {detail}"
-      }
+      },
+      "trackingLost": "No longer tracked: the agent server lost the session that was watching this job. The job may still be running - press Refresh to get its real status.",
+      "autoActivated": "The model was activated automatically after training, as you requested.",
+      "autoActivateFailed": "Could not activate the model automatically after training: {detail}"
     },
     "predict": {
       "title": "Try a prediction",
@@ -1290,7 +1296,8 @@
       "run": "Predict",
       "running": "Predicting…",
       "result": "Result",
-      "latency": "{ms} ms"
+      "latency": "{ms} ms",
+      "timeSeriesHint": "Each row is one future point in time: enter a timestamp after the last training timestamp, on the same interval (e.g. hourly or daily), plus any other feature values. Values are sent as text."
     },
     "duration": {
       "seconds": "{n} s",

@@ -367,18 +367,62 @@ def _job_brief(job: dict) -> dict:
     }
 
 
-def list_my_jobs(client: HAutoMLClient) -> dict:
-    """Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước."""
+# Số job tối đa trả về một lần. Không giới hạn thì kết quả lớn dần theo lịch sử
+# tài khoản: benchmark v4-02 đo được 2 job (585 ký tự) lên 131 job (32k ký tự,
+# ~10k token) cho CÙNG một lời gọi - chi phí tăng mà câu hỏi không đổi.
+DEFAULT_JOB_LIMIT = 20
+MAX_JOB_LIMIT = 50
+
+
+def list_my_jobs(client: HAutoMLClient, dataset_id: str = "", status=None, limit: int = DEFAULT_JOB_LIMIT) -> dict:
+    """
+    Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước.
+
+    Chỉ trả `limit` job mới nhất (sau khi lọc theo dataset_id / status nếu có);
+    `count` vẫn là tổng số job khớp bộ lọc.
+    """
     jobs, problem = _own_jobs(client)
     if problem:
         return problem
 
-    return {
+    dataset_id = str(dataset_id or "").strip()
+    if dataset_id:
+        jobs = [job for job in jobs if str((job.get("data") or {}).get("id") or "") == dataset_id]
+    if status is not None and str(status).strip() != "":
+        try:
+            wanted = int(status)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"status '{status}' không hợp lệ. Dùng 0, 1, -1 hoặc -2."}
+        jobs = [job for job in jobs if job.get("status") == wanted]
+
+    try:
+        limit = max(1, min(int(limit), MAX_JOB_LIMIT))
+    except (TypeError, ValueError):
+        limit = DEFAULT_JOB_LIMIT
+    # Không tin thứ tự backend trả về: tự xếp mới nhất trước.
+    jobs = sorted(jobs, key=lambda job: _created_at(job.get("create_at")), reverse=True)
+
+    result = {
         "ok": True,
         "count": len(jobs),
-        "jobs": [_job_brief(job) for job in jobs],
+        "jobs": [_job_brief(job) for job in jobs[:limit]],
         "note": "Điểm đầy đủ từng model của một job: get_job_info.",
     }
+    if len(jobs) > limit:
+        result["truncated"] = True
+        result["note"] = (
+            f"Chỉ hiện {limit}/{len(jobs)} job mới nhất. Lọc theo dataset_id hoặc status để "
+            "tìm job cũ hơn. Điểm đầy đủ từng model của một job: get_job_info."
+        )
+    return result
+
+
+def _created_at(value) -> float:
+    """create_at của backend là timestamp (số) hoặc chuỗi ISO; không đọc được thì xếp cuối."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    parsed = _parse_time(value)
+    return parsed.timestamp() if parsed else float("-inf")
 
 
 def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict | None]:

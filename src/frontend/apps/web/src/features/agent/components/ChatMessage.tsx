@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertCircle, Bot, Check, CheckCircle2, Copy, History, RotateCcw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, Check, CheckCircle2, Copy, History, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { isProblemType, type AgentError, type ChatItem } from "../hooks/useAgentSession";
 import { formatSize } from "../lib/agentApi";
@@ -151,10 +151,14 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
       return (
         <div className="space-y-2.5">
           {item.trace && <AgentActivityTimeline trace={item.trace} />}
+          {/* Config / job đã tạo trước khi lỗi vẫn phải thấy được - job đó đang chạy thật. */}
+          {item.trace && <TraceArtifacts trace={item.trace} jobs={jobs} actions={actions} />}
           <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-agent-error/30 bg-agent-error-soft p-3.5 text-sm text-agent-error">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="break-words">{errorText(item.error)}</p>
+              {/* Lượt đã tạo job thì không cho gửi lại (sẽ chạy job trùng) - nói rõ job vẫn chạy. */}
+              {!!item.trace?.jobIds.length && <p className="mt-1 break-words text-xs">{t("jobAlreadyRunning")}</p>}
               {item.retryText && (
                 <button
                   type="button"
@@ -206,6 +210,14 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
               )}
             </>
           )}
+        </div>
+      );
+
+    case "notice":
+      return (
+        <div role="status" className={cn(card, "flex items-start gap-2 bg-agent-warning-soft p-3.5 text-sm text-agent-warning")}>
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p className="break-words">{t(item.code)}</p>
         </div>
       );
   }

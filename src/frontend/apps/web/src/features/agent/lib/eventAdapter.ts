@@ -5,7 +5,7 @@
  * từ câu trả lời của LLM.
  */
 
-import { JOB_CANCELLED, JOB_FAILED, JOB_RUNNING, JOB_SUCCESS, type AgentEvent, type Verification } from "./events";
+import { JOB_CANCELLED, JOB_FAILED, JOB_RUNNING, JOB_SUCCESS, type Activation, type AgentEvent, type Verification } from "./events";
 
 // Tool có nhãn dịch sẵn trong messages (Agent.tools.*). Tool khác hiện nguyên tên.
 export const KNOWN_TOOLS = new Set([
@@ -53,6 +53,8 @@ export interface ConfigView {
   /** null = chưa có kết quả kiểm định. */
   valid: boolean | null;
   errors: string[];
+  /** Cảnh báo của validate_config.py (không chặn job), vd lưu ý time_series. */
+  warnings?: string[];
   configId?: string;
   config?: Record<string, any>;
   jobId?: string;
@@ -173,6 +175,7 @@ export function applyTurnEvent(trace: TurnTrace, event: AgentEvent): TurnTrace {
 
     case "config_checked": {
       const errors = asList(event.errors).map((e) => clip(e, 400) as string);
+      const warnings = asList(event.warnings).map((w) => clip(w, 400) as string);
       const validation: ActivityStep = {
         id: `validation-${event.seq ?? Math.random()}`,
         kind: "validation",
@@ -185,7 +188,7 @@ export function applyTurnEvent(trace: TurnTrace, event: AgentEvent): TurnTrace {
         endedAt: event.time,
       };
       // Config hợp lệ đi kèm config_id và nội dung, để thẻ cấu hình hiện đủ cả khi job chưa chạy được.
-      const view: ConfigView = { valid: Boolean(event.ok), errors, datasetId: trace.datasetId };
+      const view: ConfigView = { valid: Boolean(event.ok), errors, warnings, datasetId: trace.datasetId };
       if (event.ok && event.config_id) Object.assign(view, { configId: event.config_id, config: event.config });
       return { ...trace, steps: [...trace.steps, validation], configs: [...trace.configs, view] };
     }
@@ -286,6 +289,13 @@ export interface JobView {
   warning?: string;
   /** Model đã được kích hoạt để dự đoán (theo API backend). */
   activated?: boolean;
+  /** Watcher tự kích hoạt model khi job xong (người dùng yêu cầu "train xong kích hoạt luôn"). */
+  activation?: Activation;
+  /**
+   * Agent server đã mất phiên đang theo dõi job này (khởi động lại / phiên quá
+   * hạn): không còn sự kiện nào về job nữa. Trạng thái thật phải lấy lại từ API.
+   */
+  lost?: boolean;
 }
 
 export const JOB_EVENT_TYPES = new Set([
@@ -296,6 +306,7 @@ export const JOB_EVENT_TYPES = new Set([
   "job_failed",
   "job_watch_timeout",
   "job_watch_warning",
+  "job_watch_resumed",
 ]);
 
 export const JOB_TERMINAL: JobStatus[] = ["completed", "failed", "cancelled", "unknown"];
@@ -322,20 +333,31 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
   const current: JobView = jobs[jobId] ?? { jobId, status: "submitted" };
   // Job đã kết thúc thì sự kiện tới muộn (trùng hoặc lệch thứ tự) không được kéo nó lùi lại.
   const finished = JOB_TERMINAL.includes(current.status);
+  // "unknown" (watcher hết giờ chờ, hoặc mất phiên) không phải kết thúc thật: job được
+  // theo dõi lại (watch_job) thì sống lại và nhận tiếp trạng thái tới khi xong.
+  const revivable = current.status === "unknown";
   let next: JobView = { ...current, lastUpdated: at, source: "stream" };
+  const revive = () => {
+    next = { ...next, status: "running", error: undefined, lost: undefined, finishedAt: undefined };
+  };
 
   switch (event.type) {
     case "job_started":
       next = { ...next, configId: event.config_id, config: event.config, metric: event.config?.metric_sort, submittedAt: at };
       break;
     case "job_watch":
+      if (revivable) revive();
       break;
     case "job_status":
-      if (finished) return jobs;
+      if (finished && !(revivable && event.status === JOB_RUNNING)) return jobs;
+      if (revivable) revive();
       if (typeof event.elapsed === "number") next.elapsed = event.elapsed;
       if (event.status === JOB_RUNNING) next.status = "running";
+      // Watcher hỏi được backend nghĩa là cảnh báo cũ (vd phiên hết hạn) đã hết đúng.
+      next.warning = undefined;
       break;
-    case "job_done":
+    case "job_done": {
+      const activation = event.activation && typeof event.activation === "object" ? (event.activation as Activation) : undefined;
       next = {
         ...next,
         status: "completed",
@@ -348,10 +370,14 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         leaderboard: toLeaderboard(event.leaderboard, event.metric_sort ?? next.metric),
         modelsScored: event.models_scored,
         verification: event.verification,
+        activation,
+        activated: activation?.ok ? true : next.activated,
         error: undefined,
         warning: undefined,
+        lost: undefined,
       };
       break;
+    }
     case "job_failed":
       next = {
         ...next,
@@ -360,6 +386,7 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         dataset: event.dataset ?? next.dataset,
         error: clip(event.error, 400),
         warning: undefined,
+        lost: undefined,
       };
       break;
     case "job_watch_timeout":
@@ -369,8 +396,24 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
     case "job_watch_warning":
       next.warning = clip(event.error);
       break;
+    case "job_watch_resumed":
+      next.warning = undefined;
+      break;
   }
   return { ...jobs, [jobId]: next };
+}
+
+/**
+ * Agent server mất phiên (khởi động lại, phiên quá hạn bị dọn): job đang chạy
+ * không còn ai theo dõi, sẽ không có sự kiện nào nữa. Đánh dấu thay vì để thẻ
+ * quay mãi - trạng thái thật lấy lại bằng nút "Làm mới" (API backend).
+ */
+export function markJobsLost(jobs: Record<string, JobView>): Record<string, JobView> {
+  const active = Object.values(jobs).filter(isJobActive);
+  if (!active.length) return jobs;
+  const next = { ...jobs };
+  for (const job of active) next[job.jobId] = { ...job, status: "unknown", lost: true, warning: undefined };
+  return next;
 }
 
 // Metric sai số: nhỏ hơn là tốt hơn (khớp LOWER_IS_BETTER ở agent/watcher.py).
@@ -398,9 +441,13 @@ export function mergeJobFromApi(current: JobView, raw: Record<string, any>, now:
             : current.status;
 
   const metric: string | undefined = raw.config?.metric_sort ?? current.metric;
+  // Có trạng thái thật từ API thì không còn "mất dấu" nữa.
+  const known = [JOB_SUCCESS, JOB_FAILED, JOB_CANCELLED, JOB_RUNNING].includes(raw.status);
   const next: JobView = {
     ...current,
     status,
+    lost: known ? undefined : current.lost,
+    error: known && status === "running" ? undefined : current.error,
     metric,
     config: current.config ?? raw.config ?? undefined,
     dataset: raw.data?.name ?? current.dataset,

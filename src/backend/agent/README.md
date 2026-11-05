@@ -140,6 +140,9 @@ thật không bị commit.
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
 | `AGENT_JOB_POLL_SECONDS` | Chu kỳ watcher hỏi trạng thái job, mặc định 20 giây |
+| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lời gọi LLM (giây), mặc định 300. SDK vẫn tự thử lại lỗi tạm thời |
+| `AGENT_HISTORY_FULL_TURNS` | Số lượt chat gần nhất Manager giữ đủ các bước tool, mặc định 4. Lượt cũ hơn chỉ còn câu hỏi và câu trả lời cuối, để phiên dài không vượt trần token |
+| `AGENT_MAX_CONCURRENT_TURNS` | Số lượt chat chạy song song tối đa trên server (pool thread riêng), mặc định 32. Lượt vượt mức xếp hàng chờ |
 | `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` / `time_series.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
 
 ### Azure OpenAI

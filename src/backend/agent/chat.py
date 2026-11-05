@@ -23,6 +23,7 @@ Lệnh trong lúc chat:
 # Standard libraries
 import argparse
 import json
+import os
 import threading
 import uuid
 
@@ -45,6 +46,21 @@ from agent.watcher import JobWatcher
 
 # Ranh giới giữa câu tóm tắt và JSON chi tiết trong một dòng sự kiện job.
 _EVENT_DETAIL = " Chi tiết: "
+
+
+def _full_turns() -> int:
+    """
+    Số lượt TRƯỚC lượt hiện tại giữ ĐỦ các bước tool trong lịch sử của Manager
+    (AGENT_HISTORY_FULL_TURNS, mặc định 4). Lượt cũ hơn chỉ giữ câu của người
+    dùng và câu trả lời cuối. Benchmark chỉ có kịch bản 1-2 lượt nên không đổi.
+    """
+    raw = os.getenv("AGENT_HISTORY_FULL_TURNS", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 4
+
+
+def _strip_event_details(text: str) -> str:
+    """Bỏ phần JSON chi tiết của dòng sự kiện job, giữ câu tóm tắt."""
+    return "\n".join(line.split(_EVENT_DETAIL)[0] for line in (text or "").splitlines())
 
 class ChatSession:
     """
@@ -156,6 +172,32 @@ class ChatSession:
     def logged_in(self) -> bool:
         return bool(self.api.access_token)
 
+    def compact_history(self, full_turns: int | None = None) -> None:
+        """
+        Gọn lịch sử: lượt cũ chỉ còn câu người dùng + câu trả lời cuối của Manager.
+
+        Mỗi bước của Manager gửi lại TOÀN BỘ lịch sử, và số token đó tính vào trần
+        của lượt. Không gọn thì phiên dài (web giữ phiên tới 1 giờ, 26 giờ khi có
+        job) sớm muộn vượt trần mỗi lượt, hoặc vượt context của model - lượt lỗi bị
+        bỏ khỏi lịch sử nhưng lịch sử vẫn dài như cũ, nên mọi lượt sau lỗi y hệt.
+
+        Bỏ assistant tool_calls cùng các tool message của nó nên chuỗi tin vẫn hợp
+        lệ. ID job/config đã nằm trong câu trả lời cuối và trong team.handoff.
+        """
+        keep = full_turns or _full_turns()
+        starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+        if len(starts) <= keep:
+            return
+        cut = starts[-keep]
+        compacted = []
+        for message in self.messages[1:cut]:
+            role = message.get("role")
+            if role == "user":
+                compacted.append({"role": "user", "content": _strip_event_details(message.get("content"))})
+            elif role == "assistant" and not message.get("tool_calls"):
+                compacted.append({"role": "assistant", "content": message.get("content") or "(không có nội dung)"})
+        self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
+
     def recent_user_messages(self, limit: int) -> list[str]:
         """
         Vài tin gần nhất của người dùng, cho sub-agent không thấy lịch sử.
@@ -165,10 +207,7 @@ class ChatSession:
         hàng nghìn token cho dữ liệu nó không dùng.
         """
         recent = [m["content"] for m in self.messages if m.get("role") == "user"][-limit:]
-        return [
-            "\n".join(line.split(_EVENT_DETAIL)[0] for line in text.splitlines())
-            for text in recent
-        ]
+        return [_strip_event_details(text) for text in recent]
 
     def _on_job_finished(self, summary: dict) -> None:
         """Watcher gọi khi job kết thúc: để lượt chat kế tiếp Manager biết kết quả."""
@@ -193,9 +232,17 @@ class ChatSession:
                 )
                 if unchecked:
                     judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
+            # Chỉ có khi người dùng dặn "train xong kích hoạt luôn" (watcher tự kích hoạt).
+            activation = summary.get("activation")
+            if activation is None:
+                activated = ""
+            elif activation.get("ok"):
+                activated = " Model ĐÃ được tự kích hoạt theo yêu cầu của người dùng, dự đoán được ngay."
+            else:
+                activated = f" Model CHƯA được kích hoạt: {activation.get('error')}"
             text = (
                 f"Job {job_id} đã huấn luyện xong: model tốt nhất {summary.get('best_model')}, "
-                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}. "
+                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated} "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
                 f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
             )
@@ -222,7 +269,9 @@ class ChatSession:
             notes = "\n".join(f"[Sự kiện] {event}" for event in events)
             user_message = f"{notes}\n\n{user_message}"
 
+        self.compact_history()
         before = len(self.messages)
+        jobs_before = set(self.team.handoff.jobs)
         self._turn_start = self.usage["total_tokens"]
         self.messages.append({"role": "user", "content": user_message})
         self.events.emit("turn_start", agent=MANAGER)
@@ -269,6 +318,16 @@ class ChatSession:
             del self.messages[before:]
             with self._pending_lock:
                 self.pending_events[:0] = events
+            # Job đã tạo trong lượt lỗi vẫn chạy thật trên backend. Lịch sử của lượt
+            # bị bỏ nên phải báo lại, không thì người dùng gửi lại câu cũ là Manager
+            # tạo thêm một job trùng chạy hàng giờ.
+            created = [job_id for job_id in self.team.handoff.jobs if job_id not in jobs_before]
+            if created:
+                self.add_event(
+                    f"Lượt chat trước bị lỗi giữa chừng NHƯNG đã tạo job {', '.join(created)}; job vẫn "
+                    "chạy nền và đang được theo dõi. KHÔNG tạo lại job cho cùng yêu cầu đó - báo người "
+                    "dùng job đã chạy."
+                )
             raise
 
         self.events.emit("turn_done", agent=MANAGER, total_tokens=self.usage["total_tokens"])

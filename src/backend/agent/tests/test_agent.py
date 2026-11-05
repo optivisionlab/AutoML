@@ -512,3 +512,251 @@ def test_refreshed_token_reaches_session_mid_turn(session, monkeypatch):
         result = request("POST", "/agent/token", json={"session_id": "s1", "access_token": "new"})
     assert result.status_code == 200
     assert session.api.access_token == "new"
+
+
+# --------------------------------------------------------------- review 2026-11-05
+
+class ManyJobsBackend(Backend):
+    """30 job của user-1, create_at tăng dần, xen kẽ hai dataset và hai trạng thái."""
+
+    def list_jobs(self):
+        return [
+            {"_id": f"job-{i}", "user": {"id": "user-1"}, "status": i % 2, "create_at": float(i),
+             "data": {"id": "ds-a" if i % 2 else "ds-b", "name": "demo"}}
+            for i in range(30)
+        ]
+
+
+def test_list_my_jobs_is_limited_newest_first_and_filterable():
+    result = tools.list_my_jobs(ManyJobsBackend())
+    assert result["count"] == 30 and result["truncated"] is True
+    assert len(result["jobs"]) == tools.DEFAULT_JOB_LIMIT
+    assert result["jobs"][0]["job_id"] == "job-29"
+
+    by_dataset = tools.list_my_jobs(ManyJobsBackend(), dataset_id="ds-b", limit=100)
+    assert by_dataset["count"] == 15 and "truncated" not in by_dataset
+    assert len(by_dataset["jobs"]) == 15
+
+    running = tools.list_my_jobs(ManyJobsBackend(), status=0, limit=3)
+    assert [job["status"] for job in running["jobs"]] == [0, 0, 0]
+    assert tools.list_my_jobs(ManyJobsBackend(), status="abc")["ok"] is False
+
+
+class FlakyJobsBackend(Backend):
+    """Lần hỏi đầu ném lỗi lạ (không phải ApiError), lần sau job đã xong."""
+
+    def __init__(self, job):
+        super().__init__()
+        self.job = job
+        self.calls = 0
+        self.activated = []
+
+    def list_jobs(self):
+        self.calls += 1
+        if self.calls == 1:
+            raise KeyError("scores")
+        return [self.job]
+
+    def activate_model(self, job_id, activate):
+        self.activated.append((job_id, activate))
+        return {"endpoint_url": f"/predict/{job_id}"}
+
+
+def _watch_until_done(api, requirements=None):
+    from agent.watcher import JobWatcher
+
+    events, finished = [], []
+    watcher = JobWatcher(api, lambda type, **data: events.append({"type": type, **data}), finished.append, poll=0.01)
+    watcher.watch("job-1", max_time=60, requirements=requirements)
+    watcher._threads["job-1"].join(timeout=5)
+    return events, finished
+
+
+SUCCESS_JOB = {
+    "_id": "job-1", "user": {"id": "user-1"}, "status": 1, "best_model": "RF", "best_score": 0.8,
+    "config": {"metric_sort": "accuracy"},
+    "orther_model_scores": [{"model_name": "RF", "scores": {"accuracy": 0.8}}],
+}
+
+
+def test_watcher_survives_unexpected_error_and_still_reports():
+    events, finished = _watch_until_done(FlakyJobsBackend(SUCCESS_JOB))
+    types = [event["type"] for event in events]
+    assert "job_watch_warning" in types and "job_watch_resumed" in types
+    assert types[-1] == "job_done"
+    assert len(finished) == 1 and finished[0]["status"] == 1
+    assert "activation" not in finished[0]
+
+
+def test_watcher_activates_model_when_user_asked():
+    api = FlakyJobsBackend(SUCCESS_JOB)
+    _, finished = _watch_until_done(api, {"service": {"deploy": True}, "problem": {"constraints": []}})
+    assert api.activated == [("job-1", True)]
+    assert finished[0]["activation"] == {"ok": True, "endpoint_url": "/predict/job-1"}
+
+
+def test_watcher_does_not_activate_model_that_misses_constraints():
+    api = FlakyJobsBackend(SUCCESS_JOB)
+    requirements = {
+        "service": {"deploy": True},
+        "problem": {"constraints": [{"metric": "accuracy", "op": ">=", "value": 0.95}]},
+    }
+    _, finished = _watch_until_done(api, requirements)
+    assert api.activated == []
+    assert finished[0]["activation"]["ok"] is False and finished[0]["activation"]["skipped"]
+
+
+def test_job_event_tells_manager_about_activation(session):
+    session._on_job_finished({**SUCCESS_JOB, "job_id": "job-1", "activation": {"ok": True}})
+    session._on_job_finished({**SUCCESS_JOB, "job_id": "job-2", "activation": {"ok": False, "error": "lỗi X"}})
+    assert "ĐÃ được tự kích hoạt" in session.pending_events[0]
+    assert "CHƯA được kích hoạt: lỗi X" in session.pending_events[1]
+
+
+def test_service_flags_are_real_booleans():
+    raw = {"user": {"intent": "train"}, "dataset": {"id": "dataset-1"},
+           "service": {"deploy": "false", "predict": "true"}}
+    requirements, _, _ = normalize_requirements(raw, [{"id": "dataset-1", "name": "demo"}])
+    assert requirements["service"] == {"deploy": False, "predict": True}
+
+
+def test_wide_dataset_profile_lists_every_column_name():
+    from agent.team import profile_brief
+
+    schema = {"columns": [{"name": f"c{i}"} for i in range(100)], "target_candidates_by_type": {}}
+    brief = profile_brief(schema)
+    assert len(brief["columns"]) == 60 and brief["columns_truncated"]
+    assert brief["all_column_names"] == [f"c{i}" for i in range(100)]
+    assert "all_column_names" not in profile_brief({"columns": [{"name": "a"}]})
+
+
+def test_old_turns_are_compacted_and_history_stays_valid(session, monkeypatch):
+    monkeypatch.setenv("AGENT_HISTORY_FULL_TURNS", "2")
+    replies = []
+    for turn in range(6):
+        replies += [response(tool="unknown"), response(f"Trả lời {turn}")]
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=replies))))
+    for turn in range(6):
+        assert session.send(f"Câu {turn}") == f"Trả lời {turn}"
+
+    messages = session.messages
+    users = [i for i, m in enumerate(messages) if m["role"] == "user"]
+    assert len(users) == 6
+    # Lượt cũ: chỉ còn câu hỏi + câu trả lời. Lượt hiện tại và 2 lượt trước nó
+    # giữ đủ tool_calls.
+    old = messages[1:users[-3]]
+    assert [m["role"] for m in old] == ["user", "assistant"] * 3
+    assert sum(1 for m in messages[users[-3]:] if m.get("tool_calls")) == 3
+    assert all("tool_calls" not in m for m in old)
+    for i, message in enumerate(messages):
+        if message["role"] == "tool":
+            assert messages[i - 1].get("tool_calls"), "tool message phải theo sau assistant tool_calls"
+
+
+def test_failed_turn_reports_job_it_created(session):
+    def create(**_):
+        session.team.handoff.jobs["job-9"] = "cfg_x"
+        error = RuntimeError("provider lỗi")
+        error.status_code = 500
+        raise error
+
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with pytest.raises(RuntimeError):
+        session.send("Train giúp tôi")
+    assert len(session.messages) == 1
+    assert any("job-9" in event and "KHÔNG tạo lại" in event for event in session.pending_events)
+
+
+class MissingTargetSeries(SeriesBackend):
+    def get_dataset_preview(self, dataset_id):
+        preview = super().get_dataset_preview(dataset_id)
+        preview["records"][3]["sales"] = None
+        return preview
+
+
+def test_time_series_target_with_missing_values_is_blocked():
+    result = tools.prepare_training_config(MissingTargetSeries(), "dataset-1", "sales", ["date"], "rmse", "time_series")
+    assert result["ok"] is False
+    assert any("thiếu 1 giá trị" in e for e in result["errors"])
+
+
+def test_superseded_config_is_not_handed_to_manager(session):
+    submit = {"dataset_id": "dataset-1", "target": "y", "list_feature": ["x"],
+              "metric_sort": "accuracy", "problem_type": "classification"}
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=[
+        response(tool="submit_config", arguments=submit),
+        response(tool="submit_config", arguments={**submit, "max_time": 300}),
+        response("Đã chốt config"),
+    ]))))
+    result = session.team.ask_model_agent(session.api, "Chốt config", dataset_id="dataset-1")
+    assert result["ok"]
+    assert len(session.team.handoff.configs) == 2
+    [config] = result["configs"]
+    assert config["config"]["max_time"] == 300
+
+
+def test_budget_overrun_in_subagent_is_not_called_an_llm_error(session):
+    session.turn_budget = 20
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=[
+        response(tool="ask_data_agent", arguments={"task": "Liệt kê dataset"}),
+        response(tool="list_my_datasets"),
+    ]))))
+    answer = session.send("Tôi có dataset nào?")
+    assert "tốn quá nhiều xử lý" in answer
+    [done] = [e for e in session.events.since(0) if e["type"] == "agent_done"]
+    assert "vượt trần token" in done["error"] and "lỗi khi gọi LLM" not in done["error"]
+
+
+def _sse_events(text):
+    events = []
+    for block in text.strip().split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in block.splitlines() if not line.startswith(":"))
+        if "event" in fields:
+            events.append((fields["event"], json.loads(fields["data"])))
+    return events
+
+
+@pytest.mark.parametrize("after,replayed", [(1, True), (None, False)])
+def test_chat_stream_replays_missed_events(session, monkeypatch, after, replayed):
+    monkeypatch.setattr(server, "_owner_of", {"token": "user-1"}.get)
+    monkeypatch.setitem(server._sessions, "s1", server._Entry(session, "user-1"))
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(return_value=response("Xong")))))
+    session.events.emit("job_status", job_id="job-1", status=0)
+    session.events.emit("job_done", job_id="job-1", status=1)
+
+    body = {"message": "Chào", "session_id": "s1", "access_token": "token"}
+    if after is not None:
+        body["after"] = after
+    result = request("POST", "/agent/chat/stream", json=body)
+    events = _sse_events(result.text)
+    assert events[0] == ("session", {"session_id": "s1", "start_seq": 2})
+    assert (("job_done" in [name for name, _ in events])) is replayed
+    assert events[-1][0] == "reply" and events[-1][1]["reply"] == "Xong"
+
+
+def test_background_events_stream_without_holding_threads(session, monkeypatch):
+    monkeypatch.setattr(server, "_owner_of", {"token": "user-1"}.get)
+    monkeypatch.setitem(server._sessions, "s1", server._Entry(session, "user-1"))
+    monkeypatch.setattr(server, "EVENTS_STREAM_SECONDS", 0.5)
+    session.events.emit("job_done", job_id="job-1", status=1)
+
+    result = request("POST", "/agent/events", json={"session_id": "s1", "access_token": "token", "after": 0})
+    names = [name for name, _ in _sse_events(result.text)]
+    assert names == ["job_done", "reconnect"]
+
+
+def test_slow_turn_keeps_chat_stream_alive(session, monkeypatch):
+    import time as time_module
+
+    monkeypatch.setattr(server, "_owner_of", {"token": "user-1"}.get)
+    monkeypatch.setitem(server._sessions, "s1", server._Entry(session, "user-1"))
+    monkeypatch.setattr(server, "CHAT_PING_SECONDS", 0.1)
+
+    def slow(**_):
+        time_module.sleep(0.8)
+        return response("Xong")
+
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=slow)))
+    result = request("POST", "/agent/chat/stream", json={"message": "Chào", "session_id": "s1", "access_token": "token"})
+    assert ": ping" in result.text
+    assert _sse_events(result.text)[-1][0] == "reply"

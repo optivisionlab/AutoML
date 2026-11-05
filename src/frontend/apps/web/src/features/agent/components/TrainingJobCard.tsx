@@ -380,7 +380,23 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
       )}
 
       {(job.status === "failed" || job.status === "cancelled" || job.status === "unknown") && (
-        <p className="mt-2 break-words rounded-lg bg-agent-error-soft px-2.5 py-1.5 text-xs text-agent-error">{job.error ?? t("noReason")}</p>
+        <p className="mt-2 break-words rounded-lg bg-agent-error-soft px-2.5 py-1.5 text-xs text-agent-error">
+          {job.lost ? t("trackingLost") : job.error ?? t("noReason")}
+        </p>
+      )}
+
+      {/* Watcher tự kích hoạt model theo yêu cầu "train xong kích hoạt luôn". */}
+      {job.activation && (
+        <p
+          className={cn(
+            "mt-2 break-words rounded-lg px-2.5 py-1.5 text-xs",
+            job.activation.ok ? "bg-agent-success-soft text-agent-success" : "bg-agent-warning-soft text-agent-warning",
+          )}
+        >
+          {job.activation.ok
+            ? t("autoActivated")
+            : t("autoActivateFailed", { detail: job.activation.error ?? t("noReason") })}
+        </p>
       )}
 
       {refreshError && <p role="alert" className="mt-2 text-xs text-agent-error">{refreshError}</p>}
@@ -433,7 +449,7 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
 
       {full && job.status === "completed" && showPredict && (
         <div className="mt-3 rounded-xl border border-automl-line p-3">
-          <InferenceForm jobId={job.jobId} activated={!!job.activated} />
+          <InferenceForm jobId={job.jobId} activated={!!job.activated} problemType={job.config?.problem_type} />
         </div>
       )}
 

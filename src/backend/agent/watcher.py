@@ -14,6 +14,7 @@ Mỗi lần hỏi chỉ đọc danh sách job (GET /inference/jobs) và không g
 """
 
 # Standard libraries
+import logging
 import os
 import threading
 import time
@@ -21,6 +22,8 @@ import time
 # Local modules
 from agent import tools, tracing
 
+
+_log = logging.getLogger("agent.watcher")
 
 DEFAULT_POLL_SECONDS = 20
 # Config không có timeout thì backend chạy tới khi mọi model xong, không giới
@@ -215,57 +218,112 @@ class JobWatcher:
             self._emit(type, agent="operation-agent", **data)
             tracing.log_event(type, trace_context, data, level=level)
 
-        started = time.time()
-        last_status = None
-        auth_warned = False
+        state = {"started": time.time(), "last_status": None, "warned": None}
 
         while not self._stopped.is_set():
-            job, problem = tools.find_own_job(self._api, job_id)
-
-            if problem is None:
-                auth_warned = False
-                status = job.get("status")
-                if status != last_status:
-                    emit(
-                        "job_status",
-                        job_id=job_id,
-                        status=status,
-                        elapsed=round(time.time() - started),
-                    )
-                    last_status = status
-
-                if status in tools.JOB_FINISHED:
-                    summary = summarize_job(job, requirements)
-                    failed = status != tools.JOB_SUCCESS or (summary.get("verification") or {}).get("passed") is False
-                    emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", level="WARNING" if failed else None, **summary)
-                    self._on_finish(summary)
+            # Bọc cả lần hỏi: một lỗi ngoài dự kiến (bản ghi job dị dạng, client
+            # đã đóng...) không được giết thread trong im lặng - thread chết thì
+            # job biến khỏi active() và người dùng không bao giờ được báo.
+            try:
+                if self._poll_once(job_id, requirements, emit, state):
                     return
-
-            elif problem.get("status_code") == 404:
-                # Job không còn trong danh sách của người dùng: bị xoá hoặc ID sai.
-                summary = {"job_id": job_id, "status": None, "error": problem.get("error")}
-                emit("job_failed", level="ERROR", **summary)
-                self._on_finish(summary)
-                return
-
-            elif problem.get("status_code") in (401, 403) and not auth_warned:
-                emit(
-                    "job_watch_warning",
-                    level="WARNING",
-                    job_id=job_id,
-                    error="Phiên đăng nhập hết hạn, sẽ thử lại khi có token mới.",
-                )
-                auth_warned = True
-            # Lỗi khác (mất mạng, backend khởi động lại) coi là tạm thời: hỏi lại sau.
+            except Exception:  # noqa: BLE001
+                _log.exception("theo dõi job %s lỗi", job_id)
+                self._warn(emit, state, job_id, "error", "Lỗi tạm thời khi theo dõi job, sẽ thử lại.")
 
             if time.time() >= deadline:
                 summary = {
                     "job_id": job_id,
-                    "status": last_status,
+                    "status": state["last_status"],
                     "error": "Quá thời gian chờ mà job chưa kết thúc. Hỏi lại sau để xem trạng thái.",
                 }
                 emit("job_watch_timeout", level="WARNING", **summary)
-                self._on_finish(summary)
+                self._finish(summary)
                 return
 
             self._stopped.wait(self._poll)
+
+    @staticmethod
+    def _warn(emit, state: dict, job_id: str, kind: str, error: str) -> None:
+        """Báo một lần cho mỗi đợt lỗi; lần hỏi thành công sau đó phát job_watch_resumed."""
+        if state["warned"] == kind:
+            return
+        emit("job_watch_warning", level="WARNING", job_id=job_id, error=error)
+        state["warned"] = kind
+
+    def _finish(self, summary: dict) -> None:
+        try:
+            self._on_finish(summary)
+        except Exception:  # noqa: BLE001 - lỗi ghi sự kiện không được làm treo thread
+            _log.exception("on_finish lỗi cho job %s", summary.get("job_id"))
+
+    def _poll_once(self, job_id: str, requirements: dict | None, emit, state: dict) -> bool:
+        """Hỏi trạng thái job một lần. True khi việc theo dõi đã kết thúc."""
+        job, problem = tools.find_own_job(self._api, job_id)
+
+        if problem is None:
+            if state["warned"]:
+                emit("job_watch_resumed", job_id=job_id)
+                state["warned"] = None
+            status = job.get("status")
+            if status != state["last_status"]:
+                emit(
+                    "job_status",
+                    job_id=job_id,
+                    status=status,
+                    elapsed=round(time.time() - state["started"]),
+                )
+                state["last_status"] = status
+
+            if status in tools.JOB_FINISHED:
+                try:
+                    summary = summarize_job(job, requirements)
+                except Exception:  # noqa: BLE001 - bản ghi dị dạng: vẫn phải báo job đã xong
+                    _log.exception("tóm tắt job %s lỗi", job_id)
+                    summary = {"job_id": job_id, "status": status, "error": job.get("infor")}
+                if status == tools.JOB_SUCCESS and wants_deploy(requirements):
+                    summary["activation"] = self._activate(job_id, summary)
+                failed = status != tools.JOB_SUCCESS or (summary.get("verification") or {}).get("passed") is False
+                emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", level="WARNING" if failed else None, **summary)
+                self._finish(summary)
+                return True
+            return False
+
+        if problem.get("status_code") == 404:
+            # Job không còn trong danh sách của người dùng: bị xoá hoặc ID sai.
+            summary = {"job_id": job_id, "status": None, "error": problem.get("error")}
+            emit("job_failed", level="ERROR", **summary)
+            self._finish(summary)
+            return True
+
+        if problem.get("status_code") in (401, 403):
+            self._warn(emit, state, job_id, "auth", "Phiên đăng nhập hết hạn, sẽ thử lại khi có token mới.")
+        # Lỗi khác (mất mạng, backend khởi động lại) coi là tạm thời: hỏi lại sau.
+        return False
+
+    def _activate(self, job_id: str, summary: dict) -> dict:
+        """
+        Người dùng đã dặn "train xong kích hoạt luôn" (R.service.deploy): kích hoạt
+        ngay khi job xong, không chờ lượt chat sau. Job không đạt ràng buộc người
+        dùng đặt ra thì KHÔNG kích hoạt - để người dùng quyết.
+        """
+        if (summary.get("verification") or {}).get("passed") is False:
+            return {
+                "ok": False,
+                "skipped": True,
+                "error": "Không tự kích hoạt vì kết quả không đạt ràng buộc người dùng đặt ra.",
+            }
+        try:
+            result = tools.activate_model(self._api, job_id)
+        except Exception as error:  # noqa: BLE001
+            _log.exception("tự kích hoạt job %s lỗi", job_id)
+            return {"ok": False, "error": f"Lỗi nội bộ khi kích hoạt ({type(error).__name__})."}
+        if not result.get("ok"):
+            return {"ok": False, "error": str(result.get("error") or "Không kích hoạt được.")}
+        return {"ok": True, "endpoint_url": result.get("endpoint_url")}
+
+
+def wants_deploy(requirements: dict | None) -> bool:
+    """R.service.deploy: người dùng muốn dùng model ngay sau khi train."""
+    value = ((requirements or {}).get("service") or {}).get("deploy")
+    return value is True or str(value).strip().lower() == "true"

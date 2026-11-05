@@ -8,9 +8,16 @@ import { cn } from "@/shared/lib/utils";
 import { input, primaryPill } from "../lib/ui";
 import { useApiErrorText } from "./useApiErrorText";
 
-/** Chữ số thì gửi dạng số, còn lại giữ nguyên chữ - backend tự ép kiểu theo model. */
-function coerce(value: string): string | number {
+/**
+ * Chữ số thì gửi dạng số, còn lại giữ nguyên chữ - backend tự ép kiểu theo model.
+ *
+ * Job time_series thì gửi nguyên chữ: cột thời gian kiểu "20250101" mà thành số
+ * thì pandas đọc là epoch nano giây (backend trả 400); các cột số khác model
+ * time_series tự ép kiểu (TimeSeriesForecaster.predict).
+ */
+function coerce(value: string, timeSeries: boolean): string | number {
   const trimmed = value.trim();
+  if (timeSeries) return trimmed;
   return trimmed !== "" && !Number.isNaN(Number(trimmed)) ? Number(trimmed) : trimmed;
 }
 
@@ -18,7 +25,8 @@ function coerce(value: string): string | number {
  * Form dự đoán sinh từ danh sách feature thật của model (GET .../deployment,
  * lấy từ config.list_feature của job). Model phải được kích hoạt trước.
  */
-export default function InferenceForm({ jobId, activated }: { jobId: string; activated: boolean }) {
+export default function InferenceForm({ jobId, activated, problemType }: { jobId: string; activated: boolean; problemType?: string }) {
+  const timeSeries = problemType === "time_series";
   const t = useTranslations("Agent.predict");
   const errorText = useApiErrorText();
   const deployment = useGetModelDeploymentInfoQuery(jobId);
@@ -46,7 +54,7 @@ export default function InferenceForm({ jobId, activated }: { jobId: string; act
     const empty = features.filter((name) => !(values[name] ?? "").trim());
     setMissing(empty);
     if (empty.length) return;
-    const row = Object.fromEntries(features.map((name) => [name, coerce(values[name])]));
+    const row = Object.fromEntries(features.map((name) => [name, coerce(values[name], timeSeries)]));
     try {
       await predict({ jobId, data: [row] }).unwrap();
     } catch {
@@ -58,7 +66,7 @@ export default function InferenceForm({ jobId, activated }: { jobId: string; act
 
   return (
     <form onSubmit={submit} noValidate className="space-y-2.5">
-      <p className="text-[11px] text-automl-muted">{t("hint")}</p>
+      <p className="text-[11px] text-automl-muted">{timeSeries ? t("timeSeriesHint") : t("hint")}</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {features.map((name) => {
           const id = `predict-${jobId}-${name}`;

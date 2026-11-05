@@ -300,7 +300,18 @@ TOOL_SCHEMAS = [
     ),
     _tool(
         "list_my_jobs",
-        "Liệt kê các job huấn luyện của tài khoản đang đăng nhập. Không cần truyền user_id.",
+        (
+            "Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước (tối đa "
+            "`limit` job, mặc định 20). Không cần truyền user_id."
+        ),
+        {
+            "dataset_id": {**_DATASET_ID, "description": "Chỉ lấy job của dataset này. Bỏ trống = mọi dataset."},
+            "status": {
+                "type": "integer",
+                "description": "Chỉ lấy job có trạng thái này: 0 đang chạy, 1 xong, -1 lỗi, -2 bị huỷ.",
+            },
+            "limit": {"type": "integer", "description": "Số job mới nhất tối đa, 1 đến 50. Mặc định 20."},
+        },
     ),
     _tool(
         "get_job_info",

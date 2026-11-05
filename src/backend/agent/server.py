@@ -32,6 +32,7 @@ import os
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 # Third party libraries
 import uvicorn
@@ -62,12 +63,33 @@ WATCHING_TTL_SECONDS = 26 * 60 * 60
 # Một kết nối /agent/events sống bao lâu trước khi bảo frontend mở lại. Ngắn
 # hơn hạn token (15 phút) để token mới kịp được gửi lên cho watcher dùng.
 EVENTS_STREAM_SECONDS = 55
+# Luồng chat im lặng quá lâu (một lời gọi LLM dài) thì proxy như nginx cắt kết
+# nối (mặc định 60 giây) - gửi comment SSE giữ kết nối.
+CHAT_PING_SECONDS = 15
+# Chờ sự kiện bằng cách hỏi bus định kỳ trong event loop, KHÔNG chiếm thread:
+# trước đây mỗi kết nối SSE giữ một thread của pool mặc định (16 thread trên máy
+# 12 nhân), vài chục tab đang theo dõi job là mọi request khác phải xếp hàng.
+_EVENT_POLL_SECONDS = 0.25
+
+
+def _turn_workers() -> int:
+    raw = os.getenv("AGENT_MAX_CONCURRENT_TURNS", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 32
+
+
+# Lượt chat chạy hàng phút: pool riêng, để các việc ngắn dùng asyncio.to_thread
+# (xác minh token, upload) không phải chờ sau chúng.
+_TURN_POOL = ThreadPoolExecutor(max_workers=_turn_workers(), thread_name_prefix="agent-turn")
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
     access_token: str | None = None
+    # seq cuối frontend đã nhận. /agent/chat/stream phát lại các sự kiện sau mốc
+    # này - sự kiện nền (vd job_done) rơi vào lúc luồng /agent/events đang chờ
+    # kết nối lại không bị bỏ qua.
+    after: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -263,6 +285,20 @@ async def health() -> dict:
     return result
 
 
+async def _wait_events(bus, after: int, timeout: float) -> list[dict]:
+    """Sự kiện mới hơn `after`, chờ tối đa `timeout` giây mà không giữ thread nào."""
+    deadline = time.monotonic() + timeout
+    while True:
+        happened = bus.since(after)
+        if happened or time.monotonic() >= deadline:
+            return happened
+        await asyncio.sleep(_EVENT_POLL_SECONDS)
+
+
+def _start_turn(session_id: str, entry: "_Entry", message: str) -> asyncio.Future:
+    return asyncio.get_running_loop().run_in_executor(_TURN_POOL, _run_turn, session_id, entry, message)
+
+
 def _run_turn(session_id: str, entry: _Entry, message: str) -> ChatResponse:
     """
     Chạy một lượt chat. ĐỒNG BỘ - gọi qua thread, không chạy thẳng trong event loop.
@@ -312,7 +348,7 @@ def _run_turn(session_id: str, entry: _Entry, message: str) -> ChatResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     owner = await _resolve_owner(request.access_token)
     session_id, session = _get_session(request.session_id, request.access_token, owner)
-    return await asyncio.to_thread(_run_turn, session_id, _sessions[session_id], request.message)
+    return await _start_turn(session_id, _sessions[session_id], request.message)
 
 
 def _sse(event: str, data: dict, event_id: int | None = None) -> str:
@@ -338,20 +374,32 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     session_id, session = _get_session(request.session_id, request.access_token, owner)
     entry = _sessions[session_id]
     start = session.events.last_seq
+    # Phát lại sự kiện frontend chưa nhận - chỉ khi vẫn là phiên cũ của nó (phiên
+    # mới thì seq của frontend thuộc phiên khác, không so được).
+    replay_from = start
+    if request.after is not None and request.session_id == session_id:
+        replay_from = max(0, min(start, request.after))
 
     async def stream():
-        yield _sse("session", {"session_id": session_id})
-        turn = asyncio.create_task(asyncio.to_thread(_run_turn, session_id, entry, request.message))
+        # start_seq: sự kiện có seq <= mốc này là phát lại, không thuộc lượt này.
+        yield _sse("session", {"session_id": session_id, "start_seq": start})
+        turn = _start_turn(session_id, entry, request.message)
         # Frontend ngắt giữa chừng thì lượt chat vẫn chạy nốt và vào lịch sử;
         # đọc exception để asyncio không cảnh báo "never retrieved".
         turn.add_done_callback(lambda task: task.cancelled() or task.exception())
-        last = start
+        last = replay_from
+        quiet_since = time.monotonic()
 
         while True:
-            happened = await asyncio.to_thread(session.events.wait, last, 0.5)
+            happened = await _wait_events(session.events, last, 0.5)
             for event in happened:
                 last = event["seq"]
                 yield _sse(event["type"], event, event["seq"])
+            if happened:
+                quiet_since = time.monotonic()
+            elif time.monotonic() - quiet_since >= CHAT_PING_SECONDS:
+                yield ": ping\n\n"
+                quiet_since = time.monotonic()
 
             if turn.done():
                 for event in session.events.since(last):
@@ -391,7 +439,7 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         while time.monotonic() < deadline:
             if await http.is_disconnected():
                 return
-            happened = await asyncio.to_thread(bus.wait, last, 5)
+            happened = await _wait_events(bus, last, 5)
             for event in happened:
                 last = event["seq"]
                 yield _sse(event["type"], event, event["seq"])

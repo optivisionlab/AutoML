@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from agent import prompts, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     SUBAGENT_MAX_STEPS,
+    TurnBudgetExceeded,
     create_completion,
     describe_error,
     _DISPATCH,
@@ -170,9 +171,17 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
             for c in columns[:_MAX_PROFILE_COLUMNS]
         ],
         "columns_truncated": len(columns) > _MAX_PROFILE_COLUMNS,
+        # Dataset rộng: thống kê chỉ cho 60 cột đầu nhưng TÊN thì đủ hết - thiếu nó
+        # thì "dùng tất cả các cột còn lại" bị lặng lẽ cắt còn 60 cột.
+        **({"all_column_names": [c.get("name") for c in columns]} if len(columns) > _MAX_PROFILE_COLUMNS else {}),
         "note": (
             "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset. "
             "target_for: loại bài toán mà cột đó làm biến mục tiêu được."
+            + (
+                f" Chỉ {_MAX_PROFILE_COLUMNS} cột đầu có thống kê; all_column_names là ĐỦ mọi cột - "
+                "chọn đặc trưng theo danh sách đó."
+                if len(columns) > _MAX_PROFILE_COLUMNS else ""
+            )
         ),
         **extra,
     }
@@ -297,6 +306,12 @@ def normalize_requirements(raw: dict, datasets: list[dict]) -> tuple[dict, list,
     if algorithm not in SEARCH_ALGORITHMS:
         requirements["model"]["search_algorithm"] = None
 
+    # watcher tự kích hoạt model khi service.deploy đúng: chuỗi "false" không được thành True.
+    service = requirements["service"]
+    for flag in ("deploy", "predict"):
+        value = service.get(flag)
+        service[flag] = value is True or str(value).strip().lower() == "true"
+
     return requirements, missing, notes
 
 
@@ -386,8 +401,13 @@ class AgentTeam:
                 check_budget=self.session.check_budget,
             )
         except Exception as error:  # noqa: BLE001 - sub-agent hỏng không được làm chết Manager
-            _log.exception("%s lỗi", agent)
-            message = f"{prompts.title(agent)} lỗi khi gọi LLM: {describe_error(error)}"
+            # Vượt trần token cũng về đây (không raise tiếp: Manager đang giữ một
+            # tool_call chờ kết quả). Manager tự dừng ở lần kiểm trần kế tiếp.
+            if isinstance(error, TurnBudgetExceeded):
+                message = f"{prompts.title(agent)} dừng vì lượt chat đã vượt trần token: {error}"
+            else:
+                _log.exception("%s lỗi", agent)
+                message = f"{prompts.title(agent)} lỗi khi gọi LLM: {describe_error(error)}"
             self._emit("agent_done", agent=agent, ok=False, error=message)
             return {"ok": False, "agent": agent, "error": message}
 
@@ -459,6 +479,11 @@ class AgentTeam:
         with tracing.observe(PROMPT_AGENT, as_type="agent", input={"request": request, "context": context}) as observation:
             try:
                 raw = self._ask_json(PROMPT_AGENT, prompts.agent_prompt(PROMPT_AGENT, context), request)
+            except TurnBudgetExceeded as error:
+                message = f"Prompt Agent dừng vì lượt chat đã vượt trần token: {error}"
+                self._emit("agent_done", agent=PROMPT_AGENT, ok=False, error=message)
+                tracing.end(observation, error=message)
+                return {"ok": False, "agent": PROMPT_AGENT, "error": message}
             except Exception as error:  # noqa: BLE001
                 _log.exception("prompt-agent lỗi")
                 message = f"Prompt Agent lỗi: {describe_error(error)}"
@@ -564,10 +589,12 @@ class AgentTeam:
 
         before = set(self.handoff.configs)
         result = self._run_subagent(MODEL_AGENT, task, context)
+        # Model Agent submit lại trong cùng lần chạy thì config trước đã bị thay:
+        # chỉ đưa Manager config còn hiệu lực, khỏi chuyển nhầm cho Operation Agent.
         result["configs"] = [
             {key: self.handoff.configs[cid][key] for key in ("config_id", "config", "warnings")}
             for cid in self.handoff.configs
-            if cid not in before
+            if cid not in before and not self.handoff.configs[cid].get("superseded_by")
         ]
         if result["ok"] and not result["configs"] and dataset_id:
             result["note"] = "Model Agent chưa chốt config nào - đọc report để biết còn thiếu gì."

@@ -24,6 +24,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# Thời gian chờ MỘT lời gọi LLM (giây). SDK mặc định 600 giây và còn thử lại
+# tới max_retries lần, nên provider treo có thể giữ lượt chat gần một giờ. Lời
+# gọi chậm nhất đo được trong benchmark là ~169 giây (p99 ~37 giây).
+DEFAULT_LLM_TIMEOUT = 300.0
+
+
+def llm_timeout() -> float:
+    """AGENT_LLM_TIMEOUT trong .env (giây), không đặt hoặc sai thì dùng mặc định."""
+    try:
+        value = float(os.getenv("AGENT_LLM_TIMEOUT", "").strip() or DEFAULT_LLM_TIMEOUT)
+    except ValueError:
+        return DEFAULT_LLM_TIMEOUT
+    return value if value > 0 else DEFAULT_LLM_TIMEOUT
+
+
 # api-version GA của Azure, dùng khi không khai báo gì.
 # Model mới có thể cần bản mới hơn - xem ghi chú trong README.
 DEFAULT_AZURE_API_VERSION = "2024-10-21"
@@ -212,12 +227,14 @@ def build_client(config: ProviderConfig, max_retries: int = 5):
             azure_endpoint=config.endpoint,
             api_version=config.api_version,
             max_retries=max_retries,
+            timeout=llm_timeout(),
         )
 
     return OpenAI(
         base_url=config.base_url,
         api_key=config.api_key,
         max_retries=max_retries,
+        timeout=llm_timeout(),
     )
 
 

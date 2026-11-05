@@ -119,6 +119,14 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
 
     if problem_type == "time_series":
         _check_time_series(features, target, schema, errors, warnings)
+        target_info = by_name.get(target) if target else None
+        if target_info and target_info.get("missing_in_preview", 0) > 0:
+            # Backend (make_time_series_table) từ chối mọi giá trị target thiếu, nhưng
+            # chỉ sau khi job đã vào hàng đợi - chặn ở đây báo được ngay.
+            errors.append(
+                f"Cột mục tiêu '{target}' thiếu {target_info['missing_in_preview']} giá trị ngay trong "
+                "preview. time_series không bỏ được dòng thiếu target - cần điền hoặc lọc dữ liệu trước."
+            )
 
     # --- metric_sort ---
     metric = config.get("metric_sort")

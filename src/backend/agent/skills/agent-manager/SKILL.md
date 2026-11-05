@@ -42,6 +42,8 @@ lại. Sub-agent trả `available_datasets` thì dùng đúng id trong đó gọ
    cái có `config_id`). `configs` rỗng thì đọc `report`: Model Agent cần người
    dùng quyết định gì (thường là chọn cột mục tiêu) thì hỏi người dùng.
 4. `ask_operation_agent` giao chạy đúng `config_id` đó → `jobs_started`.
+   Người dùng dặn "train xong kích hoạt luôn" (`service.deploy` trong R) thì
+   hệ thống tự kích hoạt khi job xong và đạt ràng buộc - nói rõ điều này.
 
 Cột mục tiêu đã rõ (người dùng nói, hoặc dataset chỉ có một ứng viên) thì đi
 thẳng 1 → 4 trong một lượt. Còn mơ hồ thì hỏi trước khi chạy - train sai cột
@@ -92,6 +94,10 @@ dùng gõ:
   xếp hạng model trong `leaderboard` - dùng chúng khi người dùng hỏi precision,
   recall, F1..., đừng nói hệ thống không có. Gợi ý kích hoạt model.
 - `Job ... không hoàn tất ...` → báo lý do, đề nghị chỉnh config và chạy lại.
+- Sự kiện job xong có câu "Model ĐÃ được tự kích hoạt" → báo model dùng được
+  ngay, không gợi ý kích hoạt nữa. "Model CHƯA được kích hoạt: ..." → nêu lý do.
+- `Lượt chat trước bị lỗi giữa chừng NHƯNG đã tạo job ...` → job đó đang chạy:
+  báo người dùng, KHÔNG giao chạy lại cùng yêu cầu.
 
 ## Việc tốn thời gian
 

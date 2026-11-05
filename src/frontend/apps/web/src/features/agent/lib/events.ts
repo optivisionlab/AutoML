@@ -31,6 +31,16 @@ export interface Verification {
   checks: VerificationCheck[];
 }
 
+/**
+ * Kết quả watcher tự kích hoạt model khi job xong - chỉ có khi người dùng yêu
+ * cầu "train xong kích hoạt luôn" (R.service.deploy). Nằm trong sự kiện job_done.
+ */
+export interface Activation {
+  ok: boolean;
+  error?: string;
+  endpoint_url?: string;
+}
+
 /** Payload `reply` của /agent/chat/stream (ChatResponse ở server.py). */
 export interface ChatReply {
   session_id: string;
@@ -45,7 +55,7 @@ export interface ChatReply {
 export interface UploadedDataset {
   id: string;
   name: string;
-  type: "classification" | "regression";
+  type: "classification" | "regression" | "time_series";
   filename: string;
   size_bytes: number;
 }

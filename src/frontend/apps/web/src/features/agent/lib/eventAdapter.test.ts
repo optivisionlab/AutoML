@@ -14,6 +14,7 @@ import {
   currentActivity,
   emptyTrace,
   groupConfigErrors,
+  markJobsLost,
   mergeJobFromApi,
   type JobView,
   type TurnTrace,
@@ -245,4 +246,101 @@ test("'đang làm gì' lấy từ bước và tool đang chạy", () => {
   ]);
   assert.deepEqual(currentActivity(trace), { agent: "data-agent", tool: "get_dataset_schema" });
   assert.equal(currentActivity(emptyTrace()), null);
+});
+
+test("cảnh báo của validate_config được giữ trên thẻ cấu hình, kể cả sau khi job chạy", () => {
+  const config = { problem_type: "time_series", target: "load", metric_sort: "rmse", list_feature: ["date", "temp"] };
+  const { trace } = run([
+    {
+      seq: 1,
+      type: "config_checked",
+      agent: "model-agent",
+      ok: true,
+      errors: [],
+      warnings: ["Khi dự báo phải biết trước giá trị tương lai của: temp."],
+      config_id: "cfg_t",
+      config,
+      time: 1,
+    },
+    { seq: 2, type: "job_started", agent: "operation-agent", job_id: "JT", config_id: "cfg_t", config, time: 2 },
+  ]);
+  assert.deepEqual(trace.configs[0].warnings, ["Khi dự báo phải biết trước giá trị tương lai của: temp."]);
+  assert.equal(trace.configs[0].jobId, "JT");
+});
+
+test("cảnh báo phiên hết hạn tự xoá khi watcher hỏi được backend trở lại", () => {
+  const warned = run([
+    { seq: 1, type: "job_started", job_id: "W", config: {}, time: 1 },
+    { seq: 2, type: "job_watch_warning", job_id: "W", error: "Phiên đăng nhập hết hạn", time: 2 },
+  ]).jobs;
+  assert.equal(warned.W.warning, "Phiên đăng nhập hết hạn");
+  const resumed = applyJobEvent(warned, { seq: 3, type: "job_watch_resumed", job_id: "W", time: 3 });
+  assert.equal(resumed.W.warning, undefined);
+  // job_status sau đó cũng xoá cảnh báo (vd cảnh báo tới lại rồi job đổi trạng thái).
+  const again = applyJobEvent(warned, { seq: 4, type: "job_status", job_id: "W", status: 0, elapsed: 30, time: 4 });
+  assert.equal(again.W.warning, undefined);
+  assert.equal(again.W.status, "running");
+});
+
+test("job_done kèm kết quả tự kích hoạt model", () => {
+  const ok = run([
+    { seq: 1, type: "job_started", job_id: "A", config: { metric_sort: "accuracy" }, time: 1 },
+    { seq: 2, type: "job_done", job_id: "A", status: 1, best_model: "RF", best_score: 0.9, activation: { ok: true, endpoint_url: "/x" }, time: 2 },
+  ]).jobs;
+  assert.equal(ok.A.status, "completed");
+  assert.equal(ok.A.activated, true);
+  assert.deepEqual(ok.A.activation, { ok: true, endpoint_url: "/x" });
+
+  const failed = run([
+    { seq: 1, type: "job_done", job_id: "B", status: 1, activation: { ok: false, error: "HTTP 500" }, time: 1 },
+  ]).jobs;
+  assert.equal(failed.B.activated, undefined);
+  assert.equal(failed.B.activation?.error, "HTTP 500");
+
+  // Không yêu cầu kích hoạt thì không có trường activation.
+  const plain = run([{ seq: 1, type: "job_done", job_id: "C", status: 1, time: 1 }]).jobs;
+  assert.equal(plain.C.activation, undefined);
+});
+
+test("job hết giờ chờ rồi được theo dõi lại thì sống lại và nhận kết quả", () => {
+  const { jobs } = run([
+    { seq: 1, type: "job_started", job_id: "R", config: {}, time: 1 },
+    { seq: 2, type: "job_watch_timeout", job_id: "R", status: 0, error: "Quá thời gian chờ", time: 2 },
+  ]);
+  assert.equal(jobs.R.status, "unknown");
+  // Sự kiện trạng thái lẻ của job đã kết thúc thật vẫn bị bỏ qua.
+  const done = run([{ seq: 1, type: "job_done", job_id: "D", status: 1, time: 1 }]).jobs;
+  assert.equal(applyJobEvent(done, { seq: 2, type: "job_status", job_id: "D", status: 0, time: 2 }), done);
+
+  let next = applyJobEvent(jobs, { seq: 3, type: "job_watch", job_id: "R", time: 3 });
+  assert.equal(next.R.status, "running");
+  assert.equal(next.R.error, undefined);
+  next = applyJobEvent(next, { seq: 4, type: "job_done", job_id: "R", status: 1, best_model: "LR", best_score: 0.8, time: 4 });
+  assert.equal(next.R.status, "completed");
+  assert.equal(next.R.bestModel, "LR");
+});
+
+test("mất phiên: job đang chạy được đánh dấu mất dấu, làm mới từ API thì hết", () => {
+  const { jobs } = run([
+    { seq: 1, type: "job_started", job_id: "L", config: {}, time: 1 },
+    { seq: 2, type: "job_status", job_id: "L", status: 0, time: 2 },
+    { seq: 3, type: "job_done", job_id: "K", status: 1, time: 3 },
+  ]);
+  const lost = markJobsLost(jobs);
+  assert.equal(lost.L.status, "unknown");
+  assert.equal(lost.L.lost, true);
+  // Job đã xong không bị đụng tới.
+  assert.equal(lost.K.status, "completed");
+  assert.equal(lost.K.lost, undefined);
+  // Không có job nào đang chạy thì giữ nguyên object.
+  assert.equal(markJobsLost({ K: jobs.K }).K, jobs.K);
+
+  const refreshed = mergeJobFromApi(lost.L, { _id: "L", status: 0, activate: 0 }, 5000);
+  assert.equal(refreshed.status, "running");
+  assert.equal(refreshed.lost, undefined);
+
+  // Phiên mới theo dõi lại job cũ (watch_job): sống lại.
+  const rewatched = applyJobEvent(lost, { seq: 1, type: "job_watch", job_id: "L", time: 9 });
+  assert.equal(rewatched.L.status, "running");
+  assert.equal(rewatched.L.lost, undefined);
 });

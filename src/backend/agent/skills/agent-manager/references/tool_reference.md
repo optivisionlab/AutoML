@@ -42,7 +42,7 @@ Endpoint tính từ `/api/v1` của backend.
 |---|---|---|
 | `start_training` | `POST /datasets/{id}/training` | Chỉ nhận `config_id`, tự bật watcher. `max_time` gửi đi dưới tên `timeout` |
 | `watch_job` | `GET /inference/jobs` (định kỳ) | Theo dõi nền tới khi `status ≠ 0` |
-| `list_my_jobs` | `GET /inference/jobs` | Bản tóm tắt từng job; lọc job của chính người dùng (admin nhận job của mọi người) |
+| `list_my_jobs` | `GET /inference/jobs` | Tóm tắt tối đa 20 job mới nhất (lọc được theo `dataset_id`, `status`); chỉ job của chính người dùng (admin nhận job của mọi người) |
 | `get_job_info` | `GET /inference/jobs` | Backend không có endpoint xem một job - tìm trong danh sách |
 | `activate_model` | `PUT /inference/models/{id}/activation` | Job của mình và đã xong |
 | `predict` | `POST /inference/models/{id}/predict` | ≤ 50 mẫu, soát đủ cột cho mọi mẫu |

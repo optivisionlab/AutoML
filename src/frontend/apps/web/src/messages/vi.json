@@ -1142,7 +1142,9 @@
       "retry": "Gửi lại",
       "scrollToLatest": "Cuộn xuống tin mới nhất",
       "restored": "Đã nối lại phiên trước. Agent vẫn nhớ ngữ cảnh cuộc trò chuyện, nhưng tin nhắn cũ không hiện lại được.",
-      "restoredJobs": "Các job của phiên này:"
+      "restoredJobs": "Các job của phiên này:",
+      "sessionLost": "Agent server đã bắt đầu một phiên mới (server khởi động lại hoặc phiên cũ hết hạn). Agent không còn nhớ phần hội thoại phía trên. Job vẫn chạy trên hệ thống - bấm Làm mới trên thẻ job để xem trạng thái thật.",
+      "jobAlreadyRunning": "Lượt này đã tạo một job huấn luyện và job vẫn đang chạy nền. Gửi lại sẽ tạo thêm một job trùng - hãy hỏi agent về trạng thái job thay vì gửi lại."
     },
     "upload": {
       "added": "Đã thêm <b>{name}</b> vào kho dataset của bạn",
@@ -1218,7 +1220,8 @@
         "metric": "Metric",
         "algorithm": "Thuật toán tìm",
         "max_time": "Thời gian tối đa"
-      }
+      },
+      "warningsTitle": "Lưu ý khi kiểm định"
     },
     "job": {
       "title": "Job huấn luyện",
@@ -1278,7 +1281,10 @@
         "404": "Không tìm thấy job hoặc model.",
         "409": "Trạng thái job không cho phép thao tác này (ví dụ job chưa hoàn tất).",
         "other": "Backend báo lỗi: {detail}"
-      }
+      },
+      "trackingLost": "Không còn được theo dõi: agent server đã mất phiên theo dõi job này. Job có thể vẫn đang chạy - bấm Làm mới để xem trạng thái thật.",
+      "autoActivated": "Model đã được tự động kích hoạt sau khi huấn luyện xong, theo yêu cầu của bạn.",
+      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}"
     },
     "predict": {
       "title": "Thử dự đoán",
@@ -1290,7 +1296,8 @@
       "run": "Dự đoán",
       "running": "Đang dự đoán…",
       "result": "Kết quả",
-      "latency": "{ms} ms"
+      "latency": "{ms} ms",
+      "timeSeriesHint": "Mỗi dòng là một mốc thời gian trong tương lai: nhập mốc sau mốc cuối của dữ liệu huấn luyện, đúng bước thời gian (vd theo giờ, theo ngày), kèm giá trị các cột khác nếu có. Giá trị được gửi dạng chữ."
     },
     "duration": {
       "seconds": "{n} giây",

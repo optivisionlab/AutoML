@@ -29,28 +29,32 @@ export default function AgentWorkspace() {
   const { data: session, status } = useSession();
   const user = session?.user;
   if (status === "loading") return <AppLoading variant="page" label={t("authLoading")} />;
-  // Refresh token hết hạn: access_token trong session đã chết, mọi lời gọi agent sẽ 401.
-  const expired = (session as { error?: string } | null)?.error === "RefreshAccessTokenError";
-  if (!user?.access_token || expired) {
+  if (!user?.access_token) {
     return (
       <div className="flex flex-col items-center gap-3 py-20 text-center">
-        <p className="text-sm text-automl-muted">{expired ? t("sessionExpired") : t("authRequired")}</p>
+        <p className="text-sm text-automl-muted">{t("authRequired")}</p>
         <button type="button" onClick={() => signIn()} className="agent-focus rounded-xl bg-agent-primary px-4 py-2 text-sm font-semibold text-agent-primary-fg hover:bg-agent-primary/90">
           {t("signIn")}
         </button>
       </div>
     );
   }
+  // Làm mới token thất bại (refresh token hết hạn, hoặc chỉ là mạng chập chờn - lần
+  // làm mới sau thành công thì lỗi tự xoá). KHÔNG gỡ Workspace: gỡ là mất tin nhắn,
+  // lượt chat đang chạy và tiến độ tải lên. Chỉ khoá gửi/tải lên và mời đăng nhập lại.
+  const expired = (session as { error?: string } | null)?.error === "RefreshAccessTokenError";
   const userKey = String(user.id ?? user.email ?? "user");
-  return <Workspace key={userKey} token={user.access_token} userKey={userKey} />;
+  return <Workspace key={userKey} token={user.access_token} userKey={userKey} expired={expired} />;
 }
 
 const iconButton =
   "agent-focus inline-flex rounded-xl border border-automl-line bg-automl-surface p-2 text-automl-muted-strong transition-colors duration-200 hover:bg-automl-surface-muted";
 
-function Workspace({ token, userKey }: { token: string; userKey: string }) {
+function Workspace({ token, userKey, expired }: { token: string; userKey: string; expired: boolean }) {
   const t = useTranslations("Agent");
   const agent = useAgentSession(token, userKey);
+  // Phiên đăng nhập hỏng: mọi lời gọi agent sẽ 401 - khoá thao tác như lúc bận.
+  const locked = agent.busy || expired;
   const [pending, setPending] = useState<PendingUpload | null>(null);
   const [composerError, setComposerError] = useState<ComposerError | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -81,7 +85,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
-    if (agent.busy) return;
+    if (locked) return;
     const picked = pickFile(event.dataTransfer.files?.[0]);
     setComposerError(picked.error);
     setPending(picked.pending);
@@ -91,7 +95,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
     <PromptComposer
       ref={composerRef}
       variant={variant}
-      busy={agent.busy}
+      busy={locked}
       sending={agent.sending}
       activityText={activityText}
       uploadProgress={agent.uploadProgress}
@@ -109,7 +113,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
   );
 
   const actions = {
-    busy: agent.busy,
+    busy: locked,
     onSend: agent.send,
     onRefreshed: agent.applyJobFromApi,
     onActivated: (jobId: string) => agent.setJobActivated(jobId, true),
@@ -127,7 +131,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
       onDatasetRows={(id, rows) => setDatasetRows((prev) => ({ ...prev, [id]: rows }))}
       items={agent.items}
       jobs={agent.jobs}
-      busy={agent.busy}
+      busy={locked}
       onSend={agent.send}
       onRefreshed={agent.applyJobFromApi}
       onActivated={actions.onActivated}
@@ -162,7 +166,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
               await agent.reset();
               composerRef.current?.focus();
             }}
-            disabled={agent.busy || empty}
+            disabled={locked || empty}
             title={agent.busy ? t("header.waitBusy") : undefined}
             className="agent-focus inline-flex items-center gap-1.5 rounded-xl border border-automl-line bg-automl-surface px-3 py-2 text-sm font-semibold text-automl-ink transition-colors duration-200 hover:bg-automl-surface-muted disabled:opacity-40"
           >
@@ -185,11 +189,20 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
         </div>
       </header>
 
+      {expired && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-agent-warning/30 bg-agent-warning-soft px-4 py-2.5 text-sm text-agent-warning">
+          <p className="min-w-0 flex-1 break-words">{t("sessionExpired")}</p>
+          <button type="button" onClick={() => signIn()} className="agent-focus shrink-0 rounded-xl bg-agent-primary px-3 py-1.5 text-xs font-semibold text-agent-primary-fg hover:bg-agent-primary/90">
+            {t("signIn")}
+          </button>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1 gap-4">
         <div
           onDragOver={(event) => {
             event.preventDefault();
-            if (!agent.busy) setDragging(true);
+            if (!locked) setDragging(true);
           }}
           onDragLeave={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false);
@@ -199,7 +212,7 @@ function Workspace({ token, userKey }: { token: string; userKey: string }) {
         >
           {empty ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <AgentWelcome composer={composer("hero")} busy={agent.busy} onSend={agent.send} />
+              <AgentWelcome composer={composer("hero")} busy={locked} onSend={agent.send} />
             </div>
           ) : (
             <>

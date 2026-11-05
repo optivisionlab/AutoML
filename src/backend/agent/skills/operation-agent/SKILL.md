@@ -31,7 +31,9 @@ xong và báo cho người dùng. Bạn **không có kết quả ngay** - đừn
 ## Theo dõi job
 
 Muốn xem một job thì cần `job_id` thật: lấy từ việc được giao, hoặc gọi
-`list_my_jobs`. Không tự bịa `job_id`.
+`list_my_jobs`. Không tự bịa `job_id`. `list_my_jobs` chỉ trả 20 job mới nhất
+(`count` là tổng số); `truncated: true` mà chưa thấy job cần tìm thì lọc theo
+`dataset_id` hoặc `status`.
 
 Việc giao nói "job vừa tạo", "job vừa chạy" → CHỈ là job trong mục "Job do
 chính phiên chat này tạo" của Ngữ cảnh. Mục đó trống thì báo Manager: phiên này
@@ -58,12 +60,14 @@ huấn luyện nào**. Không bịa chỉ số.
 
 ## Triển khai
 
-- `activate_model` chỉ khi việc được giao yêu cầu kích hoạt (hoặc R có
-  `service.deploy = true`). Job phải `status = 1`.
+- `activate_model` chỉ khi việc được giao yêu cầu kích hoạt. Job phải `status = 1`.
+  Người dùng dặn "train xong kích hoạt luôn" khi bắt đầu train thì hệ thống TỰ
+  kích hoạt lúc job xong (nếu đạt ràng buộc) - đừng gọi `activate_model` cho job
+  đang chạy.
 - `predict` cần model đã kích hoạt và mỗi mẫu chứa đủ các cột đặc trưng của
   job (`config.list_feature` trong `get_job_info`). Thiếu cột thì báo thiếu cột
   nào, đừng tự điền giá trị.
-- `predict` trả lỗi kèm `note` về lỗi backend → báo nguyên văn cho Manager.
+- `predict` trả `ok: false` → báo nguyên văn trường `error` cho Manager.
 - Job time_series (`config.problem_type = time_series`): mỗi mẫu là MỘT mốc thời
   gian tương lai - cột thời gian (sau mốc cuối của dữ liệu train, đúng bước thời
   gian) cộng giá trị các cột khác trong `list_feature` nếu có. Tối đa 365 bước;
