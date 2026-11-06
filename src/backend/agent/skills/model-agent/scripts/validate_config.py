@@ -13,7 +13,7 @@ Hàm ở đây là thuần tuý: không mạng, không LLM, không đọc file. 
 # Nguồn: src/core/constants.py (SearchAlgorithm) của backend v1
 SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
 
-PROBLEM_TYPES = ("classification", "regression")
+PROBLEM_TYPES = ("classification", "regression", "time_series")
 
 # Mẫu tên cột trông như khoá định danh - không mang thông tin dự đoán.
 # Nguồn: database/get_dataset.py, cùng mẫu backend dùng để loại cột ID.
@@ -101,7 +101,8 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
         )
 
     if len(set(features)) != len(features):
-        warnings.append("list_feature có cột bị lặp, backend sẽ bỏ qua bản trùng.")
+        # Backend không tự bỏ bản trùng (DataFrame có cột trùng tên làm train hỏng).
+        errors.append("list_feature có cột bị lặp - mỗi cột chỉ được xuất hiện một lần.")
 
     for column in features:
         if looks_like_id(column):
@@ -115,6 +116,17 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
             warnings.append(
                 f"Cột '{column}' thiếu {info['missing_in_preview']}/50 giá trị "
                 "trong phần preview."
+            )
+
+    if problem_type == "time_series":
+        _check_time_series(features, target, schema, errors, warnings)
+        target_info = by_name.get(target) if target else None
+        if target_info and target_info.get("missing_in_preview", 0) > 0:
+            # Backend (make_time_series_table) từ chối mọi giá trị target thiếu, nhưng
+            # chỉ sau khi job đã vào hàng đợi - chặn ở đây báo được ngay.
+            errors.append(
+                f"Cột mục tiêu '{target}' thiếu {target_info['missing_in_preview']} giá trị ngay trong "
+                "preview. time_series không bỏ được dòng thiếu target - cần điền hoặc lọc dữ liệu trước."
             )
 
     # --- metric_sort ---
@@ -146,3 +158,53 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
             errors.append(f"'max_time' quá lớn, tối đa {MAX_MAX_TIME} giây.")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _check_time_series(features: list, target, schema: dict, errors: list, warnings: list) -> None:
+    """
+    Điều kiện riêng của time_series, theo src/modules/preprocessing/time_series.py
+    của backend: đúng một cột ngày giờ trong list_feature, mốc không trùng và
+    cách đều. Sai thì job chỉ hỏng sau khi đã vào hàng đợi, nên chặn ở đây.
+    """
+    time_columns = {t["name"]: t for t in schema.get("time_columns") or []}
+    if not time_columns:
+        errors.append(
+            "time_series cần một cột ngày giờ, nhưng dataset không có cột nào mà mọi "
+            "giá trị đều đọc được thành ngày giờ."
+        )
+        return
+
+    chosen = [f for f in features if f in time_columns]
+    if not chosen:
+        errors.append(
+            "time_series cần ĐÚNG MỘT cột thời gian trong list_feature (backend tìm cột "
+            f"thời gian trong đó). Thêm một trong: {', '.join(time_columns)}"
+        )
+        return
+    if len(chosen) > 1:
+        errors.append(f"list_feature chỉ được có một cột thời gian, đang có: {', '.join(chosen)}")
+        return
+
+    info = time_columns[chosen[0]]
+    if info.get("missing_in_preview"):
+        errors.append(
+            f"Cột '{chosen[0]}' có {info['missing_in_preview']} mốc thời gian trống ngay trong preview. "
+            "time_series cần mọi dòng có mốc thời gian - cần điền hoặc lọc dữ liệu trước."
+        )
+    elif info.get("duplicated_in_preview"):
+        errors.append(
+            f"Cột '{chosen[0]}' có mốc thời gian trùng nhau ngay trong preview. time_series "
+            "chỉ nhận MỘT chuỗi, mỗi mốc một dòng - cần gộp hoặc lọc dữ liệu trước."
+        )
+    elif not info.get("regular_in_preview"):
+        warnings.append(
+            f"Các mốc của '{chosen[0]}' trong preview không cách đều. Backend sẽ báo lỗi nếu "
+            "toàn bộ dữ liệu không cách đều (cần resample trước)."
+        )
+
+    exogenous = [f for f in features if f != chosen[0] and f != target]
+    if exogenous:
+        warnings.append(
+            f"Khi dự báo phải biết trước giá trị tương lai của: {', '.join(exogenous)}. "
+            "Không biết trước thì chỉ nên dùng cột thời gian."
+        )

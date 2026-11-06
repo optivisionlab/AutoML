@@ -37,11 +37,20 @@ TABLE_DATA_TYPE = "table"
 
 
 class ApiError(Exception):
-    """Lỗi từ backend. status_code = 0 nghĩa là không gọi được tới server."""
+    """
+    Lỗi từ backend. status_code = 0 nghĩa là không gọi được tới server.
 
-    def __init__(self, status_code: int, detail: str) -> None:
+    timed_out: request ĐÃ gửi đi nhưng backend không trả lời kịp. Gọi lại thường
+    cũng treo hết thời gian chờ, và lệnh tạo (job, dataset) có thể đã chạy.
+    maybe_sent: request có thể đã tới backend (đứt kết nối khi đang gửi / chờ trả lời) - lệnh
+    tạo có thể đã chạy. False chỉ khi chắc chưa gửi được (không kết nối được).
+    """
+
+    def __init__(self, status_code: int, detail: str, timed_out: bool = False, maybe_sent: bool = False) -> None:
         self.status_code = status_code
         self.detail = detail
+        self.timed_out = timed_out
+        self.maybe_sent = maybe_sent or timed_out
         super().__init__(f"HTTP {status_code}: {detail}")
 
 
@@ -97,8 +106,14 @@ class HAutoMLClient:
 
         try:
             response = self._http.request(method, path, headers=headers, **kwargs)
-        except httpx.RequestError as error:
+        except (httpx.ReadTimeout, httpx.WriteTimeout) as error:
+            raise ApiError(0, f"Backend không trả lời trong thời gian chờ ({error})", timed_out=True) from error
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as error:
+            # Chưa kết nối được: request chắc chắn chưa đi - gọi lại an toàn, kể cả lệnh tạo.
             raise ApiError(0, f"Không kết nối được tới {self.base_url} ({error})") from error
+        except httpx.RequestError as error:
+            # Đứt giữa chừng (ReadError, RemoteProtocolError...): backend có thể đã nhận và xử lý.
+            raise ApiError(0, f"Mất kết nối với {self.base_url} giữa chừng ({error})", maybe_sent=True) from error
 
         if response.status_code >= 400:
             raise ApiError(response.status_code, _extract_detail(response))

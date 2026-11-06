@@ -17,6 +17,8 @@ Các hàm ở đây là Python thuần nên gọi trực tiếp được mà kh�
 import logging
 import os
 import time
+from collections import Counter
+from datetime import datetime
 
 # Local modules
 from agent.api_client import ApiError, HAutoMLClient
@@ -31,8 +33,26 @@ _TRANSIENT_STATUS = (0, 429, 502, 503, 504)
 # Backend tự nó không trả 429/502/503 - các mã này đến từ proxy khi request
 # chưa tới được backend. Lệnh TẠO (job, dataset) chỉ thử lại với các mã này:
 # timeout (0, 504) có thể backend đã nhận, gọi lại là sinh bản trùng.
-_NOT_RECEIVED_STATUS = (429, 502, 503)
+_NOT_RECEIVED_STATUS = (429, 503)
 _RETRY_DELAYS = (1.0, 3.0)
+
+
+def as_bool(value) -> bool | None:
+    """
+    Đọc chặt một tham số boolean do LLM truyền. Chuỗi "false" là truthy trong Python - để
+    nguyên thì activate_model(activate="false") lại KÍCH HOẠT. Không đọc được thì None.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("true", "1", "yes", "on"):
+            return True
+        if text in ("false", "0", "no", "off"):
+            return False
+    return None
 
 
 def _failure(error: ApiError) -> dict:
@@ -41,7 +61,7 @@ def _failure(error: ApiError) -> dict:
         "status_code": error.status_code,
         "error": error.detail,
         # Lỗi tạm thời đã được _call thử lại mà vẫn hỏng.
-        "retryable": error.status_code in _TRANSIENT_STATUS,
+        "retryable": error.status_code in _TRANSIENT_STATUS and not error.timed_out,
     }
 
 
@@ -57,7 +77,8 @@ def _call(method, *args, retry_on: tuple = _TRANSIENT_STATUS, **kwargs):
         try:
             return method(*args, **kwargs)
         except ApiError as error:
-            if error.status_code not in retry_on:
+            # Backend đã nhận request nhưng treo: gọi lại chỉ nhân thời gian chờ lên.
+            if error.status_code not in retry_on or error.timed_out:
                 raise
             name = getattr(method, "__name__", "API")
             _log.warning("%s lỗi tạm thời (HTTP %s), thử lại sau %.0fs", name, error.status_code, delay)
@@ -107,9 +128,11 @@ def _need_login() -> dict:
     }
 
 
-# Loại bài toán agent hỗ trợ. Backend có thêm time_series nhưng engine chưa có
-# model cho nó (không có time_series.yml).
-PROBLEM_TYPES = ("classification", "regression")
+# Loại bài toán agent hỗ trợ (src/core/constants.py: ProblemType của backend).
+PROBLEM_TYPES = ("classification", "regression", "time_series")
+# Loại suy được từ cột mục tiêu. time_series có cùng ứng viên target với
+# regression nên không bao giờ tự suy: người dùng phải muốn dự báo theo thời gian.
+INFERABLE_TYPES = ("classification", "regression")
 
 
 def list_my_datasets(client: HAutoMLClient) -> dict:
@@ -166,6 +189,66 @@ def _summarize_columns(names: list, by_type: dict, rows: list, problem_type: str
     return summary
 
 
+# Định dạng ngày giờ hay gặp ngoài ISO 8601 (datetime.fromisoformat đã đọc được ISO).
+_DATE_FORMATS = ("%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y %H:%M", "%Y-%m")
+
+
+def _parse_time(value) -> datetime | None:
+    """Đọc một giá trị ngày giờ dạng chuỗi. Số thuần không tính là ngày giờ."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        return datetime.fromisoformat(text).replace(tzinfo=None)
+    except ValueError:
+        pass
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _time_columns(names: list, rows: list, total_rows) -> list[dict]:
+    """
+    Cột ngày giờ trong preview kèm bước thời gian - thứ Model Agent cần cho bài
+    toán time_series (backend: src/modules/preprocessing/time_series.py).
+
+    Như _find_time_column của backend, cột chỉ tính là ngày giờ khi MỌI giá trị
+    đọc được thành ngày giờ. Backend còn đòi các mốc cách đều và không trùng;
+    preview chỉ là 50 dòng đầu nên chỉ báo được dấu hiệu, không khẳng định.
+    """
+    found = []
+    for name in names:
+        values = [row.get(name) for row in rows if row.get(name) is not None]
+        times = [_parse_time(value) for value in values]
+        if len(times) < 2 or any(t is None for t in times):
+            continue
+        # Ô trống không làm cột thôi là cột thời gian, nhưng backend từ chối mốc trống
+        # (make_time_series_table) - giữ số đếm để validate_config chặn.
+        missing = len(rows) - len(values)
+        times.sort()
+        steps = [b - a for a, b in zip(times, times[1:])]
+        step = Counter(steps).most_common(1)[0][0]
+        info = {
+            "name": name,
+            "first_in_preview": times[0].isoformat(sep=" "),
+            "step": str(step),
+            "duplicated_in_preview": len(set(times)) < len(times),
+            "regular_in_preview": len(set(steps)) == 1,
+            "missing_in_preview": missing,
+        }
+        # Đúng khi file sắp theo thời gian và không hở mốc (backend vốn đòi cách đều).
+        if info["regular_in_preview"] and step and isinstance(total_rows, int):
+            try:
+                info["estimated_last"] = (times[0] + step * (total_rows - 1)).isoformat(sep=" ")
+            except OverflowError:
+                pass  # mốc cuối vượt năm 9999 - bỏ trường ước tính, không làm hỏng cả schema
+        found.append(info)
+    return found
+
+
 def get_dataset_schema(
     client: HAutoMLClient,
     dataset_id: str,
@@ -177,18 +260,19 @@ def get_dataset_schema(
 
     Dataset không còn mang loại bài toán (dataType chỉ là "table"), nên luôn hỏi
     backend cột nào làm target được cho CẢ classification lẫn regression -
-    Model Agent cần cả hai để suy ra loại bài toán từ cột mục tiêu.
+    Model Agent cần cả hai để suy ra loại bài toán từ cột mục tiêu. Dataset có
+    cột ngày giờ thì thêm time_columns và ứng viên target cho time_series.
 
     Cố ý KHÔNG trả hết 50 dòng preview - chỉ vài dòng mẫu cộng thống kê từng
     cột, để không làm phình context của LLM với dataset lớn.
 
-    problem_type: classification | regression thì target_candidates theo loại
-        đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
+    problem_type: classification | regression | time_series thì target_candidates
+        theo loại đó; bỏ trống thì là mọi cột làm target được cho ít nhất một loại.
     """
     try:
         info = _call(client.get_dataset_info, dataset_id)
         preview = _call(client.get_dataset_preview, dataset_id)
-        by_type = {kind: _call(client.get_dataset_features, dataset_id, kind) or {} for kind in PROBLEM_TYPES}
+        by_type = {kind: _call(client.get_dataset_features, dataset_id, kind) or {} for kind in INFERABLE_TYPES}
     except ApiError as error:
         return _failure(error)
 
@@ -205,17 +289,23 @@ def get_dataset_schema(
     requested = (problem_type or "").strip().lower()
     requested = requested if requested in PROBLEM_TYPES else None
     rows = preview.get("records") or []
+    time_columns = _time_columns(names, rows, preview.get("rows"))
+    if time_columns:
+        # Backend chọn target time_series theo đúng luật của regression (datasets/service.py).
+        # Gắn vào by_type để target_for / can_be_target của từng cột khớp target_candidates.
+        times = {t["name"] for t in time_columns}
+        by_type["time_series"] = {name: bool(ok) and name not in times for name, ok in by_type["regression"].items()}
     columns = _summarize_columns(names, by_type, rows, requested)
-    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in PROBLEM_TYPES}
+    by_kind = {kind: [c["name"] for c in columns if kind in c["target_for"]] for kind in by_type}
 
-    return {
+    schema = {
         "ok": True,
         "dataset_id": dataset_id,
         "data_name": info.get("dataName"),
         "problem_type": requested,
         "total_rows": preview.get("rows"),
         "column_count": len(columns),
-        "target_candidates": by_kind[requested] if requested else [c["name"] for c in columns if c["target_for"]],
+        "target_candidates": by_kind.get(requested, []) if requested else [c["name"] for c in columns if c["target_for"]],
         "target_candidates_by_type": by_kind,
         "columns": columns,
         "sample_rows": rows[:sample_rows],
@@ -226,16 +316,26 @@ def get_dataset_schema(
             "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset."
         ),
     }
+    if time_columns:
+        schema["time_columns"] = time_columns
+        schema["time_series_note"] = (
+            "Có cột ngày giờ: làm được time_series (dự báo theo thời gian) nếu người dùng muốn "
+            "dự báo. list_feature phải chứa ĐÚNG MỘT cột thời gian; các cột khác chỉ dùng được khi "
+            "biết trước giá trị của chúng ở tương lai. estimated_last là mốc cuối ước tính, giả định "
+            "file sắp theo thời gian."
+        )
+    return schema
 
 
 def infer_problem_type(schema: dict, target: str) -> str | None:
     """
     Loại bài toán suy ra từ cột mục tiêu: cột chỉ làm target được cho đúng một
     loại thì là loại đó. Cột hợp cả hai (số nguyên ít giá trị) hoặc không hợp
-    loại nào -> None, phải để người dùng / Model Agent quyết định.
+    loại nào -> None, phải để người dùng / Model Agent quyết định. time_series
+    không bao giờ được suy ra, phải truyền problem_type.
     """
     by_type = schema.get("target_candidates_by_type") or {}
-    kinds = [kind for kind in PROBLEM_TYPES if target in (by_type.get(kind) or [])]
+    kinds = [kind for kind in INFERABLE_TYPES if target in (by_type.get(kind) or [])]
     return kinds[0] if len(kinds) == 1 else None
 
 
@@ -289,18 +389,62 @@ def _job_brief(job: dict) -> dict:
     }
 
 
-def list_my_jobs(client: HAutoMLClient) -> dict:
-    """Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước."""
+# Số job tối đa trả về một lần. Không giới hạn thì kết quả lớn dần theo lịch sử
+# tài khoản: benchmark v4-02 đo được 2 job (585 ký tự) lên 131 job (32k ký tự,
+# ~10k token) cho CÙNG một lời gọi - chi phí tăng mà câu hỏi không đổi.
+DEFAULT_JOB_LIMIT = 20
+MAX_JOB_LIMIT = 50
+
+
+def list_my_jobs(client: HAutoMLClient, dataset_id: str = "", status=None, limit: int = DEFAULT_JOB_LIMIT) -> dict:
+    """
+    Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước.
+
+    Chỉ trả `limit` job mới nhất (sau khi lọc theo dataset_id / status nếu có);
+    `count` vẫn là tổng số job khớp bộ lọc.
+    """
     jobs, problem = _own_jobs(client)
     if problem:
         return problem
 
-    return {
+    dataset_id = str(dataset_id or "").strip()
+    if dataset_id:
+        jobs = [job for job in jobs if str((job.get("data") or {}).get("id") or "") == dataset_id]
+    if status is not None and str(status).strip() != "":
+        try:
+            wanted = int(status)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"status '{status}' không hợp lệ. Dùng 0, 1, -1 hoặc -2."}
+        jobs = [job for job in jobs if job.get("status") == wanted]
+
+    try:
+        limit = max(1, min(int(limit), MAX_JOB_LIMIT))
+    except (TypeError, ValueError):
+        limit = DEFAULT_JOB_LIMIT
+    # Không tin thứ tự backend trả về: tự xếp mới nhất trước.
+    jobs = sorted(jobs, key=lambda job: _created_at(job.get("create_at")), reverse=True)
+
+    result = {
         "ok": True,
         "count": len(jobs),
-        "jobs": [_job_brief(job) for job in jobs],
+        "jobs": [_job_brief(job) for job in jobs[:limit]],
         "note": "Điểm đầy đủ từng model của một job: get_job_info.",
     }
+    if len(jobs) > limit:
+        result["truncated"] = True
+        result["note"] = (
+            f"Chỉ hiện {limit}/{len(jobs)} job mới nhất. Lọc theo dataset_id hoặc status để "
+            "tìm job cũ hơn. Điểm đầy đủ từng model của một job: get_job_info."
+        )
+    return result
+
+
+def _created_at(value) -> float:
+    """create_at của backend là timestamp (số) hoặc chuỗi ISO; không đọc được thì xếp cuối."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    parsed = _parse_time(value)
+    return parsed.timestamp() if parsed else float("-inf")
 
 
 def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict | None]:
@@ -343,6 +487,10 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
     Kiểm trước job của chính người dùng và đã xong (status = 1) để báo lỗi rõ
     ràng; backend cũng kiểm lại hai điều này.
     """
+    flag = as_bool(activate)
+    if flag is None:
+        return {"ok": False, "error": f"activate phải là true hoặc false, nhận được {activate!r}."}
+
     job, problem = find_own_job(client, job_id)
     if problem:
         return problem
@@ -357,14 +505,14 @@ def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) ->
         }
 
     try:
-        deployment = _call(client.activate_model, job_id, activate)
+        deployment = _call(client.activate_model, job_id, flag)
     except ApiError as error:
         return _failure(error)
 
     return {
         "ok": True,
         "job_id": job_id,
-        "activated": bool(activate),
+        "activated": flag,
         "best_model": job.get("best_model"),
         "endpoint_url": (deployment or {}).get("endpoint_url"),
         "features": (deployment or {}).get("features"),
@@ -474,14 +622,16 @@ DEFAULT_MAX_TIME = 900
 DEFAULT_SEARCH_ALGORITHM = "grid_search"
 
 # Metric backend tính được, dùng khi không đọc được metric_list trong
-# classification.yml / regression.yml (agent chạy tách khỏi backend).
+# classification.yml / regression.yml / time_series.yml (agent chạy tách khỏi backend).
 DEFAULT_METRICS = {
     "classification": [
         "accuracy", "balanced_accuracy", "precision_macro", "precision_weighted",
         "recall_macro", "recall_weighted", "f1_macro", "f1_weighted",
     ],
     "regression": ["mse", "mae", "mape", "r2"],
+    "time_series": ["mse", "mae", "rmse", "r2"],
 }
+_BAD_PROBLEM_TYPE = "problem_type '{}' không hợp lệ. Chọn classification, regression hoặc time_series."
 
 
 def list_metrics(client: HAutoMLClient, problem_type: str) -> dict:
@@ -493,10 +643,7 @@ def list_metrics(client: HAutoMLClient, problem_type: str) -> dict:
     """
     normalized = (problem_type or "").strip().lower()
     if normalized not in PROBLEM_TYPES:
-        return {
-            "ok": False,
-            "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
-        }
+        return {"ok": False, "error": _BAD_PROBLEM_TYPE.format(problem_type)}
 
     metrics = _load_skill_script("model-agent", "model_catalog").load_metrics(normalized)
     return {"ok": True, "problem_type": normalized, "metrics": metrics or DEFAULT_METRICS[normalized]}
@@ -506,22 +653,20 @@ def list_models(client: HAutoMLClient, problem_type: str) -> dict:
     """
     Các model engine sẽ huấn luyện cho một loại bài toán, kèm kích thước lưới tham số.
 
-    Đọc classification.yml / regression.yml của backend qua scripts/model_catalog.py.
-    Tham số client không dùng tới, giữ cho đồng nhất chữ ký với mọi tool khác.
+    Đọc classification.yml / regression.yml / time_series.yml của backend qua
+    scripts/model_catalog.py. Tham số client không dùng tới, giữ cho đồng nhất
+    chữ ký với mọi tool khác.
     """
     normalized = (problem_type or "").strip().lower()
     if normalized not in PROBLEM_TYPES:
-        return {
-            "ok": False,
-            "error": f"problem_type '{problem_type}' không hợp lệ. Chọn classification hoặc regression.",
-        }
+        return {"ok": False, "error": _BAD_PROBLEM_TYPE.format(problem_type)}
 
     catalog = _load_skill_script("model-agent", "model_catalog").load_catalog(normalized)
     if not catalog:
         return {
             "ok": False,
             "error": (
-                "Không tìm thấy classification.yml / regression.yml trong src/backend/assets. "
+                f"Không tìm thấy {normalized}.yml trong src/backend/assets. "
                 "Agent chạy tách khỏi backend thì đặt HAUTOML_SYSTEM_MODELS_DIR."
             ),
         }
@@ -560,6 +705,13 @@ def prepare_training_config(
     Trả {"ok": True, "config", "warnings"} hoặc {"ok": False, "errors", ...} kèm
     sẵn valid_columns / target_candidates / valid_metrics để agent tự sửa.
     """
+    # null tường minh (LLM chép trường nullable của R) không được thành "không giới hạn":
+    # backend hiểu timeout null là chạy tới khi mọi model xong.
+    if max_time is None:
+        max_time = DEFAULT_MAX_TIME
+    if not search_algorithm:
+        search_algorithm = DEFAULT_SEARCH_ALGORITHM
+
     schema = get_dataset_schema(client, dataset_id=dataset_id, problem_type=problem_type)
     if not schema.get("ok"):
         return schema
@@ -567,7 +719,7 @@ def prepare_training_config(
     resolved_type = schema["problem_type"] or infer_problem_type(schema, target)
     if resolved_type is None:
         by_type = schema["target_candidates_by_type"]
-        both = all(target in by_type[kind] for kind in PROBLEM_TYPES)
+        both = all(target in by_type[kind] for kind in INFERABLE_TYPES)
         return {
             "ok": False,
             "error": "Không xác định được loại bài toán.",
@@ -582,27 +734,35 @@ def prepare_training_config(
         }
 
     # validate_config so target với target_candidates của ĐÚNG loại bài toán.
+    # Không có cột ngày giờ thì không có ứng viên time_series: validate_config báo lý do.
     schema = {
         **schema,
         "problem_type": resolved_type,
-        "target_candidates": schema["target_candidates_by_type"][resolved_type],
+        "target_candidates": schema["target_candidates_by_type"].get(resolved_type, []),
     }
 
     metrics = list_metrics(client, resolved_type)
     if not metrics.get("ok"):
         return metrics
 
+    # Backend KHÔNG tự bỏ cột lặp: DataFrame có hai cột trùng tên làm tiền xử lý hỏng khi train.
+    features = list(list_feature or []) if isinstance(list_feature, list) else list_feature
+    duplicates = sorted({f for f in features if features.count(f) > 1}) if isinstance(features, list) else []
+    if duplicates:
+        features = list(dict.fromkeys(features))
     config = {
         "choose": "new_model",
         "problem_type": resolved_type,
         "target": target,
-        "list_feature": list(list_feature or []),
+        "list_feature": features,
         "metric_sort": metric_sort,
         "search_algorithm": search_algorithm,
         "max_time": max_time,
     }
 
     check = _validate_training_config(config, schema, metrics["metrics"])
+    if duplicates:
+        check["warnings"] = [f"Đã bỏ cột lặp trong list_feature: {', '.join(map(str, duplicates))}.", *check["warnings"]]
     if not check["ok"]:
         return {
             "ok": False,
@@ -657,12 +817,20 @@ def start_training(
 
     config = prepared["config"]
     try:
-        result = _call(
-            client.start_training,
-            dataset_id=dataset_id,
-            config=_backend_training_config(config),
-            retry_on=_NOT_RECEIVED_STATUS,
-        )
+        result = _create_training_job(client, dataset_id, config)
+    except TrainingOutcomeUnknown as unknown:
+        time.sleep(_OUTCOME_UNKNOWN_WAIT)
+        return {
+            "ok": False,
+            "outcome_unknown": True,
+            "status_code": unknown.error.status_code,
+            "error": (
+                f"Không rõ job đã được tạo hay chưa ({_outcome_reason(unknown.error)}). "
+                "KHÔNG chạy lại config này: kiểm tra list_my_jobs / possible_job_ids trước. Có job khớp thì "
+                "watch_job job đó; chắc chắn không có thì báo người dùng và nhờ Model Agent chốt lại config."
+            ),
+            "possible_job_ids": [job["job_id"] for job in possible_jobs(client, dataset_id, config, unknown.started_at) or []],
+        }
     except ApiError as error:
         return _failure(error)
 
@@ -676,6 +844,92 @@ def start_training(
             "job_id này để xem tiến độ. KHÔNG có kết quả ngay."
         ),
     }
+
+
+# Lệnh TẠO job mà kết quả không chắc (đứt kết nối / hết thời gian chờ, 5xx ngoài 503 - backend
+# ghi job TRƯỚC rồi mới đẩy đi, nên 500 không chứng minh chưa tạo -, hoặc 2xx mà không có
+# job_id dùng được): backend CÓ THỂ đã tạo job, mà backend không chống tạo trùng. Gửi lại mù là
+# thêm một job chạy hàng giờ; "nhận" một job tìm được theo cấu hình cũng có thể nhận nhầm. Nên
+# không làm cả hai: báo "chưa rõ kết quả" kèm job có thể đã được tạo, để người dùng / agent kiểm.
+# Chỉ lỗi CHẮC bị từ chối (4xx, 429/503, chưa kết nối được) mới coi là chưa tạo.
+# Lệch đồng hồ cho phép giữa agent và backend (cùng máy / cùng mạng nội bộ).
+_CLOCK_SKEW_SECONDS = 5
+# Chờ trước khi tìm job có thể đã tạo: backend đang ghi job (nếu có) thì kịp hiện trong danh sách.
+_OUTCOME_UNKNOWN_WAIT = 1.0
+
+
+def _outcome_reason(error: ApiError) -> str:
+    if error.status_code == 0:
+        return "hết thời gian chờ" if error.timed_out else "mất kết nối giữa chừng"
+    return f"HTTP {error.status_code}: {str(error.detail)[:120]}"
+
+
+class TrainingOutcomeUnknown(Exception):
+    def __init__(self, error: ApiError, started_at: float) -> None:
+        super().__init__(error.detail)
+        self.error = error
+        self.started_at = started_at
+
+
+def _create_training_job(client: HAutoMLClient, dataset_id: str, config: dict) -> dict:
+    """
+    Gửi lệnh tạo job. Gửi lại chỉ khi CHẮC backend chưa nhận (429 / 503: bị từ chối hẳn);
+    502 / 504 / hết thời gian chờ thì raise TrainingOutcomeUnknown, không gửi lại.
+    """
+    payload = _backend_training_config(config)
+    started_at = time.time()
+    for delay in (*_RETRY_DELAYS, None):
+        try:
+            result = client.start_training(dataset_id=dataset_id, config=payload)
+        except ApiError as error:
+            status = error.status_code
+            ambiguous = error.maybe_sent or 200 <= status < 300 or (status >= 500 and status != 503)
+            if ambiguous:
+                raise TrainingOutcomeUnknown(error, started_at) from error
+            # 429 / 503: bị từ chối hẳn; status 0 mà không maybe_sent: chưa kết nối được.
+            refused = status in _NOT_RECEIVED_STATUS or status == 0
+            if not refused or delay is None:
+                raise
+            _log.warning("start_training bị từ chối tạm thời (HTTP %s), gửi lại", status)
+            time.sleep(delay)
+            continue
+        job_id = (result or {}).get("job_id") if isinstance(result, dict) else None
+        if not isinstance(job_id, str) or not job_id.strip():
+            # Backend báo thành công nhưng không có job_id dùng được: có thể job ĐÃ được tạo.
+            raise TrainingOutcomeUnknown(ApiError(200, "phản hồi tạo job không có job_id"), started_at)
+        return result
+    raise AssertionError("unreachable")
+
+
+def feature_set(features) -> tuple:
+    """Đặc trưng so theo TẬP: đổi thứ tự hay lặp cột vẫn là cùng một lần train."""
+    return tuple(sorted({str(f) for f in features or []}))
+
+
+def possible_jobs(client: HAutoMLClient, dataset_id: str, config: dict, since: float) -> list[dict] | None:
+    """
+    Job có thể vừa được tạo bởi lệnh chưa rõ kết quả: của người dùng, trên dataset này, tạo SAU
+    lúc gửi, cùng target / metric / loại bài toán / tập đặc trưng. Chỉ để tham khảo - không tự
+    nhận. Trả [{"job_id", "status"}]; None nếu KHÔNG đọc được danh sách job (khác "không có").
+    """
+    jobs, problem = _own_jobs(client)
+    if problem:
+        return None
+    found = []
+    for job in sorted(jobs, key=lambda item: _created_at(item.get("create_at")), reverse=True):
+        if str((job.get("data") or {}).get("id") or "") != dataset_id:
+            continue
+        if _created_at(job.get("create_at")) < since - _CLOCK_SKEW_SECONDS:
+            break
+        existing = job.get("config") or {}
+        if (
+            existing.get("target") == config["target"]
+            and existing.get("metric_sort") == config["metric_sort"]
+            and existing.get("problem_type") == config["problem_type"]
+            and feature_set(existing.get("list_feature")) == feature_set(config["list_feature"])
+        ):
+            found.append({"job_id": job["job_id"], "status": job.get("status")})
+    return found
 
 
 def _load_skill_script(skill: str, module_name: str):
@@ -753,8 +1007,8 @@ def upload_dataset_file(
     agent.uploads.check_dataset_file TRƯỚC khi tới đây.
 
     data_type là loại bài toán người dùng chọn lúc tải lên (classification /
-    regression). Backend v1 không lưu nó - dataset chỉ là "table" - nên chỉ trả
-    lại để báo cho Agent Manager biết ý định của người dùng.
+    regression / time_series). Backend v1 không lưu nó - dataset chỉ là "table" -
+    nên chỉ trả lại để báo cho Agent Manager biết ý định của người dùng.
     """
     try:
         dataset = _call(
@@ -766,6 +1020,19 @@ def upload_dataset_file(
             retry_on=_NOT_RECEIVED_STATUS,
         )
     except ApiError as error:
+        status = error.status_code
+        if error.maybe_sent or 200 <= status < 300 or (status >= 500 and status != 503):
+            # Backend ghi dataset ở bước cuối: lỗi lúc này có thể đến SAU khi đã ghi. Báo rõ để
+            # người dùng xem danh sách trước, không tải lại ngay (sẽ ra dataset trùng).
+            return {
+                "ok": False,
+                "outcome_unknown": True,
+                "status_code": status,
+                "error": (
+                    f"Không rõ dataset đã được tạo hay chưa ({_outcome_reason(error)}). Xem danh sách "
+                    "dataset trước khi tải lại để tránh tạo trùng."
+                ),
+            }
         return _failure(error)
 
     return {

@@ -2,8 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { Check, ChevronDown, Copy, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Copy, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { isProblemType } from "../hooks/useAgentSession";
 import { groupConfigErrors, type ConfigField, type ConfigView } from "../lib/eventAdapter";
 import { formatDuration, shortId } from "../lib/format";
 import { card, ghostButton } from "../lib/ui";
@@ -89,12 +90,26 @@ export default function ConfigSummaryCard({ view }: { view: ConfigView }) {
         </div>
       )}
 
+      {/* Cảnh báo của validate_config.py: config vẫn hợp lệ nhưng người dùng nên biết (vd time_series). */}
+      {!!view.warnings?.length && (
+        <div className="mt-2.5 rounded-xl bg-agent-warning-soft px-3 py-2 text-xs text-agent-warning">
+          <p className="flex items-center gap-1 font-semibold">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden /> {t("warningsTitle")}
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {view.warnings.map((warning, i) => (
+              <li key={i} className="break-words">{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {config && (
         <>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
             <Field
               label={t("problemType")}
-              value={problemType === "classification" || problemType === "regression" ? tTypes(problemType) : problemType ?? "—"}
+              value={isProblemType(problemType) ? tTypes(problemType) : problemType ?? "—"}
               errors={byField.get("problem_type")}
             />
             <Field label={t("target")} value={config.target ?? "—"} errors={byField.get("target")} />

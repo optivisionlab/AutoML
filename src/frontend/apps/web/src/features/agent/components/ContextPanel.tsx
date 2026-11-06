@@ -10,7 +10,7 @@ import {
   useGetDatasetInfoQuery,
   useLazyGetDatasetDataPreviewQuery,
 } from "@/core/api/datasetApi";
-import type { ActiveDataset, ChatItem, ProblemType } from "../hooks/useAgentSession";
+import { PROBLEM_TYPES, isProblemType, type ActiveDataset, type ChatItem, type ProblemType } from "../hooks/useAgentSession";
 import { isJobActive, type ConfigView, type JobView } from "../lib/eventAdapter";
 import { formatScore, shortId } from "../lib/format";
 import { card, pillButton } from "../lib/ui";
@@ -110,8 +110,8 @@ function DatasetContextCard({
   const t = useTranslations("Agent.dataset");
   const tTypes = useTranslations("Agent.problemTypes");
   // Loại bài toán: người dùng chọn lúc tải lên, hoặc lấy từ cấu hình đã kiểm định.
-  const problemType: ProblemType =
-    dataset.problemType ?? (config?.config?.problem_type === "regression" ? "regression" : "classification");
+  const configured = config?.config?.problem_type;
+  const problemType: ProblemType = dataset.problemType ?? (isProblemType(configured) ? configured : "classification");
   const info = useGetDatasetInfoQuery(dataset.id);
   const features = useGetDatasetFeaturesQuery({ datasetId: dataset.id, problemType });
 
@@ -159,7 +159,7 @@ function DatasetContextCard({
           <fieldset className="mt-3">
             <legend className="text-[11px] font-medium uppercase tracking-wide text-automl-muted">{t("problemType")}</legend>
             <div className="mt-1 inline-flex rounded-lg border border-automl-line p-0.5">
-              {(["classification", "regression"] as const).map((type) => (
+              {PROBLEM_TYPES.map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -333,6 +333,8 @@ interface Props {
   onSend: (text: string) => void;
   onRefreshed: (jobId: string, raw: Record<string, any>) => void;
   onActivated: (jobId: string) => void;
+  onDeactivated: (jobId: string) => void;
+  onSetAutoActivate: (jobId: string, enabled: boolean) => Promise<boolean>;
 }
 
 export default function ContextPanel({
@@ -349,6 +351,8 @@ export default function ContextPanel({
   onSend,
   onRefreshed,
   onActivated,
+  onDeactivated,
+  onSetAutoActivate,
 }: Props) {
   const t = useTranslations("Agent.panel");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -463,7 +467,15 @@ export default function ContextPanel({
 
         {tab === "job" &&
           (jobList.length ? (
-            jobList.map((job) => <TrainingJobCard key={job.jobId} job={job} variant="compact" onRefreshed={onRefreshed} />)
+            jobList.map((job) => (
+              <TrainingJobCard
+                key={job.jobId}
+                job={job}
+                variant="compact"
+                onRefreshed={onRefreshed}
+                onSetAutoActivate={onSetAutoActivate}
+              />
+            ))
           ) : (
             <Empty>
               {t.rich("empty.job", {
@@ -479,7 +491,16 @@ export default function ContextPanel({
         {tab === "results" &&
           (completed.length ? (
             completed.map((job) => (
-              <TrainingJobCard key={job.jobId} job={job} busy={busy} onAsk={onSend} onRefreshed={onRefreshed} onActivated={onActivated} />
+              <TrainingJobCard
+                key={job.jobId}
+                job={job}
+                busy={busy}
+                onAsk={onSend}
+                onRefreshed={onRefreshed}
+                onActivated={onActivated}
+                onDeactivated={onDeactivated}
+                onSetAutoActivate={onSetAutoActivate}
+              />
             ))
           ) : (
             <Empty>{t("empty.results")}</Empty>

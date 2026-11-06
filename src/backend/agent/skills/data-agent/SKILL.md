@@ -54,5 +54,9 @@ không phải toàn bộ dataset. Khi nói về chúng thì nêu rõ điều nà
   lý do loại cột - đừng khuyên bỏ một cột "để tránh đa cộng tuyến".
 - Điều bất thường đáng để ý (lớp mất cân bằng nhìn thấy trong preview, cột số
   lưu dạng chuỗi...).
+- Có `time_columns` (cột ngày giờ) thì nêu tên cột, bước thời gian (`step`), mốc
+  đầu và `estimated_last`, và nói dataset làm được time_series (dự báo theo thời
+  gian). Mốc trùng hoặc không cách đều trong preview thì nêu rõ: backend đòi một
+  chuỗi duy nhất, các mốc cách đều.
 
 Chi tiết cách đọc và chọn cột: `data-agent/dataset_schema`.

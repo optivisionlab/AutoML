@@ -1113,7 +1113,8 @@
     },
     "problemTypes": {
       "classification": "Phân loại",
-      "regression": "Hồi quy"
+      "regression": "Hồi quy",
+      "time_series": "Chuỗi thời gian"
     },
     "drop": {
       "title": "Thả file vào đây",
@@ -1126,10 +1127,12 @@
     },
     "errors": {
       "busy": "Agent vẫn đang xử lý tin nhắn trước. Chờ xong rồi gửi lại.",
-      "auth": "Phiên đăng nhập đã hết hạn hoặc bạn không có quyền. Tải lại trang để đăng nhập lại.",
+      "auth": "Phiên đăng nhập đã hết hạn hoặc bạn không có quyền. Đăng nhập lại rồi bấm Gửi lại.",
       "server": "Agent gặp lỗi: {detail}",
       "serverNoDetail": "Agent gặp lỗi.",
-      "disconnected": "Mất kết nối giữa chừng. Agent có thể vẫn đang xử lý trên server - hỏi lại trạng thái trước khi gửi lại yêu cầu huấn luyện.",
+      "maybeReceived": "Không nhận được phản hồi từ agent, nhưng tin nhắn có thể đã tới nơi. Nếu bạn vừa yêu cầu huấn luyện, hãy xem danh sách job trước khi gửi lại để tránh chạy trùng.",
+      "noReply": "Không nhận được câu trả lời của lượt bị mất kết nối. Hỏi lại agent để biết kết quả.",
+      "disconnected": "Mất kết nối giữa chừng. Agent vẫn đang xử lý trên server - câu trả lời sẽ hiện ở đây khi xong. Đừng gửi lại yêu cầu huấn luyện.",
       "network": "Không kết nối được tới agent API.",
       "budget": "Lượt chat vượt trần token và đã dừng."
     },
@@ -1141,7 +1144,9 @@
       "retry": "Gửi lại",
       "scrollToLatest": "Cuộn xuống tin mới nhất",
       "restored": "Đã nối lại phiên trước. Agent vẫn nhớ ngữ cảnh cuộc trò chuyện, nhưng tin nhắn cũ không hiện lại được.",
-      "restoredJobs": "Các job của phiên này:"
+      "restoredJobs": "Các job của phiên này:",
+      "sessionLost": "Agent server đã bắt đầu một phiên mới (server khởi động lại hoặc phiên cũ hết hạn). Agent không còn nhớ phần hội thoại phía trên. Job vẫn chạy trên hệ thống - bấm Làm mới trên thẻ job để xem trạng thái thật.",
+      "jobAlreadyRunning": "Lượt này đã tạo một job huấn luyện và job vẫn đang chạy nền. Gửi lại sẽ tạo thêm một job trùng - hãy hỏi agent về trạng thái job thay vì gửi lại."
     },
     "upload": {
       "added": "Đã thêm <b>{name}</b> vào kho dataset của bạn",
@@ -1217,7 +1222,8 @@
         "metric": "Metric",
         "algorithm": "Thuật toán tìm",
         "max_time": "Thời gian tối đa"
-      }
+      },
+      "warningsTitle": "Lưu ý khi kiểm định"
     },
     "job": {
       "title": "Job huấn luyện",
@@ -1252,6 +1258,7 @@
       "lowerBetter": "Metric sai số: càng nhỏ càng tốt.",
       "higherBetter": "Càng lớn càng tốt.",
       "passed": "Đạt ràng buộc bạn đặt ra",
+      "verificationIncomplete": "Chưa kiểm đủ các ràng buộc của bạn: job không có điểm cho một số metric.",
       "notPassed": "Chưa đạt ràng buộc bạn đặt ra",
       "checkLine": "{metric} {op} {value} - thực tế {score}",
       "noScore": "không có",
@@ -1277,7 +1284,20 @@
         "404": "Không tìm thấy job hoặc model.",
         "409": "Trạng thái job không cho phép thao tác này (ví dụ job chưa hoàn tất).",
         "other": "Backend báo lỗi: {detail}"
-      }
+      },
+      "autoActivatePending": "Sẽ tự kích hoạt model khi job xong (nếu đạt ràng buộc).",
+      "autoActivatePendingIf": "Sẽ tự kích hoạt model khi job xong nếu đạt: {conditions}.",
+      "autoActivatePendingAlways": "Sẽ tự kích hoạt model khi job xong - không đặt điều kiện nào, nên kích hoạt bất kể điểm.",
+      "cancelAutoActivate": "Huỷ tự kích hoạt",
+      "autoActivateCancelled": "Đã huỷ tự kích hoạt - khi job xong, bạn tự quyết định có kích hoạt hay không.",
+      "cancelAutoActivateFailed": "Không huỷ được tự kích hoạt (job có thể đã xong hoặc agent mất phiên). Hãy kiểm tra lại trạng thái job.",
+      "autoActivateSkipped": "Không còn tự kích hoạt: agent thôi theo dõi trước khi job xong nên lời hẹn đã hết hiệu lực. Khi job xong, hãy kích hoạt thủ công.",
+      "untracked": "Backend báo job vẫn đang chạy nhưng agent không còn theo dõi: kết quả sẽ không tự hiện ở đây. Bấm Làm mới sau, hoặc nhờ agent theo dõi lại.",
+      "askWatch": "Nhờ agent theo dõi lại",
+      "watchPrompt": "Kiểm tra job {id} và theo dõi tiếp tới khi xong.",
+      "trackingLost": "Không còn được theo dõi: agent server đã mất phiên theo dõi job này. Job có thể vẫn đang chạy - bấm Làm mới để xem trạng thái thật.",
+      "autoActivated": "Model đã được tự động kích hoạt sau khi huấn luyện xong, theo yêu cầu của bạn.",
+      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}"
     },
     "predict": {
       "title": "Thử dự đoán",
@@ -1289,7 +1309,22 @@
       "run": "Dự đoán",
       "running": "Đang dự đoán…",
       "result": "Kết quả",
-      "latency": "{ms} ms"
+      "latency": "{ms} ms",
+      "seriesLast": "Mốc cuối của dữ liệu huấn luyện: {last} · bước: {step}.",
+      "seriesLastEstimated": "Mốc cuối của dữ liệu huấn luyện (ước tính, giả định file xếp theo thời gian): {last} · bước: {step}.",
+      "seriesUseNext": "Dùng {next}",
+      "seriesBadTimestamp": "Mốc thời gian phải sau mốc cuối của dữ liệu huấn luyện ({last}) và đúng bước {step}, ví dụ {next}.",
+      "seriesBadTimestampEstimated": "Mốc thời gian phải sau mốc cuối của dữ liệu huấn luyện (ước tính {last}) và đúng bước {step}, ví dụ {next}.",
+      "seriesBadTimestampNoHint": "Mốc thời gian phải sau mốc cuối của dữ liệu huấn luyện và đúng bước thời gian của dữ liệu. Nhập đủ ngày giờ, ví dụ 2014-09-29 00:00:00.",
+      "seriesTooFar": "Model chỉ dự báo được tối đa {max} bước sau mốc cuối của dữ liệu huấn luyện.",
+      "backendError": "Backend báo lỗi: {detail}",
+      "step": {
+        "days": "{n} ngày",
+        "hours": "{n} giờ",
+        "minutes": "{n} phút",
+        "seconds": "{n} giây"
+      },
+      "timeSeriesHint": "Mỗi dòng là một mốc thời gian trong tương lai: nhập mốc sau mốc cuối của dữ liệu huấn luyện, đúng bước thời gian (vd theo giờ, theo ngày), kèm giá trị các cột khác nếu có. Giá trị được gửi dạng chữ."
     },
     "duration": {
       "seconds": "{n} giây",
@@ -1353,7 +1388,8 @@
       "reply": "Agent đã trả lời.",
       "jobStarted": "Đã gửi job huấn luyện {id}.",
       "jobDone": "Job {id} đã hoàn tất.",
-      "jobFailed": "Job {id} không thành công."
+      "jobFailed": "Job {id} không thành công.",
+      "jobTimeout": "Job {id} chạy quá thời gian chờ, agent thôi theo dõi."
     }
   }
 }

@@ -1,9 +1,10 @@
 ---
 name: model-agent
 description: >-
-  Model Agent - RA QUYẾT ĐỊNH config huấn luyện cho một dataset: cột mục tiêu,
-  cột đặc trưng, metric xếp hạng, thuật toán tìm kiếm (grid / bayesian /
-  genetic), max_time; tư vấn model nào trong danh mục engine hợp dữ liệu. Config
+  Model Agent - RA QUYẾT ĐỊNH config huấn luyện cho một dataset: loại bài toán
+  (classification / regression / time_series), cột mục tiêu, cột đặc trưng,
+  metric xếp hạng, thuật toán tìm kiếm (grid / bayesian / genetic), max_time;
+  tư vấn model nào trong danh mục engine hợp dữ liệu. Config
   được kiểm bằng code (validate_config.py) và trả về config_id. Cần dataset_id
   và nên có R từ Prompt Agent. KHÔNG bấm chạy huấn luyện (→ Operation Agent),
   KHÔNG liệt kê dataset hay giải thích cột cho người dùng (→ Data Agent), KHÔNG
@@ -47,20 +48,30 @@ loại đó (bỏ trống `problem_type` khi submit cũng được, code tự su
 loại (cột số nguyên ít giá trị, vd điểm 1-10) → suy theo ý người dùng: dự
 đoán nhóm/nhãn là `classification`, dự đoán con số là `regression`; không rõ
 thì báo Manager hỏi người dùng.
+- `time_series` (dự báo theo thời gian): khi `R.problem.type = time_series`, hoặc
+  người dùng muốn DỰ BÁO theo thời gian và hồ sơ có `time_columns`. Code không
+  bao giờ tự suy ra loại này - luôn truyền `problem_type: time_series`. Mục tiêu
+  lấy trong `target_candidates_by_type.time_series`. Hồ sơ không có
+  `time_columns` thì không làm time_series được: báo Manager lý do.
 
 **B2. Đặc trưng.** Mọi cột còn lại, trừ: cột mục tiêu, cột trông như khoá
 định danh, cột hằng số hoặc thiếu gần hết. Tôn trọng `R.knowledge` (người dùng
-nói bỏ cột nào thì bỏ).
+nói bỏ cột nào thì bỏ). Hồ sơ có `columns_truncated: true` thì `columns` chỉ là
+60 cột đầu - lấy tên cột từ `all_column_names` (đủ mọi cột), đừng bỏ sót.
 - Người dùng đã chỉ định đặc trưng (liệt kê cột, hoặc "dùng tất cả các cột còn
   lại") → dùng ĐÚNG như vậy. Không tự bỏ cột vì lý do kỹ thuật, kể cả bộ cột
   one-hot (vd `Sex_F/Sex_I/Sex_M` giữ đủ cả 3): mọi model trong `list_models`
   (cây, SVM, KNN, hồi quy tuyến tính/logistic của sklearn) đều chạy được với đủ
   cột. Muốn khuyên thì ghi trong báo cáo, không sửa config.
+- `time_series`: `list_feature` PHẢI có đúng một cột trong `time_columns` (backend
+  tạo lag và đặc trưng lịch từ cột này). Người dùng không chỉ định feature thì
+  chỉ thêm cột khác khi biết trước giá trị của nó ở tương lai (vd lịch khuyến
+  mãi); không chắc thì chỉ dùng cột thời gian và nói rõ trong báo cáo.
 
 **B3. Metric.** Gọi `list_metrics`. Ưu tiên `R.problem.metric`, rồi metric của
 ràng buộc đầu tiên trong `R.problem.constraints`. Không có thì: classification
 dùng `accuracy`, lớp mất cân bằng dùng `f1_macro` hoặc `balanced_accuracy`;
-regression dùng `r2`.
+regression dùng `r2`; time_series dùng `rmse`.
 
 **B4. Model.** Gọi `list_models`. Engine train **tất cả** model trong danh sách
 rồi xếp hạng theo metric - config không có trường chọn model. Dùng danh sách để
@@ -82,6 +93,8 @@ cột mục tiêu thì KHÔNG sửa bằng cách chọn cột khác (xem B1).
 ## Báo cáo cho Manager
 
 `config_id`, cột mục tiêu và lý do, số cột đặc trưng (và cột đã loại), metric,
-thuật toán, `max_time`, model dự đoán sẽ tốt, `warnings` nếu có.
+thuật toán, `max_time`, model dự đoán sẽ tốt, `warnings` nếu có. Với
+time_series thêm cột thời gian, `step` và `estimated_last` - Manager cần chúng để
+dự báo các mốc tiếp theo.
 
 Chi tiết về năm thuật toán tìm kiếm: `model-agent/search_strategies`.

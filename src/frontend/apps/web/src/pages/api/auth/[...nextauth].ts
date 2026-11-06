@@ -91,14 +91,20 @@ export const authOptions: NextAuthOptions = {
             },
           });
 
-          const json = await res.json();
+          // Chỉ tin token khi BACKEND xác nhận được người dùng. Claim tự giải mã từ JWT
+          // (jwtDecode không kiểm chữ ký) không dùng làm danh tính hay quyền: ai cũng tự
+          // viết được một token mang role "admin".
+          if (!res.ok) return null;
+          const json = await res.json().catch(() => null);
           const userInf = json?.data || json;
+          const userId = userInf?._id || userInf?.id;
+          if (!userId) return null;
 
           return {
-            id: userInf?._id || userInf?.id || decoded.sub || "user",
-            username: userInf?.username || decoded.username || "user",
-            email: userInf?.email || decoded.email || "",
-            role: userInf?.role || decoded.role || "user",
+            id: String(userId),
+            username: userInf.username || "user",
+            email: userInf.email || "",
+            role: userInf.role || "user",
             access_token,
             refresh_token,
             accessTokenExpires: decoded.exp ? decoded.exp * 1000 : Date.now() + 3600 * 1000,
@@ -206,7 +212,9 @@ export const authOptions: NextAuthOptions = {
         session.user.id = (token.id || token.sub) as string;
         session.user.role = token.role as string;
         session.user.access_token = token.access_token as string;
-        session.user.refresh_token = token.refresh_token as string;
+        // refresh_token KHÔNG đưa ra session: session đọc được từ JavaScript phía trình duyệt
+        // (useSession), mà không code client nào cần nó - việc làm mới token chạy ở callback
+        // jwt phía server, đọc refresh_token trong JWT đã mã hoá.
         (session as any).error = token.error;
       }
       return session;

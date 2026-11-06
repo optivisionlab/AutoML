@@ -33,7 +33,7 @@ chép lại:
 |---|---|---|
 | Prompt Agent → Manager | R: `user, problem, dataset, model, knowledge, service` + `missing` | `normalize_requirements`: chỉ giữ dataset ID có thật, ràng buộc so sánh được |
 | Data Agent → Model Agent | kết quả `get_dataset_schema` | tự đọc lại nếu Manager bỏ qua Data Agent |
-| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py`, và cột mục tiêu do người dùng nói (trong R hoặc tin nhắn) hoặc là ứng viên duy nhất |
+| Model Agent → Operation Agent | `config_id` | chỉ có `config_id` khi config qua `validate_config.py`, và cột mục tiêu do người dùng chọn (trong R, hoặc tin nhắn nói rõ "target X" / "dự đoán X" - chỉ nhắc tên cột thì không tính) hoặc là ứng viên duy nhất |
 | Operation Agent → backend | `start_training(config_id)` | không nhận config tự điền, không chạy trùng; mọi tool tự thử lại lỗi tạm thời của backend (`tools._call`) |
 | Watcher → Manager | `[Sự kiện] Job ... đã huấn luyện xong` + kiểm định | so `best_score` với ràng buộc trong R |
 
@@ -140,7 +140,10 @@ thật không bị commit.
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
 | `AGENT_JOB_POLL_SECONDS` | Chu kỳ watcher hỏi trạng thái job, mặc định 20 giây |
-| `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
+| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lời gọi LLM (giây), mặc định 300. SDK vẫn tự thử lại lỗi tạm thời |
+| `AGENT_HISTORY_FULL_TURNS` | Số lượt chat gần nhất Manager giữ đủ các bước tool, mặc định 4. Lượt cũ hơn chỉ còn câu hỏi và câu trả lời cuối, để phiên dài không vượt trần token |
+| `AGENT_MAX_CONCURRENT_TURNS` | Số lượt chat chạy song song tối đa trên server (pool thread riêng), mặc định 32. Lượt vượt mức xếp hàng chờ |
+| `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` / `time_series.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
 
 ### Azure OpenAI
 
@@ -254,9 +257,9 @@ python -m agent.cli --provider google "..."
 | Prompt Agent | *(không tool)* | Một lượt LLM trả JSON R |
 | Data Agent | `list_my_datasets` | `GET /datasets` (lật hết các trang) |
 | | `get_dataset_info` | `GET /datasets/{id}` - metadata, **không có tên cột** |
-| | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression. Kết quả tự chuyển cho Model Agent |
+| | `get_dataset_schema` | `/datasets/{id}` + `/data` + `/features` cho cả classification lẫn regression; cột ngày giờ đọc được thì thêm `time_columns` và ứng viên target time_series. Kết quả tự chuyển cho Model Agent |
 | Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
-| | `list_models` | Đọc `assets/classification.yml` / `regression.yml` qua `scripts/model_catalog.py` |
+| | `list_models` | Đọc `assets/classification.yml` / `regression.yml` / `time_series.yml` qua `scripts/model_catalog.py` |
 | | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. Chặn cột mục tiêu người dùng chưa chọn khi có nhiều ứng viên. **Không train** |
 | Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
@@ -272,15 +275,19 @@ python -m agent.cli --provider google "..."
 |---|---|
 | `GET /health` | HTTP 200 khi server đang chạy; `llm_ready` cho biết cấu hình LLM đã đủ. Thiếu cấu hình trả `status: degraded` + `configuration_error`, không làm hỏng upload. Không gọi LLM để kiểm tra key/quota |
 | `POST /agent/chat` | Một lượt chat, trả JSON `{reply, agents, tools, watching, ...}` |
-| `POST /agent/chat/stream` | Như trên nhưng SSE: sự kiện tiến độ (`agent_start`, `tool_call`, `config_checked`, `job_started`...) rồi `reply` |
-| `POST /agent/events` | SSE sự kiện nền (`job_status`, `job_done`, `job_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới |
+| `POST /agent/chat/stream` | Như trên nhưng SSE: `session` (`session_id`, `start_seq`), các sự kiện tiến độ (`agent_start`, `tool_call`, `config_checked`, `job_started`...), rồi `reply` hoặc `error`. Body nhận thêm `after` (seq cuối frontend đã nhận - phát lại sự kiện bị lỡ) và `turn_id` (server gắn lại vào `turn_start` / `turn_done` (kèm `reply`) / `turn_failed`, để luồng đứt giữa chừng vẫn nhận được kết quả qua `/agent/events`). Im lặng lâu thì gửi `: ping` |
+| `POST /agent/events` | SSE sự kiện nền, mở đầu bằng `hello` (`last_seq` hiện tại) (`job_watch`, `job_status`, `job_done`, `job_failed`, `job_watch_timeout`, `job_watch_warning` / `job_watch_resumed`, `auto_activate_changed`, `turn_done` / `turn_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới. `hello` / `reconnect` kèm `watching`, `auto_activate` và `auto_activate_constraints` (job -> điều kiện sẽ kiểm trước khi tự kích hoạt; rỗng = bất kể điểm), `job_watch` / `job_status` / `auto_activate_changed` cũng mang `auto_activate_constraints` |
+| `POST /agent/auto-activate` | Bật/tắt TỰ kích hoạt model khi một job đang chạy xong (`job_id`, `enabled`) - nút "Huỷ tự kích hoạt" trên thẻ job. Operation Agent có tool `set_auto_activate` cùng tác dụng khi người dùng đổi ý qua chat (bật kèm `constraints` = điều kiện người dùng nêu, được kiểm lúc job xong; phần trăm đổi sang tỉ lệ 0-1; điều kiện không kiểm được thì không bật và huỷ lời hứa đang bật; kết quả - kể cả khi lỗi - trả `checked_constraints`) |
 | `POST /agent/upload` | Tải dataset từ trang /agent (trang 4 của sơ đồ) |
 | `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi |
+| `POST /agent/token` | Frontend gửi access token mới ngay khi NextAuth làm mới, kể cả giữa một lượt chat |
 
 SSE dùng POST thay vì `EventSource` để token nằm trong body, không lên URL.
 `/agent/events` đóng định kỳ có chủ đích: token người dùng chỉ sống 15 phút
 (`ACCESS_EXPIRE`) trong khi job chạy hàng giờ - mỗi lần frontend mở lại, token
-mới được gán vào client mà watcher đang dùng.
+mới được gán vào client mà watcher đang dùng. Nhưng kênh này chỉ mở khi có job
+được theo dõi, nên token mới còn đi qua `/agent/token`: thiếu nó, một lượt chat
+dài qua lúc token hết hạn sẽ nhận 401 giữa lượt.
 
 Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy thẳng trong
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request
@@ -391,6 +398,8 @@ Langfuse thì không patch gì cả.
 Tool này gộp bốn lời gọi vì không có endpoint nào trả đủ một mình:
 `/datasets/{id}` cho metadata, `/datasets/{id}/data` cho preview, và
 `/datasets/{id}/features` hai lần (classification, regression) cho danh sách cột.
+Không gọi lần thứ ba cho time_series: backend chọn target time_series theo đúng
+luật của regression, nên ứng viên được suy từ regression trừ cột thời gian.
 
 **Bẫy 1 - `features` không phải danh sách đặc trưng.** `/datasets/{id}/features` trả
 `{tên_cột: bool}` với key là *tất cả* cột, còn value là "cột này làm **biến mục

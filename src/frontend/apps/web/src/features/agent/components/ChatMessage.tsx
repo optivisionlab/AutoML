@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertCircle, Bot, Check, CheckCircle2, Copy, History, RotateCcw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, Check, CheckCircle2, Copy, History, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import type { AgentError, ChatItem } from "../hooks/useAgentSession";
+import { isProblemType, type AgentError, type ChatItem } from "../hooks/useAgentSession";
 import { formatSize } from "../lib/agentApi";
 import type { JobView, TurnTrace } from "../lib/eventAdapter";
 import { formatTime } from "../lib/format";
@@ -19,6 +19,10 @@ export interface JobActions {
   onSend: (text: string) => void;
   onRefreshed: (jobId: string, raw: Record<string, any>) => void;
   onActivated: (jobId: string) => void;
+  /** Backend báo model đã bị tắt (403 khi dự đoán): cập nhật mọi thẻ của job. */
+  onDeactivated: (jobId: string) => void;
+  /** Bật/tắt tự kích hoạt khi job đang chạy xong. */
+  onSetAutoActivate: (jobId: string, enabled: boolean) => Promise<boolean>;
   onOpenDetails: () => void;
 }
 
@@ -68,6 +72,7 @@ export function TraceArtifacts({ trace, jobs, actions }: { trace: TurnTrace; job
             job={jobs[jobId]}
             variant="compact"
             onRefreshed={actions.onRefreshed}
+            onSetAutoActivate={actions.onSetAutoActivate}
             onOpenDetails={actions.onOpenDetails}
           />
         ) : null,
@@ -127,7 +132,7 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
             <div className="min-w-0 text-sm">
               <p className="font-semibold">{tUpload.rich("added", { name: item.dataset.name, b: (chunks) => <strong>{chunks}</strong> })}</p>
               <p className="mt-0.5 truncate text-xs opacity-80">
-                {item.dataset.filename} · {formatSize(item.dataset.size_bytes)} · {tTypes(item.dataset.type === "regression" ? "regression" : "classification")}
+                {item.dataset.filename} · {formatSize(item.dataset.size_bytes)} · {tTypes(isProblemType(item.dataset.type) ? item.dataset.type : "classification")}
               </p>
             </div>
           </div>
@@ -151,10 +156,14 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
       return (
         <div className="space-y-2.5">
           {item.trace && <AgentActivityTimeline trace={item.trace} />}
+          {/* Config / job đã tạo trước khi lỗi vẫn phải thấy được - job đó đang chạy thật. */}
+          {item.trace && <TraceArtifacts trace={item.trace} jobs={jobs} actions={actions} />}
           <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-agent-error/30 bg-agent-error-soft p-3.5 text-sm text-agent-error">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="break-words">{errorText(item.error)}</p>
+              {/* Lượt đã tạo job thì không cho gửi lại (sẽ chạy job trùng) - nói rõ job vẫn chạy. */}
+              {!!item.trace?.jobIds.length && <p className="mt-1 break-words text-xs">{t("jobAlreadyRunning")}</p>}
               {item.retryText && (
                 <button
                   type="button"
@@ -179,6 +188,8 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
           onAsk={onSend}
           onRefreshed={actions.onRefreshed}
           onActivated={actions.onActivated}
+          onDeactivated={actions.onDeactivated}
+          onSetAutoActivate={actions.onSetAutoActivate}
         />
       ) : null;
     }
@@ -201,11 +212,21 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
                     onAsk={onSend}
                     onRefreshed={actions.onRefreshed}
                     onActivated={actions.onActivated}
+                    onDeactivated={actions.onDeactivated}
+                    onSetAutoActivate={actions.onSetAutoActivate}
                   />
                 ) : null,
               )}
             </>
           )}
+        </div>
+      );
+
+    case "notice":
+      return (
+        <div role="status" className={cn(card, "flex items-start gap-2 bg-agent-warning-soft p-3.5 text-sm text-agent-warning")}>
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p className="break-words">{t(item.code)}</p>
         </div>
       );
   }

@@ -111,7 +111,12 @@ function Leaderboard({ job }: { job: JobView }) {
     const dir = sort.asc ? 1 : -1;
     return [...ranked].sort((a, b) => {
       if (sort.key === "model") return a.model.localeCompare(b.model) * dir;
-      if (sort.key === "score") return ((a.score ?? -Infinity) - (b.score ?? -Infinity)) * dir;
+      if (sort.key === "score") {
+        // Hai điểm cùng null: -Infinity - -Infinity = NaN làm sort lộn xộn - so sánh thẳng.
+        const x = a.score ?? -Infinity;
+        const y = b.score ?? -Infinity;
+        return (x === y ? 0 : x < y ? -1 : 1) * dir;
+      }
       return (a.rank - b.rank) * dir;
     });
   }, [job.leaderboard, sort]);
@@ -202,14 +207,17 @@ function Results({ job }: { job: JobView }) {
         </dl>
       )}
 
-      {verification && verification.passed !== null && (
+      {verification && verification.checks.length > 0 && (
         <div
           className={cn(
             "mt-2 rounded-xl px-3 py-2 text-xs",
             verification.passed ? "bg-agent-success-soft text-agent-success" : "bg-agent-warning-soft text-agent-warning",
           )}
         >
-          <p className="font-semibold">{verification.passed ? t("passed") : t("notPassed")}</p>
+          {/* passed null = có ràng buộc không kiểm được: "chưa kiểm đủ", KHÔNG phải "đạt". */}
+          <p className="font-semibold">
+            {verification.passed === true ? t("passed") : verification.passed === false ? t("notPassed") : t("verificationIncomplete")}
+          </p>
           <ul className="mt-0.5">
             {verification.checks.map((c, i) => (
               <li key={i}>
@@ -239,13 +247,27 @@ interface Props {
   onAsk?: (text: string) => void;
   onRefreshed?: (jobId: string, raw: Record<string, any>) => void;
   onActivated?: (jobId: string) => void;
+  /** Backend báo model đã bị tắt (403 khi dự đoán): cờ activated của job đã cũ. */
+  onDeactivated?: (jobId: string) => void;
+  /** Bật/tắt tự kích hoạt khi job xong (nút "Huỷ tự kích hoạt"). */
+  onSetAutoActivate?: (jobId: string, enabled: boolean) => Promise<boolean>;
   onOpenDetails?: () => void;
 }
 
 // Job của phiên này luôn mới - vài trang đầu (mới nhất trước) là đủ.
 const REFRESH_MAX_PAGES = 3;
 
-export default function TrainingJobCard({ job, variant = "full", busy = false, onAsk, onRefreshed, onActivated, onOpenDetails }: Props) {
+export default function TrainingJobCard({
+  job,
+  variant = "full",
+  busy = false,
+  onAsk,
+  onRefreshed,
+  onActivated,
+  onDeactivated,
+  onSetAutoActivate,
+  onOpenDetails,
+}: Props) {
   const t = useTranslations("Agent.job");
   const tDuration = useTranslations("Agent.duration");
   const locale = useLocale();
@@ -256,6 +278,17 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
   const [activationError, setActivationError] = useState<string | null>(null);
   const [confirmActivate, setConfirmActivate] = useState(false);
   const [showPredict, setShowPredict] = useState(false);
+  const isActivated = Boolean(job.activated);
+  const [cancellingAuto, setCancellingAuto] = useState(false);
+  const [autoCancelFailed, setAutoCancelFailed] = useState(false);
+  const cancelAutoActivate = async () => {
+    if (!onSetAutoActivate) return;
+    setCancellingAuto(true);
+    setAutoCancelFailed(false);
+    const ok = await onSetAutoActivate(job.jobId, false);
+    setCancellingAuto(false);
+    setAutoCancelFailed(!ok);
+  };
 
   const active = isJobActive(job);
   const now = useNow(active);
@@ -369,8 +402,52 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
           <div className="h-1 overflow-hidden rounded-full bg-agent-primary-soft" role="progressbar" aria-label={t("indeterminate")}>
             <div className="h-full w-1/3 animate-[agent-indeterminate_1.6s_ease-in-out_infinite] rounded-full bg-agent-primary motion-reduce:animate-none" />
           </div>
-          {full && <p className="mt-1.5 text-[11px] text-automl-muted">{t("background")}</p>}
+          {full && !job.untracked && <p className="mt-1.5 text-[11px] text-automl-muted">{t("background")}</p>}
         </div>
+      )}
+
+      {/* Hành động tự động phải hiện rõ và huỷ được: model sẽ tự kích hoạt khi job xong. */}
+      {(active || (job.status === "completed" && !isActivated)) && job.autoActivate && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-agent-primary-soft px-2.5 py-1.5 text-xs text-agent-primary-strong">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <Power className="h-3.5 w-3.5 shrink-0" aria-hidden />{" "}
+            {/* Nói đúng điều kiện server sẽ kiểm: không hứa "nếu đạt ràng buộc" khi không có ràng buộc nào. */}
+            {job.autoActivateConstraints === undefined
+              ? t("autoActivatePending")
+              : job.autoActivateConstraints.length > 0
+                ? t("autoActivatePendingIf", {
+                    conditions: job.autoActivateConstraints.map((c) => `${c.metric} ${c.op} ${c.value}`).join(", "),
+                  })
+                : t("autoActivatePendingAlways")}
+          </span>
+          {onSetAutoActivate && (
+            <button
+              type="button"
+              onClick={cancelAutoActivate}
+              disabled={cancellingAuto}
+              className="agent-focus shrink-0 rounded font-semibold underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {t("cancelAutoActivate")}
+            </button>
+          )}
+        </div>
+      )}
+      {active && !job.autoActivate && job.autoActivateCancelled && (
+        <p className="mt-2 text-[11px] text-automl-muted">{t("autoActivateCancelled")}</p>
+      )}
+      {autoCancelFailed && job.autoActivate && (
+        <p role="alert" className="mt-1 text-xs text-agent-error">{t("cancelAutoActivateFailed")}</p>
+      )}
+      {/* Hết giờ theo dõi khi job chưa xong: lời hứa tự kích hoạt chưa được thực hiện. */}
+      {job.autoActivateSkipped && !job.autoActivate && !isActivated && (
+        <p className="mt-2 break-words rounded-lg bg-agent-warning-soft px-2.5 py-1.5 text-xs text-agent-warning">
+          {t("autoActivateSkipped")}
+        </p>
+      )}
+
+      {/* Vẫn chạy theo API nhưng không watcher nào theo dõi: kết quả sẽ không tự về. */}
+      {active && job.untracked && (
+        <p className="mt-2 break-words rounded-lg bg-agent-warning-soft px-2.5 py-1.5 text-xs text-agent-warning">{t("untracked")}</p>
       )}
 
       {job.warning && (
@@ -380,7 +457,24 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
       )}
 
       {(job.status === "failed" || job.status === "cancelled" || job.status === "unknown") && (
-        <p className="mt-2 break-words rounded-lg bg-agent-error-soft px-2.5 py-1.5 text-xs text-agent-error">{job.error ?? t("noReason")}</p>
+        <p className="mt-2 break-words rounded-lg bg-agent-error-soft px-2.5 py-1.5 text-xs text-agent-error">
+          {job.lost ? t("trackingLost") : job.error ?? t("noReason")}
+        </p>
+      )}
+
+      {/* Watcher tự kích hoạt model theo yêu cầu "train xong kích hoạt luôn". */}
+      {/* Model đã bị tắt sau đó (403 khi dự đoán) thì không còn "đã tự kích hoạt". */}
+      {job.activation && (!job.activation.ok || isActivated) && (
+        <p
+          className={cn(
+            "mt-2 break-words rounded-lg px-2.5 py-1.5 text-xs",
+            job.activation.ok ? "bg-agent-success-soft text-agent-success" : "bg-agent-warning-soft text-agent-warning",
+          )}
+        >
+          {job.activation.ok
+            ? t("autoActivated")
+            : t("autoActivateFailed", { detail: job.activation.error ?? t("noReason") })}
+        </p>
       )}
 
       {refreshError && <p role="alert" className="mt-2 text-xs text-agent-error">{refreshError}</p>}
@@ -395,7 +489,7 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
         )}
         {full && job.status === "completed" && (
           <>
-            {job.activated ? (
+            {isActivated ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-agent-success-soft px-3 py-1.5 text-xs font-semibold text-agent-success">
                 <Power className="h-3.5 w-3.5" aria-hidden /> {t("activated")}
               </span>
@@ -412,7 +506,13 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
             </button>
           </>
         )}
-        {full && !active && onAsk && (
+        {/* Mất dấu (chưa biết job còn chạy hay không) hoặc còn chạy mà không ai theo dõi: nhờ agent theo dõi lại. */}
+        {full && onAsk && (job.lost || job.untracked || job.status === "unknown") && (
+          <button type="button" onClick={() => onAsk(t("watchPrompt", { id: job.jobId }))} disabled={busy} className={pillButton}>
+            {t("askWatch")}
+          </button>
+        )}
+        {full && !active && !job.lost && job.status !== "unknown" && onAsk && (
           <button
             type="button"
             onClick={() => onAsk(job.status === "completed" ? t("explainPrompt", { id: job.jobId }) : t("whyFailedPrompt", { id: job.jobId }))}
@@ -433,7 +533,13 @@ export default function TrainingJobCard({ job, variant = "full", busy = false, o
 
       {full && job.status === "completed" && showPredict && (
         <div className="mt-3 rounded-xl border border-automl-line p-3">
-          <InferenceForm jobId={job.jobId} activated={!!job.activated} />
+          <InferenceForm
+            jobId={job.jobId}
+            activated={isActivated}
+            onInactive={() => onDeactivated?.(job.jobId)}
+            problemType={job.config?.problem_type ?? job.problemType}
+            datasetId={job.datasetId}
+          />
         </div>
       )}
 

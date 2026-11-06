@@ -26,7 +26,7 @@ ALLOWED_EXTENSIONS = (".csv", ".xlsx", ".xls")
 _XLSX_MAGIC = b"PK\x03\x04"                          # .xlsx là file zip
 _XLS_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"     # .xls là file OLE2 cũ
 
-DATA_TYPES = ("classification", "regression")
+DATA_TYPES = ("classification", "regression", "time_series")
 
 _MIME = {
     ".csv": "text/csv",
@@ -108,7 +108,10 @@ def check_dataset_file(filename: str, content: bytes) -> UploadCheck:
     if extension == ".csv" and not _looks_like_text(content[:4096]):
         return _fail(415, f"'{name}' có đuôi .csv nhưng nội dung là dữ liệu nhị phân.")
 
-    return UploadCheck(ok=True, extension=extension, clean_name=name)
+    # Backend chọn cách đọc theo đuôi file và so phân biệt hoa thường (".XLSX" bị đọc như CSV):
+    # gửi đuôi viết thường.
+    clean_name = name[: len(name) - len(extension)] + extension
+    return UploadCheck(ok=True, extension=extension, clean_name=clean_name)
 
 
 def default_dataset_name(filename: str) -> str:

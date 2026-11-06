@@ -14,6 +14,7 @@ Thứ tự ưu tiên khi chọn provider: tham số hàm > biến LLM_PROVIDER >
 
 # Standard libraries
 import os
+import re
 from dataclasses import dataclass
 
 # Third party libraries
@@ -22,6 +23,21 @@ from dotenv import load_dotenv
 
 # Load file .env
 load_dotenv()
+
+
+# Thời gian chờ MỘT lời gọi LLM (giây). SDK mặc định 600 giây và còn thử lại
+# tới max_retries lần, nên provider treo có thể giữ lượt chat gần một giờ. Lời
+# gọi chậm nhất đo được trong benchmark là ~169 giây (p99 ~37 giây).
+DEFAULT_LLM_TIMEOUT = 300.0
+
+
+def llm_timeout() -> float:
+    """AGENT_LLM_TIMEOUT trong .env (giây), không đặt hoặc sai thì dùng mặc định."""
+    try:
+        value = float(os.getenv("AGENT_LLM_TIMEOUT", "").strip() or DEFAULT_LLM_TIMEOUT)
+    except ValueError:
+        return DEFAULT_LLM_TIMEOUT
+    return value if value > 0 else DEFAULT_LLM_TIMEOUT
 
 
 # api-version GA của Azure, dùng khi không khai báo gì.
@@ -83,6 +99,58 @@ _PROVIDERS = {
 }
 
 SUPPORTED = tuple(sorted(_PROVIDERS))
+
+# Biến môi trường chứa bí mật: giá trị THẬT của chúng bị che trong log và lỗi.
+_SECRET_ENVS = tuple(dict.fromkeys(
+    [name for spec in _PROVIDERS.values() for name in spec["key_env"]]
+    + ["ANTHROPIC_API_KEY", "LANGFUSE_SECRET_KEY", "AGENT_PASSWORD"]
+))
+# Dạng bí mật hay gặp, kể cả bản provider in lại một phần: key OpenAI/OpenRouter
+# (sk-...), key Google (AIza...), header Bearer và JWT (access token của người dùng).
+_SECRET_PATTERNS = re.compile(
+    r"sk-[A-Za-z0-9_\-*]{6,}|AIza[0-9A-Za-z_\-]{10,}|Bearer\s+[A-Za-z0-9._~+/=\-]+"
+    r"|eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"
+)
+
+
+def redact_secrets(text) -> str:
+    """Che API key, token và mật khẩu trong một đoạn chữ."""
+    text = str(text)
+    for name in _SECRET_ENVS:
+        value = os.getenv(name)
+        if value and len(value) >= 6:
+            text = text.replace(value, "***")
+    return _SECRET_PATTERNS.sub("***", text)
+
+
+def _redact_value(value):
+    """redact_secrets cho body lỗi của provider (chuỗi, dict, list lồng nhau)."""
+    if isinstance(value, str):
+        return redact_secrets(value)
+    if isinstance(value, dict):
+        return {key: _redact_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    return value
+
+
+def _sanitized(client_class):
+    """
+    Lớp con của OpenAI / AzureOpenAI che bí mật trong lỗi HTTP NGAY lúc SDK tạo lỗi.
+
+    Lỗi xác thực của provider có thể in lại (một phần) API key. Che ở đây - nơi
+    mọi lỗi HTTP của SDK được dựng (_make_status_error) - thì mọi thứ phía sau chỉ
+    thấy bản đã che: wrapper langfuse.openai (nó ghi log và gửi str(lỗi) lên
+    Langfuse làm status_message TRƯỚC khi code agent bắt được lỗi), log server, và
+    describe_error. Che bằng mask của Langfuse không đủ: mask không áp cho status_message.
+    """
+
+    class Sanitized(client_class):
+        def _make_status_error(self, err_msg, *, body, response):
+            return super()._make_status_error(redact_secrets(err_msg), body=_redact_value(body), response=response)
+
+    Sanitized.__name__ = Sanitized.__qualname__ = client_class.__name__
+    return Sanitized
 
 
 def _first_env(*names: str) -> str | None:
@@ -207,17 +275,19 @@ def build_client(config: ProviderConfig, max_retries: int = 5):
         from openai import AzureOpenAI, OpenAI
 
     if config.kind == "azure":
-        return AzureOpenAI(
+        return _sanitized(AzureOpenAI)(
             api_key=config.api_key,
             azure_endpoint=config.endpoint,
             api_version=config.api_version,
             max_retries=max_retries,
+            timeout=llm_timeout(),
         )
 
-    return OpenAI(
+    return _sanitized(OpenAI)(
         base_url=config.base_url,
         api_key=config.api_key,
         max_retries=max_retries,
+        timeout=llm_timeout(),
     )
 
 

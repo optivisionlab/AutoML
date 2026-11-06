@@ -23,6 +23,7 @@ Lệnh trong lúc chat:
 # Standard libraries
 import argparse
 import json
+import os
 import threading
 import uuid
 
@@ -31,6 +32,7 @@ from agent import providers, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     MAX_STEPS,
     TurnBudgetExceeded,
+    describe_error,
     _new_usage,
     _print_usage,
     run_tool_loop,
@@ -45,6 +47,21 @@ from agent.watcher import JobWatcher
 
 # Ranh giới giữa câu tóm tắt và JSON chi tiết trong một dòng sự kiện job.
 _EVENT_DETAIL = " Chi tiết: "
+
+
+def _full_turns() -> int:
+    """
+    Số lượt TRƯỚC lượt hiện tại giữ ĐỦ các bước tool trong lịch sử của Manager
+    (AGENT_HISTORY_FULL_TURNS, mặc định 4). Lượt cũ hơn chỉ giữ câu của người
+    dùng và câu trả lời cuối. Benchmark chỉ có kịch bản 1-2 lượt nên không đổi.
+    """
+    raw = os.getenv("AGENT_HISTORY_FULL_TURNS", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else 4
+
+
+def _strip_event_details(text: str) -> str:
+    """Bỏ phần JSON chi tiết của dòng sự kiện job, giữ câu tóm tắt."""
+    return "\n".join(line.split(_EVENT_DETAIL)[0] for line in (text or "").splitlines())
 
 class ChatSession:
     """
@@ -95,6 +112,11 @@ class ChatSession:
         # Có khoá vì watcher ghi vào từ thread nền.
         self.pending_events: list[str] = []
         self._pending_lock = threading.Lock()
+        # turn_id của lượt đang chạy (None khi rảnh) - /agent/events báo trong `hello`.
+        self.current_turn_id: str | None = None
+        # Có tin người dùng đã nhận (lượt đang xếp hàng / chuẩn bị) mà CHƯA vào self.messages: nút
+        # Huỷ tự kích hoạt bấm lúc này phải coi tin đó là cũ hơn lần huỷ (team.record_auto_activate_change).
+        self.incoming_user_message = False
 
         # Gom các lượt chat cùng phiên thành một Session trên Langfuse. server.py
         # đặt lại bằng session_id của nó để hai bên khớp nhau.
@@ -156,6 +178,32 @@ class ChatSession:
     def logged_in(self) -> bool:
         return bool(self.api.access_token)
 
+    def compact_history(self, full_turns: int | None = None) -> None:
+        """
+        Gọn lịch sử: lượt cũ chỉ còn câu người dùng + câu trả lời cuối của Manager.
+
+        Mỗi bước của Manager gửi lại TOÀN BỘ lịch sử, và số token đó tính vào trần
+        của lượt. Không gọn thì phiên dài (web giữ phiên tới 1 giờ, 26 giờ khi có
+        job) sớm muộn vượt trần mỗi lượt, hoặc vượt context của model - lượt lỗi bị
+        bỏ khỏi lịch sử nhưng lịch sử vẫn dài như cũ, nên mọi lượt sau lỗi y hệt.
+
+        Bỏ assistant tool_calls cùng các tool message của nó nên chuỗi tin vẫn hợp
+        lệ. ID job/config đã nằm trong câu trả lời cuối và trong team.handoff.
+        """
+        keep = full_turns or _full_turns()
+        starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
+        if len(starts) <= keep:
+            return
+        cut = starts[-keep]
+        compacted = []
+        for message in self.messages[1:cut]:
+            role = message.get("role")
+            if role == "user":
+                compacted.append({"role": "user", "content": _strip_event_details(message.get("content"))})
+            elif role == "assistant" and not message.get("tool_calls"):
+                compacted.append({"role": "assistant", "content": message.get("content") or "(không có nội dung)"})
+        self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
+
     def recent_user_messages(self, limit: int) -> list[str]:
         """
         Vài tin gần nhất của người dùng, cho sub-agent không thấy lịch sử.
@@ -165,15 +213,22 @@ class ChatSession:
         hàng nghìn token cho dữ liệu nó không dùng.
         """
         recent = [m["content"] for m in self.messages if m.get("role") == "user"][-limit:]
-        return [
-            "\n".join(line.split(_EVENT_DETAIL)[0] for line in text.splitlines())
-            for text in recent
-        ]
+        return [_strip_event_details(text) for text in recent]
 
     def _on_job_finished(self, summary: dict) -> None:
         """Watcher gọi khi job kết thúc: để lượt chat kế tiếp Manager biết kết quả."""
         job_id = summary.get("job_id")
-        if summary.get("status") == 1:
+        if summary.get("summary_error"):
+            activation = summary.get("activation")
+            activated = "" if activation is None else (
+                " Model ĐÃ được tự kích hoạt." if activation.get("ok") else f" Model CHƯA được kích hoạt: {activation.get('error')}"
+            )
+            text = (
+                f"Job {job_id} đã kết thúc (status {summary.get('status')}) nhưng hệ thống gặp lỗi: "
+                f"{str(summary['summary_error']).rstrip('.')}. Dùng get_job_info để xem, đừng suy diễn điểm hay "
+                f"kiểm định.{activated}"
+            )
+        elif summary.get("status") == 1:
             # watcher chỉ kèm "verification" khi người dùng CÓ đặt ràng buộc.
             verification = summary.get("verification")
             checks = (verification or {}).get("checks") or []
@@ -181,9 +236,12 @@ class ChatSession:
             if not verification:
                 judged = "người dùng không đặt ràng buộc nào"
             elif verification.get("passed") is None:
+                checked_ok = [c["metric"] for c in checks if c.get("passed") is True]
                 judged = (
-                    "KHÔNG kiểm được - job không có điểm cho metric "
+                    "CHƯA kiểm đủ - job không có điểm cho metric "
                     f"{', '.join(unchecked)} mà người dùng đặt ràng buộc"
+                    + (f" (các ràng buộc kiểm được - {', '.join(checked_ok)} - đều đạt)" if checked_ok else "")
+                    + "; đừng nói là đạt mọi ràng buộc"
                 )
             else:
                 judged = (
@@ -193,14 +251,27 @@ class ChatSession:
                 )
                 if unchecked:
                     judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
+            # Chỉ có khi người dùng dặn "train xong kích hoạt luôn" (watcher tự kích hoạt).
+            activation = summary.get("activation")
+            if activation is None:
+                activated = ""
+            elif activation.get("ok"):
+                activated = " Model ĐÃ được tự kích hoạt theo yêu cầu của người dùng, dự đoán được ngay."
+            else:
+                activated = f" Model CHƯA được kích hoạt: {activation.get('error')}"
             text = (
                 f"Job {job_id} đã huấn luyện xong: model tốt nhất {summary.get('best_model')}, "
-                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}. "
+                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated} "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
                 f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
             )
         else:
             text = f"Job {job_id} không hoàn tất: {summary.get('error') or 'không rõ lý do'}."
+            if summary.get("auto_activate_skipped"):
+                text += (
+                    " Model CHƯA được tự kích hoạt và lời hứa tự kích hoạt đã HẾT HIỆU LỰC (thôi theo dõi). "
+                    "Báo người dùng: khi job xong cần kích hoạt thủ công (hoặc nhờ agent dùng activate_model)."
+                )
         self.add_event(text)
 
     def check_budget(self, agent: str) -> None:
@@ -212,20 +283,53 @@ class ChatSession:
                 f"(dừng trước khi {title(agent)} gọi LLM)"
             )
 
-    def send(self, user_message: str) -> str:
-        """Gửi một câu, Manager chạy (và uỷ thác) cho tới khi trả lời xong."""
-        tool_schemas, dispatch = self.team.tools_for(MANAGER)
+    def send(self, user_message: str, turn_id: str | None = None) -> str:
+        """Như _send; giữ turn_id của lượt ĐANG chạy để trang vừa tải lại còn chờ được kết quả."""
+        self.current_turn_id = turn_id
+        self.incoming_user_message = True
+        try:
+            return self._send(user_message, turn_id)
+        finally:
+            self.current_turn_id = None
+            if self.incoming_user_message:
+                # Hỏng trước khi tin vào lịch sử: mốc huỷ đã tính trước tin đó thì kẹp lại.
+                self.incoming_user_message = False
+                self.team.clamp_auto_marks()
+
+    def _send(self, user_message: str, turn_id: str | None = None) -> str:
+        """
+        Gửi một câu, Manager chạy (và uỷ thác) cho tới khi trả lời xong.
+
+        turn_id: mã lượt do frontend tạo, gắn vào turn_start / turn_done / turn_failed.
+            Luồng lượt chat đứt giữa chừng thì frontend nhận câu trả lời qua kênh nền và
+            ghép đúng lượt theo mã này (seq không đủ: phiên đổi thì seq bắt đầu lại).
+        """
+        # Lượt nào cũng phải kết thúc bằng turn_done hoặc turn_failed - kể cả khi hỏng
+        # ngay ở bước chuẩn bị - không thì frontend mất luồng sẽ chờ mãi.
+        try:
+            tool_schemas, dispatch = self.team.tools_for(MANAGER)
+            self.compact_history()
+        except Exception as error:
+            self.events.emit("turn_failed", agent=MANAGER, error=describe_error(error), turn_id=turn_id)
+            raise
 
         with self._pending_lock:
             events, self.pending_events = self.pending_events, []
         if events:
-            notes = "\n".join(f"[Sự kiện] {event}" for event in events)
+            # Gộp khoảng trắng: dòng xuống trong sự kiện (vd traceback trong lỗi job) mà để
+            # nguyên thì các dòng sau không có tiền tố [Sự kiện] và bị coi là lời người dùng.
+            notes = "\n".join(f"[Sự kiện] {' '.join(event.split())}" for event in events)
             user_message = f"{notes}\n\n{user_message}"
 
         before = len(self.messages)
+        jobs_before = set(self.team.handoff.jobs)
+        self.team.begin_turn()
         self._turn_start = self.usage["total_tokens"]
-        self.messages.append({"role": "user", "content": user_message})
-        self.events.emit("turn_start", agent=MANAGER)
+        # Cùng khoá với việc ghi mốc huỷ: tin vào lịch sử và cờ "đang tới" đổi cùng lúc.
+        with self.team._auto_lock:
+            self.messages.append({"role": "user", "content": user_message})
+            self.incoming_user_message = False
+        self.events.emit("turn_start", agent=MANAGER, turn_id=turn_id)
 
         # Gộp mọi bước của lượt này - kể cả của sub-agent - vào một trace, để
         # Langfuse cộng được tổng chi phí và thấy được ai làm gì (xem tracing.py).
@@ -262,16 +366,36 @@ class ChatSession:
             )
             self.messages.append({"role": "assistant", "content": answer})
             self.events.emit("turn_budget_exceeded", agent=MANAGER, error=str(error))
-        except Exception:
+        except Exception as error:
             # Bỏ dở lượt này khỏi lịch sử, kể cả tin của người dùng: để lại thì
             # lượt sau có hai tin "user" liền nhau. Sự kiện chưa kịp đọc thì
             # trả lại hàng đợi.
             del self.messages[before:]
             with self._pending_lock:
                 self.pending_events[:0] = events
+            # Job đã tạo trong lượt lỗi vẫn chạy thật trên backend. Lịch sử của lượt
+            # bị bỏ nên phải báo lại, không thì người dùng gửi lại câu cũ là Manager
+            # tạo thêm một job trùng chạy hàng giờ.
+            for note in self.team.after_failed_turn():
+                self.add_event(note)
+            created = [job_id for job_id in self.team.handoff.jobs if job_id not in jobs_before]
+            if created:
+                self.add_event(
+                    f"Lượt chat trước bị lỗi giữa chừng NHƯNG đã tạo job {', '.join(created)}; job vẫn "
+                    "chạy nền và đang được theo dõi. KHÔNG tạo lại job cho cùng yêu cầu đó - báo người "
+                    "dùng job đã chạy."
+                )
+            # Frontend mất luồng lượt chat giữa chừng chỉ còn chờ sự kiện kết thúc lượt
+            # trên kênh nền: lượt lỗi cũng phải có sự kiện, không thì nó chờ mãi.
+            self.events.emit("turn_failed", agent=MANAGER, error=describe_error(error), turn_id=turn_id)
             raise
 
-        self.events.emit("turn_done", agent=MANAGER, total_tokens=self.usage["total_tokens"])
+        # Kèm câu trả lời: sự kiện nằm trong bộ đệm và được phát lại, nên luồng lượt chat
+        # đứt giữa chừng (đổi wifi, máy ngủ) thì frontend vẫn nhận được câu trả lời này
+        # qua kênh nền - lượt chat chạy xong trên server và đã vào lịch sử của agent.
+        self.events.emit(
+            "turn_done", agent=MANAGER, total_tokens=self.usage["total_tokens"], reply=answer, turn_id=turn_id,
+        )
         return answer
 
 
