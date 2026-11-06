@@ -1,0 +1,48 @@
+# Dùng cùng backend API v1 và training consumer với cấu hình deploy.
+include:
+  - path: ./src/backend/deploy/docker-compose.yml
+    env_file: ./src/backend/.env
+
+services:
+  hautoml_agent:
+    build: ./src/backend/agent
+    image: hautoml-agent:local
+    container_name: hautoml-agent
+    env_file:
+      - ./src/backend/.env
+    environment:
+      HAUTOML_BASE_URL: "http://hautoml-service:9999"
+      HAUTOML_API_PREFIX: "/api/v1"
+    volumes:
+      - ./src/backend/agent:/app/agent
+      - ./src/backend/assets:/app/assets:ro
+    ports:
+      - "9500:9500"
+    depends_on:
+      - hautoml-service
+    restart: unless-stopped
+    networks:
+      - hautoml_net
+
+  hautoml_frontend:
+    build: ./src/frontend
+    image: hautoml-frontend:local
+    container_name: hautoml-frontend
+    environment:
+      INTERNAL_API_URL: "http://hautoml-service:9999"
+      NEXT_PUBLIC_BASE_API: "${NEXT_PUBLIC_BASE_API:-http://localhost:9999}"
+      NEXT_PUBLIC_AGENT_API: "${NEXT_PUBLIC_AGENT_API:-http://localhost:9500}"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:-optivisionlab@hautoml}"
+    volumes:
+      - ./src/frontend/apps:/app/apps
+      - ./src/frontend/packages:/app/packages
+      # Keep Docker's Next.js build cache separate from host dev/build output.
+      - /app/apps/web/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - hautoml-service
+      - hautoml_agent
+    networks:
+      - hautoml_net

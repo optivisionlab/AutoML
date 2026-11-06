@@ -1,4 +1,5 @@
 import {
+  Bot,
   Database,
   DatabaseZap,
   History,
@@ -14,6 +15,14 @@ export function NavItems(role: string) {
       labelKey: "dashboard",
       icon: <LayoutDashboard size={18} />,
       href: "/dashboard",
+      active: false,
+      position: "top",
+      role: ["user", "admin"],
+    },
+    {
+      labelKey: "agent",
+      icon: <Bot size={18} />,
+      href: "/agent",
       active: false,
       position: "top",
       role: ["user", "admin"],

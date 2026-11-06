@@ -2,13 +2,17 @@
 
 import { getSession } from "next-auth/react";
 
+// Server action chạy phía server - xem ghi chú INTERNAL_API_URL trong
+// pages/api/auth/[...nextauth].ts.
+const API = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_BASE_API;
+
 // Quên mật khẩu -> gọi yêu cầu gửi
 export async function forgotPassword(email: string) {
   const session = await getSession();
 
   try {
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_API}/forgot-password?email=${email}`,
+      `${API}/forgot-password?email=${email}`,
       {
         method: "POST",
         headers: {
@@ -39,7 +43,7 @@ export async function changePassword(
   // const session = await getSession();
 
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_API}/reset-password`,
+    `${API}/reset-password`,
     {
       method: "POST",
       headers: {

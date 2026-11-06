@@ -565,7 +565,7 @@ export default function ConnectDatabaseDialog({
                       placeholder={t("datasetNamePlaceholder")}
                     />
                     <p className="automl-dialog-helper text-xs text-muted-foreground mt-1">
-                      Tên tập dữ liệu sẽ hiển thị trong danh sách "Bộ dữ liệu của tôi" sau khi nhập.
+                      Tên tập dữ liệu sẽ hiển thị trong danh sách &quot;Bộ dữ liệu của tôi&quot; sau khi nhập.
                     </p>
                   </div>
                 </div>
