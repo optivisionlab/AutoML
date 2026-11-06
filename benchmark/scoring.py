@@ -1,5 +1,6 @@
 """
-Chấm mô hình của nhóm C trên tập test độc lập (file *_test.csv không bao giờ đi qua LLM).
+Chấm mô hình của nhóm C và T trên tập test độc lập (file *_test.csv không bao giờ đi qua LLM).
+Nhóm T (time series): dự báo đúng 96 mốc thời gian của phần test, RMSLE như AutoML-Agent.
 
 Gọi predict trực tiếp từ bộ chấm, không qua agent, nên không tính vào token hay
 số tool call của agent. Không tự kích hoạt model: model chưa kích hoạt là lỗi
@@ -25,12 +26,40 @@ from benchmark.analyze import task_config, _job_matches_task
 _BATCH = tools.MAX_PREDICT_ROWS
 
 
-def _read_test(path: Path, target: str) -> tuple[list[dict], list[float]]:
+def _read_test(path: Path, target: str, time_column: str | None = None) -> tuple[list[dict], list[float]]:
+    """time_column: cột ngày giờ của time series - giữ nguyên chuỗi (backend dự báo theo mốc thời gian)."""
     with path.open(newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     y_true = [float(row[target]) for row in rows]
-    x = [{k: float(v) for k, v in row.items() if k != target} for row in rows]
+    x = [{k: (v if k == time_column else float(v)) for k, v in row.items() if k != target} for row in rows]
     return x, y_true
+
+
+def _rmse(y_true: list[float], y_pred: list[float]) -> float:
+    return math.sqrt(sum((t - p) ** 2 for t, p in zip(y_true, y_pred)) / len(y_true))
+
+
+def _rmsle(y_true: list[float], y_pred: list[float]) -> float:
+    """RMSLE như AutoML-Agent (sklearn mean_squared_log_error): chỉ xác định khi mọi giá trị > -1."""
+    if not all(v > -1 for v in y_true + y_pred):
+        raise ValueError("RMSLE không xác định: có giá trị thật/dự báo <= -1.")
+    return math.sqrt(sum((math.log1p(p) - math.log1p(t)) ** 2 for t, p in zip(y_true, y_pred)) / len(y_true))
+
+
+def naive_baselines(history: list[float], y_true: list[float]) -> dict:
+    """
+    Dự báo ngây thơ theo mùa cho chuỗi theo giờ, chỉ từ phần train: lặp lại 24 giờ cuối
+    (ngày trước) và 168 giờ cuối (tuần trước). Mốc so sánh, không phải đối thủ được tối ưu.
+    """
+    result = {}
+    for name, period in (("last_day", 24), ("last_week", 168)):
+        if len(history) < period:
+            continue
+        tail = history[-period:]
+        forecast = [tail[i % period] for i in range(len(y_true))]
+        result[f"naive_{name}_rmse"] = _rmse(y_true, forecast)
+        result[f"naive_{name}_rmsle"] = _rmsle(y_true, forecast)
+    return result
 
 
 def f1_macro(y_true: list, y_pred: list) -> float:
@@ -50,8 +79,20 @@ def compute_metrics(problem_type: str, y_true: list[float], y_pred: list[float])
     n = len(y_true)
     if not n or len(y_pred) != n or not all(math.isfinite(v) for v in y_true + y_pred):
         raise ValueError("Test/prediction rỗng, sai số lượng hoặc chứa NaN/Inf.")
-    if problem_type not in {"classification", "regression"}:
+    if problem_type not in {"classification", "regression", "time_series"}:
         raise ValueError("Loại bài toán không hợp lệ.")
+    if problem_type == "time_series":
+        # AutoML-Agent chấm dự báo bằng RMSLE, NPS = 1/(1+RMSLE); thêm RMSE/MAE (metric engine tính).
+        metrics = {"rmse": _rmse(y_true, y_pred), "mae": sum(abs(t - p) for t, p in zip(y_true, y_pred)) / n}
+        if all(p > -1 for p in y_pred):
+            metrics["rmsle"] = _rmsle(y_true, y_pred)
+            metrics["nps"] = 1 / (1 + metrics["rmsle"])
+        else:
+            # Dự báo <= -1 cho chuỗi dương: lỗi của MÔ HÌNH (không phải của phép đo) - NPS = 0, không loại khỏi trung bình.
+            metrics.update({"rmsle": None, "rmsle_undefined": True, "nps": 0.0})
+        if all(t > 0 for t in y_true):
+            metrics["mape"] = sum(abs(t - p) / t for t, p in zip(y_true, y_pred)) / n
+        return metrics
     if problem_type == "classification":
         if not set(y_pred) <= set(y_true):
             raise RuntimeError("Nhãn dự đoán nằm ngoài tập nhãn test cố định")
@@ -63,6 +104,15 @@ def compute_metrics(problem_type: str, y_true: list[float], y_pred: list[float])
     residual = sum((t - p) ** 2 for t, p in zip(y_true, y_pred))
     r2 = 1 - residual / total if total else None
     return {"mae": mae, "r2": r2, "nps": 1 / (1 + mae)}
+
+
+def _train_series(task: dict) -> list[float]:
+    """Chuỗi train của dataset nhóm T (file đã khoá trong manifest_ts) - cho baseline ngây thơ."""
+    from benchmark.prepare_ts import MANIFEST, TS_DIR
+
+    meta = load_json(MANIFEST)["datasets"][task["dataset"]]
+    with (TS_DIR / meta["files"]["train"]).open(newline="", encoding="utf-8") as f:
+        return [float(row[meta["target"]]) for row in csv.DictReader(f)]
 
 
 def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
@@ -88,7 +138,8 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
     if _job_matches_task(snapshot, task_config(case, run.get("placeholders") or {})):
         return "job sai yêu cầu; bộ chấm ghi FAIL, không chọn lại model"
 
-    x, y_true = _read_test(test_path, task["target"])
+    time_column = task.get("time_column") if task["problem_type"] == "time_series" else None
+    x, y_true = _read_test(test_path, task["target"], time_column)
     y_pred = []
     for start in range(0, len(x), _BATCH):
         batch = x[start:start + _BATCH]
@@ -101,6 +152,8 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
         y_pred.extend(float(item["predict"]) for item in predictions)
 
     metrics = compute_metrics(task["problem_type"], y_true, y_pred)
+    if task["problem_type"] == "time_series":
+        metrics.update(naive_baselines(_train_series(task), y_true))
     out.mkdir(exist_ok=True)
     with (out / "test_predictions.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)

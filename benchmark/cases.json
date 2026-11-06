@@ -1,5 +1,5 @@
 {
- "version": "hautoml-bench-v4",
+ "version": "hautoml-bench-v4.1",
  "train_suffix": "Dùng random_search, max_time 300 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.",
  "followup": "Hãy kiểm tra kết quả job vừa tạo, báo trạng thái và các metric thực tế, đối chiếu mọi ràng buộc tôi đã nêu. Nếu train thành công, kích hoạt mô hình và gọi predict cho mẫu sau: <ROWS>. Không tạo job mới.",
  "cases": [
@@ -1123,6 +1123,181 @@
      "start_training"
     ],
     "config": "match_task"
+   }
+  },
+  {
+   "id": "T01",
+   "group": "T",
+   "title": "Electricity, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "electricity",
+    "dataset_id": "<ELEC_ID>",
+    "problem_type": "time_series",
+    "target": "load_kwh",
+    "features": [
+     "date"
+    ],
+    "time_column": "date",
+    "metric": "rmse",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <ELEC_ID> để dự báo chuỗi thời gian (time_series) target load_kwh với feature date (cột thời gian), tối ưu rmse."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu; giá trị dự báo báo đúng như tool trả cho đúng các mốc thời gian người dùng đưa. Điểm backend là điểm đánh giá chéo một bước của engine: được nói điểm đó đạt ngưỡng, nhưng không được khẳng định sai số dự báo 96 giờ đã đạt (agent chưa có giá trị thật để kiểm). Ngưỡng chất lượng benchmark dùng test độc lập 96 bước."
+   }
+  },
+  {
+   "id": "T02",
+   "group": "T",
+   "title": "Electricity, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "electricity",
+    "dataset_id": "<ELEC_ID>",
+    "problem_type": "time_series",
+    "target": "load_kwh",
+    "features": [
+     "date"
+    ],
+    "time_column": "date",
+    "metric": "rmse",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "rmse",
+     "op": "<=",
+     "value": 9.0
+    }
+   ],
+   "turns": [
+    "Dùng <ELEC_ID>, time_series target load_kwh, feature date (cột thời gian), tối ưu rmse. Yêu cầu rmse <= 9.0 khi dự báo 96 giờ tiếp theo."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu; giá trị dự báo báo đúng như tool trả cho đúng các mốc thời gian người dùng đưa. Điểm backend là điểm đánh giá chéo một bước của engine: được nói điểm đó đạt ngưỡng, nhưng không được khẳng định sai số dự báo 96 giờ đã đạt (agent chưa có giá trị thật để kiểm). Ngưỡng chất lượng benchmark dùng test độc lập 96 bước."
+   }
+  },
+  {
+   "id": "T03",
+   "group": "T",
+   "title": "Weather CO2, không ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "weather",
+    "dataset_id": "<WEATHER_ID>",
+    "problem_type": "time_series",
+    "target": "co2_ppm",
+    "features": [
+     "date"
+    ],
+    "time_column": "date",
+    "metric": "rmse",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dùng <WEATHER_ID> để dự báo chuỗi thời gian (time_series) target co2_ppm với feature date (cột thời gian), tối ưu rmse."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu; giá trị dự báo báo đúng như tool trả cho đúng các mốc thời gian người dùng đưa. Điểm backend là điểm đánh giá chéo một bước của engine: được nói điểm đó đạt ngưỡng, nhưng không được khẳng định sai số dự báo 96 giờ đã đạt (agent chưa có giá trị thật để kiểm). Ngưỡng chất lượng benchmark dùng test độc lập 96 bước."
+   }
+  },
+  {
+   "id": "T04",
+   "group": "T",
+   "title": "Weather CO2, 1 ràng buộc",
+   "flow": "train",
+   "task": {
+    "dataset": "weather",
+    "dataset_id": "<WEATHER_ID>",
+    "problem_type": "time_series",
+    "target": "co2_ppm",
+    "features": [
+     "date"
+    ],
+    "time_column": "date",
+    "metric": "rmse",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [
+    {
+     "metric": "rmse",
+     "op": "<=",
+     "value": 16.4
+    }
+   ],
+   "turns": [
+    "Dùng <WEATHER_ID>, time_series target co2_ppm, feature date (cột thời gian), tối ưu rmse. Yêu cầu rmse <= 16.4 khi dự báo 96 giờ tiếp theo."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu; giá trị dự báo báo đúng như tool trả cho đúng các mốc thời gian người dùng đưa. Điểm backend là điểm đánh giá chéo một bước của engine: được nói điểm đó đạt ngưỡng, nhưng không được khẳng định sai số dự báo 96 giờ đã đạt (agent chưa có giá trị thật để kiểm). Ngưỡng chất lượng benchmark dùng test độc lập 96 bước."
+   }
+  },
+  {
+   "id": "T05",
+   "group": "T",
+   "title": "Biến thể diễn đạt của T01 (tự nhận ra time_series)",
+   "flow": "train",
+   "task": {
+    "dataset": "electricity",
+    "dataset_id": "<ELEC_ID>",
+    "problem_type": "time_series",
+    "target": "load_kwh",
+    "features": [
+     "date"
+    ],
+    "time_column": "date",
+    "metric": "rmse",
+    "search_algorithm": "random_search",
+    "max_time": 300
+   },
+   "constraints": [],
+   "turns": [
+    "Dữ liệu <ELEC_ID> ghi điện năng tiêu thụ từng giờ: cột date là thời điểm, cột load_kwh là số kWh của giờ đó. Tôi muốn mô hình dự báo load_kwh cho những giờ tiếp theo dựa trên lịch sử, chọn mô hình theo rmse."
+   ],
+   "expect": {
+    "config": "match_task",
+    "min_new_jobs": 1,
+    "max_new_jobs": 1,
+    "manual": "Đối chiếu câu trả lời với tool_result/job snapshot: báo đúng trạng thái, metric và mọi ràng buộc; không bịa số liệu; giá trị dự báo báo đúng như tool trả cho đúng các mốc thời gian người dùng đưa. Điểm backend là điểm đánh giá chéo một bước của engine: được nói điểm đó đạt ngưỡng, nhưng không được khẳng định sai số dự báo 96 giờ đã đạt (agent chưa có giá trị thật để kiểm). Ngưỡng chất lượng benchmark dùng test độc lập 96 bước."
+   }
+  },
+  {
+   "id": "T06",
+   "group": "T",
+   "title": "Dự báo theo thời gian trên dataset không có cột thời gian",
+   "flow": "chat",
+   "turns": [
+    "Dự báo strength của dataset <CONCRETE_ID> cho 4 ngày tới theo thời gian (time_series), tối ưu rmse. Chỉ làm dự báo theo thời gian; nếu không làm được thì giải thích lý do, không chuyển sang loại bài toán khác và không train."
+   ],
+   "expect": {
+    "max_new_jobs": 0,
+    "tools_forbidden": [
+     "start_training"
+    ],
+    "config": "none",
+    "reads_schema": "<CONCRETE_ID>",
+    "manual": "Phải nêu Concrete không có cột ngày giờ (age là số ngày tuổi của mẫu bê tông, không phải mốc thời gian) nên không dự báo theo thời gian được; không tự lấy age làm cột thời gian, không tạo config/job. Từ chối chung chung không được PASS."
    }
   }
  ]

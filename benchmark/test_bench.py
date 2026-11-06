@@ -210,11 +210,17 @@ def bench(tmp_path, monkeypatch):
 def test_cases_file_is_consistent():
     cases = load_json(CASES_PATH)["cases"]
     ids = [c["id"] for c in cases]
-    assert len(ids) == len(set(ids)) == 33
+    assert len(ids) == len(set(ids)) == 39
+    # 33 ca của v4 giữ nguyên để so với đợt trước; nhóm T (time series) thêm riêng.
+    assert sum(c["group"] != "T" for c in cases) == 33
+    assert [c["id"] for c in cases if c["group"] == "T"] == ["T01", "T02", "T03", "T04", "T05", "T06"]
     for case in cases:
         assert case["flow"] in ("chat", "train", "train_start")
         if case["flow"] in ("train", "train_start") or case["expect"].get("config") == "match_task":
             assert case.get("task"), case["id"]
+        if case.get("task", {}).get("problem_type") == "time_series":
+            # Backend tìm cột thời gian trong list_feature: phải có đúng cột đó.
+            assert case["task"]["time_column"] in case["task"]["features"], case["id"]
 
 
 def test_lookup_case_passes_and_counts_steps(bench):
@@ -449,13 +455,14 @@ def test_protocol_counts_immutability_and_completion(tmp_path, monkeypatch):
     cfg = load_json(BENCH_DIR / "config.example.json")
     cases = load_json(CASES_PATH)
     monkeypatch.setattr(protocol, "check_data", lambda *_: {})
+    monkeypatch.setattr(protocol, "check_ts_data", lambda *_: {})
     monkeypatch.setattr(protocol, "source_hashes", lambda: {"agent.py": "first"})
     monkeypatch.setattr(protocol, "provider_settings", lambda _cfg: {"name": "test", "model": "m"})
-    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 33
-    # 33 ca x 5 lần + 12 ca ablation x 5 biến thể x 3 lần.
-    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 345
+    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 39
+    # (33 ca v4 + 6 ca T) x 5 lần + 12 ca ablation x 5 biến thể x 3 lần.
+    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 375
     cfg["ablation"]["enabled"] = False
-    assert len(protocol.plan(cfg, cases)) == 165
+    assert len(protocol.plan(cfg, cases)) == 195
     cfg["ablation"]["enabled"] = True
     payload = protocol.snapshot(cfg, cases, None, "official")
     locked = protocol.freeze(tmp_path, payload)
@@ -852,3 +859,135 @@ def test_provider_settings_never_include_api_key(monkeypatch):
         name="fpt", kind="openai", api_key="secret", model="m", base_url="https://llm", endpoint=None, api_version=None))
     settings = protocol.provider_settings({"provider": "fpt", "model": "m"})
     assert settings["base_url"] == "https://llm" and "api_key" not in settings
+
+
+# ------------------------------------------------------------- nhóm T (time series)
+
+def _hours(start: str, n: int) -> list[str]:
+    from datetime import datetime, timedelta
+    first = datetime.fromisoformat(start)
+    return [(first + timedelta(hours=i)).strftime("%Y-%m-%d %H:%M:%S") for i in range(n)]
+
+
+@pytest.fixture
+def ts_data(tmp_path, monkeypatch):
+    """Dữ liệu nhóm T thu nhỏ (cùng định dạng manifest_ts) trong thư mục tạm."""
+    import hashlib
+    from benchmark import prepare_ts
+
+    directory = tmp_path / "timeseries"
+    directory.mkdir()
+    datasets, hashes = {}, {}
+    for name, target in (("electricity", "load_kwh"), ("weather", "co2_ppm")):
+        stamps = _hours("2014-09-01 00:00:00", 200 + 96)
+        values = [10.0 + (i % 24) for i in range(len(stamps))]
+        files = {}
+        for split, part in (("train", slice(0, 200)), ("test", slice(200, None))):
+            filename = f"{name}_{split}.csv"
+            text = f"date,{target}\n" + "".join(f"{t},{v}\n" for t, v in zip(stamps[part], values[part]))
+            (directory / filename).write_text(text, encoding="utf-8")
+            hashes[filename] = hashlib.sha256(text.encode()).hexdigest()
+            files[split] = filename
+        datasets[name] = {"time_column": "date", "target": target, "n_train": 200, "n_test": 96, "files": files}
+    manifest = directory / "manifest_ts.json"
+    manifest.write_text(json.dumps({"split_version": prepare_ts.SPLIT_VERSION, "datasets": datasets, "sha256": hashes}))
+    monkeypatch.setattr(prepare_ts, "TS_DIR", directory)
+    monkeypatch.setattr(prepare_ts, "MANIFEST", manifest)
+    cfg = {"test_sets": {name: str(directory / meta["files"]["test"]) for name, meta in datasets.items()}}
+    return SimpleNamespace(dir=directory, cfg=cfg)
+
+
+def test_time_series_metrics_follow_automl_agent():
+    import math
+    metrics = scoring.compute_metrics("time_series", [1.0, 3.0], [1.0, 1.0])
+    assert metrics["rmse"] == pytest.approx(math.sqrt(2))
+    assert metrics["mae"] == pytest.approx(1.0)
+    rmsle = math.sqrt((math.log(2) - math.log(4)) ** 2 / 2)
+    assert metrics["rmsle"] == pytest.approx(rmsle)
+    assert metrics["nps"] == pytest.approx(1 / (1 + rmsle))
+    assert metrics["mape"] == pytest.approx(1 / 3)
+    # Dự báo <= -1 cho chuỗi dương: lỗi của mô hình - NPS = 0 (không loại lượt khỏi trung bình).
+    bad = scoring.compute_metrics("time_series", [1.0, 3.0], [1.0, -2.0])
+    assert bad["nps"] == 0.0 and bad["rmsle"] is None and bad["rmsle_undefined"] is True
+
+
+def test_naive_baselines_use_only_the_training_history():
+    history = [float(i % 24) for i in range(24 * 7)] + [100.0] * 24     # ngày cuối bất thường
+    truth = [float(i % 24) for i in range(96)]
+    result = scoring.naive_baselines(history, truth)
+    assert result["naive_last_week_rmse"] == pytest.approx(scoring._rmse(truth, history[-168:][:96]))
+    assert result["naive_last_day_rmse"] > result["naive_last_week_rmse"]
+    assert set(result) == {"naive_last_day_rmse", "naive_last_day_rmsle", "naive_last_week_rmse", "naive_last_week_rmsle"}
+
+
+def test_timestamp_rows_match_by_instant():
+    from benchmark.analyze import _same_rows
+    expected = [{"date": "2014-09-27 00:00:00"}, {"date": "2014-09-27 01:00:00"}]
+    assert _same_rows([{"date": "2014-09-27T00:00:00"}, {"date": "2014-09-27 01:00:00"}], expected)
+    assert not _same_rows([{"date": "2014-09-27 00:00:00"}, {"date": "2014-09-27 02:00:00"}], expected)
+    assert not _same_rows([{"date": "2014-09-27 00:00:00"}], expected)
+
+
+def test_time_series_test_rows_keep_the_timestamp(tmp_path):
+    path = tmp_path / "t.csv"
+    path.write_text("date,load_kwh\n2014-09-27 00:00:00,84.5\n")
+    x, y = scoring._read_test(path, "load_kwh", "date")
+    assert x == [{"date": "2014-09-27 00:00:00"}] and y == [84.5]
+
+
+def test_time_series_data_check_catches_tampering(ts_data):
+    from benchmark import protocol
+    assert protocol.check_ts_data(ts_data.cfg)["split_version"] == "time-holdout-v1"
+    with pytest.raises(ValueError, match="không trỏ"):
+        protocol.check_ts_data({"test_sets": {**ts_data.cfg["test_sets"], "weather": ts_data.cfg["test_sets"]["electricity"]}})
+    path = ts_data.dir / "weather_test.csv"
+    path.write_text(path.read_text().replace("10.0", "11.0", 1))
+    with pytest.raises(ValueError, match="Hash"):
+        protocol.check_ts_data(ts_data.cfg)
+
+
+def test_time_series_case_is_scored_on_the_96_test_steps(ts_data, tmp_path, monkeypatch):
+    case = {c["id"]: c for c in load_json(CASES_PATH)["cases"]}["T01"]
+    job_id = "job-ts01"
+    job = {
+        "_id": job_id, "user": {"id": "user-1"}, "status": 1, "activate": 1, "data": {"id": "e" * 24},
+        "config": {"problem_type": "time_series", "target": "load_kwh", "list_feature": ["date"], "metric_sort": "rmse",
+                   "search_algorithm": "random_search", "timeout": 300},
+    }
+    FakeBackend.jobs = {job_id: job}
+    seen = []
+
+    def predict(self, job_id, rows, timeout=120.0):
+        seen.append([r["date"] for r in rows])
+        return {"model_name": "RF", "predictions": [20.0 for _ in rows]}
+
+    monkeypatch.setattr(FakeBackend, "predict", predict)
+    folder = tmp_path / "full" / "T01_r01"
+    folder.mkdir(parents=True)
+    run = {"case_id": "T01", "group": "T", "variant": "full", "repeat": 1, "phase": "official", "protocol_id": "p",
+           "turns": [], "fixtures": {}, "errors": [], "placeholders": {"ELEC_ID": "e" * 24},
+           "new_jobs": [job_id], "handoff": {"jobs": {job_id: "cfg"}}, "job_snapshots": {job_id: job}}
+    (folder / "run.json").write_text(json.dumps(run))
+    assert scoring.score_run(FakeBackend(), folder, case, ts_data.cfg) == "đã chấm"
+    # Đúng 96 mốc liền sau train, theo lô <= 50, mốc giữ nguyên dạng chuỗi.
+    assert [len(b) for b in seen] == [50, 46] and seen[0][0] == "2014-09-09 08:00:00"
+    metrics = load_json(folder / "test" / "test_metrics.json")
+    truth = [10.0 + (i % 24) for i in range(200, 296)]
+    assert metrics["rmse"] == pytest.approx(scoring._rmse(truth, [20.0] * 96))
+    assert metrics["nps"] == pytest.approx(1 / (1 + metrics["rmsle"]))
+    assert metrics["naive_last_day_rmse"] == pytest.approx(0.0)      # chuỗi giả lặp đúng chu kỳ 24 giờ
+    row = analyze_run(folder, case)
+    assert row["rmse"] == metrics["rmse"] and row["nps"] == metrics["nps"]
+    text = report.render([row], load_json(CASES_PATH), None)
+    assert "## 3b. Nhóm T" in text and "T01" in text
+
+
+def test_threshold_rule_uses_only_training_windows():
+    from benchmark import prepare_ts
+    # Chuỗi lặp đúng chu kỳ tuần: baseline tuần trước khớp tuyệt đối trên mọi cửa sổ.
+    weekly = [float(i % 168) for i in range(168 * 8)]
+    assert prepare_ts.calibrate_threshold(weekly)["rmse_threshold"] == 0.0
+    # Ngưỡng ca T02/T04 trùng với quy tắc ghi trong cases.json.
+    cases = {c["id"]: c for c in load_json(CASES_PATH)["cases"]}
+    assert cases["T02"]["constraints"][0]["value"] == 9.0 and cases["T04"]["constraints"][0]["value"] == 16.4
+    assert "96 giờ" in cases["T02"]["turns"][0] and "96 giờ" in cases["T04"]["turns"][0]

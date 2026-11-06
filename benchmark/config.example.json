@@ -7,7 +7,9 @@
   "CRAB_ID": null,
   "MISSING_ID": null,
   "GLASS_JOB": null,
-  "INACTIVE_JOB": null
+  "INACTIVE_JOB": null,
+  "ELEC_ID": null,
+  "WEATHER_ID": null
  },
  "running_job_fixture": {
   "dataset": "SHOP_ID",
@@ -82,13 +84,163 @@
     "Sex_I": 0,
     "Sex_M": 1
    }
+  ],
+  "electricity": [
+   {
+    "date": "2013-09-27 00:00:00"
+   },
+   {
+    "date": "2013-09-27 01:00:00"
+   },
+   {
+    "date": "2013-09-27 02:00:00"
+   },
+   {
+    "date": "2013-09-27 03:00:00"
+   },
+   {
+    "date": "2013-09-27 04:00:00"
+   },
+   {
+    "date": "2013-09-27 05:00:00"
+   },
+   {
+    "date": "2013-09-27 06:00:00"
+   },
+   {
+    "date": "2013-09-27 07:00:00"
+   },
+   {
+    "date": "2013-09-27 08:00:00"
+   },
+   {
+    "date": "2013-09-27 09:00:00"
+   },
+   {
+    "date": "2013-09-27 10:00:00"
+   },
+   {
+    "date": "2013-09-27 11:00:00"
+   },
+   {
+    "date": "2013-09-27 12:00:00"
+   },
+   {
+    "date": "2013-09-27 13:00:00"
+   },
+   {
+    "date": "2013-09-27 14:00:00"
+   },
+   {
+    "date": "2013-09-27 15:00:00"
+   },
+   {
+    "date": "2013-09-27 16:00:00"
+   },
+   {
+    "date": "2013-09-27 17:00:00"
+   },
+   {
+    "date": "2013-09-27 18:00:00"
+   },
+   {
+    "date": "2013-09-27 19:00:00"
+   },
+   {
+    "date": "2013-09-27 20:00:00"
+   },
+   {
+    "date": "2013-09-27 21:00:00"
+   },
+   {
+    "date": "2013-09-27 22:00:00"
+   },
+   {
+    "date": "2013-09-27 23:00:00"
+   }
+  ],
+  "weather": [
+   {
+    "date": "2020-12-28 00:00:00"
+   },
+   {
+    "date": "2020-12-28 01:00:00"
+   },
+   {
+    "date": "2020-12-28 02:00:00"
+   },
+   {
+    "date": "2020-12-28 03:00:00"
+   },
+   {
+    "date": "2020-12-28 04:00:00"
+   },
+   {
+    "date": "2020-12-28 05:00:00"
+   },
+   {
+    "date": "2020-12-28 06:00:00"
+   },
+   {
+    "date": "2020-12-28 07:00:00"
+   },
+   {
+    "date": "2020-12-28 08:00:00"
+   },
+   {
+    "date": "2020-12-28 09:00:00"
+   },
+   {
+    "date": "2020-12-28 10:00:00"
+   },
+   {
+    "date": "2020-12-28 11:00:00"
+   },
+   {
+    "date": "2020-12-28 12:00:00"
+   },
+   {
+    "date": "2020-12-28 13:00:00"
+   },
+   {
+    "date": "2020-12-28 14:00:00"
+   },
+   {
+    "date": "2020-12-28 15:00:00"
+   },
+   {
+    "date": "2020-12-28 16:00:00"
+   },
+   {
+    "date": "2020-12-28 17:00:00"
+   },
+   {
+    "date": "2020-12-28 18:00:00"
+   },
+   {
+    "date": "2020-12-28 19:00:00"
+   },
+   {
+    "date": "2020-12-28 20:00:00"
+   },
+   {
+    "date": "2020-12-28 21:00:00"
+   },
+   {
+    "date": "2020-12-28 22:00:00"
+   },
+   {
+    "date": "2020-12-28 23:00:00"
+   }
   ]
  },
  "test_sets": {
   "glass": "benchmark_artifacts/datasets/glass_test.csv",
   "shopping": "benchmark_artifacts/datasets/shopping_test.csv",
   "concrete": "benchmark_artifacts/datasets/concrete_test.csv",
-  "crab": "benchmark_artifacts/datasets/crab_test.csv"
+  "crab": "benchmark_artifacts/datasets/crab_test.csv",
+  "electricity": "benchmark_artifacts/datasets/timeseries/electricity_MT_301_2013_hourly_test.csv",
+  "weather": "benchmark_artifacts/datasets/timeseries/weather_jena_co2_hourly_test.csv"
  },
  "provider": null,
  "model": null,

@@ -25,7 +25,10 @@ GROUP_TITLES = {
     "D": "Vận hành và xử lý tình huống",
     "E": "Chèn lỗi (error recovery)",
     "F": "Hiểu yêu cầu qua hội thoại",
+    "T": "Dự báo chuỗi thời gian (time series)",
 }
+# Nhóm thêm sau v4: tóm tắt và các chỉ số tổng tính trên A–F để so được với các đợt trước.
+_ADDED_GROUPS = {"T"}
 _LIST_FIELDS = ("checks", "llm_latencies", "tool_latencies")
 _CSV_SKIP = _LIST_FIELDS
 
@@ -101,6 +104,14 @@ def _tool_accuracy(rows: list[dict]) -> dict:
 
 def _c_rows(rows):
     return [r for r in rows if r["group"] == "C"]
+
+
+def _t_rows(rows):
+    return [r for r in rows if r["group"] == "T"]
+
+
+def _core_rows(rows):
+    return [r for r in rows if r["group"] not in _ADDED_GROUPS]
 
 
 def _tokens(rows):
@@ -183,15 +194,19 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
         return "\n".join(lines)
 
     # ---- 1. Tóm tắt
+    # Tóm tắt và mục 6–7 tính trên các nhóm A–F (33 ca của v4) để so được với đợt trước; nhóm T báo riêng.
+    all_full = full
+    t_rows = _t_rows(all_full)
+    full = _core_rows(all_full)
     acc = _tool_accuracy(full)
     c_rows = _c_rows(full)
     jobs = [r for r in full if r["main_job"] and r["job_success"] is not None]
     episodes = sum(r["error_episodes"] for r in full)
     e_rows = [r for r in full if r["group"] == "E"]
     e_counts = _status_counts(e_rows)
-    lines += ["## 1. Tóm tắt (bản đầy đủ)", ""]
-    lines += _table(["Chỉ số", "Kết quả", "Ghi chú"], [
-        ["Task success rate", _success_rate(full), "PASS / (PASS + FAIL), mọi nhóm"],
+    lines += ["## 1. Tóm tắt (bản đầy đủ" + (", nhóm A–F; nhóm T ở cuối bảng và mục 3b)" if t_rows else ")"), ""]
+    summary = [
+        ["Task success rate", _success_rate(full), "PASS / (PASS + FAIL), nhóm A–F" if t_rows else "PASS / (PASS + FAIL), mọi nhóm"],
         ["SR nhóm C", _mean_std([r["sr"] for r in c_rows]), "Thang điều chỉnh từ AutoML-Agent cho HAutoML"],
         ["NPS nhóm C", _mean_std([r["nps"] for r in c_rows]), "Trên test độc lập"],
         ["CS nhóm C", _mean_std([r["cs"] for r in c_rows]), "0.5·SR + 0.5·NPS"],
@@ -209,20 +224,30 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
         ["Tham số config đúng (lần đầu)", _mean_std([r["config_field_accuracy"] for r in full]), "Tỷ lệ trường đúng ở submit_config đầu tiên (B/C)"],
         ["Tự phục hồi sau lỗi tool/sub-agent", _rate(sum(r["error_recovered"] for r in full), episodes), "Lỗi không mong đợi (tự nhiên + chèn), sau đó gọi lại thành công"],
         ["Hoàn thành dù bị chèn lỗi", _rate(e_counts["PASS"], e_counts["PASS"] + e_counts["FAIL"]), "Nhóm E"],
-    ])
+    ]
+    if t_rows:
+        t_train = [r for r in t_rows if r["sr"] is not None or r["main_job"]]
+        summary += [
+            ["Task success nhóm T", _success_rate(t_rows), "Time series, báo riêng (không có ở v4-02)"],
+            ["SR nhóm T", _mean_std([r["sr"] for r in t_train]), "Cùng thang SR với nhóm C"],
+            ["NPS nhóm T", _mean_std([r["nps"] for r in t_train]), "1/(1+RMSLE) trên 96 bước test, như AutoML-Agent"],
+            ["CS nhóm T", _mean_std([r["cs"] for r in t_train]), "0.5·SR + 0.5·NPS"],
+            ["Đạt mọi ràng buộc nhóm T", constraint_rate(t_train), "Ngưỡng rmse kiểm trên test"],
+        ]
+    lines += _table(["Chỉ số", "Kết quả", "Ghi chú"], summary)
 
     # ---- 2. Task success rate theo nhóm
     lines += ["## 2. Task success rate theo nhóm", ""]
     table = []
     for group, title in GROUP_TITLES.items():
-        g = [r for r in full if r["group"] == group]
+        g = [r for r in all_full if r["group"] == group]
         if g:
             c = _status_counts(g)
             table.append([f"{group} - {title}", len(g), c["PASS"], c["FAIL"], c["PENDING_REVIEW"] + c["PENDING"], c["INVALID_FIXTURE"], _success_rate(g)])
     lines += _table(["Nhóm", "Lượt", "PASS", "FAIL", "Chờ chấm", "Fixture lỗi", "Tỷ lệ"], table)
     table = []
-    for case_id in sorted({r["scenario_id"] for r in full}):
-        g = [r for r in full if r["scenario_id"] == case_id]
+    for case_id in sorted({r["scenario_id"] for r in all_full}):
+        g = [r for r in all_full if r["scenario_id"] == case_id]
         reasons = sorted({r["failure_reason"] for r in g if r["task_status"] == "FAIL" and r["failure_reason"]})
         table.append([case_id, titles.get(case_id, ""), _success_rate(g), "; ".join(reasons)[:160] or ""])
     lines += _table(["Ca", "Nội dung", "PASS/(PASS+FAIL)", "Lý do trượt"], table)
@@ -250,12 +275,39 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
         ])
         lines += ["Hai nhóm dùng thang SR khác nhau nên không gộp khi so sánh. NPS hồi quy = 1/(1+MAE), phụ thuộc đơn vị của từng dataset.", ""]
 
+    # ---- 3b. Nhóm T
+    if t_rows:
+        lines += ["## 3b. Nhóm T - dự báo chuỗi thời gian (SR, NPS theo RMSLE, CS)", ""]
+        table = []
+        for case_id in sorted({r["scenario_id"] for r in t_rows}):
+            g = [r for r in t_rows if r["scenario_id"] == case_id and r["task_status"] != "INVALID_FIXTURE"]
+            if not any(r["main_job"] or r["sr"] is not None for r in g):
+                # Ca không train (T06): không có SR/NPS - task success ở mục 2.
+                table.append([case_id, titles.get(case_id, "")] + ["—"] * 9)
+                continue
+            measured = [r for r in g if r["rmse"] is not None and r["naive_last_week_rmse"] is not None]
+            naive_nps = [1 / (1 + r["naive_last_week_rmsle"]) for r in g if r["naive_last_week_rmsle"] is not None]
+            table.append([
+                case_id, titles.get(case_id, ""), _mean_std([r["sr"] for r in g]), _mean_std([r["nps"] for r in g]),
+                _mean_std(naive_nps), _mean_std([r["cs"] for r in g]), _mean_std([r["rmse"] for r in g]),
+                _mean_std([r["naive_last_week_rmse"] for r in g]),
+                _rate(sum(1 for r in measured if r["rmse"] < r["naive_last_week_rmse"]), len(measured)),
+                constraint_rate(g), _rate(sum(1 for r in g if r["workflow_pass"]), len(g)),
+            ])
+        lines += _table(["Ca", "Nội dung", "SR", "NPS", "NPS naive (tuần trước)", "CS", "RMSE test",
+                         "RMSE naive (tuần trước)", "Thắng naive tuần trước", "Đạt ràng buộc", "Workflow hoàn tất"], table)
+        lines += ["Dự báo 96 bước (giờ) liền sau phần train, chấm ngoài agent trên phần test không tải lên. NPS = 1/(1+RMSLE) như AutoML-Agent; "
+                  "với chuỗi dương biến thiên nhỏ so với mức trung bình, NPS sát 1 ngay cả với dự báo ngây thơ, nên đọc NPS cùng cột NPS naive "
+                  "và tỷ lệ thắng baseline lặp lại tuần trước (168 giờ cuối của train). RMSE theo đơn vị của từng chuỗi (kWh, ppm), không so giữa "
+                  "hai dataset; baseline lặp lại ngày trước có trong results.csv. T06 là ca từ chối đúng (dataset không có cột thời gian), "
+                  "không có SR/NPS; task success của nó ở mục 2.", ""]
+
     # ---- 4. Số bước
     lines += ["## 4. Số vòng lặp / bước để hoàn thành", ""]
     table = []
     agents = sorted({a for r in full for a in r["llm_calls_by_agent"]})
     for group, title in GROUP_TITLES.items():
-        g = [r for r in full if r["group"] == group]
+        g = [r for r in all_full if r["group"] == group]
         if g:
             table.append([group, _mean([r["chat_turns"] for r in g]), _mean([r["llm_calls"] for r in g]),
                           _mean([r["tool_calls"] for r in g]), _mean([r["delegations"] for r in g]),
@@ -269,7 +321,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
     lines += ["## 5. Chi phí và độ trễ", ""]
     table = []
     for group in GROUP_TITLES:
-        g = [r for r in full if r["group"] == group]
+        g = [r for r in all_full if r["group"] == group]
         if g:
             llm = [s for r in g for s in r["llm_latencies"]]
             tool = [s for r in g for s in r["tool_latencies"]]
@@ -355,8 +407,8 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
     # ---- 9. Ổn định và độ nhạy prompt
     lines += ["## 9. Độ ổn định và độ nhạy prompt", ""]
     table = []
-    for case_id in sorted({r["scenario_id"] for r in full}):
-        g = [r for r in full if r["scenario_id"] == case_id]
+    for case_id in sorted({r["scenario_id"] for r in all_full}):
+        g = [r for r in all_full if r["scenario_id"] == case_id]
         table.append([case_id, len(g), _mean_std([r["cs"] for r in g]), _mean_std(_tokens(g), 0),
                       _mean_std([r["agent_seconds"] for r in g], 1)])
     lines += _table(["Ca", "Số lần", "CS", "Token", "Agent (s)"], table)
@@ -390,8 +442,14 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
         "- Chưa có baseline ngoài hệ thống (AutoGluon, mô hình thủ công).",
         "- `single-agent` khác bản đầy đủ ở nhiều điểm cùng lúc (một vòng LLM, không có Prompt Agent nên không có R và kiểm định ngưỡng; trần bước 36 do benchmark chọn): đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent.",
         "- Tự phục hồi tự nhiên phụ thuộc lỗi phát sinh thật; số tập lỗi nhỏ thì tỷ lệ không ổn định - xem mẫu số.",
-        "",
     ]
+    if t_rows:
+        lines += [
+            "- Nhóm T: HAutoML dự báo MỘT chuỗi (đơn biến) bằng mô hình bảng với đặc trưng trễ, đệ quy từng bước; "
+            "AutoML-Agent dự báo đa biến (21/321 chiều) bằng mô hình sâu. Cùng nguồn dữ liệu và độ dài dự báo 96, "
+            "không phải tái lập bảng kết quả của bài. Mỗi dataset một cửa sổ test cố định.",
+        ]
+    lines += [""]
     return "\n".join(lines)
 
 

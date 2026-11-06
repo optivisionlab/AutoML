@@ -10,6 +10,7 @@ cho cùng kết quả. Chỗ nào không đo được thì để None, không ba
 import json
 import math
 import re
+from datetime import datetime
 from pathlib import Path
 
 # Local modules
@@ -116,13 +117,22 @@ def _mentions_averaged(text: str, base: str, avg: str) -> bool:
     )
 
 
+def _same_value(sent, expected) -> bool:
+    """Số so theo giá trị; chuỗi (mốc thời gian của time series) so theo thời điểm, không theo cách viết."""
+    if isinstance(expected, str):
+        try:
+            return datetime.fromisoformat(str(sent).strip()) == datetime.fromisoformat(expected)
+        except ValueError:
+            return str(sent).strip() == expected
+    return math.isclose(float(sent), float(expected), rel_tol=1e-9, abs_tol=1e-12)
+
+
 def _same_rows(sent: list, expected: list) -> bool:
     """Agent gửi đúng mẫu người dùng đưa: cùng số dòng, cùng thứ tự, mọi giá trị khớp."""
     if not isinstance(sent, list) or len(sent) != len(expected):
         return False
     try:
-        return all(isinstance(s, dict) and all(math.isclose(float(s[k]), float(v), rel_tol=1e-9, abs_tol=1e-12)
-                                               for k, v in e.items())
+        return all(isinstance(s, dict) and all(_same_value(s[k], v) for k, v in e.items())
                    for s, e in zip(sent, expected))
     except (KeyError, TypeError, ValueError):
         return False
@@ -322,7 +332,7 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
     config_metrics = {"first_config_valid": None, "first_config_rejected": None,
                       "config_field_accuracy": None, "config_wrong_fields": None}
     # Chỉ số điền config chỉ tính B/C: ở nhóm E lỗi chèn có thể làm hỏng lần submit đầu.
-    if expect.get("config") == "match_task" and case["group"] in ("B", "C"):
+    if expect.get("config") == "match_task" and case["group"] in ("B", "C", "T"):
         config_metrics["first_config_valid"] = bool(checked and checked[0].get("ok"))
         config_metrics["first_config_rejected"] = bool(checked and not checked[0].get("ok"))
         first = next((o for o in outputs if o.get("name") == "submit_config"), None)
@@ -569,6 +579,11 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
         "sr": sr, "nps": nps, "cs": cs, "score_source": test.get("score_source") if test else None,
         "accuracy": (test or {}).get("accuracy"), "f1_macro": (test or {}).get("f1_macro"),
         "mae": (test or {}).get("mae"), "r2": (test or {}).get("r2"),
+        # Nhóm T (time series): RMSLE như AutoML-Agent, RMSE theo engine, và hai baseline ngây thơ.
+        "rmse": (test or {}).get("rmse"), "rmsle": (test or {}).get("rmsle"), "mape": (test or {}).get("mape"),
+        "naive_last_day_rmse": (test or {}).get("naive_last_day_rmse"),
+        "naive_last_week_rmse": (test or {}).get("naive_last_week_rmse"),
+        "naive_last_week_rmsle": (test or {}).get("naive_last_week_rmsle"),
         "backend_best_score": snapshot.get("best_score") if snapshot else None,
         **config_metrics,
         # Bước

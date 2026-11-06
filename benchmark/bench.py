@@ -5,6 +5,7 @@ Chạy từ thư mục gốc repository:
 
     python benchmark/bench.py init                     # tạo bench_config.json + pricing.json mẫu
     python benchmark/bench.py prepare                  # chia 4 dataset thật thành train/test
+    python benchmark/bench.py prepare-ts               # dữ liệu nhóm T: 2 chuỗi thời gian thật, 96 bước test
     python benchmark/bench.py preflight --online       # kiểm dữ liệu/cấu hình/backend
     python benchmark/bench.py lock --phase pilot       # khóa trước khi chạy thử
     python benchmark/bench.py run --phase pilot        # chạy thử mỗi ca 1 lần
@@ -69,6 +70,12 @@ def cmd_init(_args) -> None:
 
 def cmd_prepare(_args) -> None:
     from benchmark.prepare_data import main
+
+    main()
+
+
+def cmd_prepare_ts(_args) -> None:
+    from benchmark.prepare_ts import main
 
     main()
 
@@ -171,6 +178,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Tạo file cấu hình mẫu")
     sub.add_parser("prepare", help="Chia dataset thành train/test cố định")
+    sub.add_parser("prepare-ts", help="Dựng dữ liệu nhóm T (time series): train / 96 bước test")
     pre = sub.add_parser("preflight", help="Kiểm tra dữ liệu/cấu hình; không gọi LLM/train")
     pre.add_argument("--cases")
     pre.add_argument("--online", action="store_true", help="Đăng nhập và đọc metadata/fixture trên backend")
@@ -188,14 +196,14 @@ def main() -> None:
     run.add_argument("--experiment")
     run.add_argument("--retry-invalid", action="store_true", help="Lưu trữ và chạy lại riêng lượt INVALID_FIXTURE; giữ nguyên FAIL")
 
-    for name, help_text in (("score", "Chấm nhóm C trên tập test"), ("report", "Xuất báo cáo")):
+    for name, help_text in (("score", "Chấm nhóm C và T trên tập test"), ("report", "Xuất báo cáo")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--phase", choices=("pilot", "official"), default="official")
         p.add_argument("--experiment")
 
     args = parser.parse_args()
     try:
-        {"init": cmd_init, "prepare": cmd_prepare, "preflight": cmd_preflight, "lock": cmd_lock,
+        {"init": cmd_init, "prepare": cmd_prepare, "prepare-ts": cmd_prepare_ts, "preflight": cmd_preflight, "lock": cmd_lock,
          "run": cmd_run, "score": cmd_score, "report": cmd_report}[args.command](args)
     except (ValueError, RuntimeError, OSError) as exc:
         raise SystemExit(str(exc))

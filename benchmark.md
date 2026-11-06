@@ -1,6 +1,6 @@
-# Benchmark hệ thống agent HAutoML — protocol v4
+# Benchmark hệ thống agent HAutoML — protocol v4.1
 
-Bộ benchmark gồm **33 kịch bản** trong 6 nhóm, chạy thử **33 lượt**, chạy chính thức bản đầy đủ **165 lượt**. Năm biến thể ablation chạy thêm **180 lượt** nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **345 lượt**, chạy xen kẽ theo thứ tự đã khóa; pilot được lưu riêng.
+Bộ benchmark gồm **39 kịch bản** trong 7 nhóm: 33 ca của v4 (nhóm A–F, giữ nguyên để so với các đợt trước) và 6 ca nhóm T (dự báo chuỗi thời gian, thêm ở v4.1 - mục 4 và mục 9). Chạy thử **39 lượt**, chạy chính thức bản đầy đủ **195 lượt**. Năm biến thể ablation chạy thêm **180 lượt** nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **375 lượt**, chạy xen kẽ theo thứ tự đã khóa; pilot được lưu riêng. So sánh với đợt v4 trước chỉ dùng 33 ca chung; tóm tắt của báo cáo cũng tính trên nhóm A–F, nhóm T báo riêng.
 
 Protocol v4 là bản tổng hợp sau khi Claude xây và Codex xác nhận độc lập; các thay đổi so với v3 nằm ở mục 8.
 
@@ -10,11 +10,11 @@ Protocol v4 là bản tổng hợp sau khi Claude xây và Codex xác nhận đ�
 
 | Nguồn | Áp dụng vào HAutoML | Giới hạn |
 |---|---|---|
-| [AutoML-Agent](8647_AutoML_Agent_A_Multi_Agen.pdf) | SR nhiều mức, NPS, CS, thời gian, chi phí và nhiều lần chạy | Điều chỉnh cách chứng minh triển khai theo API hiện có; NPS hồi quy dùng MAE, không phải RMSLE |
+| [AutoML-Agent](8647_AutoML_Agent_A_Multi_Agen.pdf) | SR nhiều mức, NPS, CS, thời gian, chi phí và nhiều lần chạy; nhóm T theo task Time-Series Forecasting của bài (Weather, Electricity, dự báo 96 bước, NPS = 1/(1+RMSLE)) | Điều chỉnh cách chứng minh triển khai theo API hiện có; NPS hồi quy bảng dùng MAE, không phải RMSLE; nhóm T dự báo một chuỗi, không đa biến như bài |
 | [Multi-Agent Automated Machine Learning](Wang_Multi-Agent_Automated_Machine_Learning_CVPR_2023_paper.pdf) | Accuracy, chất lượng trong cùng ngân sách tìm kiếm, độ ổn định và ablation | MA2ML dùng học tăng cường; đây không phải tái lập trực tiếp phương pháp hoặc bảng kết quả của bài |
 | Kiểm thử riêng HAutoML | Thành công nhiệm vụ, tính đúng cấu hình/tool, giữ ngữ cảnh, xử lý lỗi và mức đáp ứng ràng buộc | Các chỉ số bổ sung phải phân biệt với chỉ số của hai bài |
 
-Chỉ đo classification/regression dạng bảng qua `ChatSession`, LLM và backend thật. Không tính frontend hay HTTP agent server vào thời gian agent. Chưa đo FLOPs, reward RL, số tham số, số vòng HPO, chi phí CPU/GPU hay mức tăng so với AutoGluon độc lập.
+Đo classification/regression dạng bảng (nhóm A–F) và dự báo một chuỗi thời gian theo giờ (nhóm T) qua `ChatSession`, LLM và backend thật. Không tính frontend hay HTTP agent server vào thời gian agent. Chưa đo FLOPs, reward RL, số tham số, số vòng HPO, chi phí CPU/GPU hay mức tăng so với AutoGluon độc lập.
 
 ## 2. Dữ liệu, môi trường và cấu hình
 
@@ -34,6 +34,20 @@ Split `feature-group-v1`, seed 42: gom theo **toàn bộ feature đã chọn, kh
 [manifest.json](benchmark_artifacts/datasets/manifest.json) lưu hash nguồn, hash tám file split, số mẫu, số nhóm trùng/mâu thuẫn và chính sách chia. Kiểm tra hiện tại: cả bốn dataset có **0 nhóm feature giao nhau giữa train và test**. Bản chia ngẫu nhiên theo dòng trước đó chưa từng được upload và đã bị xoá.
 
 **Upload lại đúng bốn file `*_train.csv` của bản mới.** Không dùng ID trỏ vào bản chia cũ dù số dòng giống nhau. File test chỉ do bộ chấm đọc sau khi hoàn tất official; không upload test, không đưa nhãn/điểm test vào LLM, không dùng test để chọn model/prompt/ngưỡng. Mẫu `predict_rows` dùng kiểm tra endpoint, không phải tập tính Accuracy/F1.
+
+### 2.1b. Dữ liệu nhóm T (time series)
+
+| Dataset | Nguồn | Target | Train | Test (không upload) |
+|---|---|---|---:|---:|
+| Electricity | UCI 321 (ElectricityLoadDiagrams20112014), khách hàng MT_301, năm 2013, gộp 15 phút -> giờ | `load_kwh` | 4.296 giờ (2013-04-01 → 2013-09-26) | 96 giờ (2013-09-27 → 2013-09-30) |
+| Weather (Jena) | Trạm thời tiết MPI-BGC Jena (`mpi_roof`), năm 2020, gộp 10 phút -> giờ | `co2_ppm` | 3.384 giờ (2020-08-09 → 2020-12-27) | 96 giờ (2020-12-28 → 2020-12-31) |
+
+Cả hai cùng nguồn với Electricity/Weather mà AutoML-Agent dùng qua Time-Series-Library (giấy phép CC BY 4.0). Mỗi file chỉ có hai cột `date,<target>`, mốc giờ cách đều, không thiếu. Split `time-holdout-v1`: **96 bước cuối** (PRED_SEQ_LEN của bài) là test, phần trước là train, không xáo trộn. Dựng bằng `bench.py prepare-ts` vào `benchmark_artifacts/datasets/timeseries/`; [manifest_ts.json](benchmark_artifacts/datasets/timeseries/manifest_ts.json) lưu nguồn, URL tải, hash file gốc/file chia và cách xử lý.
+
+- Electricity lấy năm **2013**, khoảng chưa từng dùng: khi phát triển tính năng time series (2026-11-03) đã thử trên 2014-04..09 của cùng khách hàng, nên cửa sổ đó không còn là dữ liệu chưa nhìn. Tháng 4–9 tránh hai ngày đổi giờ UCI ghi chú.
+- Weather dùng CO2 (target `OT` của Time-Series-Library khi dự báo một chuỗi), không dùng nhiệt độ: RMSLE của bài (`log(1+y)`) không xác định khi giá trị ≤ −1, mà nhiệt độ tháng 12 ở Jena xuống dưới −1 °C.
+- Cửa sổ Weather là đoạn sạch dài nhất của năm 2020: file gốc có CO2 = −9999 (thiết bị không đo) ngày 20/02 và 08/08, một mốc trùng (12/05) và một khoảng thiếu 80 phút (29/05). **Không nội suy, không bù, không sinh số liệu.**
+- Không upload file test, không đưa giá trị test vào LLM, không dùng test để chọn ngưỡng/prompt.
 
 ### 2.2. Môi trường
 
@@ -55,12 +69,13 @@ Chạy `init` tạo [bench_config.json](benchmark_artifacts/bench_config.json) v
 | `MISSING_ID` | ObjectId 24 ký tự hex hợp lệ nhưng không tồn tại trong tài khoản |
 | `GLASS_JOB` | Job train trên `GLASS_ID` mới, đủ 9 feature, target `Type`, thành công và đã activate |
 | `INACTIVE_JOB` | Một job Glass riêng cùng yêu cầu, thành công nhưng chưa activate |
+| `ELEC_ID`, `WEATHER_ID` | ID upload đúng hai file `*_train.csv` của nhóm T (`electricity_MT_301_hourly_train.csv`, `weather_jena_co2_hourly_train.csv`) |
 
 `RUNNING_JOB` do runner tự tạo trước D06 theo `running_job_fixture`; không điền ID cố định. Job này train trên `SHOP_ID` (9.937 dòng, random_search) để còn chạy khi agent đọc trạng thái: backend dừng job ngay khi mọi model xong, `max_time` chỉ là trần, nên job Glass 171 dòng có thể xong trước khi agent kịp hỏi. Chi phí fixture nằm ngoài số lượt đo.
 
 Trước mỗi ca dùng `GLASS_JOB` (D01–D03, D05, E03) runner bật lại job nếu đang tắt; trước D04 runner tắt `INACTIVE_JOB` nếu một lượt trước đã bật nó. Trạng thái trước ca được ghi vào `run.json`; không đưa được về đúng trạng thái thì lượt là `INVALID_FIXTURE`. `predict_rows`, feature và đường dẫn test đã có trong config mẫu.
 
-`experiment_id` mặc định `hautoml-v4-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 165 lượt, đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
+`experiment_id` mặc định `hautoml-v4-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 195 lượt (không ablation), đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
 
 Chi phí tiền là tùy chọn: điền provider/model khớp config, giá USD/triệu token input/output, ngày giá, nguồn và ghi chú. Chỉ đặt `billing_mode="uniform_input_output"` khi bảng giá này mô tả đủ cách tính token của provider; nếu còn cache/reasoning/tier riêng chưa xử lý thì để trống. Thiếu bảng giá vẫn đo token, nhưng chi phí USD để `null`; không giả định bằng 0.
 
@@ -73,7 +88,9 @@ PY=src/backend/.venv/bin/python
 $PY benchmark/bench.py init
 # Chỉ dùng prepare trước khi có protocol lock; dữ liệu bản mới đã được tạo sẵn.
 # $PY benchmark/bench.py prepare
-# Upload bốn file train mới, tạo hai job fixture và điền cấu hình mục 2.3.
+# Dữ liệu nhóm T đã dựng sẵn; chỉ chạy khi chưa có manifest_ts.json:
+# $PY benchmark/bench.py prepare-ts
+# Upload bốn file train mới + hai file *_train.csv nhóm T, tạo hai job fixture và điền cấu hình mục 2.3.
 $PY benchmark/bench.py preflight
 $PY benchmark/bench.py preflight --online
 $PY -m pytest benchmark/test_bench.py -q -p no:cacheprovider
@@ -93,7 +110,7 @@ $PY benchmark/bench.py preflight --online
 $PY benchmark/bench.py lock --phase official
 ```
 
-Pilot gồm 33 lượt full, không có ablation. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
+Pilot gồm 39 lượt full (33 ca v4 + 6 ca T), không có ablation; có thể chạy riêng một phần bằng `--cases`. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
 
 `protocol.json` khóa cases/prompt/ngưỡng, cấu hình, bảng giá, manifest, hash code benchmark/agent/backend (bỏ thư mục cache như `__pycache__`, `.pytest_cache`), phiên bản Python, một số biến runtime và danh sách từng lượt `(variant, case, repeat)`. Nó không tự đóng băng container hay máy backend từ xa; ghi và giữ môi trường như mục 2.2. `run`/`score` kiểm tra lại snapshot và từ chối nếu thay đổi. Khóa bằng hash giúp phát hiện thay đổi, không phải chữ ký chống sửa có chủ ý.
 
@@ -141,13 +158,14 @@ benchmark_artifacts/
   bench_config.json
   pricing.json
   datasets/manifest.json + *_train.csv + *_test.csv
+  datasets/timeseries/manifest_ts.json + *_train.csv + *_test.csv   # nhóm T
   runs/<experiment_id>/<pilot|official>/
     protocol.json
     <variant>/<case>_rNN/
       run.json
       trace.jsonl
       review.json                    # người đánh giá tạo khi cần
-      test/test_predictions.csv      # chỉ nhóm C đo được
+      test/test_predictions.csv      # nhóm C và các ca train của nhóm T
       test/test_metrics.json
       test/error.json                # nếu phép đo lỗi
   report/<experiment_id>/<pilot|official>/
@@ -158,7 +176,7 @@ benchmark_artifacts/
 
 `report` không gọi backend/LLM; dùng cases và bảng giá trong snapshot. `--experiment <id>` cho phép đọc báo cáo đợt cũ. Báo cáo ghi protocol ID, số lượt đã có/tổng plan, số lượt lưu trữ `.invalid-*`/`.aborted-*`, phần chưa review/chưa đo và các mẫu số; cảnh báo nếu code đã đổi sau khi khóa và từ chối thư mục lượt chạy sai tên (vd bản sao `A01_r01.bak`). Không gộp pilot, biến thể hoặc experiment khác vào kết quả full official.
 
-## 4. Danh sách 33 kịch bản
+## 4. Danh sách 39 kịch bản
 
 ### Nhóm A — Tra cứu và hiểu dữ liệu: 4 ca
 
@@ -212,7 +230,7 @@ Ngưỡng trên là **ngưỡng thử nghiệm được chọn cho protocol**, k
 
 Quy trình chọn và khóa ngưỡng:
 
-1. Chạy thử 33 ca để kiểm đường chạy và log. Trong giai đoạn này **không chạy bộ chấm trên `*_test.csv`**; NPS/CS test để `null`.
+1. Chạy thử 39 ca (hoặc riêng nhóm T bằng `--cases`) để kiểm đường chạy và log. Trong giai đoạn này **không chạy bộ chấm trên `*_test.csv`**; NPS/CS test để `null`.
 2. Nếu cần hiệu chỉnh ngưỡng, chỉ dùng metric validation/CV từ phần train hoặc tập pilot tách từ `*_train.csv`. Không dùng dữ liệu hay điểm test cuối cùng để chọn ngưỡng, prompt, cấu hình hoặc mô hình.
 3. Ghi ngưỡng đã chọn, nguồn dữ liệu hiệu chỉnh và phiên bản benchmark; khóa chúng trước khi xem test score. Khi thay ngưỡng, sửa đồng bộ prompt và bộ chấm. Kết quả pilot không gộp vào các lượt chính thức.
 4. Chạy đủ các lượt chính thức với protocol đã khóa, sau đó chấm test. Không điều chỉnh protocol dựa trên điểm test rồi chạy lại để báo kết quả tốt hơn. Nếu test đã được dùng cho việc điều chỉnh, ghi rõ đó là dữ liệu phát triển và dùng một tập test chưa xem cho đánh giá tiếp theo.
@@ -263,6 +281,23 @@ Các nhóm trên đưa đủ thông tin trong một câu. Nhóm F đo phần ra 
 
 Chỉ số config đúng ngay lần đầu không tính nhóm F, vì config đầu tiên của F01/F02 được chờ đợi là khác yêu cầu cuối.
 
+### Nhóm T — Dự báo chuỗi thời gian (time series): 6 ca
+
+Thêm ở v4.1 theo task Time-Series Forecasting của AutoML-Agent. Ca train (T01–T05) chạy đúng hai lượt như nhóm C, cùng hậu tố lượt 1 và câu lượt 2. `<ROWS>` là **24 mốc giờ đầu** của phần test (`predict_rows` trong config, dạng `{"date": "..."}`): kiểm agent kích hoạt và gọi dự báo đúng các mốc người dùng đưa. Chất lượng do bộ chấm đo trên **đủ 96 bước** test. Ngân sách như nhóm C: `random_search`, `max_time` 300 giây.
+
+| ID | Prompt lượt 1 trước hậu tố | Loại đánh giá |
+|---|---|---|
+| T01 | `Dùng <ELEC_ID> để dự báo chuỗi thời gian (time_series) target load_kwh với feature date (cột thời gian), tối ưu rmse.` | Không ràng buộc; NPS theo RMSLE. |
+| T02 | `Dùng <ELEC_ID>, time_series target load_kwh, feature date (cột thời gian), tối ưu rmse. Yêu cầu rmse <= 9.0 khi dự báo 96 giờ tiếp theo.` | Một ràng buộc (kWh). |
+| T03 | `Dùng <WEATHER_ID> để dự báo chuỗi thời gian (time_series) target co2_ppm với feature date (cột thời gian), tối ưu rmse.` | Không ràng buộc. |
+| T04 | `Dùng <WEATHER_ID>, time_series target co2_ppm, feature date (cột thời gian), tối ưu rmse. Yêu cầu rmse <= 16.4 khi dự báo 96 giờ tiếp theo.` | Một ràng buộc (ppm). |
+| T05 | `Dữ liệu <ELEC_ID> ghi điện năng tiêu thụ từng giờ: cột date là thời điểm, cột load_kwh là số kWh của giờ đó. Tôi muốn mô hình dự báo load_kwh cho những giờ tiếp theo dựa trên lịch sử, chọn mô hình theo rmse.` | Biến thể diễn đạt của T01: không nói "time_series", agent phải tự nhận ra và chọn đúng cột thời gian. |
+| T06 | `Dự báo strength của dataset <CONCRETE_ID> cho 4 ngày tới theo thời gian (time_series), tối ưu rmse. Chỉ làm dự báo theo thời gian; nếu không làm được thì giải thích lý do, không chuyển sang loại bài toán khác và không train.` | Ca từ chối đúng: Concrete không có cột ngày giờ (`age` là số ngày tuổi của mẫu). Không config, không job, phải đọc schema đúng dataset; người chấm kiểm lời giải thích. |
+
+Cấu hình đúng của T01–T05: `problem_type=time_series`, target như bảng, `list_feature=["date"]` (backend tìm cột thời gian trong list_feature), metric `rmse`, `random_search`, 300 giây.
+
+Ngưỡng T02/T04 chọn **chỉ từ phần train** theo một quy tắc cố định (`prepare_ts.calibrate_threshold`, ghi trong manifest_ts.json): trung vị RMSE của baseline lặp lại tuần trước trên 8 cửa sổ 96 giờ liên tiếp cuối phần train, mỗi cửa sổ chỉ dùng dữ liệu trước nó, làm tròn 1 chữ số. Kết quả: Electricity **9.0** kWh (8 cửa sổ: 6,8–21,8), Weather **16.4** ppm (13,2–25,6). Đạt ngưỡng nghĩa là dự báo 96 giờ không tệ hơn dự báo ngây thơ điển hình của chuỗi; độ khó của một cửa sổ test riêng lẻ vẫn dao động (xem dải trên), nên đọc kết quả cùng cột baseline của báo cáo. Backend chấm mô hình bằng CV một bước, còn ngưỡng kiểm trên dự báo đệ quy 96 bước: prompt nói rõ "khi dự báo 96 giờ tiếp theo", và câu trả lời không được khẳng định sai số 96 giờ đã đạt chỉ dựa trên điểm CV (tiêu chí chấm tay). Pilot nhóm T chỉ kiểm đường chạy; không xem test trước khi khoá official.
+
 ## 5. Quy tắc chấm điểm
 
 ### 5.1. Trạng thái và mẫu số
@@ -284,7 +319,7 @@ Quy tắc chấm tự động về nội dung:
 - D06: chỉ lần agent đọc trạng thái **đầu tiên** quyết định điều kiện ca. Lần đầu đã thấy job đang chạy thì ca hợp lệ, kể cả khi job xong trước lần đọc sau.
 - Config đã bị một config mới hơn của cùng dataset thay thế thì không chạy được nữa, nên không tính là config hợp lệ cuối cùng.
 
-Task success tạm thời = `PASS/(PASS+FAIL)`, luôn kèm số pending/invalid và số lượt theo plan. Chỉ kết luận tỷ lệ cuối khi đã giải quyết các ca chưa chấm. SR/NPS/CS chỉ tính nhóm C; A/B/D/E để `null`.
+Task success tạm thời = `PASS/(PASS+FAIL)`, luôn kèm số pending/invalid và số lượt theo plan. Chỉ kết luận tỷ lệ cuối khi đã giải quyết các ca chưa chấm. SR/NPS/CS tính cho nhóm C và các ca train T01–T05; các nhóm khác (và T06) để `null`.
 
 Tỷ lệ đạt mọi ràng buộc = số ca có ngưỡng với workflow đạt và mọi ngưỡng test đạt / **tất cả ca có ngưỡng hợp lệ**, gồm train thất bại và chưa đo; báo riêng số chưa đo. Không loại job fail khỏi mẫu số. Job success có mẫu số riêng là số lượt thực sự tạo job; phải đọc cùng Task success để thấy cả lỗi không tạo được job.
 
@@ -309,6 +344,8 @@ Tỷ lệ đạt mọi ràng buộc = số ca có ngưỡng với workflow đạ
 - `workflow_pass` mô tả đúng một job, đúng cấu hình, train thành công, activate và predict. `all_constraints_pass` kiểm thêm mọi ngưỡng trên test ngoài. Nội dung báo cáo trung thực của agent được review riêng; không tự động đồng nhất workflow với PASS toàn nhiệm vụ.
 - Kiểm từng ngưỡng từ `cases.json`; không dùng `passed=True` của watcher thay phép đo, vì watcher có thể thiếu metric.
 
+Nhóm T dùng cùng thang SR (T01, T03, T05 không ngưỡng; T02, T04 một ngưỡng) và cùng đối chiếu bảy trường config. Bộ chấm gọi predict trực tiếp với **96 mốc giờ của phần test** (lô ≤ 50, mốc giữ nguyên dạng chuỗi), rồi tính `NPS = 1/(1+RMSLE)` như AutoML-Agent; RMSLE không xác định (giá trị ≤ −1) là lỗi phép đo, không thay bằng 0. Báo thêm RMSE (metric engine, dùng cho ngưỡng), MAE, MAPE và hai baseline ngây thơ chỉ từ phần train: lặp lại 24 giờ cuối (ngày trước) và 168 giờ cuối (tuần trước). RMSE có đơn vị (kWh, ppm) nên không so giữa hai dataset.
+
 Báo riêng từng ca/dataset, tách nhóm có/không có ngưỡng. Trung bình CS toàn nhóm C chỉ mô tả bộ ca này với trọng số theo số ca; Glass xuất hiện nhiều hơn. Báo mean ± sample std và số đo `n`; không coi các lần lặp trên cùng test là các dataset độc lập.
 
 ### 5.3. Phép đo test ngoài agent
@@ -325,7 +362,7 @@ Bộ chấm không activate hộ agent, không chọn lại job/model, không hu
 | Số bước | Lượt chat, số lời gọi LLM gửi tới provider (đếm cả lời gọi trả về thiếu usage; theo từng agent chỉ đếm được lời gọi có usage), tool nghiệp vụ, số ủy thác `ask_*`, chạm giới hạn bước/token. Token chỉ lấy trung bình trên lượt đủ usage, kèm số lượt đủ / tổng |
 | Token và tiền | Prompt/completion/total tokens; chi phí LLM ước tính nếu đủ usage và bảng giá khớp model |
 | Thời gian | Tổng thời gian `session.send`, theo agent, LLM/tool p50–p95, chờ job, end-to-end đến phản hồi cuối |
-| Cấu hình | Chỉ nhóm B/C (nhóm E có lỗi chèn làm hỏng lần submit đầu). Config hợp lệ ngay lần đầu; tỷ lệ đúng trên **7 trường** của config mà submit đầu tiên được nhận: trường được phép bỏ trống tính theo giá trị hệ thống điền (vd `problem_type` từ R), submit bị từ chối thì chấm tham số thô và trường thiếu tính sai; tự sửa sau khi config đầu bị validate chặn |
+| Cấu hình | Chỉ nhóm B/C/T (nhóm E có lỗi chèn làm hỏng lần submit đầu). Config hợp lệ ngay lần đầu; tỷ lệ đúng trên **7 trường** của config mà submit đầu tiên được nhận: trường được phép bỏ trống tính theo giá trị hệ thống điền (vd `problem_type` từ R), submit bị từ chối thì chấm tham số thô và trường thiếu tính sai; tự sửa sau khi config đầu bị validate chặn |
 | Tool/API | Đúng schema; thực thi thành công; chọn tool và tham số được yêu cầu; gọi tool bị cấm |
 | Phục hồi | Tỷ lệ lỗi có lời gọi cùng tool thành công về sau; sub-agent lỗi rồi chạy lại; task success nhóm E |
 | Ổn định | Mean ± std qua lặp; C01 so C04 đo độ nhạy cách diễn đạt; ablation theo cặp ca/lần lặp |
@@ -357,12 +394,13 @@ Ablation dùng 12 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03
 | D — Vận hành | 6 | 5 | full | 30 |
 | E — Phục hồi | 4 | 5 | full | 20 |
 | F — Hiểu yêu cầu qua hội thoại | 3 | 5 | full | 15 |
-| **Official full** | **33** | **5** | **1** | **165** |
-| Ablation thêm | 12 trong 33 ca | 3 | 5 | 180 |
-| **Official khi bật ablation** | | | | **345** |
-| Pilot, lưu riêng | 33 | 1 | full | 33 |
+| T — Dự báo chuỗi thời gian (v4.1) | 6 | 5 | full | 30 |
+| **Official full** | **39** | **5** | **1** | **195** |
+| Ablation thêm | 12 trong 33 ca của v4 (không có ca T) | 3 | 5 | 180 |
+| **Official khi bật ablation** | | | | **375** |
+| Pilot, lưu riêng | 39 | 1 | full | 39 |
 
-Nếu chạy cả pilot và ablation: **378 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C yêu cầu train và 5 ca E02 yêu cầu train; ablation thêm 75 ca C yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
+Nếu chạy cả pilot và ablation: **414 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C, 25 ca T và 5 ca E02 yêu cầu train; ablation thêm 75 ca C yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
 
 ## 7. Điều kiện trước khi công bố kết quả
 
@@ -370,9 +408,10 @@ Nếu chạy cả pilot và ablation: **378 lượt đo dự kiến**, chưa tí
 - Mỗi ca C đo được phải có metric/prediction đúng job; lỗi chức năng được giữ; báo số NPS/CS đo được trên tổng số ca.
 - Review có giải thích bằng chứng; nếu có nhiều người đánh giá, cố định cùng rubric và lưu bất đồng.
 - Có protocol ID, manifest, môi trường thực thi, provider/model, cấu hình worker và nguồn bảng giá nếu báo tiền.
-- Nêu phạm vi bốn dataset, test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khóa seed và thiếu baseline ngoài hệ thống.
+- Nêu phạm vi bốn dataset bảng và hai chuỗi thời gian, test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khóa seed và thiếu baseline ngoài hệ thống (nhóm T chỉ có hai baseline ngây thơ).
+- Nhóm T: HAutoML dự báo một chuỗi bằng mô hình bảng với đặc trưng trễ, dự báo đệ quy; AutoML-Agent dự báo đa biến bằng mô hình sâu. Cùng nguồn dữ liệu và cùng 96 bước; nhưng Weather của bài lấy mẫu 10 phút (96 bước = 16 giờ), ở đây gộp theo giờ (96 bước = 96 giờ). Không phải tái lập bảng kết quả của bài.
 
-Trạng thái chuẩn bị: dữ liệu mới và file cấu hình mẫu đã có; bộ chạy/chấm/báo cáo có 55 kiểm thử offline; kết quả xác nhận của Codex ở mục 8. Cần điền tài khoản, ID upload/job fixture và xác nhận dịch vụ thật bằng `preflight --online` trước khi chạy pilot. Chưa có số liệu để kết luận chất lượng agent.
+Trạng thái chuẩn bị: dữ liệu mới và file cấu hình mẫu đã có; bộ chạy/chấm/báo cáo có 62 kiểm thử offline; kết quả xác nhận của Codex ở mục 8. Cần điền tài khoản, ID upload/job fixture và xác nhận dịch vụ thật bằng `preflight --online` trước khi chạy pilot. Chưa có số liệu để kết luận chất lượng agent.
 
 ## 8. Thay đổi trong protocol v4 (Claude xây, Codex xác nhận)
 
@@ -393,3 +432,12 @@ Codex rà độc lập bản v3 ở chế độ chỉ đọc (vòng 1); Claude k
 | D4 | CS trong bảng ablation có thể lấy trên hai tập lượt khác nhau | CS chỉ so trên cặp cùng đo được; SR và task success là kết quả chính |
 
 Còn để pilot xác nhận: worker có thực sự dừng khi job hết `max_time` hay không, tỷ lệ D06 còn chạy lúc agent đọc trên Shopping, và độ khả thi của ngưỡng C07/C10.
+
+## 9. Thay đổi trong protocol v4.1: nhóm T (time series)
+
+- Thêm 6 ca T01–T06 (mục 4), dữ liệu thật Electricity (UCI 321) và Weather Jena 2020 (mục 2.1b), split `time-holdout-v1` với 96 bước test, manifest riêng `manifest_ts.json` được khoá cùng protocol.
+- 33 ca của v4 giữ nguyên prompt, tiêu chí và ngưỡng; tóm tắt và các chỉ số tổng của báo cáo (mục 1, 6, 7) tính trên nhóm A–F để so với đợt trước; nhóm T có mục 3b riêng. Thứ tự xen kẽ đã khoá đổi vì plan có thêm ca.
+- Bộ chấm: nhánh time series (RMSLE/NPS như bài, RMSE/MAE/MAPE, baseline ngây thơ); đối chiếu mẫu dự đoán dạng mốc thời gian theo thời điểm (`2014-09-27T00:00:00` khớp `2014-09-27 00:00:00`).
+- `preflight --online` kiểm thêm `ELEC_ID`/`WEATHER_ID` khớp số dòng và cột của file train nhóm T; preflight offline kiểm `predict_rows`/`test_sets` cho mọi ca train.
+- Trạng thái tài khoản khác v4-02: tài khoản có thêm hai dataset nhóm T (A01 phải liệt kê 6 dataset thay vì 4, `list_my_datasets` dài hơn) và thêm khoảng 25 job train của nhóm T xen kẽ (`list_my_jobs` đã giới hạn 20 job mới nhất). Xoá dataset thử nghiệm cũ (`electricity_MT_301_hourly_train` của bản thử 2014) khỏi tài khoản benchmark trước khi lock. Đây là khác biệt cần ghi khi so A01 và token với v4-02.
+- Báo cáo nhóm T hiện NPS của baseline lặp lại tuần trước và tỷ lệ thắng baseline, vì NPS theo RMSLE sát 1 ngay cả với dự báo ngây thơ; dự báo ≤ −1 (RMSLE không xác định) tính NPS = 0.

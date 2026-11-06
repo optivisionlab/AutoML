@@ -13,6 +13,9 @@ from pathlib import Path
 from benchmark.common import ARTIFACTS, BACKEND, BENCH_DIR, REPO, load_json
 
 DATASETS = ("glass", "shopping", "concrete", "crab")
+# Nhóm T (time series): tách theo thời gian, manifest riêng (benchmark/prepare_ts.py).
+TS_DATASETS = ("electricity", "weather")
+TS_PLACEHOLDERS = {"electricity": "ELEC_ID", "weather": "WEATHER_ID"}
 
 
 def digest(value):
@@ -54,6 +57,49 @@ def check_data(cfg=None):
             inputs.append({tuple(row[:-1]) for row in numbers})
         if inputs[0] & inputs[1]:
             raise ValueError(f"{name}: feature trùng giữa train và test.")
+    return manifest
+
+
+def check_ts_data(cfg=None):
+    """
+    Dữ liệu nhóm T: hash khớp manifest_ts.json, mỗi file đúng cột (date, target), đủ số dòng,
+    mốc giờ cách đều, test nối tiếp ngay sau train, giá trị hữu hạn và > -1 (RMSLE xác định được).
+    """
+    from datetime import datetime, timedelta
+    from benchmark.prepare_ts import FMT, MANIFEST, SPLIT_VERSION, TS_DIR
+
+    manifest = load_json(MANIFEST)
+    if not manifest or manifest.get("split_version") != SPLIT_VERSION:
+        raise ValueError(
+            "Thiếu dữ liệu nhóm T (benchmark_artifacts/datasets/timeseries/manifest_ts.json, split time-holdout-v1). "
+            "Máy khác: chép nguyên thư mục datasets/timeseries/ từ máy đã dựng (rsync); máy có file gốc: `bench.py prepare-ts`."
+        )
+    for name, expected in manifest["sha256"].items():
+        if file_hash(TS_DIR / name) != expected:
+            raise ValueError(f"Hash không khớp manifest_ts: {name}")
+    for name in TS_DATASETS:
+        meta = manifest["datasets"][name]
+        stamps = {}
+        for split in ("train", "test"):
+            path = TS_DIR / meta["files"][split]
+            if cfg and split == "test" and name not in (cfg.get("test_sets") or {}):
+                raise ValueError(f"bench_config.json thiếu test_sets.{name} (chép từ benchmark/config.example.json).")
+            if cfg and split == "test" and (REPO / cfg["test_sets"][name]).resolve() != path.resolve():
+                raise ValueError(f"test_sets.{name} không trỏ vào file đã khóa trong manifest_ts.")
+            with path.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                if reader.fieldnames != [meta["time_column"], meta["target"]]:
+                    raise ValueError(f"Schema không khớp: {path.name}")
+                rows = list(reader)
+            if len(rows) != meta[f"n_{split}"] or not rows:
+                raise ValueError(f"Số mẫu không khớp: {path.name}")
+            values = [float(r[meta["target"]]) for r in rows]
+            if not all(math.isfinite(v) and v > -1 for v in values):
+                raise ValueError(f"Giá trị không hợp lệ (NaN/Inf hoặc <= -1) trong {path.name}")
+            stamps[split] = [datetime.strptime(r[meta["time_column"]], FMT) for r in rows]
+        series = stamps["train"] + stamps["test"]
+        if not all(b - a == timedelta(hours=1) for a, b in zip(series, series[1:])):
+            raise ValueError(f"{name}: mốc thời gian không liên tục / test không nối tiếp train.")
     return manifest
 
 
@@ -109,10 +155,11 @@ def plan(cfg, cases):
 
 def preflight(cfg, cases, case_ids=None):
     errors, warnings = [], []
-    try:
-        check_data(cfg)
-    except (ValueError, OSError, KeyError) as exc:
-        errors.append(str(exc))
+    for check in (check_data, check_ts_data):
+        try:
+            check(cfg)
+        except (ValueError, OSError, KeyError) as exc:
+            errors.append(str(exc))
     if not re.fullmatch(r"[A-Za-z0-9_-]+", str(cfg.get("experiment_id", ""))):
         errors.append("experiment_id chỉ gồm chữ, số, '_' và '-'.")
     selected = [c for c in cases["cases"] if case_ids is None or c["id"] in case_ids]
@@ -124,6 +171,11 @@ def preflight(cfg, cases, case_ids=None):
     for key in sorted(needed):
         if not cfg.get("placeholders", {}).get(key):
             errors.append(f"Chưa điền placeholders.{key}")
+    # Ca train cần mẫu dự đoán và tập test của dataset - thiếu thì runner/bộ chấm hỏng giữa chừng.
+    for dataset in sorted({c["task"]["dataset"] for c in selected if c["flow"] == "train"}):
+        for section in ("predict_rows", "test_sets"):
+            if dataset not in (cfg.get(section) or {}):
+                errors.append(f"bench_config.json thiếu {section}.{dataset} (chép từ benchmark/config.example.json).")
     for key in ("provider", "model"):
         if not cfg.get(key):
             errors.append(f"Điền {key} rõ ràng để khóa model; không dùng mặc định thay đổi theo .env.")
@@ -155,7 +207,7 @@ def experiment_root(cfg, phase):
 def snapshot(cfg, cases, pricing, phase):
     planned_cfg = cfg if phase == "official" else {**cfg, "repeats": 1, "ablation": {"enabled": False}}
     return {"config": cfg, "cases": cases, "pricing": pricing, "phase": phase,
-            "manifest": check_data(cfg), "source_hashes": source_hashes(),
+            "manifest": check_data(cfg), "manifest_ts": check_ts_data(cfg), "source_hashes": source_hashes(),
             "runtime": runtime_settings(), "provider": provider_settings(cfg), "plan": plan(planned_cfg, cases)}
 
 
@@ -227,6 +279,13 @@ def check_online(cfg):
             if not info.get("ok") or info.get("total_rows") != expected["n_train"] or \
                     {c["name"] for c in info.get("columns", [])} != set(expected["features"] + [expected["target"]]):
                 errors.append(f"{name}: ID không đọc được hoặc số dòng/schema không khớp file train mới.")
+        ts_manifest = check_ts_data(cfg)
+        for name, placeholder in TS_PLACEHOLDERS.items():
+            info = tools.get_dataset_schema(api, cfg["placeholders"][placeholder])
+            expected = ts_manifest["datasets"][name]
+            if not info.get("ok") or info.get("total_rows") != expected["n_train"] or \
+                    {c["name"] for c in info.get("columns", [])} != {expected["time_column"], expected["target"]}:
+                errors.append(f"{name}: ID không đọc được hoặc số dòng/schema không khớp file *_train.csv của nhóm T.")
         missing = cfg["placeholders"]["MISSING_ID"]
         listing = tools.list_my_datasets(api)
         if not listing.get("ok") or any(d.get("_id") == missing for d in listing.get("datasets", [])):
