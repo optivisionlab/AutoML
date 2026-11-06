@@ -1127,10 +1127,12 @@
     },
     "errors": {
       "busy": "The agent is still handling your previous message. Wait until it finishes.",
-      "auth": "Your session has expired or you lack permission. Reload the page to sign in again.",
+      "auth": "Your session has expired or you lack permission. Sign in again, then press Resend.",
       "server": "The agent hit an error: {detail}",
       "serverNoDetail": "The agent hit an error.",
-      "disconnected": "Connection lost midway. The agent may still be working on the server - ask for the status before resending a training request.",
+      "maybeReceived": "No response from the agent, but your message may have reached it. If you just asked to train, check your job list before sending it again to avoid a duplicate run.",
+      "noReply": "No answer arrived for the turn whose connection dropped. Ask the agent again for the result.",
+      "disconnected": "Connection lost midway. The agent is still working on the server - its answer will appear here when it finishes. Do not resend a training request.",
       "network": "Cannot reach the agent API.",
       "budget": "This turn exceeded its token budget and was stopped."
     },
@@ -1256,6 +1258,7 @@
       "lowerBetter": "Error metric: lower is better.",
       "higherBetter": "Higher is better.",
       "passed": "Meets your constraints",
+      "verificationIncomplete": "Not all of your constraints could be checked: the job has no score for some metrics.",
       "notPassed": "Does not meet your constraints",
       "checkLine": "{metric} {op} {value} - actual {score}",
       "noScore": "none",
@@ -1282,6 +1285,16 @@
         "409": "The job's state does not allow this (e.g. it has not completed).",
         "other": "The backend returned an error: {detail}"
       },
+      "autoActivatePending": "The model will be activated automatically when the job finishes (if it meets the constraints).",
+      "autoActivatePendingIf": "The model will be activated automatically when the job finishes if it meets: {conditions}.",
+      "autoActivatePendingAlways": "The model will be activated automatically when the job finishes - no conditions were set, so regardless of its score.",
+      "cancelAutoActivate": "Cancel auto-activation",
+      "autoActivateCancelled": "Auto-activation cancelled - when the job finishes, you decide whether to activate it.",
+      "cancelAutoActivateFailed": "Could not cancel auto-activation (the job may have finished or the agent lost the session). Check the job status.",
+      "autoActivateSkipped": "Auto-activation no longer applies: the agent stopped watching before the job finished. When the job finishes, activate it manually.",
+      "untracked": "Still running according to the backend, but no longer watched by the agent: the result will not appear here by itself. Press Refresh later, or ask the agent to watch it again.",
+      "askWatch": "Ask the agent to watch it",
+      "watchPrompt": "Check job {id} and keep watching it until it finishes.",
       "trackingLost": "No longer tracked: the agent server lost the session that was watching this job. The job may still be running - press Refresh to get its real status.",
       "autoActivated": "The model was activated automatically after training, as you requested.",
       "autoActivateFailed": "Could not activate the model automatically after training: {detail}"
@@ -1297,6 +1310,20 @@
       "running": "Predicting…",
       "result": "Result",
       "latency": "{ms} ms",
+      "seriesLast": "Last training timestamp: {last} · step: {step}.",
+      "seriesLastEstimated": "Last training timestamp (estimated, assuming the file is sorted by time): {last} · step: {step}.",
+      "seriesUseNext": "Use {next}",
+      "seriesBadTimestamp": "The timestamp must come after the last training timestamp ({last}) and fall on the same {step} step, e.g. {next}.",
+      "seriesBadTimestampEstimated": "The timestamp must come after the last training timestamp (estimated: {last}) and fall on the same {step} step, e.g. {next}.",
+      "seriesBadTimestampNoHint": "The timestamp must come after the last training timestamp and fall on the same step as the training data. Enter a full date and time, e.g. 2014-09-29 00:00:00.",
+      "seriesTooFar": "The model can forecast at most {max} steps after the last training timestamp.",
+      "backendError": "The backend returned an error: {detail}",
+      "step": {
+        "days": "{n, plural, one {# day} other {# days}}",
+        "hours": "{n, plural, one {# hour} other {# hours}}",
+        "minutes": "{n, plural, one {# minute} other {# minutes}}",
+        "seconds": "{n, plural, one {# second} other {# seconds}}"
+      },
       "timeSeriesHint": "Each row is one future point in time: enter a timestamp after the last training timestamp, on the same interval (e.g. hourly or daily), plus any other feature values. Values are sent as text."
     },
     "duration": {
@@ -1361,7 +1388,8 @@
       "reply": "The agent replied.",
       "jobStarted": "Training job {id} submitted.",
       "jobDone": "Job {id} completed.",
-      "jobFailed": "Job {id} did not succeed."
+      "jobFailed": "Job {id} did not succeed.",
+      "jobTimeout": "Job {id} ran past the waiting time; the agent stopped watching it."
     }
   }
 }

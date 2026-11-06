@@ -333,6 +333,8 @@ interface Props {
   onSend: (text: string) => void;
   onRefreshed: (jobId: string, raw: Record<string, any>) => void;
   onActivated: (jobId: string) => void;
+  onDeactivated: (jobId: string) => void;
+  onSetAutoActivate: (jobId: string, enabled: boolean) => Promise<boolean>;
 }
 
 export default function ContextPanel({
@@ -349,6 +351,8 @@ export default function ContextPanel({
   onSend,
   onRefreshed,
   onActivated,
+  onDeactivated,
+  onSetAutoActivate,
 }: Props) {
   const t = useTranslations("Agent.panel");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -463,7 +467,15 @@ export default function ContextPanel({
 
         {tab === "job" &&
           (jobList.length ? (
-            jobList.map((job) => <TrainingJobCard key={job.jobId} job={job} variant="compact" onRefreshed={onRefreshed} />)
+            jobList.map((job) => (
+              <TrainingJobCard
+                key={job.jobId}
+                job={job}
+                variant="compact"
+                onRefreshed={onRefreshed}
+                onSetAutoActivate={onSetAutoActivate}
+              />
+            ))
           ) : (
             <Empty>
               {t.rich("empty.job", {
@@ -479,7 +491,16 @@ export default function ContextPanel({
         {tab === "results" &&
           (completed.length ? (
             completed.map((job) => (
-              <TrainingJobCard key={job.jobId} job={job} busy={busy} onAsk={onSend} onRefreshed={onRefreshed} onActivated={onActivated} />
+              <TrainingJobCard
+                key={job.jobId}
+                job={job}
+                busy={busy}
+                onAsk={onSend}
+                onRefreshed={onRefreshed}
+                onActivated={onActivated}
+                onDeactivated={onDeactivated}
+                onSetAutoActivate={onSetAutoActivate}
+              />
             ))
           ) : (
             <Empty>{t("empty.results")}</Empty>

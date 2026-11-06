@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyboardEvent, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { KeyboardEvent, forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { AlertCircle, ArrowUp, Database, FileSpreadsheet, Loader2, Paperclip, UploadCloud, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -32,6 +32,12 @@ interface Props {
   pending: PendingUpload | null;
   onPendingChange: (pending: PendingUpload | null) => void;
   onSend: (text: string) => void;
+  /**
+   * Nội dung đang gõ - giữ ở Workspace chứ không trong composer: màn chào (hero) và
+   * khung chat (docked) là hai composer ở hai cây khác nhau, đổi màn là mất bản nháp.
+   */
+  text: string;
+  onTextChange: (text: string) => void;
   onUpload: (pending: PendingUpload) => Promise<AgentError | null>;
   error: ComposerError | null;
   onError: (error: ComposerError | null) => void;
@@ -51,6 +57,8 @@ const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptCo
     pending,
     onPendingChange,
     onSend,
+    text,
+    onTextChange: setText,
     onUpload,
     error,
     onError,
@@ -66,7 +74,6 @@ const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptCo
   const tErrors = useTranslations("Agent.errors");
   const tTypes = useTranslations("Agent.problemTypes");
   const tDataset = useTranslations("Agent.dataset");
-  const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploading = uploadProgress !== null;

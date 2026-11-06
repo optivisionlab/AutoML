@@ -26,6 +26,13 @@ export interface VerificationCheck {
   score: number | null;
 }
 
+/** Điều kiện watcher sẽ kiểm trước khi tự kích hoạt (rỗng = kích hoạt bất kể điểm). */
+export interface ActivationConstraint {
+  metric: string;
+  op: string;
+  value: number;
+}
+
 export interface Verification {
   passed: boolean | null;
   checks: VerificationCheck[];

@@ -56,6 +56,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
   // Phiên đăng nhập hỏng: mọi lời gọi agent sẽ 401 - khoá thao tác như lúc bận.
   const locked = agent.busy || expired;
   const [pending, setPending] = useState<PendingUpload | null>(null);
+  // Bản nháp chung cho composer màn chào và composer khung chat (xem PromptComposer).
+  const [draft, setDraft] = useState("");
   const [composerError, setComposerError] = useState<ComposerError | null>(null);
   const [dragging, setDragging] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -102,6 +104,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
       pending={pending}
       onPendingChange={setPending}
       onSend={agent.send}
+      text={draft}
+      onTextChange={setDraft}
       onUpload={agent.upload}
       error={composerError}
       onError={setComposerError}
@@ -117,6 +121,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
     onSend: agent.send,
     onRefreshed: agent.applyJobFromApi,
     onActivated: (jobId: string) => agent.setJobActivated(jobId, true),
+    onDeactivated: (jobId: string) => agent.setJobActivated(jobId, false),
+    onSetAutoActivate: agent.setAutoActivate,
     onOpenDetails: openDetails,
   };
 
@@ -135,6 +141,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
       onSend={agent.send}
       onRefreshed={agent.applyJobFromApi}
       onActivated={actions.onActivated}
+      onDeactivated={actions.onDeactivated}
+      onSetAutoActivate={actions.onSetAutoActivate}
     />
   );
 

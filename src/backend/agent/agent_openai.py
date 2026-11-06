@@ -26,10 +26,12 @@ Chạy:
 import json
 import logging
 import os
+import traceback
 
 # Local modules
 from agent import tools, tracing
 from agent.api_client import HAutoMLClient
+from agent.providers import redact_secrets
 
 
 _log = logging.getLogger("agent.tools")
@@ -71,6 +73,16 @@ def describe_error(error: Exception) -> str:
     if name in ("APIConnectionError", "APITimeoutError"):
         return "Không kết nối được tới dịch vụ LLM"
     return f"{name} (HTTP {status})" if status else name
+
+
+def log_exception(logger: logging.Logger, message: str, *args) -> None:
+    """
+    Như logger.exception nhưng che bí mật trong cả thông báo lỗi lẫn traceback.
+
+    Lỗi của SDK LLM có thể chứa (một phần) API key - describe_error đã lược bản
+    gửi người dùng, nhưng logger.exception vẫn ghi nguyên văn vào log server.
+    """
+    logger.error("%s\n%s", message % args if args else message, redact_secrets(traceback.format_exc()).rstrip())
 
 
 def create_completion(llm, **request):
@@ -299,6 +311,35 @@ TOOL_SCHEMAS = [
         ["job_id"],
     ),
     _tool(
+        "set_auto_activate",
+        (
+            "Bật/tắt TỰ kích hoạt model khi một job ĐANG CHẠY của phiên này xong. Dùng khi người dùng "
+            "đổi ý sau khi job đã chạy (\"à thôi đừng kích hoạt\" -> enabled=false). Job đã xong thì dùng activate_model."
+        ),
+        {
+            "job_id": _JOB_ID,
+            "enabled": {"type": "boolean", "description": "false = không tự kích hoạt nữa, true = tự kích hoạt khi xong."},
+            "constraints": {
+                "type": "array",
+                "description": (
+                    "Điều kiện người dùng nêu kèm khi bật (\"đạt accuracy >= 0.9 thì kích hoạt\" -> "
+                    "[{metric: accuracy, op: >=, value: 0.9}]; phần trăm viết thành tỉ lệ 0-1). Thay ràng buộc "
+                    "cùng metric đặt lúc tạo job. [] khi tắt hoặc người dùng không nêu điều kiện nào."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "metric": {"type": "string"},
+                        "op": {"type": "string", "enum": [">=", ">", "<=", "<"]},
+                        "value": {"type": "number"},
+                    },
+                    "required": ["metric", "op", "value"],
+                },
+            },
+        },
+        ["job_id", "enabled", "constraints"],
+    ),
+    _tool(
         "list_my_jobs",
         (
             "Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước (tối đa "
@@ -388,6 +429,7 @@ SESSION_TOOLS = {
     "submit_config",
     "start_training",
     "watch_job",
+    "set_auto_activate",
 }
 
 
@@ -422,7 +464,7 @@ def _call_tool(api: HAutoMLClient, dispatch: dict, name: str, arguments: dict) -
         return {"ok": False, "error": f"Tham số không hợp lệ cho {name}: {error}"}
     except Exception as error:  # noqa: BLE001 - tool không được làm chết cả lượt chat
         # Chi tiết vào log server; LLM chỉ nhận loại lỗi để tự quyết bước sau.
-        _log.exception("tool %s lỗi", name)
+        log_exception(_log, "tool %s lỗi", name)
         return {"ok": False, "error": f"Tool {name} gặp lỗi nội bộ ({type(error).__name__})."}
 
     if not isinstance(result, dict):

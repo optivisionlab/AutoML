@@ -101,7 +101,8 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
         )
 
     if len(set(features)) != len(features):
-        warnings.append("list_feature có cột bị lặp, backend sẽ bỏ qua bản trùng.")
+        # Backend không tự bỏ bản trùng (DataFrame có cột trùng tên làm train hỏng).
+        errors.append("list_feature có cột bị lặp - mỗi cột chỉ được xuất hiện một lần.")
 
     for column in features:
         if looks_like_id(column):
@@ -185,7 +186,12 @@ def _check_time_series(features: list, target, schema: dict, errors: list, warni
         return
 
     info = time_columns[chosen[0]]
-    if info.get("duplicated_in_preview"):
+    if info.get("missing_in_preview"):
+        errors.append(
+            f"Cột '{chosen[0]}' có {info['missing_in_preview']} mốc thời gian trống ngay trong preview. "
+            "time_series cần mọi dòng có mốc thời gian - cần điền hoặc lọc dữ liệu trước."
+        )
+    elif info.get("duplicated_in_preview"):
         errors.append(
             f"Cột '{chosen[0]}' có mốc thời gian trùng nhau ngay trong preview. time_series "
             "chỉ nhận MỘT chuỗi, mỗi mốc một dòng - cần gộp hoặc lọc dữ liệu trước."

@@ -5,7 +5,16 @@
  * từ câu trả lời của LLM.
  */
 
-import { JOB_CANCELLED, JOB_FAILED, JOB_RUNNING, JOB_SUCCESS, type Activation, type AgentEvent, type Verification } from "./events";
+import {
+  JOB_CANCELLED,
+  JOB_FAILED,
+  JOB_RUNNING,
+  JOB_SUCCESS,
+  type Activation,
+  type ActivationConstraint,
+  type AgentEvent,
+  type Verification,
+} from "./events";
 
 // Tool có nhãn dịch sẵn trong messages (Agent.tools.*). Tool khác hiện nguyên tên.
 export const KNOWN_TOOLS = new Set([
@@ -68,6 +77,12 @@ export interface TurnTrace {
   jobIds: string[];
   /** dataset_id mà sub-agent vừa thao tác (lấy từ tham số tool, không từ chữ). */
   datasetId?: string;
+  /**
+   * dataset_id của tool gọi THÀNH CÔNG gần nhất - dùng để đổi dataset đang làm việc.
+   * datasetId ở trên có cả lúc tool mới bắt đầu (cần để gắn thẻ cấu hình), nên một
+   * lời gọi hỏng với id sai/bịa sẽ không được kéo dataset đang làm việc theo.
+   */
+  activeDatasetId?: string;
   error?: string;
 }
 
@@ -144,6 +159,7 @@ export function applyTurnEvent(trace: TurnTrace, event: AgentEvent): TurnTrace {
 
       const datasetId = typeof event.arguments?.dataset_id === "string" ? event.arguments.dataset_id : undefined;
       let next: TurnTrace = datasetId ? { ...trace, datasetId } : trace;
+      if (datasetId && event.type === "tool_call" && event.ok === true) next = { ...next, activeDatasetId: datasetId };
 
       let index = lastStepIndex(next.steps, agent);
       if (index < 0) {
@@ -195,14 +211,22 @@ export function applyTurnEvent(trace: TurnTrace, event: AgentEvent): TurnTrace {
 
     case "job_started": {
       const jobId = String(event.job_id);
+      const datasetId = typeof event.dataset_id === "string" && event.dataset_id ? event.dataset_id : undefined;
       const view: ConfigView = { valid: true, errors: [], configId: event.config_id, config: event.config, jobId };
-      // Gắn vào đúng config_id; sự kiện kiểu cũ không có config_id thì vào lần kiểm định hợp lệ gần nhất chưa có job.
-      const byId = trace.configs.map((c) => Boolean(event.config_id) && c.configId === event.config_id).lastIndexOf(true);
-      const index = byId >= 0 ? byId : trace.configs.map((c) => c.valid === true && !c.jobId).lastIndexOf(true);
+      if (datasetId) view.datasetId = datasetId;
+      // Gắn vào đúng thẻ có config_id đó. Không khớp (vd config chốt ở lượt trước) thì
+      // chỉ được gắn theo vị trí vào lần kiểm định hợp lệ gần nhất chưa có job VÀ chưa
+      // mang config_id (sự kiện kiểu cũ) - không bao giờ ghi đè thẻ của một config khác;
+      // không có thẻ như vậy thì thêm thẻ mới.
+      const byId = event.config_id ? trace.configs.map((c) => c.configId === event.config_id).lastIndexOf(true) : -1;
+      const index =
+        byId >= 0
+          ? byId
+          : trace.configs.map((c) => c.valid === true && !c.jobId && (!event.config_id || !c.configId)).lastIndexOf(true);
       const configs =
         index >= 0
           ? trace.configs.map((c, i) => (i === index ? { ...c, ...view } : c))
-          : [...trace.configs, { ...view, datasetId: trace.datasetId }];
+          : [...trace.configs, { ...view, datasetId: datasetId ?? trace.datasetId }];
       return { ...trace, configs, jobIds: [...trace.jobIds, jobId] };
     }
 
@@ -296,6 +320,41 @@ export interface JobView {
    * hạn): không còn sự kiện nào về job nữa. Trạng thái thật phải lấy lại từ API.
    */
   lost?: boolean;
+  /**
+   * Job vẫn chạy (theo API) nhưng KHÔNG còn watcher nào theo dõi - sẽ không có sự kiện
+   * kết quả. Có sau khi "Làm mới" một job mất dấu / hết giờ chờ; hết khi agent theo dõi lại.
+   */
+  untracked?: boolean;
+  /** problem_type của job khi chưa có config (job chỉ biết qua job_watch / job_done). */
+  problemType?: string;
+  /**
+   * Hệ thống sẽ TỰ kích hoạt model khi job xong (người dùng dặn "train xong kích hoạt luôn").
+   * Hiện trên thẻ kèm nút huỷ; false sau khi huỷ (autoActivateCancelled).
+   */
+  autoActivate?: boolean;
+  autoActivateCancelled?: boolean;
+  /** Lời hứa tự kích hoạt hết hiệu lực (hết giờ theo dõi / mất phiên): người dùng tự kích hoạt. */
+  autoActivateSkipped?: boolean;
+  /**
+   * Điều kiện server sẽ kiểm trước khi tự kích hoạt: [] = kích hoạt bất kể điểm,
+   * undefined = chưa biết (sự kiện cũ không mang trường này).
+   */
+  autoActivateConstraints?: ActivationConstraint[];
+}
+
+/** auto_activate_constraints của sự kiện -> danh sách hợp lệ; không phải mảng thì undefined. */
+export function parseConstraints(raw: unknown): ActivationConstraint[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
+    .filter((c) => typeof c.metric === "string" && typeof c.op === "string" && typeof c.value === "number")
+    .map((c) => ({ metric: c.metric as string, op: c.op as string, value: c.value as number }));
+}
+
+function sameConstraints(a: ActivationConstraint[] | undefined, b: ActivationConstraint[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((c, i) => c.metric === b[i].metric && c.op === b[i].op && c.value === b[i].value);
 }
 
 export const JOB_EVENT_TYPES = new Set([
@@ -307,6 +366,7 @@ export const JOB_EVENT_TYPES = new Set([
   "job_watch_timeout",
   "job_watch_warning",
   "job_watch_resumed",
+  "auto_activate_changed",
 ]);
 
 export const JOB_TERMINAL: JobStatus[] = ["completed", "failed", "cancelled", "unknown"];
@@ -337,8 +397,20 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
   // theo dõi lại (watch_job) thì sống lại và nhận tiếp trạng thái tới khi xong.
   const revivable = current.status === "unknown";
   let next: JobView = { ...current, lastUpdated: at, source: "stream" };
+  // job_started / job_watch / job_done / job_failed mang dataset_id và problem_type: form dự đoán
+  // cần chúng kể cả khi job chỉ được biết qua watch_job, hoặc job_started đã trôi khỏi bộ đệm.
+  if (typeof event.dataset_id === "string" && event.dataset_id) next.datasetId = event.dataset_id;
+  if (typeof event.problem_type === "string" && event.problem_type) next.problemType = event.problem_type;
+  // job_started / job_watch mang cờ tự kích hoạt; auto_activate_changed khi người dùng đổi ý.
+  if (typeof event.auto_activate === "boolean" && event.type !== "auto_activate_changed") next.autoActivate = event.auto_activate;
+  // Lời hứa đang chờ trở lại (theo dõi lại rồi người dùng yêu cầu lại): lời nhắc "hết hiệu lực" cũ hết đúng.
+  if (event.auto_activate === true && event.type !== "auto_activate_changed") next.autoActivateSkipped = undefined;
+  // job_watch / job_status / auto_activate_changed: điều kiện THẬT sẽ được kiểm (thẻ không hứa
+  // "nếu đạt ràng buộc" khi không có ràng buộc nào).
+  const constraints = parseConstraints(event.auto_activate_constraints);
+  if (constraints) next.autoActivateConstraints = constraints;
   const revive = () => {
-    next = { ...next, status: "running", error: undefined, lost: undefined, finishedAt: undefined };
+    next = { ...next, status: "running", error: undefined, lost: undefined, untracked: undefined, finishedAt: undefined };
   };
 
   switch (event.type) {
@@ -346,6 +418,8 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
       next = { ...next, configId: event.config_id, config: event.config, metric: event.config?.metric_sort, submittedAt: at };
       break;
     case "job_watch":
+      // Có watcher theo dõi lại: sẽ có sự kiện kết quả.
+      next.untracked = undefined;
       if (revivable) revive();
       break;
     case "job_status":
@@ -353,6 +427,7 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
       if (revivable) revive();
       if (typeof event.elapsed === "number") next.elapsed = event.elapsed;
       if (event.status === JOB_RUNNING) next.status = "running";
+      next.untracked = undefined;
       // Watcher hỏi được backend nghĩa là cảnh báo cũ (vd phiên hết hạn) đã hết đúng.
       next.warning = undefined;
       break;
@@ -370,11 +445,16 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         leaderboard: toLeaderboard(event.leaderboard, event.metric_sort ?? next.metric),
         modelsScored: event.models_scored,
         verification: event.verification,
-        activation,
+        // job_done lặp (vd watch_job sau khi watcher đã báo) không mang activation: giữ kết quả cũ.
+        activation: activation ?? next.activation,
         activated: activation?.ok ? true : next.activated,
         error: undefined,
-        warning: undefined,
+        // Không đọc được kết quả chi tiết (bản ghi job dị dạng): đừng để thẻ trông như kết quả rỗng.
+        warning: typeof event.summary_error === "string" ? clip(event.summary_error, 400) : undefined,
         lost: undefined,
+        untracked: undefined,
+        autoActivate: undefined,
+        autoActivateSkipped: undefined,
       };
       break;
     }
@@ -387,11 +467,32 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         error: clip(event.error, 400),
         warning: undefined,
         lost: undefined,
+        untracked: undefined,
+        autoActivate: undefined,
+        autoActivateSkipped: undefined,
       };
       break;
+    case "auto_activate_changed":
+      next.autoActivate = event.enabled === true;
+      next.autoActivateCancelled = event.enabled === false ? true : undefined;
+      if (event.enabled === true) next.autoActivateSkipped = undefined;
+      break;
     case "job_watch_timeout":
-      if (finished) return jobs;
-      next = { ...next, status: "unknown", error: clip(event.error, 400) };
+      if (finished) {
+        // Job đã "xong" theo nút Làm mới nhưng watcher hết giờ trước khi kịp kích hoạt: lời hứa
+        // hết hiệu lực - thẻ không được tiếp tục hứa.
+        if (!next.autoActivate && event.auto_activate_skipped !== true) return jobs;
+        next = { ...next, autoActivate: undefined, autoActivateSkipped: event.auto_activate_skipped === true || next.autoActivateSkipped };
+        break;
+      }
+      next = {
+        ...next,
+        status: "unknown",
+        error: clip(event.error, 400),
+        autoActivate: undefined,
+        // Lần hết giờ sau (đã theo dõi lại) không mang cờ này: giữ lời nhắc "kích hoạt thủ công".
+        autoActivateSkipped: event.auto_activate_skipped === true || next.autoActivateSkipped,
+      };
       break;
     case "job_watch_warning":
       next.warning = clip(event.error);
@@ -409,10 +510,52 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
  * quay mãi - trạng thái thật lấy lại bằng nút "Làm mới" (API backend).
  */
 export function markJobsLost(jobs: Record<string, JobView>): Record<string, JobView> {
-  const active = Object.values(jobs).filter(isJobActive);
-  if (!active.length) return jobs;
+  const affected = Object.values(jobs).filter((job) => isJobActive(job) || job.autoActivate);
+  if (!affected.length) return jobs;
   const next = { ...jobs };
-  for (const job of active) next[job.jobId] = { ...job, status: "unknown", lost: true, warning: undefined };
+  for (const job of affected) {
+    // Không còn watcher: không còn gì tự kích hoạt nữa (kể cả job "xong" theo Làm mới mà chưa kịp kích hoạt).
+    const lostAuto = job.autoActivate ? { autoActivate: undefined, autoActivateSkipped: true } : {};
+    next[job.jobId] = isJobActive(job)
+      ? { ...job, ...lostAuto, status: "unknown", lost: true, warning: undefined }
+      : { ...job, ...lostAuto };
+  }
+  return next;
+}
+
+/**
+ * Job đang được theo dõi theo server (sự kiện hello / reconnect), kèm lời hứa tự kích hoạt.
+ * Phiên dài thì sự kiện của job có thể đã trôi khỏi bộ đệm (500 sự kiện): tải lại trang vẫn
+ * phải dựng lại được thẻ job đang chạy và nút huỷ tự kích hoạt.
+ */
+export function applyWatchState(
+  jobs: Record<string, JobView>,
+  watching: unknown,
+  auto: unknown,
+  autoConstraints?: unknown,
+): Record<string, JobView> {
+  const ids = Array.isArray(watching) ? watching.map(String) : [];
+  const flags = auto && typeof auto === "object" ? (auto as Record<string, unknown>) : {};
+  const conditions = autoConstraints && typeof autoConstraints === "object" ? (autoConstraints as Record<string, unknown>) : {};
+  let next = jobs;
+  for (const id of ids) {
+    const current: JobView = next[id] ?? { jobId: id, status: "running" };
+    const flag = flags[id];
+    // Ảnh chụp có thể cũ hơn job_done vừa tới: không hứa lại trên job đã kết thúc.
+    const ended = current.status === "completed" || current.status === "failed" || current.status === "cancelled";
+    const autoActivate = flag === true ? (ended ? current.autoActivate : true) : flag === false ? undefined : current.autoActivate;
+    const autoActivateConstraints =
+      flag === true && !ended ? (parseConstraints(conditions[id]) ?? current.autoActivateConstraints) : current.autoActivateConstraints;
+    const autoActivateSkipped = flag === true && !ended ? undefined : current.autoActivateSkipped;
+    if (
+      next[id] &&
+      current.autoActivate === autoActivate &&
+      current.autoActivateSkipped === autoActivateSkipped &&
+      sameConstraints(current.autoActivateConstraints, autoActivateConstraints)
+    )
+      continue;
+    next = { ...next, [id]: { ...current, autoActivate, autoActivateConstraints, autoActivateSkipped } };
+  }
   return next;
 }
 
@@ -429,6 +572,10 @@ export function metricDirection(metric: string | undefined): "higher" | "lower" 
  * Cùng cách tính như summarize_job ở agent/watcher.py.
  */
 export function mergeJobFromApi(current: JobView, raw: Record<string, any>, now: number): JobView {
+  // Phản hồi "Làm mới" tới muộn hơn sự kiện kết thúc (đọc lúc job còn chạy): không kéo job đã
+  // kết thúc lùi về "đang chạy" - sẽ không còn sự kiện nào sửa lại.
+  const ended = current.status === "completed" || current.status === "failed" || current.status === "cancelled";
+  if (ended && raw.status === JOB_RUNNING) return current;
   const status: JobStatus =
     raw.status === JOB_SUCCESS
       ? "completed"
@@ -447,6 +594,18 @@ export function mergeJobFromApi(current: JobView, raw: Record<string, any>, now:
     ...current,
     status,
     lost: known ? undefined : current.lost,
+    // Job mất dấu / hết giờ chờ mà API báo vẫn chạy: không watcher nào còn theo dõi nó -
+    // không được hiện như đang được theo dõi trực tiếp (sẽ không có kết quả tự về).
+    untracked: status === "running" && (current.lost || current.status === "unknown" || current.untracked) ? true : undefined,
+    // Không watcher nào theo dõi (mất dấu / hết giờ) thì không có gì tự kích hoạt; job xong thì lời hứa đã xử lý.
+    // Job xong theo API nhưng watcher chưa kịp hỏi (tới ~20 giây): việc tự kích hoạt sắp diễn ra,
+    // vẫn huỷ được - đừng giấu đi.
+    autoActivate:
+      (status === "running" || (status === "completed" && raw.activate !== 1)) &&
+      !(current.lost || current.status === "unknown" || current.untracked)
+        ? current.autoActivate
+        : undefined,
+    problemType: current.problemType ?? raw.config?.problem_type ?? undefined,
     error: known && status === "running" ? undefined : current.error,
     metric,
     config: current.config ?? raw.config ?? undefined,

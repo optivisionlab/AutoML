@@ -58,10 +58,15 @@ cảnh, rồi trả về **DUY NHẤT một object JSON**, không kèm chữ nà
   các cột khác, không theo thời gian → `regression`.
 - Đổi lời nói thành ràng buộc so sánh được: "độ chính xác trên 90%" →
   `{"metric": "accuracy", "op": ">=", "value": 0.9}`; "r2 ít nhất 0.8" →
-  `{"metric": "r2", "op": ">=", "value": 0.8}`. `op` chỉ là `>=`, `>`, `<=`, `<`.
+  `{"metric": "r2", "op": ">=", "value": 0.8}`; "MAPE dưới 10%" →
+  `{"metric": "mape", "op": "<", "value": 0.1}` (accuracy, f1, precision, recall,
+  r2, mape là tỉ lệ 0-1: phần trăm luôn chia 100). `op` chỉ là `>=`, `>`, `<=`, `<`.
 - Thời gian: "trong 30 phút" → `max_time: 1800`.
-- `service.deploy = true` khi người dùng muốn dùng model ngay sau khi train
-  ("train xong kích hoạt luôn"); `service.predict = true` khi họ đưa mẫu cần dự đoán.
+- `service.deploy = true` chỉ khi người dùng NÓI RÕ muốn kích hoạt / triển khai / dùng
+  ngay model sau khi train ("train xong kích hoạt luôn", "xong thì deploy"). Hệ thống sẽ
+  TỰ kích hoạt model khi job xong, nên đừng suy đoán; câu phủ định ("đừng kích hoạt")
+  là `false`. Code cũng kiểm lại lời người dùng trước khi tự kích hoạt.
+  `service.predict = true` khi họ đưa mẫu cần dự đoán.
 
 ## `missing` - chỉ những gì CHẶN việc
 

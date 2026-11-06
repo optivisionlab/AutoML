@@ -19,6 +19,10 @@ export interface JobActions {
   onSend: (text: string) => void;
   onRefreshed: (jobId: string, raw: Record<string, any>) => void;
   onActivated: (jobId: string) => void;
+  /** Backend báo model đã bị tắt (403 khi dự đoán): cập nhật mọi thẻ của job. */
+  onDeactivated: (jobId: string) => void;
+  /** Bật/tắt tự kích hoạt khi job đang chạy xong. */
+  onSetAutoActivate: (jobId: string, enabled: boolean) => Promise<boolean>;
   onOpenDetails: () => void;
 }
 
@@ -68,6 +72,7 @@ export function TraceArtifacts({ trace, jobs, actions }: { trace: TurnTrace; job
             job={jobs[jobId]}
             variant="compact"
             onRefreshed={actions.onRefreshed}
+            onSetAutoActivate={actions.onSetAutoActivate}
             onOpenDetails={actions.onOpenDetails}
           />
         ) : null,
@@ -183,6 +188,8 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
           onAsk={onSend}
           onRefreshed={actions.onRefreshed}
           onActivated={actions.onActivated}
+          onDeactivated={actions.onDeactivated}
+          onSetAutoActivate={actions.onSetAutoActivate}
         />
       ) : null;
     }
@@ -205,6 +212,8 @@ export default function ChatMessage({ item, jobs, actions }: { item: ChatItem; j
                     onAsk={onSend}
                     onRefreshed={actions.onRefreshed}
                     onActivated={actions.onActivated}
+                    onDeactivated={actions.onDeactivated}
+                    onSetAutoActivate={actions.onSetAutoActivate}
                   />
                 ) : null,
               )}

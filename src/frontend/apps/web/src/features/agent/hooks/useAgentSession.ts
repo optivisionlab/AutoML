@@ -12,6 +12,7 @@ import {
 import {
   applyJobEvent,
   applyTurnEvent,
+  applyWatchState,
   createSeqTracker,
   emptyTrace,
   markJobsLost,
@@ -19,6 +20,7 @@ import {
   type JobView,
   type TurnTrace,
 } from "../lib/eventAdapter";
+import { OrphanTurns, isTurnEnd, turnEnd } from "../lib/orphanTurns";
 import type { AgentEvent, ChatReply, HealthInfo, UploadedDataset } from "../lib/events";
 
 // Cùng danh sách PROBLEM_TYPES của agent (src/backend/agent/tools.py).
@@ -35,7 +37,7 @@ export interface PendingUpload {
 
 /** Lỗi hiển thị cho người dùng: mã để dịch (Agent.errors.*) + chi tiết từ server nếu có. */
 export interface AgentError {
-  code: "busy" | "auth" | "server" | "disconnected" | "network";
+  code: "busy" | "auth" | "server" | "disconnected" | "network" | "noReply" | "maybeReceived";
   detail?: string;
 }
 
@@ -71,7 +73,7 @@ export interface ActiveDataset {
 
 /** Thông báo cho trình đọc màn hình (aria-live). `n` tăng để đọc lại cùng nội dung. */
 export interface Announcement {
-  code: "reply" | "jobStarted" | "jobDone" | "jobFailed";
+  code: "reply" | "jobStarted" | "jobDone" | "jobFailed" | "jobTimeout";
   values?: Record<string, string>;
   n: number;
 }
@@ -83,6 +85,11 @@ const RESTORE_REPLAY_MS = 4_000;
 // Chờ phản hồi ĐẦU TIÊN của /agent/events khi khôi phục: server còn kiểm token qua
 // backend (/me) trước khi trả lời, nên không gộp vào 4 giây đọc sự kiện ở trên.
 const RESTORE_CONNECT_MS = 15_000;
+/** Mã lượt chat (server gắn lại vào turn_done / turn_failed). randomUUID chỉ có ở trang https/localhost. */
+function newTurnId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 // /agent/token thất bại (mạng chập chờn, agent khởi động lại) thì thử lại vài lần.
 const TOKEN_RETRY_DELAYS_MS = [3_000, 10_000, 30_000];
 
@@ -135,6 +142,9 @@ export function useAgentSession(token: string, userKey: string) {
   // biết job nào đang chạy - sự kiện `reconnect` cuối kênh mang danh sách watching
   // thật (job cũ có thể đã trôi khỏi bộ đệm 500 sự kiện nên không phát lại được).
   const [probeEvents, setProbeEvents] = useState(false);
+  // Đang chờ /agent/reset (xem reset): tính vào busy.
+  const [resetting, setResetting] = useState(false);
+  const resettingRef = useRef(false);
 
   const nextId = useRef(1);
   // Trang đã rời đi: không cập nhật state nữa, và huỷ luồng lượt chat đang đọc.
@@ -156,6 +166,21 @@ export function useAgentSession(token: string, userKey: string) {
   // Đang phát lại sự kiện cũ sau khi tải lại trang: job xong hiện trong thẻ khôi
   // phục, không chèn từng thẻ kết quả riêng.
   const replaying = useRef(false);
+  // Khôi phục phiên sau tải lại trang KHÔNG tới được server (mạng, quá giờ chờ, 5xx):
+  // lượt chat đầu tiên sẽ nhận cả bộ đệm sự kiện cũ (after = 0). `unreplayed` chờ luồng
+  // đó báo start_seq; `replayUntil` = mốc đó: sự kiện có seq <= mốc là CŨ, dù tới qua luồng
+  // nào (luồng lượt chat có thể đứt giữa phần phát lại, phần còn lại tới qua kênh nền) -
+  // chỉ cập nhật job, không chèn thẻ kết quả / thông báo lại.
+  const unreplayed = useRef(false);
+  const replayUntil = useRef<number | null>(null);
+  // Lượt có luồng đứt giữa chừng: turn_id -> số lần kênh nền đã mở lại trong lúc chờ. Lượt
+  // vẫn chạy xong trên server và kết thúc bằng turn_done / turn_failed mang ĐÚNG turn_id đó.
+  const orphans = useRef(new OrphanTurns());
+  // Lượt đang chạy, và kết thúc của nó nếu turn_done / turn_failed đã tới trước khi luồng đứt.
+  const currentTurnId = useRef<string | null>(null);
+  const activeTurnEnd = useRef<{ reply?: string; error?: string } | null>(null);
+  // turn_start của lượt hiện tại đã tới (qua kênh nào cũng được): server chắc chắn đã nhận lượt.
+  const currentTurnStarted = useRef(false);
   // Tăng mỗi lần "Cuộc trò chuyện mới": luồng SSE của phiên cũ có thể còn đẩy
   // sự kiện trong khoảng trước khi effect kịp đóng nó - sự kiện đó không được
   // lọt vào phiên mới (sẽ làm seq.last nhảy vọt và bỏ sót sự kiện của phiên mới).
@@ -164,10 +189,28 @@ export function useAgentSession(token: string, userKey: string) {
   const sessionRef = useRef<string | null>(null);
 
   const uploading = uploadProgress !== null;
-  const busy = sending || uploading || restoring;
+  const busy = sending || uploading || restoring || resetting;
 
-  const push = useCallback((item: NewChatItem) => {
-    setItems((prev) => [...prev, { ...item, at: Date.now(), id: nextId.current++ } as ChatItem]);
+  const push = useCallback((item: NewChatItem): number => {
+    const id = nextId.current++;
+    setItems((prev) => [...prev, { ...item, at: Date.now(), id } as ChatItem]);
+    return id;
+  }, []);
+
+  /** Sửa một item đã có (vd bỏ nút "Gửi lại" khi biết server đã nhận lượt đó). */
+  const updateItem = useCallback((id: number | undefined, patch: (item: ChatItem) => ChatItem) => {
+    if (id === undefined) return;
+    setItems((prev) => prev.map((item) => (item.id === id ? patch(item) : item)));
+  }, []);
+
+  /** Chèn ngay sau một item (vd kết quả của lượt bị đứt, ngay dưới thông báo đứt của chính nó). */
+  const insertAfter = useCallback((afterId: number | undefined, item: NewChatItem) => {
+    const id = nextId.current++;
+    const entry = { ...item, at: Date.now(), id } as ChatItem;
+    setItems((prev) => {
+      const index = afterId === undefined ? -1 : prev.findIndex((existing) => existing.id === afterId);
+      return index < 0 ? [...prev, entry] : [...prev.slice(0, index + 1), entry, ...prev.slice(index + 1)];
+    });
   }, []);
 
   const announce = useCallback((code: Announcement["code"], values?: Record<string, string>) => {
@@ -184,6 +227,62 @@ export function useAgentSession(token: string, userKey: string) {
     push({ kind: "notice", code: "sessionLost" });
   }, [push]);
 
+  /** Bỏ các lượt đang chờ kết quả (phiên đổi / cuộc trò chuyện mới); notify = báo người dùng. */
+  const dropOrphans = useCallback(
+    (notify: boolean) => {
+      const itemIds = orphans.current.clear();
+      if (notify) for (const itemId of itemIds) insertAfter(itemId, { kind: "error", error: { code: "noReply" } });
+    },
+    [insertAfter],
+  );
+
+  /**
+   * Server báo một lượt đang chạy mà trang này không gửi (vd vừa tải lại trang giữa lượt): chờ
+   * kết quả của nó như lượt bị đứt luồng, giữ kênh nền mở tới khi nó kết thúc.
+   */
+  const adoptRunningTurn = useCallback(
+    (turnId: unknown) => {
+      if (typeof turnId !== "string" || !turnId || turnId === currentTurnId.current) return;
+      if (orphans.current.has(turnId)) {
+        // Lượt lỗi mạng trước khi có phản hồi mà server báo đang chạy / xếp hàng: chắc chắn đã nhận.
+        const confirmed = orphans.current.confirm(turnId);
+        if (confirmed) {
+          updateItem(confirmed.itemId, (item) =>
+            item.kind === "error" ? { ...item, retryText: undefined, error: { code: "disconnected" } } : item,
+          );
+        }
+        return;
+      }
+      orphans.current.add(turnId, undefined, true);
+      setProbeEvents(true);
+    },
+    [updateItem],
+  );
+
+  /** Hiện kết quả của một lượt: câu trả lời, hoặc lỗi nếu lượt hỏng trên server. */
+  const showTurnEnd = useCallback(
+    (end: { reply?: string; error?: string }, trace?: TurnTrace, afterId?: number) => {
+      if (end.reply !== undefined) {
+        insertAfter(afterId, { kind: "agent", text: end.reply, trace: trace ?? emptyTrace(), agents: [] });
+        announce("reply");
+      } else {
+        insertAfter(afterId, { kind: "error", trace, error: { code: "server", detail: end.error || undefined } });
+      }
+    },
+    [announce, insertAfter],
+  );
+
+  /**
+   * Bỏ lượt chờ quá lâu. Lượt chưa xác nhận (lỗi mạng trước khi server trả lời, không thấy
+   * turn_start) bỏ im lặng - có thể server chưa từng nhận. Gọi mỗi lần kênh nền mở lại
+   * HOẶC lỗi, để kênh lỗi liên tục cũng không giữ lượt chờ (và kênh) mãi.
+   */
+  const expireOrphans = useCallback((): number => {
+    const { notify, removed } = orphans.current.expire();
+    for (const itemId of notify) insertAfter(itemId, { kind: "error", error: { code: "noReply" } });
+    return removed;
+  }, [insertAfter]);
+
   /** Quên phiên hiện tại ở phía trình duyệt: tin nhắn sau sẽ tạo phiên mới. */
   const forgetSession = useCallback(() => {
     generation.current += 1;
@@ -193,6 +292,9 @@ export function useAgentSession(token: string, userKey: string) {
     setWatching([]);
     setProbeEvents(false);
     seq.current.reset();
+    unreplayed.current = false;
+    replayUntil.current = null;
+    orphans.current.clear();
   }, [userKey]);
 
   /**
@@ -207,14 +309,17 @@ export function useAgentSession(token: string, userKey: string) {
       if (sessionRef.current && id !== sessionRef.current) {
         generation.current += 1;
         seq.current.reset();
+        replayUntil.current = null;
         setWatching([]);
         setProbeEvents(false);
         markSessionLost();
+        // Phiên cũ đã mất: lượt đang chờ kết quả sẽ không bao giờ có kết quả nữa.
+        dropOrphans(true);
       }
       sessionRef.current = id;
       setSessionId(id);
     },
-    [markSessionLost],
+    [markSessionLost, dropOrphans],
   );
 
   /**
@@ -238,6 +343,25 @@ export function useAgentSession(token: string, userKey: string) {
           setLiveTrace(next);
         }
       }
+      // Sự kiện cũ phát lại không được chèn thẻ kết quả / thông báo lần nữa.
+      const until = replayUntil.current;
+      const quiet = replaying.current || (until !== null && typeof event.seq === "number" && event.seq <= until);
+      if (until !== null && seq.current.last >= until) replayUntil.current = null;
+
+      // Kết thúc lượt: ghép theo turn_id - không thể nhầm lượt, kể cả khi phiên đổi
+      // (seq bắt đầu lại) hay có nhiều lượt bị đứt (xem lib/orphanTurns.ts).
+      const resolved = orphans.current.onEvent(event);
+      if (resolved) {
+        // Server đã nhận lượt này: item lỗi của nó không được mời "Gửi lại" nữa (gửi lại =
+        // chạy lượt thứ hai, có thể tạo job huấn luyện trùng).
+        updateItem(resolved.itemId, (item) =>
+          item.kind === "error" ? { ...item, retryText: undefined, error: { code: "disconnected" } } : item,
+        );
+        if (resolved.kind === "ended") showTurnEnd(resolved.end, undefined, resolved.itemId);
+      } else if (event.turn_id && event.turn_id === currentTurnId.current) {
+        if (event.type === "turn_start") currentTurnStarted.current = true;
+        if (isTurnEnd(event)) activeTurnEnd.current = turnEnd(event);
+      }
 
       setJobs((prev) => applyJobEvent(prev, event));
 
@@ -248,19 +372,21 @@ export function useAgentSession(token: string, userKey: string) {
         // Job hết giờ chờ (job_watch_timeout) rồi được theo dõi lại: phải báo được kết quả lần nữa.
         finishedJobs.current.delete(jobId);
         setWatching((prev) => (prev.includes(jobId) ? prev : [...prev, jobId]));
-        if (event.type === "job_started" && !replaying.current) announce("jobStarted", { id: jobId.slice(0, 8) });
+        if (event.type === "job_started" && !quiet) announce("jobStarted", { id: jobId.slice(0, 8) });
       } else if (event.type && END_EVENTS.has(event.type)) {
         setWatching((prev) => prev.filter((id) => id !== jobId));
         if (!finishedJobs.current.has(jobId)) {
           finishedJobs.current.add(jobId);
-          if (!replaying.current) {
+          if (!quiet) {
             push({ kind: "job", jobId });
-            announce(event.type === "job_done" ? "jobDone" : "jobFailed", { id: jobId.slice(0, 8) });
+            // Hết giờ chờ KHÔNG có nghĩa job hỏng - chỉ là watcher thôi theo dõi.
+            const code = event.type === "job_done" ? "jobDone" : event.type === "job_watch_timeout" ? "jobTimeout" : "jobFailed";
+            announce(code, { id: jobId.slice(0, 8) });
           }
         }
       }
     },
-    [announce, push],
+    [announce, push, showTurnEnd, updateItem],
   );
 
   // session_id theo tab: lưu mỗi khi đổi để tải lại trang còn nối lại được.
@@ -301,8 +427,10 @@ export function useAgentSession(token: string, userKey: string) {
           outcome = "restored";
           await readSSE(res, (name, data) => {
             if (gen !== generation.current) return;
-            if (name === "reconnect") {
+            if (name === "hello" || name === "reconnect") {
               if (Array.isArray(data.watching)) setWatching(data.watching);
+              setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              if (name === "hello") adoptRunningTurn(data.turn_id);
               return;
             }
             if (data.job_id && (data.type === "job_started" || data.type === "job_watch")) replayed.add(String(data.job_id));
@@ -315,8 +443,11 @@ export function useAgentSession(token: string, userKey: string) {
         outcome = "unreachable";
       } finally {
         window.clearTimeout(timer);
-        replaying.current = false;
-        if (!cancelled) setRestoring(false);
+        // Bị huỷ (cleanup) thì không đụng tới: lần chạy sau của effect có thể đang phát lại.
+        if (!cancelled) {
+          replaying.current = false;
+          setRestoring(false);
+        }
       }
       if (cancelled) return;
       if (outcome === "gone") {
@@ -329,6 +460,8 @@ export function useAgentSession(token: string, userKey: string) {
       if (outcome === "restored") {
         push({ kind: "restored", jobIds: [...replayed] });
         setProbeEvents(true);
+      } else {
+        unreplayed.current = true;
       }
     })();
 
@@ -338,7 +471,7 @@ export function useAgentSession(token: string, userKey: string) {
       controller.abort();
       setRestoring(false);
     };
-  }, [adoptSession, ingest, push, userKey]);
+  }, [adoptSession, adoptRunningTurn, ingest, push, userKey]);
 
   // Trạng thái agent server. Upload vẫn chạy được khi LLM chưa cấu hình.
   useEffect(() => {
@@ -383,6 +516,8 @@ export function useAgentSession(token: string, userKey: string) {
             // ai theo dõi job, agent cũng không còn nhớ hội thoại - báo người dùng.
             if (!stopped && gen === generation.current) {
               setStream("idle");
+              // Lượt đang chờ kết quả thuộc phiên đã mất: sẽ không bao giờ có kết quả.
+              dropOrphans(true);
               forgetSession();
               markSessionLost();
             }
@@ -394,10 +529,23 @@ export function useAgentSession(token: string, userKey: string) {
           let reconnected = false;
           await readSSE(res, (name, data) => {
             if (gen !== generation.current) return;
+            if (name === "hello") {
+              // Vừa tải lại trang mà chưa phát lại được lịch sử: sự kiện tới mốc này là CŨ.
+              if (unreplayed.current && typeof data.last_seq === "number") {
+                replayUntil.current = data.last_seq;
+                unreplayed.current = false;
+              }
+              setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              adoptRunningTurn(data.turn_id);
+              return;
+            }
             if (name === "reconnect") {
               reconnected = true;
               if (Array.isArray(data.watching)) setWatching(data.watching);
-              setProbeEvents(false);
+              setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              // Còn chờ kết quả của lượt bị đứt thì giữ kênh mở tiếp - có hạn (expireOrphans).
+              expireOrphans();
+              if (!orphans.current.size) setProbeEvents(false);
               return;
             }
             ingest(data);
@@ -408,6 +556,9 @@ export function useAgentSession(token: string, userKey: string) {
           failures = 0;
         } catch {
           if (stopped) return;
+          // Kênh lỗi liên tục (5xx, proxy cắt sớm) cũng phải tính vào thời gian chờ. Chỉ đóng kênh
+          // khi vừa bỏ lượt cuối - kênh mở để khôi phục phiên thì giữ tới `reconnect` đầu tiên.
+          if (expireOrphans() > 0 && !orphans.current.size) setProbeEvents(false);
           failures += 1;
           setStream("reconnecting");
           // Agent API khởi động lại hoặc mất mạng: chờ lâu dần rồi thử lại.
@@ -420,7 +571,7 @@ export function useAgentSession(token: string, userKey: string) {
       stopped = true;
       controller.abort();
     };
-  }, [sessionId, listen, ingest, forgetSession, markSessionLost]);
+  }, [sessionId, listen, ingest, forgetSession, markSessionLost, dropOrphans, expireOrphans, adoptRunningTurn]);
 
   // NextAuth làm mới access token (sống 15 phút) khi gần hết hạn. Báo ngay cho
   // agent: token chỉ tới agent theo request, nên một lượt chat dài qua lúc hết
@@ -471,6 +622,10 @@ export function useAgentSession(token: string, userKey: string) {
       setSending(true);
       turnActive.current = true;
       turnStartSeq.current = null;
+      const turnId = newTurnId();
+      currentTurnId.current = turnId;
+      activeTurnEnd.current = null;
+      currentTurnStarted.current = false;
       traceRef.current = emptyTrace();
       setLiveTrace(traceRef.current);
       const controller = new AbortController();
@@ -483,7 +638,7 @@ export function useAgentSession(token: string, userKey: string) {
         // after: seq cuối đã nhận - server phát lại sự kiện nền kênh nền bỏ lỡ (vd job_done lúc đang chờ kết nối lại).
         const res = await postJson(
           "/agent/chat/stream",
-          { message: content, session_id: sessionId, access_token: token, after: seq.current.last },
+          { message: content, session_id: sessionId, access_token: token, after: seq.current.last, turn_id: turnId },
           controller.signal,
         );
         if (!res.ok) {
@@ -499,6 +654,11 @@ export function useAgentSession(token: string, userKey: string) {
           if (name === "session") {
             adoptSession(data.session_id);
             turnStartSeq.current = typeof data.start_seq === "number" ? data.start_seq : null;
+            // Khôi phục không tới được server: luồng này phát lại bộ đệm cũ tới start_seq.
+            if (unreplayed.current && turnStartSeq.current !== null) {
+              replayUntil.current = turnStartSeq.current;
+              unreplayed.current = false;
+            }
           } else if (name === "reply") reply = data as ChatReply;
           else if (name === "error") failure = new AgentHttpError(data.status_code ?? 502, data.detail || "");
           else ingest(data);
@@ -512,27 +672,75 @@ export function useAgentSession(token: string, userKey: string) {
         push({ kind: "agent", text: done.reply, trace: traceRef.current, agents: done.agents ?? [] });
         announce("reply");
         if (Array.isArray(done.watching)) setWatching(done.watching);
-        const datasetId = traceRef.current.datasetId;
+        // Chỉ dataset của tool gọi THÀNH CÔNG mới thành dataset đang làm việc (id sai/bịa thì không).
+        const datasetId = traceRef.current.activeDatasetId;
         if (datasetId) setActiveDataset((prev) => (prev?.id === datasetId ? prev : { id: datasetId }));
       } catch (error) {
         if (unmounted.current) return;
         const trace = traceRef.current.steps.length || traceRef.current.jobIds.length ? traceRef.current : undefined;
-        // Lượt đã tạo job mà lỗi ở bước sau: gửi lại là chạy thêm một job trùng hàng giờ.
-        const retryText = traceRef.current.jobIds.length ? undefined : content;
-        if (error instanceof AgentHttpError && error.status === 409) {
+        // Lượt đã tạo job - hoặc đã GỬI lệnh tạo job (start_training) mà chưa rõ kết quả - rồi
+        // lỗi ở bước sau: gửi lại là có thể chạy thêm một job trùng hàng giờ.
+        const triedTraining = traceRef.current.steps.some((step) => step.tools.some((tool) => tool.name === "start_training"));
+        const retryText = traceRef.current.jobIds.length || triedTraining ? undefined : content;
+        // Lỗi mạng, hoặc 502/504 TRƯỚC khi luồng bắt đầu (proxy): không rõ server đã nhận lượt chưa.
+        const ambiguous = !started && (!(error instanceof AgentHttpError) || error.status === 502 || error.status === 504);
+        if (ambiguous && activeTurnEnd.current) {
+          // Kênh nền đã đưa kết thúc của chính lượt này (seq đã được nhận - sẽ không tới lần nữa).
+          showTurnEnd(activeTurnEnd.current, traceRef.current);
+        } else if (ambiguous && currentTurnStarted.current && sessionRef.current) {
+          // Server chắc chắn đã nhận (turn_start đã tới): chờ kết quả, không mời gửi lại.
+          const itemId = push({ kind: "error", trace, error: { code: "disconnected" } });
+          orphans.current.add(turnId, itemId, true);
+          setProbeEvents(true);
+        } else if (ambiguous && !sessionRef.current) {
+          // Chưa có phiên: gửi lại sẽ mở phiên MỚI không biết gì về lượt có thể đang chạy (có thể tạo
+          // job trùng) - không mời gửi lại, nhắc kiểm tra danh sách job trước.
+          push({ kind: "error", error: { code: "maybeReceived" } });
+        } else if (ambiguous && error instanceof AgentHttpError) {
+          // Có phiên: như lỗi mạng - nghe thử kết quả; gửi lại khi lượt đó còn chạy thì bị 409.
+          const itemId = push({ kind: "error", error: { code: "server", detail: error.message }, retryText });
+          orphans.current.add(turnId, itemId, false);
+          setProbeEvents(true);
+        } else if (error instanceof AgentHttpError && error.status === 409) {
           push({ kind: "error", trace, error: { code: "busy" } });
         } else if (error instanceof AgentHttpError && (error.status === 401 || error.status === 403)) {
-          push({ kind: "error", trace, error: { code: "auth" } });
+          // Server từ chối token TRƯỚC khi bắt đầu lượt (không có job nào được tạo): thử lại
+          // sau khi đăng nhập lại là an toàn, khỏi bắt người dùng gõ lại.
+          push({ kind: "error", trace, error: { code: "auth" }, retryText });
         } else if (error instanceof AgentHttpError) {
           push({ kind: "error", trace, error: { code: "server", detail: error.message }, retryText });
+        } else if (started && activeTurnEnd.current) {
+          // Luồng đứt sau khi lượt đã kết thúc (turn_done / turn_failed đã tới) nhưng trước `reply`.
+          showTurnEnd(activeTurnEnd.current, traceRef.current);
+        } else if (started && sessionRef.current) {
+          const itemId = push({ kind: "error", trace, error: { code: "disconnected" } });
+          // Lượt vẫn chạy nốt trên server: mở kênh nền để nhận phần còn lại và kết thúc lượt.
+          orphans.current.add(turnId, itemId, true);
+          setProbeEvents(true);
         } else if (started) {
-          push({ kind: "error", trace, error: { code: "disconnected" } });
+          // Đứt trước cả sự kiện `session`: không biết phiên nào để nghe kết quả.
+          push({ kind: "error", trace, error: { code: "noReply" } });
+        } else if (activeTurnEnd.current) {
+          // Fetch lỗi nhưng kênh nền đã đưa kết thúc của chính lượt này: lượt đã xong.
+          showTurnEnd(activeTurnEnd.current, traceRef.current);
+        } else if (currentTurnStarted.current && sessionRef.current) {
+          // Server chắc chắn đã nhận (turn_start đã tới): như mất kết nối giữa chừng, không mời gửi lại.
+          const itemId = push({ kind: "error", trace, error: { code: "disconnected" } });
+          orphans.current.add(turnId, itemId, true);
+          setProbeEvents(true);
         } else {
-          push({ kind: "error", error: { code: "network" }, retryText });
+          const itemId = push({ kind: "error", error: { code: "network" }, retryText });
+          // Có thể server đã nhận tin dù trình duyệt không nhận được phản hồi: nghe thử kết quả
+          // (chỉ giữ nếu thấy turn_start của lượt này). Gửi lại khi lượt đó còn chạy thì bị 409.
+          if (sessionRef.current) {
+            orphans.current.add(turnId, itemId, false);
+            setProbeEvents(true);
+          }
         }
       } finally {
         turnActive.current = false;
         turnStartSeq.current = null;
+        currentTurnId.current = null;
         if (sendController.current === controller) sendController.current = null;
         if (!unmounted.current) {
           setSending(false);
@@ -540,7 +748,7 @@ export function useAgentSession(token: string, userKey: string) {
         }
       }
     },
-    [adoptSession, announce, busy, ingest, push, sessionId, token],
+    [adoptSession, announce, busy, ingest, push, sessionId, showTurnEnd, token],
   );
 
   /** Trả về lỗi, hoặc null nếu tải lên thành công. */
@@ -578,8 +786,7 @@ export function useAgentSession(token: string, userKey: string) {
     [adoptSession, busy, push, sessionId, token],
   );
 
-  const reset = useCallback(async () => {
-    if (busy) return;
+  const resetInner = useCallback(async () => {
     // /agent/reset xoá lịch sử nhưng GIỮ phiên và job đang theo dõi. Dùng tiếp phiên
     // đó: job đang chạy vẫn báo về, và token mới vẫn tới watcher qua /agent/token.
     // Bỏ phiên đi thì watcher của nó chạy tiếp tới 26 giờ với token đã hết hạn.
@@ -605,6 +812,9 @@ export function useAgentSession(token: string, userKey: string) {
       if (body?.ok === true) {
         setItems([]);
         setActiveDataset(null);
+        // Câu trả lời muộn của lượt cũ không được rơi vào cuộc trò chuyện mới.
+        dropOrphans(false);
+        setProbeEvents(false);
         return;
       }
       if (body?.ok !== false) {
@@ -619,7 +829,21 @@ export function useAgentSession(token: string, userKey: string) {
     forgetSession();
     setJobs({});
     finishedJobs.current.clear();
-  }, [busy, forgetSession, push, sessionId, token]);
+  }, [dropOrphans, forgetSession, push, sessionId, token]);
+
+  const reset = useCallback(async () => {
+    if (busy || resettingRef.current) return;
+    // Đang chờ server reset thì khoá gửi / tải lên / reset tiếp: phản hồi tới muộn sẽ xoá mất tin
+    // nhắn gửi trong lúc chờ.
+    resettingRef.current = true;
+    setResetting(true);
+    try {
+      await resetInner();
+    } finally {
+      resettingRef.current = false;
+      if (!unmounted.current) setResetting(false);
+    }
+  }, [busy, resetInner]);
 
   /** Ghép bản ghi job vừa lấy từ backend v1 (nút "Làm mới"). */
   const applyJobFromApi = useCallback((jobId: string, raw: Record<string, any>) => {
@@ -628,6 +852,28 @@ export function useAgentSession(token: string, userKey: string) {
 
   const setJobActivated = useCallback((jobId: string, activated: boolean) => {
     setJobs((prev) => (prev[jobId] ? { ...prev, [jobId]: { ...prev[jobId], activated } } : prev));
+  }, []);
+
+  /**
+   * Bật/tắt tự kích hoạt model khi một job đang chạy xong (nút "Huỷ tự kích hoạt" trên thẻ job).
+   * Server phát auto_activate_changed cho mọi kênh; cập nhật luôn tại chỗ để thẻ đổi ngay.
+   */
+  const setAutoActivate = useCallback(async (jobId: string, enabled: boolean): Promise<boolean> => {
+    const session = sessionRef.current;
+    if (!session) return false;
+    const res = await postJson("/agent/auto-activate", {
+      session_id: session,
+      access_token: tokenRef.current,
+      job_id: jobId,
+      enabled,
+    }).catch(() => null);
+    if (!res?.ok || unmounted.current) return false;
+    setJobs((prev) =>
+      prev[jobId]
+        ? { ...prev, [jobId]: { ...prev[jobId], autoActivate: enabled, autoActivateCancelled: enabled ? undefined : true } }
+        : prev,
+    );
+    return true;
   }, []);
 
   return {
@@ -649,6 +895,7 @@ export function useAgentSession(token: string, userKey: string) {
     reset,
     applyJobFromApi,
     setJobActivated,
+    setAutoActivate,
   };
 }
 

@@ -45,7 +45,7 @@ from starlette.datastructures import UploadFile
 
 # Local modules
 from agent import providers, tools, uploads
-from agent.agent_openai import describe_error
+from agent.agent_openai import describe_error, log_exception
 from agent.api_client import ApiError, HAutoMLClient
 from agent.chat import ChatSession
 
@@ -90,6 +90,8 @@ class ChatRequest(BaseModel):
     # này - sự kiện nền (vd job_done) rơi vào lúc luồng /agent/events đang chờ
     # kết nối lại không bị bỏ qua.
     after: int | None = None
+    # Mã lượt do frontend tạo, server gắn lại vào turn_start / turn_done / turn_failed.
+    turn_id: str | None = Field(default=None, max_length=64)
 
 
 class ChatResponse(BaseModel):
@@ -109,6 +111,13 @@ class EventsRequest(BaseModel):
     access_token: str | None = None
     # seq của sự kiện cuối frontend đã nhận.
     after: int = 0
+
+
+class AutoActivateRequest(BaseModel):
+    session_id: str
+    access_token: str | None = None
+    job_id: str = Field(..., min_length=1, max_length=64)
+    enabled: bool
 
 
 class TokenRequest(BaseModel):
@@ -182,8 +191,12 @@ def _owner_of(access_token: str) -> str | None:
     client.access_token = access_token
     try:
         user = client.get_me()
-    except ApiError:
-        return None
+    except ApiError as error:
+        # Chỉ 401/403 mới là token sai/hết hạn. Backend không tới được hoặc lỗi 5xx
+        # mà trả 401 thì frontend bảo người dùng đăng nhập lại - sai, và mất tin nhắn.
+        if error.status_code in (401, 403):
+            return None
+        raise BackendUnavailable(error.detail) from error
     finally:
         client.close()
 
@@ -198,6 +211,10 @@ def _owner_of(access_token: str) -> str | None:
     return owner
 
 
+class BackendUnavailable(RuntimeError):
+    """Không xác minh được token vì backend HAutoML không phản hồi (không phải token sai)."""
+
+
 async def _resolve_owner(access_token: str | None) -> str:
     """Chặn request không có token hợp lệ. Chạy trong thread: gọi HTTP đồng bộ."""
     if not access_token:
@@ -205,7 +222,12 @@ async def _resolve_owner(access_token: str | None) -> str:
             status_code=401,
             detail="Chưa đăng nhập. Frontend phải gửi access_token của phiên người dùng.",
         )
-    owner = await asyncio.to_thread(_owner_of, access_token)
+    try:
+        owner = await asyncio.to_thread(_owner_of, access_token)
+    except BackendUnavailable as error:
+        raise HTTPException(
+            status_code=503, detail="Backend HAutoML tạm thời không phản hồi, thử lại sau.",
+        ) from error
     if owner is None:
         raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc đã hết hạn. Đăng nhập lại.")
     return owner
@@ -295,29 +317,68 @@ async def _wait_events(bus, after: int, timeout: float) -> list[dict]:
         await asyncio.sleep(_EVENT_POLL_SECONDS)
 
 
-def _start_turn(session_id: str, entry: "_Entry", message: str) -> asyncio.Future:
-    return asyncio.get_running_loop().run_in_executor(_TURN_POOL, _run_turn, session_id, entry, message)
+def _start_turn(session_id: str, entry: "_Entry", message: str, turn_id: str | None = None) -> asyncio.Future:
+    """
+    Giữ phiên (turn_lock) NGAY lúc nhận lượt chat rồi mới xếp vào pool.
+
+    Giữ khoá bên trong thread thì lượt đang XẾP HÀNG (pool đầy) để phiên trống:
+    tin thứ hai không bị 409 mà xếp hàng chạy nối tiếp, /agent/reset xoá được
+    phiên rồi lượt huấn luyện đang chờ vẫn chạy sau đó, và _sweep có thể dọn
+    phiên đó. Khoá được nhả trong _run_turn (threading.Lock nhả được từ thread khác).
+
+    Raises:
+        HTTPException 409: phiên đang có lượt chạy hoặc đang chờ chạy.
+    """
+    if not entry.turn_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Phiên này đang xử lý một tin nhắn khác.")
+    # Lượt đang XẾP HÀNG cũng là lượt đang chạy với trang vừa tải lại (hello báo turn_id).
+    entry.session.current_turn_id = turn_id
+    # Tin đã nhận mà chưa vào lịch sử: nút Huỷ tự kích hoạt bấm trong lúc lượt xếp hàng thì tin này
+    # là cũ hơn lần huỷ (không được dùng làm lời đồng ý bật lại).
+    entry.session.incoming_user_message = True
+
+    def never_ran() -> None:
+        entry.session.current_turn_id = None
+        entry.session.incoming_user_message = False
+        try:
+            entry.session.team.clamp_auto_marks()
+        finally:
+            # Lỗi ở đâu cũng phải nhả khoá, không thì phiên kẹt 409 mãi.
+            entry.turn_lock.release()
+
+    try:
+        work = _TURN_POOL.submit(_run_turn, session_id, entry, message, turn_id)
+    except BaseException:
+        never_ran()
+        raise
+
+    def release_if_never_ran(future) -> None:
+        # Bị huỷ khi còn xếp hàng (request bị huỷ, server tắt): _run_turn không bao giờ
+        # chạy nên không nhả khoá - nhả ở đây, không thì phiên kẹt 409 mãi.
+        if future.cancelled():
+            never_ran()
+
+    work.add_done_callback(release_if_never_ran)
+    return asyncio.wrap_future(work)
 
 
-def _run_turn(session_id: str, entry: _Entry, message: str) -> ChatResponse:
+def _run_turn(session_id: str, entry: _Entry, message: str, turn_id: str | None = None) -> ChatResponse:
     """
     Chạy một lượt chat. ĐỒNG BỘ - gọi qua thread, không chạy thẳng trong event loop.
 
     Một lượt có thể gọi LLM hàng chục lần; chạy trong event loop thì mọi request
-    khác (kể cả luồng SSE) đứng chờ tới khi xong.
+    khác (kể cả luồng SSE) đứng chờ tới khi xong. Chỉ gọi qua _start_turn: khi
+    vào đây turn_lock ĐÃ được giữ, và được nhả khi lượt xong.
     """
-    if not entry.turn_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="Phiên này đang xử lý một tin nhắn khác.")
-
     session = entry.session
     try:
         start = session.events.last_seq
-        reply = session.send(message)
+        reply = session.send(message, turn_id=turn_id)
     except HTTPException:
         raise
     except Exception as error:  # noqa: BLE001 - trả lỗi có cấu trúc cho frontend
         # Chi tiết đầy đủ chỉ vào log server; người dùng nhận bản đã lược.
-        logging.getLogger("agent.server").exception("lượt chat lỗi")
+        log_exception(logging.getLogger("agent.server"), "lượt chat lỗi")
         raise HTTPException(status_code=502, detail=describe_error(error))
     finally:
         entry.turn_lock.release()
@@ -348,7 +409,8 @@ def _run_turn(session_id: str, entry: _Entry, message: str) -> ChatResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     owner = await _resolve_owner(request.access_token)
     session_id, session = _get_session(request.session_id, request.access_token, owner)
-    return await _start_turn(session_id, _sessions[session_id], request.message)
+    # shield: request bị huỷ thì lượt vẫn chạy nốt (như luồng SSE), không bị huỷ giữa hàng đợi.
+    return await asyncio.shield(_start_turn(session_id, _sessions[session_id], request.message, request.turn_id))
 
 
 def _sse(event: str, data: dict, event_id: int | None = None) -> str:
@@ -380,13 +442,16 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     if request.after is not None and request.session_id == session_id:
         replay_from = max(0, min(start, request.after))
 
+    # Bắt đầu lượt NGAY, không đợi luồng SSE được đọc: phiên đang bận thì trả 409
+    # thẳng, và client ngắt trước khi đọc luồng thì lượt vẫn chạy và nhả khoá.
+    turn = _start_turn(session_id, entry, request.message, request.turn_id)
+    # Frontend ngắt giữa chừng thì lượt chat vẫn chạy nốt và vào lịch sử;
+    # đọc exception để asyncio không cảnh báo "never retrieved".
+    turn.add_done_callback(lambda task: task.cancelled() or task.exception())
+
     async def stream():
         # start_seq: sự kiện có seq <= mốc này là phát lại, không thuộc lượt này.
         yield _sse("session", {"session_id": session_id, "start_seq": start})
-        turn = _start_turn(session_id, entry, request.message)
-        # Frontend ngắt giữa chừng thì lượt chat vẫn chạy nốt và vào lịch sử;
-        # đọc exception để asyncio không cảnh báo "never retrieved".
-        turn.add_done_callback(lambda task: task.cancelled() or task.exception())
         last = replay_from
         quiet_since = time.monotonic()
 
@@ -434,12 +499,24 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
     async def stream():
         last = request.after
         deadline = time.monotonic() + EVENTS_STREAM_SECONDS
-        yield ": connected\n\n"
+        # Mốc seq hiện tại của phiên: frontend vừa tải lại trang mà chưa phát lại được lịch sử
+        # biết những sự kiện có seq <= mốc này là CŨ (chỉ cập nhật job, không báo lại). Kèm job
+        # đang theo dõi và lời hứa tự kích hoạt: phiên dài thì sự kiện của job có thể đã trôi
+        # khỏi bộ đệm, thẻ job vẫn phải dựng lại được (kèm nút huỷ).
+        watcher = entry.session.watcher
+        yield _sse("hello", {
+            "last_seq": bus.last_seq, "watching": watcher.active(), "auto_activate": watcher.auto_activate_map(),
+            # Điều kiện sẽ kiểm trước khi tự kích hoạt (rỗng = bất kể điểm) - thẻ job hiện đúng.
+            "auto_activate_constraints": watcher.auto_activate_constraints_map(),
+            # Lượt đang chạy: trang vừa tải lại không biết turn_id của nó - phải chờ kết quả.
+            "turn_id": entry.session.current_turn_id,
+        })
 
         while time.monotonic() < deadline:
             if await http.is_disconnected():
                 return
-            happened = await _wait_events(bus, last, 5)
+            # Không chờ quá hạn đóng kênh: frontend mở lại đúng nhịp (kèm token mới).
+            happened = await _wait_events(bus, last, max(0.0, min(5.0, deadline - time.monotonic())))
             for event in happened:
                 last = event["seq"]
                 yield _sse(event["type"], event, event["seq"])
@@ -447,7 +524,18 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
                 # Comment SSE giữ kết nối không bị proxy cắt vì im lặng.
                 yield ": ping\n\n"
 
-        yield _sse("reconnect", {"after": last, "watching": entry.session.watcher.active()})
+        # Chụp trạng thái TRƯỚC, rồi gửi nốt sự kiện còn lại: job vừa xong giữa hai lần đọc vẫn
+        # có job_done trong luồng này, không bị một danh sách watching mới hơn che mất (frontend
+        # thôi nghe trước khi nhận kết quả).
+        watching = entry.session.watcher.active()
+        auto = entry.session.watcher.auto_activate_map()
+        auto_constraints = entry.session.watcher.auto_activate_constraints_map()
+        for event in bus.since(last):
+            last = event["seq"]
+            yield _sse(event["type"], event, event["seq"])
+        yield _sse("reconnect", {
+            "after": last, "watching": watching, "auto_activate": auto, "auto_activate_constraints": auto_constraints,
+        })
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
@@ -565,6 +653,8 @@ async def _store_upload(form) -> dict:
         data_type=data_type,
         mime_type=check.mime_type,
     )
+    if not result["ok"] and result.get("outcome_unknown"):
+        raise HTTPException(status_code=502, detail=result.get("error"))
     if not result["ok"]:
         code = result.get("status_code") or 502
         # status 0 = không tới được backend. 401/403 giữ nguyên. Mọi lỗi khác
@@ -605,6 +695,28 @@ async def update_token(request: TokenRequest) -> dict:
     entry.touched = time.time()
     entry.session.api.access_token = request.access_token
     return {"ok": True}
+
+
+@app.post("/agent/auto-activate")
+async def auto_activate(request: AutoActivateRequest) -> dict:
+    """
+    Bật/tắt tự kích hoạt model khi một job đang chạy xong - nút "Huỷ tự kích hoạt" trên thẻ job.
+    Không chờ turn_lock: đổi ý giữa lúc agent đang trả lời vẫn phải có hiệu lực ngay.
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    # Cùng một đường (có khoá) với tool set_auto_activate; ghi mốc huỷ và báo Manager ở lượt sau.
+    outcome = entry.session.team.change_auto_activate(request.job_id, request.enabled, by_button=True)
+    if outcome == "in_progress":
+        raise HTTPException(status_code=409, detail="Model đang được kích hoạt - không huỷ được nữa.")
+    if outcome == "finished":
+        raise HTTPException(status_code=409, detail="Lời hứa tự kích hoạt của job này đã xử lý xong hoặc đã hết hiệu lực.")
+    if outcome != "ok":
+        raise HTTPException(status_code=404, detail="Job không còn được theo dõi trong phiên này.")
+    return {"ok": True, "job_id": request.job_id, "auto_activate": request.enabled}
 
 
 @app.post("/agent/reset")
