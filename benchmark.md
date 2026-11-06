@@ -69,7 +69,7 @@ Chạy `init` tạo [bench_config.json](benchmark_artifacts/bench_config.json) v
 | `MISSING_ID` | ObjectId 24 ký tự hex hợp lệ nhưng không tồn tại trong tài khoản |
 | `GLASS_JOB` | Job train trên `GLASS_ID` mới, đủ 9 feature, target `Type`, thành công và đã activate |
 | `INACTIVE_JOB` | Một job Glass riêng cùng yêu cầu, thành công nhưng chưa activate |
-| `ELEC_ID`, `WEATHER_ID` | ID upload đúng hai file `*_train.csv` của nhóm T (`electricity_MT_301_hourly_train.csv`, `weather_jena_co2_hourly_train.csv`) |
+| `ELEC_ID`, `WEATHER_ID` | ID upload đúng hai file `*_train.csv` của nhóm T (`electricity_MT_301_2013_hourly_train.csv`, `weather_jena_co2_hourly_train.csv`) |
 
 `RUNNING_JOB` do runner tự tạo trước D06 theo `running_job_fixture`; không điền ID cố định. Job này train trên `SHOP_ID` (9.937 dòng, random_search) để còn chạy khi agent đọc trạng thái: backend dừng job ngay khi mọi model xong, `max_time` chỉ là trần, nên job Glass 171 dòng có thể xong trước khi agent kịp hỏi. Chi phí fixture nằm ngoài số lượt đo.
 
@@ -344,7 +344,7 @@ Tỷ lệ đạt mọi ràng buộc = số ca có ngưỡng với workflow đạ
 - `workflow_pass` mô tả đúng một job, đúng cấu hình, train thành công, activate và predict. `all_constraints_pass` kiểm thêm mọi ngưỡng trên test ngoài. Nội dung báo cáo trung thực của agent được review riêng; không tự động đồng nhất workflow với PASS toàn nhiệm vụ.
 - Kiểm từng ngưỡng từ `cases.json`; không dùng `passed=True` của watcher thay phép đo, vì watcher có thể thiếu metric.
 
-Nhóm T dùng cùng thang SR (T01, T03, T05 không ngưỡng; T02, T04 một ngưỡng) và cùng đối chiếu bảy trường config. Bộ chấm gọi predict trực tiếp với **96 mốc giờ của phần test** (lô ≤ 50, mốc giữ nguyên dạng chuỗi), rồi tính `NPS = 1/(1+RMSLE)` như AutoML-Agent; RMSLE không xác định (giá trị ≤ −1) là lỗi phép đo, không thay bằng 0. Báo thêm RMSE (metric engine, dùng cho ngưỡng), MAE, MAPE và hai baseline ngây thơ chỉ từ phần train: lặp lại 24 giờ cuối (ngày trước) và 168 giờ cuối (tuần trước). RMSE có đơn vị (kWh, ppm) nên không so giữa hai dataset.
+Nhóm T dùng cùng thang SR (T01, T03, T05 không ngưỡng; T02, T04 một ngưỡng) và cùng đối chiếu bảy trường config. Bộ chấm gọi predict trực tiếp với **96 mốc giờ của phần test** (lô ≤ 50, mốc giữ nguyên dạng chuỗi), rồi tính `NPS = 1/(1+RMSLE)` như AutoML-Agent; Giá trị thật ≤ −1 bị chặn từ khâu dữ liệu (`check_ts_data`); dự báo ≤ −1 của mô hình làm RMSLE không xác định và được tính là lỗi của mô hình: NPS = 0, lượt vẫn nằm trong trung bình (không phải lỗi phép đo). Báo thêm RMSE (metric engine, dùng cho ngưỡng), MAE, MAPE và hai baseline ngây thơ chỉ từ phần train: lặp lại 24 giờ cuối (ngày trước) và 168 giờ cuối (tuần trước). RMSE có đơn vị (kWh, ppm) nên không so giữa hai dataset.
 
 Báo riêng từng ca/dataset, tách nhóm có/không có ngưỡng. Trung bình CS toàn nhóm C chỉ mô tả bộ ca này với trọng số theo số ca; Glass xuất hiện nhiều hơn. Báo mean ± sample std và số đo `n`; không coi các lần lặp trên cùng test là các dataset độc lập.
 

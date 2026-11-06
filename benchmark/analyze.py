@@ -117,12 +117,27 @@ def _mentions_averaged(text: str, base: str, avg: str) -> bool:
     )
 
 
+def _instant(value):
+    """
+    Mốc thời gian theo thời điểm, như backend đọc bằng pandas.to_datetime: ISO có `T` hay dấu cách,
+    có/không giây, và dạng năm trước có gạch chéo (`2013/09/27 00:00`). Mốc có múi giờ thì backend
+    không nhận nên ở đây cũng không coi là khớp.
+    """
+    text = str(value).strip()
+    if re.match(r"^\d{4}/\d{1,2}/\d{1,2}", text):
+        text = text.replace("/", "-")
+    stamp = datetime.fromisoformat(text)
+    if stamp.tzinfo is not None:
+        raise ValueError("mốc có múi giờ")
+    return stamp
+
+
 def _same_value(sent, expected) -> bool:
     """Số so theo giá trị; chuỗi (mốc thời gian của time series) so theo thời điểm, không theo cách viết."""
     if isinstance(expected, str):
         try:
-            return datetime.fromisoformat(str(sent).strip()) == datetime.fromisoformat(expected)
-        except ValueError:
+            return _instant(sent) == _instant(expected)
+        except (ValueError, TypeError, OverflowError):
             return str(sent).strip() == expected
     return math.isclose(float(sent), float(expected), rel_tol=1e-9, abs_tol=1e-12)
 

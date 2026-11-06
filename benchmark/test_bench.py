@@ -924,6 +924,8 @@ def test_timestamp_rows_match_by_instant():
     from benchmark.analyze import _same_rows
     expected = [{"date": "2014-09-27 00:00:00"}, {"date": "2014-09-27 01:00:00"}]
     assert _same_rows([{"date": "2014-09-27T00:00:00"}, {"date": "2014-09-27 01:00:00"}], expected)
+    # Backend đọc mốc bằng pandas.to_datetime: dạng gạch chéo cùng thời điểm cũng là đúng mẫu.
+    assert _same_rows([{"date": "2014/09/27 00:00:00"}, {"date": "2014/09/27 01:00"}], expected)
     assert not _same_rows([{"date": "2014-09-27 00:00:00"}, {"date": "2014-09-27 02:00:00"}], expected)
     assert not _same_rows([{"date": "2014-09-27 00:00:00"}], expected)
 
