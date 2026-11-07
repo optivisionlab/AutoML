@@ -227,6 +227,15 @@ class HAutoMLClient:
         """GET /datasets/{id}/data - {"rows": tổng số dòng, "records": num_rows dòng đầu}."""
         return self._request("GET", f"/datasets/{dataset_id}/data", params={"num_rows": num_rows})
 
+    def query_dataset(self, dataset_id: str, sql: str) -> dict:
+        """
+        POST /datasets/{id}/query - chạy SQL (DuckDB, chỉ đọc) trên bản sao dataset, bảng tên `data`.
+
+        Trả {"columns", "rows" (tối đa 1000 dòng), "truncated"}. SQL sai hoặc chạy quá
+        thời gian thì backend trả 400 kèm thông báo lỗi của DuckDB.
+        """
+        return self._request("POST", f"/datasets/{dataset_id}/query", json={"sql": sql})
+
     def start_training(self, dataset_id: str, config: dict) -> dict:
         """
         POST /datasets/{id}/training - đẩy job vào Kafka.

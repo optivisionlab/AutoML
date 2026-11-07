@@ -155,6 +155,30 @@ def get_dataset_info(client: HAutoMLClient, dataset_id: str) -> dict:
     return {"ok": True, "dataset": dataset}
 
 
+def query_dataset(client: HAutoMLClient, dataset_id: str, sql: str, max_rows: int = 50) -> dict:
+    """
+    Chạy SQL chỉ đọc trên dataset đã tải lên (bảng tên `data`), để trả lời câu hỏi
+    tính toán: trung bình theo tháng, đếm theo nhóm, lọc dòng...
+
+    Backend trả tới 1000 dòng; chỉ đưa max_rows dòng vào context của LLM. SQL sai
+    trả {ok: false} kèm lỗi của DuckDB để LLM sửa câu rồi gọi lại.
+    """
+    try:
+        result = _call(client.query_dataset, dataset_id, sql)
+    except ApiError as error:
+        return _failure(error)
+
+    rows = result.get("rows") or []
+    truncated = bool(result.get("truncated")) or len(rows) > max_rows
+    output = {"ok": True, "columns": result.get("columns") or [], "rows": rows[:max_rows], "truncated": truncated}
+    if truncated:
+        output["note"] = (
+            f"Chỉ hiện {max_rows} dòng đầu. Cần con số tổng thì dùng COUNT / SUM / AVG + GROUP BY "
+            "thay vì đọc từng dòng."
+        )
+    return output
+
+
 # Số giá trị mẫu hiển thị cho mỗi cột. Đủ để LLM đoán ý nghĩa cột mà không
 # kéo cả dataset vào context.
 _SAMPLE_VALUES_PER_COLUMN = 5

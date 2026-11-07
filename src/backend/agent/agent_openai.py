@@ -168,7 +168,8 @@ TOOL_SCHEMAS = [
     _tool(
         "ask_data_agent",
         (
-            "Giao cho Data Agent tra cứu dataset: liệt kê, xem metadata, phân tích cột. Kết quả "
+            "Giao cho Data Agent tra cứu dataset: liệt kê, xem metadata, phân tích cột, và trả lời "
+            "câu hỏi tính toán trên dữ liệu bằng SQL (trung bình, đếm, lọc, top N). Kết quả "
             "phân tích được tự chuyển cho Model Agent."
         ),
         {"task": _TASK, "dataset_id": {**_DATASET_ID, "description": "Bỏ trống nếu chưa biết."}},
@@ -236,6 +237,25 @@ TOOL_SCHEMAS = [
             },
         },
         ["dataset_id"],
+    ),
+    _tool(
+        "query_dataset",
+        (
+            "Chạy một câu SQL (cú pháp DuckDB, chỉ đọc) trên TOÀN BỘ dataset, bảng tên `data`. "
+            "Dùng để tính toán / thống kê / lọc: trung bình theo tháng, đếm theo nhóm, top N... "
+            "Trả columns + rows (tối đa 50 dòng)."
+        ),
+        {
+            "dataset_id": _DATASET_ID,
+            "sql": {
+                "type": "string",
+                "description": (
+                    "Câu SELECT trên bảng `data`. Tên cột lấy từ get_dataset_schema; tên có dấu cách "
+                    "hoặc chữ hoa thì bọc trong dấu nháy kép."
+                ),
+            },
+        },
+        ["dataset_id", "sql"],
     ),
 
     # --- Model Agent --------------------------------------------------------------
@@ -410,6 +430,7 @@ _DISPATCH = {
     "list_my_datasets": tools.list_my_datasets,
     "get_dataset_info": tools.get_dataset_info,
     "get_dataset_schema": tools.get_dataset_schema,
+    "query_dataset": tools.query_dataset,
     "list_metrics": tools.list_metrics,
     "list_models": tools.list_models,
     "list_my_jobs": tools.list_my_jobs,

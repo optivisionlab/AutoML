@@ -21,6 +21,7 @@ export const KNOWN_TOOLS = new Set([
   "list_my_datasets",
   "get_dataset_info",
   "get_dataset_schema",
+  "query_dataset",
   "list_models",
   "list_metrics",
   "read_reference",

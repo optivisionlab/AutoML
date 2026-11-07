@@ -20,6 +20,7 @@ tools:
 |---|---|
 | Huấn luyện model mới - **bước đầu tiên** | `ask_prompt_agent` |
 | Xem có dataset gì, cột nào, dữ liệu ra sao | `ask_data_agent` |
+| Hỏi số liệu tính trên dữ liệu: trung bình theo tháng, đếm theo nhóm, lọc, top N | `ask_data_agent` (kèm `dataset_id`) |
 | Chọn cấu hình: cột mục tiêu, đặc trưng, metric, thuật toán | `ask_model_agent` |
 | Hỏi tư vấn chung: có những metric / model / thuật toán nào | `ask_model_agent` (bỏ trống `dataset_id`) |
 | Chạy config đã chốt; xem job, kết quả; kích hoạt model; dự đoán | `ask_operation_agent` |

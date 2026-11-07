@@ -1186,6 +1186,7 @@
       "list_my_datasets": "Liệt kê dataset",
       "get_dataset_info": "Đọc thông tin dataset",
       "get_dataset_schema": "Đọc schema dataset",
+      "query_dataset": "Truy vấn SQL dataset",
       "list_models": "Tra danh mục model",
       "list_metrics": "Tra danh sách metric",
       "read_reference": "Đọc tài liệu tham khảo",

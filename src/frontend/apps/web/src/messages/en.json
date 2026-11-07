@@ -1186,6 +1186,7 @@
       "list_my_datasets": "List datasets",
       "get_dataset_info": "Read dataset info",
       "get_dataset_schema": "Read dataset schema",
+      "query_dataset": "Query dataset with SQL",
       "list_models": "Look up model catalog",
       "list_metrics": "Look up metrics",
       "read_reference": "Read reference",

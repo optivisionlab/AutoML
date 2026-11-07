@@ -25,6 +25,7 @@ Endpoint tính từ `/api/v1` của backend.
 | `list_my_datasets` | `GET /datasets` (lật hết các trang) | Backend tự lọc theo token |
 | `get_dataset_info` | `GET /datasets/{id}` | Metadata, **không có tên cột** |
 | `get_dataset_schema` | `/datasets/{id}` + `/datasets/{id}/data` + `/datasets/{id}/features` × 2 | Ứng viên target cho CẢ classification lẫn regression |
+| `query_dataset` | `POST /datasets/{id}/query` | SQL DuckDB chỉ đọc trên toàn bộ dataset (bảng `data`), backend chặn truy cập file/mạng, dừng câu chạy quá 10 giây; tool đưa tối đa 50 dòng cho LLM |
 | `read_reference` | — | Đọc file trong `references/`, tối đa 6000 ký tự |
 
 ## model-agent
