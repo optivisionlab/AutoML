@@ -22,12 +22,12 @@ export default function Page() {
   }, []);
 
   return datasetID ? (
-    <div className="h-[calc(100svh-8rem)] overflow-hidden">
+    <div className="w-full min-h-[calc(100svh-7.5rem)] flex flex-col">
       <TrainCard datasetID={datasetID} datasetName={dataName} />
     </div>
   ) : (
-    <div className="h-[calc(100svh-8rem)] overflow-hidden">
-      <div>Không tìm thấy ID dataset</div>
+    <div className="w-full min-h-[calc(100svh-7.5rem)] flex flex-col items-center justify-center p-6">
+      <div className="text-sm font-bold text-slate-500">Không tìm thấy ID dataset</div>
     </div>
   );
 }

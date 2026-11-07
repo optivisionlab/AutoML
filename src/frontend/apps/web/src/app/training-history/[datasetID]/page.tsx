@@ -399,9 +399,9 @@ const ResultPage = ({ params }: Props) => {
   }, [activePipeline]);
 
   return (
-    <div className="min-h-[calc(100vh-96px)] space-y-6 rounded-[24px] bg-[var(--automl-workspace-bg)] p-4 text-[var(--automl-data-text)] sm:p-6">
+    <div className="min-h-[calc(100vh-96px)] space-y-5 rounded-[24px] bg-[var(--automl-workspace-bg)] px-4 py-3 sm:px-6 sm:py-4 text-[var(--automl-data-text)]">
       {/* Top Header & Breadcrumbs */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-0">
         <BreadcrumbNav
           items={[
             { label: "Lịch sử huấn luyện", href: "/training-history" },
@@ -531,19 +531,26 @@ const ResultPage = ({ params }: Props) => {
                   )}
                 </div>
 
-                <p className="mt-1 text-xs font-semibold text-[var(--automl-data-muted)]">
+                <p className="mt-1 max-w-xl text-xs font-semibold leading-relaxed text-[var(--automl-data-muted)] line-clamp-2">
                   Cột mục tiêu:{" "}
                   <span className="font-bold text-[var(--automl-data-text)]">
                     {formatPipelineValue(targetColumn)}
                   </span>{" "}
                   · Đặc trưng:{" "}
-                  <span className="font-bold text-[var(--automl-data-text)]">
-                    {featureList.length > 0 ? featureList.join(", ") : "—"}
+                  <span
+                    className="font-bold text-[var(--automl-data-text)] cursor-help"
+                    title={featureList.join(", ")}
+                  >
+                    {featureList.length > 6
+                      ? `${featureList.slice(0, 6).join(", ")} (+${featureList.length - 6} cột khác)`
+                      : featureList.length > 0
+                        ? featureList.join(", ")
+                        : "—"}
                   </span>
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:w-[580px]">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:w-auto xl:flex-1 max-w-2xl">
                 <MetricCard
                   label={`Điểm (${metricSort.toUpperCase()})`}
                   value={formatPipelineValue(bestScoreVal)}
@@ -747,22 +754,22 @@ const ResultPage = ({ params }: Props) => {
                   </ChartContainer>
                 </div>
               ) : (
-                <Table className="automl-data-table">
+                <Table className="automl-data-table min-w-[1000px] lg:min-w-[1100px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-16">Hạng</TableHead>
-                      <TableHead>Mô hình (Model)</TableHead>
-                      <TableHead>Trạng thái</TableHead>
+                      <TableHead className="w-16 whitespace-nowrap">Hạng</TableHead>
+                      <TableHead className="min-w-[180px] whitespace-nowrap">Mô hình (Model)</TableHead>
+                      <TableHead className="w-28 whitespace-nowrap">Trạng thái</TableHead>
                       {Object.keys(metricsConfig).map((metricKey) => (
-                        <TableHead key={metricKey}>
+                        <TableHead key={metricKey} className="whitespace-nowrap min-w-[100px]">
                           {toTitleLabel(metricKey)}
                           <span className="ml-1 text-[10px] font-normal text-[var(--automl-data-muted)]">
                             ({metricsConfig[metricKey] === "minimize" ? "min" : "max"})
                           </span>
                         </TableHead>
                       ))}
-                      <TableHead>Tham số tối ưu (Best Params)</TableHead>
-                      <TableHead className="text-center w-28">Thao tác</TableHead>
+                      <TableHead className="min-w-[280px]">Tham số tối ưu (Best Params)</TableHead>
+                      <TableHead className="text-center w-28 whitespace-nowrap">Thao tác</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -776,7 +783,7 @@ const ResultPage = ({ params }: Props) => {
                               "automl-row-highlight bg-blue-50/60 dark:bg-blue-950/20 font-bold",
                           )}
                         >
-                          <TableCell className="font-extrabold">
+                          <TableCell className="font-extrabold whitespace-nowrap">
                             {isBest ? (
                               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 text-xs font-black text-amber-600 dark:text-amber-400">
                                 🥇
@@ -785,17 +792,19 @@ const ResultPage = ({ params }: Props) => {
                               index + 1
                             )}
                           </TableCell>
-                          <TableCell className="font-extrabold text-[var(--automl-data-text)]">
+                          <TableCell className="font-extrabold text-[var(--automl-data-text)] whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <span>{model.model_name}</span>
+                              <span className="truncate max-w-[200px]" title={model.model_name}>
+                                {model.model_name}
+                              </span>
                               {isBest && (
-                                <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] py-0 px-1.5">
+                                <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] py-0 px-1.5 shrink-0">
                                   Best
                                 </Badge>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             {model.status === "succeeded" || model.status === "done" ? (
                               <Badge
                                 variant="outline"
@@ -833,30 +842,33 @@ const ResultPage = ({ params }: Props) => {
                           {Object.keys(metricsConfig).map((metricKey: string) => {
                             const val = model.scores?.[metricKey];
                             return (
-                              <TableCell key={metricKey} className="font-mono font-bold">
+                              <TableCell key={metricKey} className="font-mono font-bold whitespace-nowrap">
                                 {formatPipelineValue(val)}
                               </TableCell>
                             );
                           })}
-                          <TableCell className="max-w-md">
-                            <ModelParamsChips
-                              params={model.best_params}
-                              onViewDetails={() =>
-                                setSelectedModalModel({
-                                  model_name: model.model_name,
-                                  status: model.status,
-                                  error: model.error,
-                                  scores: model.scores,
-                                  best_params: model.best_params,
-                                  trials: model.trials,
-                                  best_trial: model.best_trial,
-                                  holdout_scores: model.holdout_scores,
-                                  rank: index + 1,
-                                })
-                              }
-                            />
+                          <TableCell className="min-w-[280px] max-w-sm">
+                            <div className="max-w-sm overflow-hidden">
+                              <ModelParamsChips
+                                params={model.best_params}
+                                maxItems={2}
+                                onViewDetails={() =>
+                                  setSelectedModalModel({
+                                    model_name: model.model_name,
+                                    status: model.status,
+                                    error: model.error,
+                                    scores: model.scores,
+                                    best_params: model.best_params,
+                                    trials: model.trials,
+                                    best_trial: model.best_trial,
+                                    holdout_scores: model.holdout_scores,
+                                    rank: index + 1,
+                                  })
+                                }
+                              />
+                            </div>
                           </TableCell>
-                          <TableCell className="text-center">
+                          <TableCell className="text-center whitespace-nowrap">
                             <Button
                               type="button"
                               size="sm"
@@ -917,14 +929,20 @@ const MetricCard = ({
   tone?: string;
 }) => (
   <div className="min-w-0 rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-3.5 py-2.5">
-    <p className="text-[10px] font-black uppercase tracking-wider text-[var(--automl-data-muted)]">
+    <p className="text-[10px] font-black uppercase tracking-wider text-[var(--automl-data-muted)] truncate" title={label}>
       {label}
     </p>
-    <p className={cn("mt-1 truncate text-base font-extrabold text-[var(--automl-data-text)]", tone)}>
+    <p
+      className={cn("mt-1 truncate text-base font-extrabold text-[var(--automl-data-text)]", tone)}
+      title={value}
+    >
       {value}
     </p>
     {detail && (
-      <p className="mt-0.5 truncate text-[10px] font-semibold text-[var(--automl-data-muted)]">
+      <p
+        className="mt-0.5 truncate text-[10px] font-semibold text-[var(--automl-data-muted)]"
+        title={detail}
+      >
         {detail}
       </p>
     )}

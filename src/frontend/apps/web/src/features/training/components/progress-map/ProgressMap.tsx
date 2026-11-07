@@ -279,7 +279,8 @@ export default function ProgressMap({
         {/* SVG Interactive Canvas */}
         <div
           className={cn(
-            "relative min-h-[460px] overflow-hidden overscroll-contain bg-slate-50/60 dark:bg-[#070e1b]",
+            "relative overflow-hidden overscroll-contain bg-slate-50/60 dark:bg-[#070e1b]",
+            isFullscreen ? "min-h-0 flex-1" : "min-h-[460px]",
             dragStart ? "cursor-grabbing" : "cursor-grab",
           )}
           onPointerDown={handlePointerDown}
@@ -521,7 +522,12 @@ export default function ProgressMap({
         </div>
 
         {/* Node Inspector Sidebar */}
-        <aside className="flex flex-col border-t border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-5 lg:border-t-0 lg:border-l overflow-y-auto max-h-[580px]">
+        <aside
+          className={cn(
+            "flex flex-col border-t border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-5 lg:border-t-0 lg:border-l overflow-y-auto scrollbar-thin",
+            isFullscreen ? "h-full max-h-none flex-1" : "max-h-[580px]",
+          )}
+        >
           {selectedNode ? (
             <div className="space-y-5">
               {/* Header Info */}
@@ -768,8 +774,11 @@ const FormattedObjectBlock = ({
               key={key}
               className="flex items-center justify-between gap-3 rounded-xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-3 py-2 text-xs"
             >
-              <span className="font-bold text-slate-500 dark:text-slate-400">{key}</span>
-              <span className="text-right font-mono font-bold text-[var(--automl-data-text)] max-w-[180px] truncate">
+              <span className="font-bold text-slate-500 dark:text-slate-400 shrink-0">{key}</span>
+              <span
+                className="text-right font-mono font-bold text-[var(--automl-data-text)] max-w-[200px] truncate"
+                title={String(value)}
+              >
                 {formatPipelineValue(value)}
               </span>
             </div>

@@ -19,6 +19,8 @@ import {
   Cpu,
   Gauge,
   Layers,
+  Maximize2,
+  Minimize2,
   Sliders,
   XCircle,
 } from "lucide-react";
@@ -58,6 +60,7 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
   metricsConfig = {},
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   if (!model) return null;
 
@@ -78,16 +81,23 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto rounded-[24px] border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-6 text-[var(--automl-data-text)] shadow-2xl">
+      <DialogContent
+        className={cn(
+          "overflow-y-auto rounded-[24px] border border-[var(--automl-data-card-border)] bg-[var(--automl-data-card-bg)] p-5 sm:p-7 text-[var(--automl-data-text)] shadow-2xl transition-all duration-200",
+          isMaximized
+            ? "max-w-[95vw] w-[95vw] h-[92vh] max-h-[92vh]"
+            : "max-w-4xl lg:max-w-5xl max-h-[88vh] w-full",
+        )}
+      >
         <DialogHeader className="border-b border-[var(--automl-data-card-border)] pb-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-automl-blue dark:bg-cyan-500/10 dark:text-cyan-400">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-automl-blue dark:bg-cyan-500/10 dark:text-cyan-400">
                 <Cpu className="h-5 w-5" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <DialogTitle className="text-xl font-extrabold tracking-tight text-[var(--automl-data-text)]">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <DialogTitle className="text-xl font-extrabold tracking-tight text-[var(--automl-data-text)] truncate">
                     {model.model_name}
                   </DialogTitle>
                   {isBestModel && (
@@ -104,6 +114,21 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setIsMaximized(!isMaximized)}
+                className="h-8 w-8 rounded-lg border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] hover:bg-slate-100 dark:hover:bg-slate-800"
+                title={isMaximized ? "Thu nhỏ cửa sổ" : "Mở rộng toàn màn hình"}
+              >
+                {isMaximized ? (
+                  <Minimize2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300" />
+                )}
+              </Button>
+
               {model.status === "done" ? (
                 <Badge variant="outline" className="automl-status-success rounded-full px-3 py-1 text-xs font-bold">
                   <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Hoàn tất
@@ -227,14 +252,14 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
             </div>
 
             {paramEntries.length > 0 ? (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                 {paramEntries.map(([pKey, pVal]) => (
                   <div
                     key={pKey}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-3.5 py-2.5 text-xs shadow-2xs"
+                    className="flex items-center justify-between gap-2.5 rounded-xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-3.5 py-2.5 text-xs shadow-2xs hover:border-blue-400/50 transition-colors"
                   >
-                    <div className="min-w-0">
-                      <p className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={pKey}>
                         {pKey}
                       </p>
                       <span className="text-[10px] font-semibold text-[var(--automl-data-muted)] uppercase">
@@ -242,8 +267,11 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="text-right">
-                      <span className="rounded-lg bg-blue-50 px-2 py-1 font-mono text-xs font-extrabold text-automl-blue dark:bg-cyan-950/80 dark:text-cyan-300 border border-blue-200/60 dark:border-cyan-800/50">
+                    <div className="text-right shrink-0">
+                      <span
+                        className="inline-block rounded-lg bg-blue-50 px-2.5 py-1 font-mono text-xs font-extrabold text-automl-blue dark:bg-cyan-950/80 dark:text-cyan-300 border border-blue-200/60 dark:border-cyan-800/50 max-w-[180px] truncate"
+                        title={String(pVal)}
+                      >
                         {formatPipelineValue(pVal)}
                       </span>
                     </div>
@@ -301,14 +329,14 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
                 )}
               </div>
 
-              <div className="max-h-60 overflow-y-auto rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)]">
-                <table className="w-full text-left text-xs">
-                  <thead className="sticky top-0 bg-[var(--automl-data-card-bg)] border-b border-[var(--automl-data-card-border)] text-[10px] font-black uppercase text-[var(--automl-data-muted)]">
+              <div className={cn("overflow-x-auto rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] scrollbar-thin", isMaximized ? "max-h-[480px]" : "max-h-72")}>
+                <table className="w-full text-left text-xs min-w-[680px]">
+                  <thead className="sticky top-0 bg-[var(--automl-data-card-bg)] border-b border-[var(--automl-data-card-border)] text-[10px] font-black uppercase text-[var(--automl-data-muted)] z-10">
                     <tr>
-                      <th className="px-3 py-2">Trial</th>
-                      <th className="px-3 py-2">Trạng thái</th>
-                      <th className="px-3 py-2">{toTitleLabel(metricSort)}</th>
-                      <th className="px-3 py-2">Tham số đánh giá</th>
+                      <th className="px-3.5 py-2.5 w-20">Trial</th>
+                      <th className="px-3.5 py-2.5 w-28">Trạng thái</th>
+                      <th className="px-3.5 py-2.5 w-32">{toTitleLabel(metricSort)}</th>
+                      <th className="px-3.5 py-2.5">Tham số đánh giá</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--automl-data-card-border)] font-mono">
@@ -324,7 +352,7 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
                             isBestTrial && "bg-amber-500/10 font-bold",
                           )}
                         >
-                          <td className="px-3 py-2 whitespace-nowrap">
+                          <td className="px-3.5 py-2.5 whitespace-nowrap">
                             <span className="flex items-center gap-1.5">
                               #{tIdx + 1}
                               {isBestTrial && (
@@ -334,31 +362,37 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
                               )}
                             </span>
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap">
+                          <td className="px-3.5 py-2.5 whitespace-nowrap">
                             {trial.status === "succeeded" ? (
-                              <Badge variant="outline" className="text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 py-0 px-1.5">
+                              <Badge variant="outline" className="text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 py-0.5 px-2">
                                 Hoàn tất
                               </Badge>
                             ) : trial.status === "pruned" ? (
-                              <Badge variant="outline" className="text-[10px] border-slate-400/30 bg-slate-500/10 text-slate-500 py-0 px-1.5">
+                              <Badge variant="outline" className="text-[10px] border-slate-400/30 bg-slate-500/10 text-slate-500 py-0.5 px-2">
                                 Dừng sớm
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                              <Badge variant="outline" className="text-[10px] py-0.5 px-2">
                                 {trial.status}
                               </Badge>
                             )}
                           </td>
-                          <td className="px-3 py-2 font-bold whitespace-nowrap">
+                          <td className="px-3.5 py-2.5 font-bold whitespace-nowrap text-automl-blue dark:text-cyan-300">
                             {formatPipelineValue(metricScore)}
                           </td>
-                          <td className="px-3 py-2 text-[11px]">
+                          <td className="px-3.5 py-2.5 text-[11px] leading-relaxed">
                             {trial.params && Object.keys(trial.params).length > 0 ? (
-                              <span className="text-slate-600 dark:text-slate-300">
-                                {Object.entries(trial.params)
-                                  .map(([k, v]) => `${k}=${formatPipelineValue(v)}`)
-                                  .join(", ")}
-                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {Object.entries(trial.params).map(([k, v]) => (
+                                  <span
+                                    key={k}
+                                    className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 text-[10px] text-slate-700 dark:text-slate-200 border border-slate-200/50 dark:border-slate-700/50"
+                                  >
+                                    <span className="text-slate-400">{k}:</span>
+                                    <span className="font-bold">{formatPipelineValue(v)}</span>
+                                  </span>
+                                ))}
+                              </div>
                             ) : (
                               <span className="text-[var(--automl-data-muted)]">—</span>
                             )}

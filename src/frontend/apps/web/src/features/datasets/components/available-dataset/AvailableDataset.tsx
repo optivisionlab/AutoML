@@ -50,7 +50,7 @@ const AvailableDataset: React.FC<AvailableDatasetProps> = ({ datasets }) => {
               <TableCell>{dataset.dataType}</TableCell>
               <TableCell className="text-right">
                 <Link
-                  className="hover:text-violet-500"
+                  className="font-medium text-automl-blue hover:underline"
                   href={`/datasets/${dataset.id}/training-model`}
                 >
                   Huấn luyện

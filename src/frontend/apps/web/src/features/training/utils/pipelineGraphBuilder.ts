@@ -358,10 +358,13 @@ export const buildProgressMapFromPipeline = (
 
     levelNodes.forEach((node, nodeIndex) => {
       let y = 50;
-      if (count > 1) {
-        // Trải đều theo trục dọc quanh tâm 50%
-        const ySpacing = count >= 5 ? 15 : count >= 3 ? 20 : 28;
-        y = 50 + (nodeIndex - (count - 1) / 2) * ySpacing;
+      if (count === 2) {
+        y = nodeIndex === 0 ? 32 : 68;
+      } else if (count > 2) {
+        // Phân bổ đều theo trục dọc, đảm bảo mọi node đều có khoảng cách rõ ràng, không bị đè nhau
+        const padding = count >= 6 ? 10 : 14;
+        const availableHeight = 100 - padding * 2;
+        y = padding + (nodeIndex / (count - 1)) * availableHeight;
       }
 
       finalNodes.push({
@@ -370,7 +373,7 @@ export const buildProgressMapFromPipeline = (
         subtitle: node.subtitle,
         status: node.status,
         x: Math.round(x),
-        y: Math.max(12, Math.min(88, Math.round(y))),
+        y: Math.max(8, Math.min(92, Math.round(y))),
         parentIds: node.depends_on.filter((p) => nodeMap.has(p)),
         branch: node.branch,
         startedAt: node.started_at ? String(node.started_at) : undefined,

@@ -165,7 +165,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           onDesktopSidebarToggle={() => setSidebarCollapsed((value) => !value)}
           onMobileSidebarOpen={() => setMobileSidebarOpen(true)}
         />
-        <main className="w-full px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="w-full px-4 pt-3 pb-6 sm:px-6 sm:pt-4 sm:pb-8 lg:px-8">{children}</main>
       </div>
       <Toaster />
     </div>
