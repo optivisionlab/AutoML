@@ -69,6 +69,16 @@ export interface ResetPasswordPayload {
   confirm_password: string;
 }
 
+export interface GoogleLoginParams {
+  redirect_uri?: string;
+}
+
+export interface GoogleCallbackParams {
+  access_token: string;
+  refresh_token: string;
+  login_success?: boolean | string;
+}
+
 export type RegisterUserPayload = SignupPayload | IUser;
 
 export type { ApiMessageResponse };

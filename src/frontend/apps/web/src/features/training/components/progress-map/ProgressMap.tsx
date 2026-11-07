@@ -30,7 +30,12 @@ import {
   ProgressMapPipeline,
   progressMapSample,
 } from "@/features/training/constants/progressMapSample";
-import { formatPipelineValue, GraphViewMode } from "@/features/training/utils/pipelineGraphBuilder";
+import {
+  formatPipelineValue,
+  GraphViewMode,
+  normalizeErrorMessage,
+  resolveModelSummary,
+} from "@/features/training/utils/pipelineGraphBuilder";
 import {
   ModelDetailModal,
   type ModelDetailData,
@@ -574,7 +579,7 @@ export default function ProgressMap({
                     <span>Lỗi thực thi</span>
                   </div>
                   <p className="mt-1 font-mono text-[11px] leading-relaxed break-words">
-                    {selectedNode.error}
+                    {normalizeErrorMessage(selectedNode.error)}
                   </p>
                 </div>
               )}
@@ -593,6 +598,10 @@ export default function ProgressMap({
                   <div className="mt-2 space-y-2">
                     {Object.entries(selectedNode.modelsList).map(([modelName, modelInfo]) => {
                       const isBest = pipeline.rawPipeline?.select_best?.output?.best_model === modelName;
+                      const { bestParams, scores, trials, bestTrialIdx } = resolveModelSummary(
+                        modelInfo,
+                        pipeline.rawPipeline?.select_best?.output?.score_source,
+                      );
                       return (
                         <div
                           key={modelName}
@@ -600,9 +609,12 @@ export default function ProgressMap({
                             setSelectedDetailModel({
                               model_name: modelName,
                               status: modelInfo.status,
-                              error: modelInfo.error,
-                              scores: modelInfo.scores,
-                              best_params: modelInfo.best_params,
+                              error: normalizeErrorMessage(modelInfo.error),
+                              scores: scores,
+                              best_params: bestParams,
+                              trials: trials,
+                              best_trial: bestTrialIdx,
+                              holdout_scores: modelInfo.holdout_scores || null,
                             })
                           }
                           className={cn(
@@ -626,8 +638,8 @@ export default function ProgressMap({
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-                            {modelInfo.scores && Object.keys(modelInfo.scores).length > 0 ? (
-                              Object.entries(modelInfo.scores).map(([sKey, sVal]) => (
+                            {scores && Object.keys(scores).length > 0 ? (
+                              Object.entries(scores).map(([sKey, sVal]) => (
                                 <span
                                   key={sKey}
                                   className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60"

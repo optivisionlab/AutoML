@@ -26,7 +26,9 @@ import { Badge } from "@/shared/components/ui/badge";
 
 import PaginationCustom from "@/shared/components/common/Panigation";
 import UploadPredictBox from "@/shared/components/common/UploadPredictBox";
-import { useGetLegacyJobsByUserIdQuery } from "@/core/api/jobApi";
+import { useGetLegacyJobsByUserIdQuery, useCancelJobMutation } from "@/core/api/jobApi";
+import { getApiErrorMessage } from "@/core/api/baseApi";
+import { useToast } from "@/shared/hooks/use-toast";
 import { Activity, CheckCircle2, Clock3, Gauge, Search, XCircle } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAppSettings } from "@/shared/hooks/useAppSettings";
@@ -45,6 +47,7 @@ const formatDate = (timestamp: number | undefined, locale: string, fallback: str
 
 const isCompleted = (status: number | string) => Number(status) === 1;
 const isRunning = (status: number | string) => Number(status) === 0;
+const isCancelled = (status: number | string) => Number(status) === -2;
 
 const TrainingHistory = () => {
   const locale = useLocale();
@@ -53,6 +56,9 @@ const TrainingHistory = () => {
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "done" | "running" | "error">("all");
+
+  const { toast } = useToast();
+  const [cancelJobMutation] = useCancelJobMutation();
 
   const { data: session } = useSession();
   const router = useRouter();
@@ -356,6 +362,10 @@ const TrainingHistory = () => {
                             <Badge variant="secondary" className="automl-status-warning rounded-full px-2.5 py-0.5 text-xs font-bold">
                               {t("status.training")}
                             </Badge>
+                          ) : isCancelled(job.status) ? (
+                            <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-full px-2.5 py-0.5 text-xs font-bold">
+                              Đã hủy
+                            </Badge>
                           ) : (
                             <Badge variant="default" className="automl-status-error rounded-full px-2.5 py-0.5 text-xs font-bold">
                               <XCircle className="mr-1 h-3 w-3" />
@@ -373,6 +383,27 @@ const TrainingHistory = () => {
                                   label: t("actions.viewDetails"),
                                   disabled: !isCompleted(job.status),
                                   onClick: () => router.push(`/training-history/${jobId}`),
+                                },
+                                {
+                                  label: isRunning(job.status) ? "Hủy tiến trình" : "Hủy",
+                                  disabled: !isRunning(job.status),
+                                  onClick: async () => {
+                                    try {
+                                      await cancelJobMutation(jobId).unwrap();
+                                      toast({
+                                        title: "Đã hủy tiến trình",
+                                        description: `Tiến trình '${job.data?.name || jobId}' đã được gửi yêu cầu hủy.`,
+                                        className: "bg-amber-100 text-amber-800 border border-amber-300",
+                                      });
+                                      refetch();
+                                    } catch (err) {
+                                      toast({
+                                        title: "Không thể hủy",
+                                        description: getApiErrorMessage(err, "Không thể hủy tiến trình này."),
+                                        variant: "destructive",
+                                      });
+                                    }
+                                  },
                                 },
                                 {
                                   label: openRow === jobId ? t("actions.closeUpload") : t("actions.uploadTest"),

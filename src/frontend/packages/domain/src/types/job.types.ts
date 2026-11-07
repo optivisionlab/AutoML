@@ -11,16 +11,18 @@ export interface JobConfig {
 }
 
 export interface OtherModelScore {
+  model_id?: number | string;
   model?: string;
   model_name?: string;
   score?: number;
   scores?: Record<string, number>;
+  best_params?: Record<string, unknown> | null;
 }
 
 export interface TrainingJob {
   _id: string;
   job_id?: string;
-  status: number | string; // 0 = pending/running, 1 = success, -1 = failed
+  status: number | string; // 1 = completed, 0 = running/pending, -1 = failed, -2 = cancelled
   activate?: number; // 0 = inactive, 1 = active/serving
   data?: {
     id?: string;
@@ -48,6 +50,13 @@ export interface JobsListParams {
   sort_name?: "asc" | "desc" | string | null;
   sort_time?: "asc" | "desc" | string | null;
 }
+
+export interface CancelJobResponseData {
+  job_id: string;
+  status: number; // -2
+}
+
+export type CancelJobResponse = BaseResponse<CancelJobResponseData>;
 
 export type JobsListResponse = PaginatedResponse<TrainingJob>;
 export type JobItemResponse = TrainingJob;

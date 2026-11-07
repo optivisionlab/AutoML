@@ -74,14 +74,16 @@ export default function DashboardPage() {
   const isAdmin = session?.user?.role === "admin";
 
   const { data: publicDatasets = [], isLoading: isPublicLoading } =
-    useGetDatasetsByUserIdQuery("0");
+    useGetDatasetsByUserIdQuery("0", {
+      skip: !userId,
+    });
   const { data: personalDatasets = [], isLoading: isPersonalLoading } =
     useGetDatasetsByUserIdQuery(userId ?? "", {
       skip: !userId || isAdmin,
     });
   const { data: adminDatasets = [], isLoading: isAdminDatasetsLoading } =
     useGetAllUserDatasetsQuery(undefined, {
-      skip: !isAdmin,
+      skip: !userId || !isAdmin,
     });
   const { data: jobs = [], isLoading: isJobsLoading } =
     useGetLegacyJobsByUserIdQuery(userId ?? "", {
@@ -89,10 +91,18 @@ export default function DashboardPage() {
     });
 
   const ownedDatasets = isAdmin ? adminDatasets : personalDatasets;
-  const allDatasets = useMemo(
-    () => [...ownedDatasets, ...publicDatasets],
-    [ownedDatasets, publicDatasets],
-  );
+  const allDatasets = useMemo(() => {
+    const map = new Map<string, Dataset>();
+    for (const d of publicDatasets) {
+      const key = d._id || d.dataName;
+      if (key) map.set(key, d);
+    }
+    for (const d of ownedDatasets) {
+      const key = d._id || d.dataName;
+      if (key) map.set(key, d);
+    }
+    return Array.from(map.values());
+  }, [ownedDatasets, publicDatasets]);
 
   const dateLocale = locale === "vi" ? "vi-VN" : "en-US";
   const monthLabels = locale === "vi" ? MONTH_LABELS.vi : MONTH_LABELS.en;
@@ -171,34 +181,40 @@ export default function DashboardPage() {
       }));
 
     const activities = [
-      ...allDatasets.map((dataset) => ({
-        id: `dataset-${dataset._id}`,
-        title: t("activity.datasetUpdated"),
-        body: dataset.dataName || common("unnamed"),
-        timestamp: getDatasetTime(dataset),
-        href: isAdmin ? "/admin/datasets/users" : "/my-datasets",
-        icon: Database,
-      })),
-      ...jobs.map((job) => ({
-        id: `job-${job.job_id}`,
-        title: isCompleted(job.status)
-          ? t("activity.trainingCompleted")
-          : isRunning(job.status)
-            ? t("activity.pipelineRunning")
-            : t("activity.trainingNeedsReview"),
-        body: `${job.data?.name || common("unknown")}${
-          job.best_score !== undefined ? ` · ${formatPercent(job.best_score)}` : ""
-        }`,
-        timestamp: getJobTime(job),
-        href: isCompleted(job.status)
-          ? `/training-history/${job.job_id}`
-          : "/training-history",
-        icon: isCompleted(job.status)
-          ? CheckCircle2
-          : isRunning(job.status)
-            ? Activity
-            : Clock3,
-      })),
+      ...allDatasets.map((dataset, idx) => {
+        const datasetId = dataset._id || `dataset-${idx}`;
+        return {
+          id: `dataset-${datasetId}`,
+          title: t("activity.datasetUpdated"),
+          body: dataset.dataName || common("unnamed"),
+          timestamp: getDatasetTime(dataset),
+          href: isAdmin ? "/admin/datasets/users" : "/my-datasets",
+          icon: Database,
+        };
+      }),
+      ...jobs.map((job, idx) => {
+        const jobId = job.job_id || job._id || `job-${idx}`;
+        return {
+          id: `job-${jobId}`,
+          title: isCompleted(job.status)
+            ? t("activity.trainingCompleted")
+            : isRunning(job.status)
+              ? t("activity.pipelineRunning")
+              : t("activity.trainingNeedsReview"),
+          body: `${job.data?.name || common("unknown")}${
+            job.best_score !== undefined ? ` · ${formatPercent(job.best_score)}` : ""
+          }`,
+          timestamp: getJobTime(job),
+          href: isCompleted(job.status)
+            ? `/training-history/${jobId}`
+            : `/training-history?highlight=${jobId}`,
+          icon: isCompleted(job.status)
+            ? CheckCircle2
+            : isRunning(job.status)
+              ? Activity
+              : Clock3,
+        };
+      }),
     ]
       .filter((activity) => activity.timestamp)
       .sort((a, b) => b.timestamp - a.timestamp)
@@ -253,7 +269,7 @@ export default function DashboardPage() {
       icon: TrendingUp,
       tone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
       href: dashboard.bestJob
-        ? `/training-history/${dashboard.bestJob.job_id}`
+        ? `/training-history/${dashboard.bestJob.job_id || dashboard.bestJob._id}`
         : "/training-history",
     },
     {
@@ -407,11 +423,12 @@ export default function DashboardPage() {
           <h2 className="text-lg font-black dark:text-white">{t("deploymentHealth")}</h2>
           <div className="mt-8 space-y-5">
             {dashboard.deployReadyJobs.slice(0, 5).length > 0 ? (
-              dashboard.deployReadyJobs.slice(0, 5).map((job) => {
+              dashboard.deployReadyJobs.slice(0, 5).map((job, idx) => {
                 const score = Math.round((job.best_score || 0) * 100);
+                const jobId = job.job_id || job._id || `deploy-${idx}`;
 
                 return (
-                  <div key={job.job_id}>
+                  <div key={jobId}>
                     <div className="mb-2 flex justify-between gap-3 text-sm font-bold text-slate-500 dark:text-white/60">
                       <span className="truncate">{job.data?.name || job.best_model || t("model")}</span>
                       <span>{score || 100}%</span>
@@ -457,15 +474,16 @@ export default function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/10">
                 {dashboard.recentJobs.length > 0 ? (
-                  dashboard.recentJobs.map((job) => {
+                  dashboard.recentJobs.map((job, idx) => {
                     const done = isCompleted(job.status);
+                    const jobId = job.job_id || job._id || `recent-${idx}`;
                     const href = done
-                      ? `/training-history/${job.job_id}`
-                      : `/training-history?highlight=${job.job_id}`;
+                      ? `/training-history/${jobId}`
+                      : `/training-history?highlight=${jobId}`;
 
                     return (
                       <tr
-                        key={job.job_id}
+                        key={jobId}
                         tabIndex={0}
                         className="transition-colors hover:bg-slate-50/80 dark:hover:bg-white/5 focus-visible:bg-blue-50/60 dark:focus-visible:bg-blue-950/30 outline-none text-slate-600 dark:text-white/70"
                       >

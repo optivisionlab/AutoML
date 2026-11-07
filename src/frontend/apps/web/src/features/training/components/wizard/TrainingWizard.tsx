@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useLanguage } from "@/core/i18n/LanguageProvider";
@@ -41,7 +41,11 @@ import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/shared/components/ui/radio-group";
 import { Switch } from "@/shared/components/ui/switch";
-import { useGetFeaturesQuery, useGetMetricsQuery } from "@/core/api/automlApi";
+import {
+  useGetFeaturesQuery,
+  useGetMetricsQuery,
+  useGetDatasetPreviewQuery,
+} from "@/core/api/automlApi";
 import { cn } from "@/shared/lib/utils";
 import toTitleLabel from "@/shared/utils/toTitleLable";
 
@@ -179,6 +183,7 @@ export default function TrainingWizard({
     data: featuresData,
     isError: isFeaturesError,
     isFetching: isFeaturesFetching,
+    refetch: refetchFeatures,
   } = useGetFeaturesQuery(
     { datasetId: datasetID ?? "", problemType },
     { skip: !shouldFetchTrainingMeta },
@@ -187,8 +192,51 @@ export default function TrainingWizard({
     useGetMetricsQuery(problemType, {
       skip: !shouldFetchTrainingMeta,
     });
+  const { data: previewData } = useGetDatasetPreviewQuery(datasetID ?? "", {
+    skip: !shouldFetchTrainingMeta,
+  });
 
-  const listFeature = featuresData?.features ?? {};
+  const listFeature = useMemo<Record<string, boolean>>(() => {
+    const raw =
+      (featuresData as any)?.features ??
+      (featuresData as any)?.data?.features ??
+      (featuresData as any)?.data ??
+      featuresData;
+
+    const result: Record<string, boolean> = {};
+
+    if (Array.isArray(raw) && raw.length > 0) {
+      raw.forEach((f: string) => {
+        result[f] = true;
+      });
+      return result;
+    }
+
+    if (raw && typeof raw === "object") {
+      Object.entries(raw).forEach(([k, v]) => {
+        if (k !== "success" && k !== "message" && k !== "status" && k !== "meta") {
+          result[k] = Boolean(v);
+        }
+      });
+      if (Object.keys(result).length > 0) {
+        return result;
+      }
+    }
+
+    // Fallback: nếu /features rỗng, đọc schema các cột từ data preview
+    if (previewData?.data && previewData.data.length > 0) {
+      const firstRow = previewData.data[0];
+      if (firstRow && typeof firstRow === "object") {
+        Object.keys(firstRow).forEach((col) => {
+          result[col] = true;
+        });
+        return result;
+      }
+    }
+
+    return {};
+  }, [featuresData, previewData?.data]);
+
   const metrics = metricsData?.metrics ?? {};
   const featureNames = Object.keys(listFeature);
   const selectableFeatures = featureNames.filter((name) => name !== selectedTarget);
@@ -197,6 +245,46 @@ export default function TrainingWizard({
     selectableFeatures.every((name) => selectedFeatures.includes(name));
   const canStart =
     Boolean(selectedTarget) && selectedFeatures.length > 0 && Boolean(metricSort);
+
+  // Tự động chọn mục tiêu và tất cả các đặc trưng khi tải xong danh sách cột
+  useEffect(() => {
+    if (featureNames.length === 0) return;
+
+    if (!selectedTarget) {
+      const recommendedTarget = Object.entries(listFeature).find(([, isRec]) => isRec)?.[0];
+      const targetToSelect = recommendedTarget || featureNames[featureNames.length - 1];
+
+      if (targetToSelect) {
+        setSelectedTarget(targetToSelect);
+        setStorage("target", targetToSelect);
+
+        const otherFeatures = featureNames.filter((f) => f !== targetToSelect);
+        setSelectedFeatures(otherFeatures);
+        setStorage("list_feature", JSON.stringify(otherFeatures));
+      }
+    } else if (selectedFeatures.length === 0) {
+      const otherFeatures = featureNames.filter((f) => f !== selectedTarget);
+      if (otherFeatures.length > 0) {
+        setSelectedFeatures(otherFeatures);
+        setStorage("list_feature", JSON.stringify(otherFeatures));
+      }
+    }
+  }, [featureNames, listFeature, selectedTarget, selectedFeatures.length]);
+
+  // Tự động chọn metric mặc định nếu chưa chọn
+  useEffect(() => {
+    if (!metricSort && metrics && Object.keys(metrics).length > 0) {
+      const defaultMetric =
+        problemType === "regression"
+          ? (metrics["r2"] ? "r2" : Object.values(metrics)[0])
+          : (metrics["accuracy"] ? "accuracy" : Object.values(metrics)[0]);
+
+      if (defaultMetric) {
+        setMetricSort(defaultMetric);
+        setStorage("metric_sort", defaultMetric);
+      }
+    }
+  }, [metrics, metricSort, problemType]);
   const displayedStep = step === 4 && canStart ? 5 : step;
   const summaryItems: SummaryConfig[] = [
     {
@@ -473,6 +561,23 @@ export default function TrainingWizard({
                     {(isFeaturesFetching || isMetricsFetching) && (
                       <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500 dark:bg-white/5 dark:text-white/60">
                         {t("step4.loading")}
+                      </div>
+                    )}
+
+                    {!isFeaturesFetching && !isFeaturesError && featureNames.length === 0 && (
+                      <div className="rounded-2xl border border-amber-300/60 bg-amber-50/70 p-6 text-center text-sm font-semibold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                        <p className="font-bold">Không tìm thấy thuộc tính nào trong bộ dữ liệu.</p>
+                        <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-400">
+                          Vui lòng kiểm tra lại cấu trúc bộ dữ liệu hoặc bấm tải lại.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 rounded-xl border-amber-300 bg-white hover:bg-amber-100 dark:border-amber-800 dark:bg-slate-900"
+                          onClick={() => refetchFeatures()}
+                        >
+                          Tải lại thuộc tính
+                        </Button>
                       </div>
                     )}
 

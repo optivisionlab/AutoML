@@ -27,19 +27,92 @@ export const formatPipelineValue = (value: unknown): string => {
 };
 
 
+export const normalizeErrorMessage = (err: unknown): string | null => {
+  if (!err) return null;
+  if (typeof err === "string") return err;
+  if (typeof err === "object" && err !== null) {
+    if ("message" in err && typeof (err as any).message === "string") {
+      return (err as any).message;
+    }
+    return JSON.stringify(err);
+  }
+  return String(err);
+};
+
 export const normalizeNodeStatus = (
   status?: PipelineNodeStatus | string | number | null,
 ): "done" | "running" | "pending" | "failed" => {
-  if (status === "done" || status === "success" || status === "completed" || status === 1 || status === "1") {
+  if (
+    status === "done" ||
+    status === "success" ||
+    status === "completed" ||
+    status === "succeeded" ||
+    status === 1 ||
+    status === "1"
+  ) {
     return "done";
   }
   if (status === "running" || status === 0 || status === "0") {
     return "running";
   }
-  if (status === "failed" || status === "error" || status === -1 || status === "-1") {
+  if (
+    status === "failed" ||
+    status === "error" ||
+    status === "cancelled" ||
+    status === -1 ||
+    status === "-1" ||
+    status === -2 ||
+    status === "-2"
+  ) {
     return "failed";
   }
   return "pending";
+};
+
+export const resolveModelSummary = (
+  detail: ModelScoreDetail | undefined,
+  scoreSource?: string | null,
+) => {
+  if (!detail) {
+    return {
+      bestParams: null,
+      scores: null,
+      trials: [],
+      bestTrialIdx: null,
+    };
+  }
+
+  const trials = detail.trials || [];
+  const bestTrialIdx =
+    typeof detail.best_trial === "number" &&
+    detail.best_trial >= 0 &&
+    detail.best_trial < trials.length
+      ? detail.best_trial
+      : trials.length > 0
+        ? 0
+        : null;
+
+  const bestTrial = bestTrialIdx !== null ? trials[bestTrialIdx] : null;
+
+  const bestParams = detail.best_params ?? bestTrial?.params ?? null;
+
+  let scores: Record<string, number | null> | null = null;
+  if (scoreSource === "holdout" && detail.holdout_scores) {
+    scores = detail.holdout_scores;
+  } else if (bestTrial?.scores) {
+    scores = bestTrial.scores;
+  } else if (detail.scores) {
+    scores = detail.scores;
+  } else if (detail.holdout_scores) {
+    scores = detail.holdout_scores;
+  }
+
+  return {
+    bestParams,
+    scores,
+    trials,
+    bestTrialIdx,
+  };
 };
 
 export const calculateElapsed = (
@@ -165,15 +238,22 @@ export const buildProgressMapFromPipeline = (
           const subId = `model_${modelName}`;
           modelSubNodeIds.push(subId);
 
+          const { bestParams, scores: resolvedScores } = resolveModelSummary(
+            detail,
+            pipeline.select_best?.output?.score_source,
+          );
+
           const resultFormatted: Record<string, string | number | boolean> = {};
-          if (detail.scores) {
-            Object.entries(detail.scores).forEach(([scoreKey, scoreVal]) => {
-              resultFormatted[scoreKey] =
-                typeof scoreVal === "number" ? Number(scoreVal.toFixed(4)) : String(scoreVal);
+          if (resolvedScores) {
+            Object.entries(resolvedScores).forEach(([scoreKey, scoreVal]) => {
+              if (scoreVal !== null && scoreVal !== undefined) {
+                resultFormatted[scoreKey] =
+                  typeof scoreVal === "number" ? Number(scoreVal.toFixed(4)) : String(scoreVal);
+              }
             });
           }
 
-          const paramsFormatted: Record<string, unknown> = detail.best_params || {};
+          const paramsFormatted: Record<string, unknown> = (bestParams as Record<string, unknown>) || {};
 
           intermediateNodes.push({
             id: subId,
@@ -184,9 +264,9 @@ export const buildProgressMapFromPipeline = (
             depends_on: raw.depends_on || ["model_selection"],
             started_at: raw.started_at,
             finished_at: raw.finished_at,
-            error: detail.error || null,
+            error: normalizeErrorMessage(detail.error),
             params: paramsFormatted,
-            output: detail.scores || {},
+            output: (resolvedScores as Record<string, unknown>) || {},
             result: resultFormatted,
             subtitle: "Model",
             branch: "Mô hình song song",
@@ -222,7 +302,7 @@ export const buildProgressMapFromPipeline = (
       depends_on: depends,
       started_at: raw.started_at,
       finished_at: raw.finished_at,
-      error: raw.error,
+      error: normalizeErrorMessage(raw.error),
       params: raw.params || {},
       output: raw.output || {},
       result: resultObj,

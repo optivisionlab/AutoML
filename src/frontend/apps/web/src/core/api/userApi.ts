@@ -86,6 +86,14 @@ export const userApi = baseApi.injectEndpoints({
       invalidatesTags: ["User"],
     }),
 
+    // 2.5 GET /api/v1/users/{id}/avatar
+    getUserAvatar: builder.query<Blob, string>({
+      query: (id) => ({
+        url: `/api/v1/users/${id}/avatar`,
+        responseType: "blob",
+      }),
+    }),
+
     // 2.6 POST /api/v1/users/{id}/avatar
     updateAvatar: builder.mutation<
       UploadAvatarResponse,
@@ -128,8 +136,10 @@ export const {
   useChangeUserPasswordMutation,
   useCreateUserMutation,
   useDeleteUserMutation,
+  useGetUserAvatarQuery,
   useGetUserQuery,
   useGetUsersQuery,
+  useLazyGetUserAvatarQuery,
   useLazyGetUserQuery,
   useLazyGetUsersQuery,
   useUpdateAvatarMutation,

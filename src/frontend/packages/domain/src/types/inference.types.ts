@@ -67,4 +67,10 @@ export interface BatchPredictFilePayload {
   file: UniversalFile;
 }
 
+export interface CancelJobPayload {
+  jobId: string;
+}
+
+export { type CancelJobResponse, type CancelJobResponseData } from "./job.types";
+
 export type ActiveModelsResponse = PaginatedResponse<TrainingJob>;

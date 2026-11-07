@@ -154,6 +154,14 @@ export const authApi = baseApi.injectEndpoints({
   }),
 });
 
+export const getGoogleLoginUrl = (baseUrl?: string): string => {
+  const base = baseUrl || process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+  const cleanBase = base.replace(/\/+$/, "");
+  return cleanBase.endsWith("/api/v1")
+    ? `${cleanBase}/auth/google`
+    : `${cleanBase}/api/v1/auth/google`;
+};
+
 export const {
   useForgotPasswordMutation,
   useGetCurrentUserQuery,

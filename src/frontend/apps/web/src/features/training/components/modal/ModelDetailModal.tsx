@@ -18,12 +18,14 @@ import {
   Copy,
   Cpu,
   Gauge,
+  Layers,
   Sliders,
   XCircle,
 } from "lucide-react";
 import toTitleLabel from "@/shared/utils/toTitleLable";
-import { formatPipelineValue } from "@/features/training/utils/pipelineGraphBuilder";
+import { formatPipelineValue, normalizeErrorMessage } from "@/features/training/utils/pipelineGraphBuilder";
 import { cn } from "@/shared/lib/utils";
+import { ModelTrial } from "@automl/domain";
 
 export interface ModelDetailData {
   model_name: string;
@@ -31,6 +33,9 @@ export interface ModelDetailData {
   error?: string | null;
   scores?: Record<string, number | null> | null;
   best_params?: Record<string, unknown> | null;
+  trials?: ModelTrial[] | null;
+  best_trial?: number | null;
+  holdout_scores?: Record<string, number> | null;
   rank?: number;
 }
 
@@ -251,6 +256,121 @@ export const ModelDetailModal: React.FC<ModelDetailModalProps> = ({
               </div>
             )}
           </div>
+
+          {/* Section 3: Điểm trên tập Holdout (nếu có) */}
+          {model.holdout_scores && Object.keys(model.holdout_scores).length > 0 && (
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <Award className="h-4 w-4 text-amber-500" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-[var(--automl-data-muted)]">
+                  Điểm đánh giá Holdout Test (Holdout Scores)
+                </h3>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                {Object.entries(model.holdout_scores).map(([hKey, hVal]) => (
+                  <div
+                    key={hKey}
+                    className="rounded-2xl border border-amber-500/30 bg-amber-50/40 dark:border-amber-500/20 dark:bg-amber-950/20 p-3.5"
+                  >
+                    <span className="font-mono text-xs font-black uppercase text-amber-700 dark:text-amber-300">
+                      {hKey}
+                    </span>
+                    <p className="mt-1.5 font-mono text-lg font-extrabold text-[var(--automl-data-text)]">
+                      {formatPipelineValue(hVal)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section 4: Lịch sử đánh giá bộ tham số (Trials) */}
+          {model.trials && model.trials.length > 0 && (
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-automl-blue dark:text-cyan-400" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-[var(--automl-data-muted)]">
+                    Lịch sử đánh giá tham số ({model.trials.length} trials)
+                  </h3>
+                </div>
+                {model.best_trial !== null && model.best_trial !== undefined && (
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                    Bộ tối ưu: Trial #{model.best_trial + 1}
+                  </span>
+                )}
+              </div>
+
+              <div className="max-h-60 overflow-y-auto rounded-2xl border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)]">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-[var(--automl-data-card-bg)] border-b border-[var(--automl-data-card-border)] text-[10px] font-black uppercase text-[var(--automl-data-muted)]">
+                    <tr>
+                      <th className="px-3 py-2">Trial</th>
+                      <th className="px-3 py-2">Trạng thái</th>
+                      <th className="px-3 py-2">{toTitleLabel(metricSort)}</th>
+                      <th className="px-3 py-2">Tham số đánh giá</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--automl-data-card-border)] font-mono">
+                    {model.trials.map((trial, tIdx) => {
+                      const isBestTrial = model.best_trial === tIdx;
+                      const metricScore = trial.scores?.[metricSort];
+
+                      return (
+                        <tr
+                          key={tIdx}
+                          className={cn(
+                            "hover:bg-blue-50/30 dark:hover:bg-cyan-950/20 transition-colors",
+                            isBestTrial && "bg-amber-500/10 font-bold",
+                          )}
+                        >
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className="flex items-center gap-1.5">
+                              #{tIdx + 1}
+                              {isBestTrial && (
+                                <span className="text-[10px] text-amber-500" title="Bộ tối ưu">
+                                  🥇
+                                </span>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {trial.status === "succeeded" ? (
+                              <Badge variant="outline" className="text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 py-0 px-1.5">
+                                Hoàn tất
+                              </Badge>
+                            ) : trial.status === "pruned" ? (
+                              <Badge variant="outline" className="text-[10px] border-slate-400/30 bg-slate-500/10 text-slate-500 py-0 px-1.5">
+                                Dừng sớm
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                                {trial.status}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-bold whitespace-nowrap">
+                            {formatPipelineValue(metricScore)}
+                          </td>
+                          <td className="px-3 py-2 text-[11px]">
+                            {trial.params && Object.keys(trial.params).length > 0 ? (
+                              <span className="text-slate-600 dark:text-slate-300">
+                                {Object.entries(trial.params)
+                                  .map(([k, v]) => `${k}=${formatPipelineValue(v)}`)
+                                  .join(", ")}
+                              </span>
+                            ) : (
+                              <span className="text-[var(--automl-data-muted)]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex justify-end border-t border-[var(--automl-data-card-border)] pt-4">

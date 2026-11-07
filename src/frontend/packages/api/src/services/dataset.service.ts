@@ -15,6 +15,9 @@ import {
   ConnectDBResponse,
   ImportDatabaseTablePayload,
   ImportDatabaseTableResponse,
+  ProblemMetricsResponse,
+  TableInfoRequest,
+  TableInfoResponse,
 } from "@automl/domain";
 import {
   buildDatasetUploadFormData,
@@ -33,6 +36,19 @@ export const createDatasetService = (client: AxiosInstance) => ({
         sort_time: params?.sort_time || "desc",
       },
     });
+    return res.data;
+  },
+
+  // 3.2 GET /api/v1/datasets/metrics (Problem Metrics)
+  getMetrics: async (
+    problemType = "classification",
+  ): Promise<ProblemMetricsResponse> => {
+    const res = await client.get<ProblemMetricsResponse>(
+      "/api/v1/datasets/metrics",
+      {
+        params: { problem_type: problemType },
+      },
+    );
     return res.data;
   },
 
@@ -123,34 +139,86 @@ export const createDatasetService = (client: AxiosInstance) => ({
   // 3.10 POST /api/v1/datasets/{id}/training
   startTraining: async (
     id: string,
-    config: DatasetTrainingConfig,
+    config: DatasetTrainingConfig | { config: DatasetTrainingConfig },
   ): Promise<StartTrainingResponse> => {
+    const rawConfig = (config as any)?.config ? (config as any).config : config;
+    let listFeature = (rawConfig as any).list_feature || (rawConfig as any).features || [];
+    if (typeof listFeature === "string") {
+      try {
+        listFeature = JSON.parse(listFeature);
+      } catch {
+        listFeature = [listFeature];
+      }
+    }
+    const bodyPayload = {
+      choose: (rawConfig as any).choose || "new_model",
+      problem_type: (rawConfig as any).problem_type || (rawConfig as any).problemType || "classification",
+      target: (rawConfig as any).target,
+      list_feature: Array.isArray(listFeature) ? listFeature : [],
+      metric_sort: (rawConfig as any).metric_sort,
+      search_algorithm: (rawConfig as any).search_algorithm || "bayesian_search",
+      ...((rawConfig as any).timeout !== undefined ? { timeout: (rawConfig as any).timeout } : {}),
+    };
     const res = await client.post<StartTrainingResponse>(
       `/api/v1/datasets/${id}/training`,
-      { config },
+      bodyPayload,
     );
     return res.data;
   },
 
-  // Database connector extension
+  // 4.5 POST /api/v1/datasets/database/connect
   connectDatabase: async (payload: ConnectDBPayload): Promise<ConnectDBResponse> => {
-    const res = await client.post<ConnectDBResponse>("/connect-database", payload);
-    return res.data;
+    try {
+      const res = await client.post<ConnectDBResponse>("/api/v1/datasets/database/connect", payload);
+      return res.data;
+    } catch (err) {
+      // Fallback for legacy backend route if not yet migrated
+      try {
+        const fallbackRes = await client.post<ConnectDBResponse>("/connect-database", payload);
+        return fallbackRes.data;
+      } catch {
+        throw err;
+      }
+    }
   },
 
-  importDatabaseTable: async (
-    payload: ImportDatabaseTablePayload,
-  ): Promise<ImportDatabaseTableResponse> => {
-    const res = await client.post<ImportDatabaseTableResponse>(
-      "/import-database-table",
+  // 4.6 POST /api/v1/datasets/database/table-info
+  getTableInfo: async (payload: TableInfoRequest): Promise<TableInfoResponse> => {
+    const res = await client.post<TableInfoResponse>(
+      "/api/v1/datasets/database/table-info",
       payload,
     );
     return res.data;
   },
 
+  // 4.7 POST /api/v1/datasets/database/import
+  importDatabaseTable: async (
+    payload: ImportDatabaseTablePayload,
+  ): Promise<ImportDatabaseTableResponse> => {
+    try {
+      const res = await client.post<ImportDatabaseTableResponse>(
+        "/api/v1/datasets/database/import",
+        payload,
+      );
+      return res.data;
+    } catch (err) {
+      // Fallback for legacy backend route if not yet migrated
+      try {
+        const fallbackRes = await client.post<ImportDatabaseTableResponse>(
+          "/import-database-table",
+          payload,
+        );
+        return fallbackRes.data;
+      } catch {
+        throw err;
+      }
+    }
+  },
+
   // Legacy compatibility methods
   getDatasetsByUserId: async (_id?: string): Promise<any> => {
-    const res = await client.get<DatasetsListResponse>("/api/v1/datasets");
+    const endpoint = _id === "0" ? "/api/v1/datasets/default" : "/api/v1/datasets";
+    const res = await client.get<DatasetsListResponse>(endpoint);
     return res.data.data || res.data;
   },
   getDatasetInfo: async (id: string): Promise<any> => {

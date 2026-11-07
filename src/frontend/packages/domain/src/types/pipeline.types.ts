@@ -1,4 +1,20 @@
-export type PipelineNodeStatus = "pending" | "running" | "success" | "done" | "completed" | "failed" | "error" | null;
+export type PipelineNodeStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled"
+  | "pending"
+  | "done"
+  | "completed"
+  | "error"
+  | null;
+
+export interface PipelineError {
+  message?: string;
+  [key: string]: unknown;
+}
 
 export interface PipelineBaseNode<TParams = Record<string, unknown>, TOutput = Record<string, unknown>> {
   name: string;
@@ -7,7 +23,7 @@ export interface PipelineBaseNode<TParams = Record<string, unknown>, TOutput = R
   status: PipelineNodeStatus;
   started_at?: string | number | null;
   finished_at?: string | number | null;
-  error?: string | null;
+  error?: string | PipelineError | null;
   params: TParams;
   output: TOutput;
 }
@@ -64,12 +80,14 @@ export interface PreprocessingParams {
 export interface PreprocessingOutput {
   cache_hit?: boolean | null;
   dropped_rows?: number | null;
+  n_features?: number | null;
   column_types?: {
     numeric?: string[];
     categorical?: string[];
     text?: string[];
     [key: string]: unknown;
   } | null;
+  class_distribution?: Record<string, number> | null;
   [key: string]: unknown;
 }
 
@@ -79,8 +97,16 @@ export interface ModelSelectionParams {
   model_names?: string[];
   search_algorithm?: string | null;
   max_time?: number | string | null;
+  timeout?: number | string | null;
   metric_sort?: string | null;
   metrics?: Record<string, string>;
+  cv?: {
+    name?: string;
+    n_splits?: number;
+    n_repeats?: number;
+    description?: string;
+    [key: string]: unknown;
+  } | null;
   split?: {
     method?: string;
     n_splits?: number;
@@ -91,9 +117,18 @@ export interface ModelSelectionParams {
   [key: string]: unknown;
 }
 
+export interface ModelTrial {
+  params: Record<string, unknown>;
+  status: "succeeded" | "pruned" | string;
+  scores: Record<string, number | null>;
+}
+
 export interface ModelScoreDetail {
   status: PipelineNodeStatus;
-  error?: string | null;
+  error?: string | PipelineError | null;
+  best_trial?: number | null;
+  trials?: ModelTrial[] | null;
+  holdout_scores?: Record<string, number> | null;
   best_params?: Record<string, unknown> | null;
   scores?: Record<string, number> | null;
 }
@@ -110,6 +145,7 @@ export interface SelectBestParams {
 
 export interface SelectBestOutput {
   best_model?: string | null;
+  score_source?: "holdout" | "cv" | string | null;
   time_limit_reached?: boolean | null;
   [key: string]: unknown;
 }
@@ -128,7 +164,9 @@ export interface PipelineData {
   job_id?: string | null;
   version?: string;
   mode?: string;
+  source?: "tracked" | "legacy" | string;
   status?: PipelineNodeStatus;
+  error?: string | PipelineError | null;
   updated_at?: string | number | null;
   read_dataset?: PipelineBaseNode<ReadDatasetParams, ReadDatasetOutput>;
   split_holdout_data?: PipelineBaseNode<SplitHoldoutParams, SplitHoldoutOutput>;

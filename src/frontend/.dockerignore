@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build artifacts and cache
+.next
+out
+build
+dist
+*.tsbuildinfo
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Git and OS metadata
+.git
+.gitignore
+.DS_Store
+Thumbs.db
+*.pem
+
+# Documentation and unused media
+docs
+packages/video
+packages/image_gt
+
+# Environment local overrides (giữ bí mật các file env local)
+.env*.local
+
+# Scripts
+install-nodejs.sh
+run-fe.sh

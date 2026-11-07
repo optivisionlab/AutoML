@@ -21,6 +21,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { getGoogleLoginUrl } from "@/core/api/authApi";
 
 type LoginFormValues = {
   username: string;
@@ -84,7 +85,7 @@ const LoginForm = () => {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_BASE_API}/google/login`;
+    window.location.href = getGoogleLoginUrl();
   };
 
   return (

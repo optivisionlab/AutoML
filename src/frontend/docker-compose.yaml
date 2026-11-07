@@ -9,7 +9,7 @@ services:
       - "3000:3000"
     expose:
       - '3000'
-    command: npm run dev
+    command: node apps/web/server.js
     logging:
       driver: "json-file"
       options:

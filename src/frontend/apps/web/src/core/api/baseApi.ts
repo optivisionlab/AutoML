@@ -16,13 +16,37 @@ import {
 export { getApiErrorMessage, serializeApiErrorData, serializeBlob };
 export type { AxiosBaseQueryArgs, ApiError };
 
+// In-flight deduplication and short-lived token caching to prevent concurrent /api/auth/session spamming
+let inFlightSessionPromise: Promise<string | undefined> | null = null;
+let cachedToken: string | undefined = undefined;
+let tokenExpiresAt = 0;
+
+export const getAuthToken = async (): Promise<string | undefined> => {
+  const now = Date.now();
+  if (cachedToken && now < tokenExpiresAt) {
+    return cachedToken;
+  }
+
+  if (!inFlightSessionPromise) {
+    inFlightSessionPromise = (async () => {
+      try {
+        const session = await getSession();
+        cachedToken = session?.user?.access_token;
+        tokenExpiresAt = Date.now() + 5000; // cache for 5 seconds
+        return cachedToken;
+      } finally {
+        inFlightSessionPromise = null;
+      }
+    })();
+  }
+
+  return inFlightSessionPromise;
+};
+
 // Client with dynamic NextAuth session token injection
 export const axiosClient = createApiClient({
   baseUrl: () => process.env.NEXT_PUBLIC_BASE_API || "",
-  getToken: async () => {
-    const session = await getSession();
-    return session?.user?.access_token;
-  },
+  getToken: getAuthToken,
 });
 
 // Public client without authentication token

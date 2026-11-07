@@ -2,6 +2,7 @@ import { AxiosInstance } from "axios";
 import {
   ActivateModelPayload,
   ActiveModelsResponse,
+  CancelJobResponse,
   DeploymentInfoResponse,
   JobsListParams,
   JobsListResponse,
@@ -14,7 +15,7 @@ import { appendUniversalFile } from "../form-data";
 import { resolveFileName } from "../client";
 
 export const createInferenceService = (client: AxiosInstance) => ({
-  // 5.1 GET /api/v1/inference/jobs
+  // 6.1 GET /api/v1/inference/jobs
   getJobs: async (params?: JobsListParams): Promise<JobsListResponse> => {
     const res = await client.get<JobsListResponse>("/api/v1/inference/jobs", {
       params: {
@@ -24,6 +25,14 @@ export const createInferenceService = (client: AxiosInstance) => ({
         sort_time: params?.sort_time || "desc",
       },
     });
+    return res.data;
+  },
+
+  // 6.2 POST /api/v1/inference/jobs/{id}/cancel
+  cancelJob: async (jobId: string): Promise<CancelJobResponse> => {
+    const res = await client.post<CancelJobResponse>(
+      `/api/v1/inference/jobs/${jobId}/cancel`,
+    );
     return res.data;
   },
 
@@ -181,7 +190,10 @@ export const createInferenceService = (client: AxiosInstance) => ({
     );
     return res.data;
   },
-  cancelPrediction: async (_jobId: string): Promise<any> => {
-    return { success: true };
+  cancelPrediction: async (jobId: string): Promise<CancelJobResponse> => {
+    const res = await client.post<CancelJobResponse>(
+      `/api/v1/inference/jobs/${jobId}/cancel`,
+    );
+    return res.data;
   },
 });

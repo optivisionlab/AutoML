@@ -12,6 +12,7 @@ import {
   Server,
   AlertCircle,
   Loader2,
+  Eye,
 } from "lucide-react";
 import {
   Dialog,
@@ -29,6 +30,8 @@ import { useTranslations } from "next-intl";
 import {
   useConnectDatabaseMutation,
   useImportDatabaseTableMutation,
+  useGetTableInfoMutation,
+  type TableInfoData,
 } from "@/core/api/datasetApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
 
@@ -159,6 +162,8 @@ export default function ConnectDatabaseDialog({
     useConnectDatabaseMutation();
   const [importDatabaseTable, { isLoading: isImporting }] =
     useImportDatabaseTableMutation();
+  const [getTableInfo, { isLoading: isPreviewingTable }] =
+    useGetTableInfoMutation();
 
   // Wizard step: 1 = Cấu hình kết nối, 2 = Chọn bảng & Đặt tên
   const [step, setStep] = useState<1 | 2>(1);
@@ -168,6 +173,7 @@ export default function ConnectDatabaseDialog({
   const [tables, setTables] = useState<string[]>([]);
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [dataName, setDataName] = useState<string>("");
+  const [tablePreview, setTablePreview] = useState<TableInfoData | null>(null);
 
   const selectedConfig = databaseConfigs[form.db_type];
 
@@ -194,6 +200,7 @@ export default function ConnectDatabaseDialog({
     setTables([]);
     setSelectedTable("");
     setDataName("");
+    setTablePreview(null);
     setStep(1);
   };
 
@@ -241,8 +248,9 @@ export default function ConnectDatabaseDialog({
 
       const res = await connectDatabase(payload).unwrap();
 
-      const tableList = res.tables || [];
+      const tableList = (res as any)?.data?.tables || (res as any)?.tables || [];
       setTables(tableList);
+      setTablePreview(null);
 
       if (tableList.length > 0) {
         setSelectedTable(tableList[0]);
@@ -272,6 +280,59 @@ export default function ConnectDatabaseDialog({
         description: String(errorMsg),
         variant: "destructive",
         duration: 5000,
+      });
+    }
+  };
+
+  // Xem trước schema & 5 dòng dữ liệu của bảng đã chọn (API 4.6 POST /api/v1/datasets/database/table-info)
+  const handlePreviewTable = async () => {
+    if (!selectedTable) return;
+    try {
+      const payload = {
+        db_type: form.db_type,
+        database: form.database.trim(),
+        host: selectedConfig.isFilePath
+          ? undefined
+          : form.host.trim() || "localhost",
+        port:
+          selectedConfig.isFilePath || !form.port
+            ? undefined
+            : Number(form.port),
+        user: selectedConfig.isFilePath
+          ? undefined
+          : form.user.trim() || undefined,
+        password: selectedConfig.isFilePath
+          ? undefined
+          : form.password || undefined,
+        schema_name:
+          selectedConfig.hasSchema && form.schema_name.trim()
+            ? form.schema_name.trim()
+            : undefined,
+        extra_params: {},
+        table_name: selectedTable,
+        limit: 5,
+      };
+
+      const res = await getTableInfo(payload).unwrap();
+      const previewData = (res as any)?.data || res;
+      setTablePreview(previewData);
+
+      toast({
+        title: "Đã tải cấu trúc bảng",
+        description: `Bảng '${selectedTable}' có ${previewData?.columns?.length || 0} cột và ${previewData?.preview_count || 0} dòng mẫu.`,
+        className: "bg-green-100 text-green-800 border border-green-300",
+      });
+    } catch (err: unknown) {
+      console.error("Preview table error:", err);
+      const errorMsg =
+        (err as { data?: { detail?: string; message?: string } })?.data
+          ?.detail ||
+        getApiErrorMessage(err, "Không thể xem trước bảng.");
+
+      toast({
+        title: "Lỗi xem trước",
+        description: String(errorMsg),
+        variant: "destructive",
       });
     }
   };
@@ -551,6 +612,50 @@ export default function ConnectDatabaseDialog({
                         ))}
                       </select>
                     </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePreviewTable}
+                        disabled={isPreviewingTable || !selectedTable}
+                        className="h-8 text-xs font-semibold"
+                      >
+                        {isPreviewingTable ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Đang tải cấu trúc...
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="mr-1.5 h-3.5 w-3.5" />
+                            Xem trước cấu trúc & mẫu dữ liệu
+                          </>
+                        )}
+                      </Button>
+                      {tablePreview && (
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {tablePreview.columns.length} cột · {tablePreview.preview_count} dòng mẫu
+                        </span>
+                      )}
+                    </div>
+
+                    {tablePreview && (
+                      <div className="mt-2 rounded-xl border border-border/80 bg-muted/30 p-3 space-y-2 max-h-48 overflow-y-auto">
+                        <div className="flex flex-wrap gap-1.5">
+                          {tablePreview.columns.map((col) => (
+                            <span
+                              key={col.name}
+                              className="inline-flex items-center gap-1 rounded-md bg-background px-2 py-0.5 text-[11px] font-mono border"
+                            >
+                              <span className="font-semibold">{col.name}</span>
+                              <span className="text-muted-foreground text-[10px]">({col.type})</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="automl-dialog-field">

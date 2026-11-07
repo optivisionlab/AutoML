@@ -1,14 +1,16 @@
 import { AxiosInstance } from "axios";
 import {
+  CancelJobResponse,
   JobsListParams,
   JobsListResponse,
   TrainingJob,
   GetPipelineSamplePayload,
   PipelineSampleResponse,
+  PipelineData,
 } from "@automl/domain";
 
 export const createJobService = (client: AxiosInstance) => ({
-  // 5.1 GET /api/v1/inference/jobs
+  // 6.1 GET /api/v1/inference/jobs
   getJobs: async (params?: JobsListParams): Promise<JobsListResponse> => {
     const res = await client.get<JobsListResponse>("/api/v1/inference/jobs", {
       params: {
@@ -18,6 +20,20 @@ export const createJobService = (client: AxiosInstance) => ({
         sort_time: params?.sort_time || "desc",
       },
     });
+    if (res.data?.data) {
+      res.data.data = res.data.data.map((job) => ({
+        ...job,
+        job_id: job.job_id || job._id,
+      }));
+    }
+    return res.data;
+  },
+
+  // 6.2 POST /api/v1/inference/jobs/{id}/cancel
+  cancelJob: async (jobId: string): Promise<CancelJobResponse> => {
+    const res = await client.post<CancelJobResponse>(
+      `/api/v1/inference/jobs/${jobId}/cancel`,
+    );
     return res.data;
   },
 
@@ -34,9 +50,18 @@ export const createJobService = (client: AxiosInstance) => ({
     return res.data?.data || res.data;
   },
 
+  // GET /api/v1/inference/jobs/{job_id}/pipeline
+  getJobPipeline: async (jobId: string): Promise<PipelineData> => {
+    const res = await client.get<any>(`/api/v1/inference/jobs/${jobId}/pipeline`);
+    return res.data?.data ?? res.data;
+  },
+
   getLegacyJobsByUserId: async (_userId?: string): Promise<TrainingJob[]> => {
     const res = await client.get<JobsListResponse>("/api/v1/inference/jobs");
-    return (res.data?.data || []) as TrainingJob[];
+    return ((res.data?.data || []) as TrainingJob[]).map((job) => ({
+      ...job,
+      job_id: job.job_id || job._id,
+    }));
   },
 
   getPipelineSample: async (

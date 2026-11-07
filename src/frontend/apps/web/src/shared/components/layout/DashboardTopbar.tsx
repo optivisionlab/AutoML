@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/components/ui/dropdown-menu";
 import ModeToggle from "@/shared/components/mode-toggle";
-import { useGetUserQuery } from "@/core/api/userApi";
+import { useGetCurrentUserQuery } from "@/core/api/authApi";
 import LanguageToggle from "@/shared/components/language-toggle";
 import NotificationBell from "@/features/notifications/components/NotificationBell";
 import { useTranslations } from "next-intl";
@@ -59,21 +59,23 @@ export default function DashboardTopbar({
   const username = session?.user?.username;
   const roleLabel =
     session?.user?.role === "admin" ? t("adminRole") : t("userRole");
-  const { data: userResponse, refetch: refetchUser } = useGetUserQuery(
-    username ?? "",
-    { skip: !username },
+  const { data: userResponse, refetch: refetchUser } = useGetCurrentUserQuery(
+    undefined,
+    { skip: !session?.user },
   );
   const userData = userResponse?.data;
-  const avatarUrl = getAvatarSrc(userData?.avatar ?? userData?.image);
+  const avatarUrl = getAvatarSrc(
+    userData?.avatar ?? (userData as any)?.image ?? (session?.user as any)?.avatar,
+  );
 
   useEffect(() => {
-    if (!username) return;
+    if (!session?.user) return;
 
     const handleAvatarUpdate = () => refetchUser();
     window.addEventListener("avatar-updated", handleAvatarUpdate);
     return () =>
       window.removeEventListener("avatar-updated", handleAvatarUpdate);
-  }, [refetchUser, username]);
+  }, [refetchUser, session?.user]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-automl-navy/90 transition-colors">

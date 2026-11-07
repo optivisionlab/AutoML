@@ -1,10 +1,56 @@
-FROM node:20.19.2
-
-# setup system
-RUN apt-get update && apt-get install vim -y
-
-# setup project
+# ==========================================
+# STAGE 1: Cài đặt dependencies (được Docker cache)
+# ==========================================
+FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
+
+# Copy các file khai báo dependencies trong monorepo
+COPY package.json package-lock.json ./
+COPY packages/domain/package.json ./packages/domain/
+COPY packages/api/package.json ./packages/api/
+
+# Tận dụng cache mount để không phải tải lại các npm packages
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --legacy-peer-deps
+
+# ==========================================
+# STAGE 2: Build Next.js standalone
+# ==========================================
+FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# CMD ["/bin/bash"]
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+RUN npm run build
+
+# ==========================================
+# STAGE 3: Runner cho môi trường Production (Cực nhẹ)
+# ==========================================
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# Bảo mật: chạy với user không có quyền root
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy tài nguyên static và bundle standalone tối giản
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+CMD ["node", "apps/web/server.js"]
