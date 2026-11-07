@@ -118,3 +118,7 @@ class ImportTableRequest(DatabaseConnection):
     data_name: str
     description: str | None = None
     public: bool = False
+
+
+class DatasetQueryRequest(BaseModel):
+    sql: str = Field(..., min_length=1, max_length=10000, description="DuckDB SQL run on the dataset, which is exposed as table `data`")

@@ -5,6 +5,7 @@ import csv
 import uuid
 import math
 import asyncio
+import threading
 import pandas as pd
 from bson import ObjectId
 from typing import Any
@@ -12,7 +13,9 @@ from datetime import datetime, timezone
 from bson.errors import InvalidId
 
 # Third-party Libraries
+import duckdb
 import numpy as np
+import pyarrow as pa
 import pyarrow.csv as pv
 import pyarrow.parquet as pq
 from fastapi import status, UploadFile
@@ -606,6 +609,89 @@ class DatasetService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to read dataset: {str(e)}",
                 error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
+            )
+
+    """
+    Query Dataset With SQL
+    """
+    @staticmethod
+    def _run_dataset_sql(table: pa.Table, sql: str, max_rows: int, timeout: float) -> dict[str, Any]:
+        con = duckdb.connect()
+        # DuckDB has no statement timeout, so a timer interrupts the running query
+        timer = threading.Timer(timeout, con.interrupt)
+        try:
+            con.register("data", table)
+            # Sandbox for untrusted SQL: no file/network access or extensions, and the settings are locked
+            con.execute("SET enable_external_access = false")
+            con.execute("SET lock_configuration = true")
+            timer.start()
+            cursor = con.execute(sql)
+            columns = [column[0] for column in cursor.description or []]
+            rows = cursor.fetchmany(max_rows + 1)
+        finally:
+            timer.cancel()
+            con.close()
+
+        return {
+            "columns": columns,
+            # NaN / Infinity are not valid JSON
+            "rows": [
+                [None if isinstance(value, float) and not math.isfinite(value) else value for value in row]
+                for row in rows[:max_rows]
+            ],
+            "truncated": len(rows) > max_rows,
+        }
+
+    async def query_dataset(self, current_user: dict, dataset_id: str, sql: str, max_rows: int = 1000, timeout: float = 10.0) -> dict[str, Any]:
+        try:
+            oid = ObjectId(dataset_id)
+        except InvalidId:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid dataset ID format",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+
+        dataset = await self.repo.get_dataset_by_id(oid, include_data_link=True)
+        if not dataset or not self._has_read_permission(dataset, current_user):
+            raise exceptions.CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found or access denied",
+                error_code=constants.ErrorCode.NOT_FOUND
+            )
+
+        data_link = dataset.get("data_link")
+        if not data_link:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found, access denied, or data link missing",
+                error_code=constants.ErrorCode.NOT_FOUND
+            )
+
+        try:
+            response_buffer = await minio_service.get_object(data_link.get("bucket_name"), data_link.get("object_name"))
+            table = pq.read_table(response_buffer)
+        except Exception as e:
+            print(f"Exception when reading dataset for query: {type(e).__name__}")
+            raise exceptions.CustomException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to read dataset",
+                error_code=constants.ErrorCode.INTERNAL_SERVER_ERROR
+            )
+
+        try:
+            return await asyncio.to_thread(self._run_dataset_sql, table, sql, max_rows, timeout)
+        except duckdb.InterruptException:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Query exceeded the {timeout:g} second time limit",
+                error_code=constants.ErrorCode.BAD_REQUEST
+            )
+        except duckdb.Error as e:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid query: {e}",
+                error_code=constants.ErrorCode.BAD_REQUEST
             )
 
     """

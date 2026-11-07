@@ -18,7 +18,8 @@ from src.modules.datasets.schemas import (
     TrainingConfig,
     DatabaseConnection,
     TableInfoRequest,
-    ImportTableRequest
+    ImportTableRequest,
+    DatasetQueryRequest
 )
 from src.modules.datasets.service import DatasetService
 from src.modules.datasets.repository import DatasetRepository
@@ -305,6 +306,19 @@ async def get_dataset_data(
             "rows": total_rows,
             "records": records
         }
+    )
+
+
+@router.post("/{id}/query", response_model=responses.BaseResponse[dict])
+async def query_dataset(
+    payload: DatasetQueryRequest,
+    id: str = Path(..., description="Dataset ID"),
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: DatasetService = Depends(get_dataset_service)
+):
+    return responses.BaseResponse(
+        message="Query executed successfully",
+        data=await service.query_dataset(current_user=current_user, dataset_id=id, sql=payload.sql)
     )
 
 
