@@ -253,7 +253,7 @@ def tracing_enabled() -> bool:
     return bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
 
 
-def build_client(config: ProviderConfig, max_retries: int = 5):
+def build_client(config: ProviderConfig, max_retries: int = 0):
     """
     Dựng client SDK phù hợp với provider.
 
@@ -266,8 +266,10 @@ def build_client(config: ProviderConfig, max_retries: int = 5):
     nhận được vẫn là openai.OpenAI, nhưng lời gọi đã được ghi lại. Vì thế phải
     import có điều kiện: không cấu hình Langfuse thì không patch gì cả.
 
-    max_retries cao hơn mặc định (2) vì tier miễn phí của Gemini/OpenRouter hay
-    trả 503 UNAVAILABLE khi quá tải - lỗi tạm thời, retry là hết.
+    max_retries = 0: SDK KHÔNG tự thử lại. Vòng thử lại nằm ở agent_openai.create_completion (audit AG-03):
+    SDK dùng cùng một timeout cho mọi lần thử và không có trần tổng thời gian, nên provider treo từng giữ lượt
+    chat tới ~30 phút. Ở đó mỗi lần thử bị kẹp theo thời gian còn lại của lượt (AGENT_TURN_DEADLINE_SECONDS),
+    vẫn thử lại 503 / 429 nhiều lần (AGENT_LLM_MAX_RETRIES) cho tier miễn phí của Gemini / OpenRouter.
     """
     if tracing_enabled():
         from langfuse.openai import AzureOpenAI, OpenAI

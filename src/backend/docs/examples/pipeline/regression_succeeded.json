@@ -1,0 +1,711 @@
+{
+  "http_status": 200,
+  "body": {
+    "success": true,
+    "message": "Training pipeline retrieved successfully",
+    "data": {
+      "job_id": "6ae5a5402ebdf7162486abf5",
+      "version": "2.0.0",
+      "mode": "automl",
+      "source": "tracked",
+      "status": "succeeded",
+      "error": null,
+      "updated_at": "2026-10-31T08:22:40Z",
+      "read_dataset": {
+        "name": "Read dataset",
+        "kind": "data_loading",
+        "depends_on": [],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": null,
+        "params": {
+          "id_data": "6ae5a5402ebdf7162486abf3",
+          "format": "parquet"
+        },
+        "output": {
+          "data_url": "dataset/6ae5a53d2ebdf7162486abef/91158fe9-9f15-41f7-a5d4-bfc1b18ffbbf.parquet",
+          "n_rows": 442,
+          "n_columns": 11
+        }
+      },
+      "split_holdout_data": {
+        "name": "Split holdout data",
+        "kind": "data_splitting",
+        "depends_on": [
+          "read_dataset"
+        ],
+        "status": "skipped",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": null,
+        "params": {},
+        "output": {
+          "train_rows": 442,
+          "holdout_rows": 0
+        }
+      },
+      "preprocessing": {
+        "name": "Preprocessing",
+        "kind": "preprocessing",
+        "depends_on": [
+          "split_holdout_data"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": null,
+        "params": {
+          "target": "target",
+          "list_feature": [
+            "age",
+            "sex",
+            "bmi",
+            "bp",
+            "s1",
+            "s2",
+            "s3",
+            "s4",
+            "s5",
+            "s6"
+          ]
+        },
+        "output": {
+          "dropped_rows": 0,
+          "n_features": 10,
+          "column_types": {
+            "numeric": [
+              "age",
+              "sex",
+              "bmi",
+              "bp",
+              "s1",
+              "s2",
+              "s3",
+              "s4",
+              "s5",
+              "s6"
+            ],
+            "categorical": [],
+            "text": []
+          },
+          "class_distribution": null
+        }
+      },
+      "model_selection": {
+        "name": "Model selection",
+        "kind": "model_selection",
+        "depends_on": [
+          "preprocessing"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:24Z",
+        "error": null,
+        "params": {
+          "problem_type": "regression",
+          "search_algorithm": "grid_search",
+          "metric_sort": "r2",
+          "timeout": 600,
+          "model_names": [
+            "LinearRegression",
+            "DecisionTreeRegressor",
+            "RandomForestRegressor",
+            "GradientBoostingRegressor",
+            "KNeighborsRegressor",
+            "Ridge",
+            "Lasso",
+            "SVR"
+          ],
+          "metrics": {
+            "mse": "minimize",
+            "mae": "minimize",
+            "mape": "minimize",
+            "r2": "maximize"
+          },
+          "cv": {
+            "name": "ContinuousRepeatedStratifiedKFold",
+            "n_splits": 5,
+            "n_repeats": 5,
+            "description": "Tier 1 (<= 500 rows): Continuous Repeated Stratified K-Fold (5 splits, 5 repeats)"
+          }
+        },
+        "output": {}
+      },
+      "train": {
+        "name": "Train models",
+        "kind": "model_training",
+        "depends_on": [
+          "model_selection"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:24Z",
+        "finished_at": "2026-10-31T08:22:40Z",
+        "error": null,
+        "params": {},
+        "output": {
+          "models": {
+            "LinearRegression": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 0,
+              "trials": [
+                {
+                  "params": {
+                    "fit_intercept": true
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2998.289830187501,
+                    "mae": 44.321160802548256,
+                    "mape": 0.3964241298495756,
+                    "r2": 0.4927413105865004
+                  }
+                },
+                {
+                  "params": {
+                    "fit_intercept": false
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 27427.902854483473,
+                    "mae": 155.90932768807482,
+                    "mape": 1.2120799938710594,
+                    "r2": -3.6336113971366313
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "DecisionTreeRegressor": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 2,
+              "trials": [
+                {
+                  "params": {
+                    "max_depth": 5,
+                    "min_samples_split": 2
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 4444.878144861765,
+                    "mae": 53.08674864889275,
+                    "mape": 0.45023605862574234,
+                    "r2": 0.24853673604732202
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 5,
+                    "min_samples_split": 5
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 4407.596607556821,
+                    "mae": 52.87429371059862,
+                    "mape": 0.448422908071473,
+                    "r2": 0.25493286964796724
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 5,
+                    "min_samples_split": 10
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 4355.742614706832,
+                    "mae": 52.57495998510129,
+                    "mape": 0.4469149802875876,
+                    "r2": 0.26354165359780124
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 10,
+                    "min_samples_split": 2
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 6483.258505616225,
+                    "mae": 63.25600842004128,
+                    "mape": 0.54667527437889,
+                    "r2": -0.09493428987901618
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 10,
+                    "min_samples_split": 5
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 6302.237232037163,
+                    "mae": 62.529440496804575,
+                    "mape": 0.540364118638074,
+                    "r2": -0.06380285714021686
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 10,
+                    "min_samples_split": 10
+                  },
+                  "status": "pruned",
+                  "scores": {
+                    "mse": null,
+                    "mae": null,
+                    "mape": null,
+                    "r2": null
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 15,
+                    "min_samples_split": 2
+                  },
+                  "status": "pruned",
+                  "scores": {
+                    "mse": null,
+                    "mae": null,
+                    "mape": null,
+                    "r2": null
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 15,
+                    "min_samples_split": 5
+                  },
+                  "status": "pruned",
+                  "scores": {
+                    "mse": null,
+                    "mae": null,
+                    "mape": null,
+                    "r2": null
+                  }
+                },
+                {
+                  "params": {
+                    "max_depth": 15,
+                    "min_samples_split": 10
+                  },
+                  "status": "pruned",
+                  "scores": {
+                    "mse": null,
+                    "mae": null,
+                    "mape": null,
+                    "r2": null
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "RandomForestRegressor": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 3,
+              "trials": [
+                {
+                  "params": {
+                    "max_features": "sqrt",
+                    "n_estimators": 50
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3301.4405280143,
+                    "mae": 46.78500827374873,
+                    "mape": 0.4147551929747247,
+                    "r2": 0.44255337088351593
+                  }
+                },
+                {
+                  "params": {
+                    "max_features": "sqrt",
+                    "n_estimators": 100
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3273.62684947906,
+                    "mae": 46.74102737487231,
+                    "mape": 0.41514572729401783,
+                    "r2": 0.44706968878230025
+                  }
+                },
+                {
+                  "params": {
+                    "max_features": "log2",
+                    "n_estimators": 50
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3316.272913501532,
+                    "mae": 47.02742400408581,
+                    "mape": 0.4166154624638933,
+                    "r2": 0.4401559593246073
+                  }
+                },
+                {
+                  "params": {
+                    "max_features": "log2",
+                    "n_estimators": 100
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3258.1608895587333,
+                    "mae": 46.75766986721144,
+                    "mape": 0.4157176597400429,
+                    "r2": 0.4497371611458281
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "GradientBoostingRegressor": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 0,
+              "trials": [
+                {
+                  "params": {
+                    "learning_rate": 0.05,
+                    "n_estimators": 50
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3286.845264819067,
+                    "mae": 47.14264525592821,
+                    "mape": 0.4187743169725202,
+                    "r2": 0.4447153562523772
+                  }
+                },
+                {
+                  "params": {
+                    "learning_rate": 0.05,
+                    "n_estimators": 100
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3287.351046161362,
+                    "mae": 46.59121400137441,
+                    "mape": 0.4058764236428023,
+                    "r2": 0.4444148930374668
+                  }
+                },
+                {
+                  "params": {
+                    "learning_rate": 0.1,
+                    "n_estimators": 50
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3292.744393482327,
+                    "mae": 46.57587323739754,
+                    "mape": 0.4050336833565907,
+                    "r2": 0.44328416872467935
+                  }
+                },
+                {
+                  "params": {
+                    "learning_rate": 0.1,
+                    "n_estimators": 100
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3444.4214596647657,
+                    "mae": 47.25507500846646,
+                    "mape": 0.4086556065012619,
+                    "r2": 0.417723237206126
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "KNeighborsRegressor": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 7,
+              "trials": [
+                {
+                  "params": {
+                    "n_neighbors": 3,
+                    "weights": "uniform"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3911.0373294745204,
+                    "mae": 48.72094313925774,
+                    "mape": 0.41853063447133027,
+                    "r2": 0.3382117640997768
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 3,
+                    "weights": "distance"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3895.625440043435,
+                    "mae": 48.45616073049841,
+                    "mape": 0.41571821260567177,
+                    "r2": 0.3407935963302814
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 5,
+                    "weights": "uniform"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3570.78842206333,
+                    "mae": 47.227107252298275,
+                    "mape": 0.40657958544679695,
+                    "r2": 0.3962781983288536
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 5,
+                    "weights": "distance"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3556.7464515606466,
+                    "mae": 46.873190031670894,
+                    "mape": 0.40335100194028145,
+                    "r2": 0.39863570113264024
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 7,
+                    "weights": "uniform"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3415.3346959621435,
+                    "mae": 46.38919889099665,
+                    "mape": 0.40437819245688233,
+                    "r2": 0.4224840440415801
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 7,
+                    "weights": "distance"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3408.3596454185517,
+                    "mae": 46.182710296156216,
+                    "mape": 0.4017702110457907,
+                    "r2": 0.42368161160645373
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 9,
+                    "weights": "uniform"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3369.45518581571,
+                    "mae": 46.24636477130859,
+                    "mape": 0.40319706846798176,
+                    "r2": 0.4301685715939322
+                  }
+                },
+                {
+                  "params": {
+                    "n_neighbors": 9,
+                    "weights": "distance"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3357.175118040984,
+                    "mae": 45.93905314731217,
+                    "mape": 0.4001361581780435,
+                    "r2": 0.43227177915132003
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "Ridge": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 2,
+              "trials": [
+                {
+                  "params": {
+                    "alpha": 0.1
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2997.835255932801,
+                    "mae": 44.31752044671752,
+                    "mape": 0.3963470839123968,
+                    "r2": 0.49281884372212725
+                  }
+                },
+                {
+                  "params": {
+                    "alpha": 1.0
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2995.70597014699,
+                    "mae": 44.29721663139961,
+                    "mape": 0.3958768282694008,
+                    "r2": 0.4931833594351565
+                  }
+                },
+                {
+                  "params": {
+                    "alpha": 10.0
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2993.5908723739312,
+                    "mae": 44.30093058203816,
+                    "mape": 0.39558608824470715,
+                    "r2": 0.49356200017215435
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "Lasso": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 1,
+              "trials": [
+                {
+                  "params": {
+                    "alpha": 0.1
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2996.5986633740667,
+                    "mae": 44.308872549921105,
+                    "mape": 0.3958572333170677,
+                    "r2": 0.4930374871576153
+                  }
+                },
+                {
+                  "params": {
+                    "alpha": 1.0
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 2986.8881939787702,
+                    "mae": 44.40323483058124,
+                    "mape": 0.3965386669179089,
+                    "r2": 0.4947924379716031
+                  }
+                },
+                {
+                  "params": {
+                    "alpha": 10.0
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3272.372254206907,
+                    "mae": 47.78025076718115,
+                    "mape": 0.4375087223212945,
+                    "r2": 0.4473132939061058
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "SVR": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 2,
+              "trials": [
+                {
+                  "params": {
+                    "C": 0.1,
+                    "kernel": "rbf"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 5915.860236754753,
+                    "mae": 64.23111773365821,
+                    "mape": 0.5603095082855407,
+                    "r2": 0.002201236760960108
+                  }
+                },
+                {
+                  "params": {
+                    "C": 1,
+                    "kernel": "rbf"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 4972.489128651652,
+                    "mae": 58.62828548949136,
+                    "mape": 0.4975866533355538,
+                    "r2": 0.1612655320923435
+                  }
+                },
+                {
+                  "params": {
+                    "C": 10,
+                    "kernel": "rbf"
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "mse": 3092.8928885328805,
+                    "mae": 44.96730920170782,
+                    "mape": 0.38761709679139256,
+                    "r2": 0.47710742807847956
+                  }
+                }
+              ],
+              "holdout_scores": null
+            }
+          }
+        }
+      },
+      "select_best": {
+        "name": "Select best model",
+        "kind": "model_selection",
+        "depends_on": [
+          "train"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:40Z",
+        "finished_at": "2026-10-31T08:22:40Z",
+        "error": null,
+        "params": {},
+        "output": {
+          "best_model": "Lasso",
+          "score_source": "cv"
+        }
+      },
+      "save_result": {
+        "name": "Save result",
+        "kind": "result_storage",
+        "depends_on": [
+          "select_best"
+        ],
+        "status": "succeeded",
+        "started_at": "2026-10-31T08:22:40Z",
+        "finished_at": "2026-10-31T08:22:40Z",
+        "error": null,
+        "params": {
+          "bucket_name": "models"
+        },
+        "output": {
+          "object_name": "6ae5a53d2ebdf7162486abef/6ae5a5402ebdf7162486abf5/Lasso_1.pkl"
+        }
+      }
+    },
+    "meta": null
+  }
+}

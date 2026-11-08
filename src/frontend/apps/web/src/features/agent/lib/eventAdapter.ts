@@ -309,6 +309,8 @@ export interface JobView {
   leaderboard?: LeaderboardRow[];
   modelsScored?: number;
   verification?: Verification;
+  /** Nguồn điểm (audit AG-02): "holdout" tập kiểm tra riêng, "cv" cross-validation lạc quan, null không rõ. */
+  scoreSource?: "holdout" | "cv" | null;
   error?: string;
   warning?: string;
   /** Model đã được kích hoạt để dự đoán (theo API backend). */
@@ -367,6 +369,7 @@ export const JOB_EVENT_TYPES = new Set([
   "job_watch_warning",
   "job_watch_resumed",
   "auto_activate_changed",
+  "model_activation",
 ]);
 
 export const JOB_TERMINAL: JobStatus[] = ["completed", "failed", "cancelled", "unknown"];
@@ -387,6 +390,8 @@ function toLeaderboard(rows: unknown, metric: string | undefined): LeaderboardRo
 /** Áp một sự kiện job vào danh sách job. Trả về chính `jobs` nếu sự kiện không liên quan. */
 export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent): Record<string, JobView> {
   if (!event.type || !JOB_EVENT_TYPES.has(event.type) || !event.job_id) return jobs;
+  // Bật / tắt model của một job cũ không có thẻ trong phiên: không dựng thẻ job "đã gửi" giả.
+  if (event.type === "model_activation" && !jobs[String(event.job_id)]) return jobs;
 
   const jobId = String(event.job_id);
   const at = typeof event.time === "number" ? event.time * 1000 : Date.now();
@@ -445,6 +450,8 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         leaderboard: toLeaderboard(event.leaderboard, event.metric_sort ?? next.metric),
         modelsScored: event.models_scored,
         verification: event.verification,
+        scoreSource: event.score_source === "holdout" || event.score_source === "cv" ? event.score_source
+          : "score_source" in event ? null : next.scoreSource,
         // job_done lặp (vd watch_job sau khi watcher đã báo) không mang activation: giữ kết quả cũ.
         activation: activation ?? next.activation,
         activated: activation?.ok ? true : next.activated,
@@ -471,6 +478,10 @@ export function applyJobEvent(jobs: Record<string, JobView>, event: AgentEvent):
         autoActivate: undefined,
         autoActivateSkipped: undefined,
       };
+      break;
+    case "model_activation":
+      // Người dùng bấm xác nhận bật / tắt model (thẻ hành động): chỉ đổi cờ kích hoạt, không đổi trạng thái job.
+      next.activated = event.activated === true;
       break;
     case "auto_activate_changed":
       next.autoActivate = event.enabled === true;

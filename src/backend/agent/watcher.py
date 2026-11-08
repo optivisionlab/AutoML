@@ -10,7 +10,9 @@ khi status ≠ 0 (mũi tên "theo dõi job" trong sơ đồ), rồi:
   2. Phát sự kiện ra frontend (SSE) và ghi vào phiên chat, để lượt chat kế tiếp
      Agent Manager biết job đã xong mà không phải hỏi lại backend.
 
-Mỗi lần hỏi chỉ đọc danh sách job (GET /inference/jobs) và không gọi LLM.
+Không gọi LLM. Lần hỏi thường chỉ đọc pipeline của MỘT job (GET /inference/jobs/{id}); danh sách job đầy đủ
+(GET /inference/jobs, lật trang) chỉ đọc lúc đầu, khi pipeline báo kết thúc / không đọc được, và định kỳ
+FULL_CHECK_EVERY lần một (audit AG-05).
 """
 
 # Standard libraries
@@ -30,8 +32,15 @@ DEFAULT_POLL_SECONDS = 20
 # Config không có timeout thì backend chạy tới khi mọi model xong, không giới
 # hạn. Watcher vẫn phải có hạn để thread không sống mãi.
 _BACKEND_DEFAULT_MAX_TIME = 4 * 60 * 60
-# Ngoài max_time, job còn phải xếp hàng Kafka và gộp kết quả các worker.
+# Ngoài max_time (backend chỉ tính thời gian chờ các task model), job còn đọc dữ liệu, tiền xử lý và gộp kết quả.
 _GRACE_SECONDS = 15 * 60
+# Hạn tuyệt đối của việc theo dõi một job, khớp WATCHING_TTL_SECONDS của server: job nằm "queued" mãi (gửi Kafka
+# hỏng) thì thread vẫn phải dừng.
+_MAX_WATCH_SECONDS = 26 * 60 * 60
+# Lần hỏi thường chỉ đọc pipeline của job (rẻ). Danh sách job đầy đủ đọc lại mỗi bấy nhiêu lần (~2 phút với nhịp 20 s):
+# huỷ job (POST /inference/jobs/{id}/cancel) chỉ đổi status trong bản ghi job, KHÔNG đổi pipeline.status - không có
+# lần kiểm này thì job bị huỷ trông như vẫn chạy tới hết hạn.
+FULL_CHECK_EVERY = 6
 
 # Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong
 # src/core/constants.py của backend.
@@ -114,13 +123,16 @@ def _round(scores: dict) -> dict:
     return {k: round(v, 4) if isinstance(v, float) else v for k, v in (scores or {}).items()}
 
 
-def summarize_job(job: dict, requirements: dict | None = None) -> dict:
+def summarize_job(job: dict, requirements: dict | None = None, score_source: str | None = None) -> dict:
     """
     Tóm tắt kết quả job cho Manager và frontend.
 
     PHẢI kèm điểm đầy đủ: best_score chỉ là điểm theo metric_sort, các metric
     khác (precision, recall, f1...) nằm trong orther_model_scores. Thiếu phần này
     thì agent kết luận sai là "hệ thống không có các chỉ số khác".
+
+    score_source (audit AG-02): "holdout" | "cv" | None - điểm đo trên tập kiểm tra riêng hay là điểm
+    cross-validation lạc quan (dataset ≤ 10.000 dòng). Luôn kèm, để không ai báo điểm CV như hiệu năng thật.
     """
     config = job.get("config") or {}
     metric = (config.get("metric_sort") or "").strip().lower()
@@ -155,6 +167,8 @@ def summarize_job(job: dict, requirements: dict | None = None) -> dict:
             # nghĩa là bảng xếp hạng chưa đủ.
             "models_scored": len(entries),
             "not_available": "Backend không lưu ma trận nhầm lẫn hay đường ROC - chỉ có các metric trong best_model_scores.",
+            "score_source": score_source,
+            "score_note": tools.SCORE_SOURCE_NOTES[score_source if score_source in tools.SCORE_SOURCES else None],
         })
         # Chỉ kèm kiểm định khi người dùng có đặt ràng buộc - không thì agent
         # dễ diễn giải "checks rỗng" thành "chưa kiểm định được".
@@ -235,10 +249,11 @@ class JobWatcher:
             if requirements is None:
                 requirements = self._promise_requirements.get(job_id)
 
-            deadline = time.time() + (max_time or _BACKEND_DEFAULT_MAX_TIME) + _GRACE_SECONDS
+            budget = (max_time or _BACKEND_DEFAULT_MAX_TIME) + _GRACE_SECONDS
+            deadline = time.time() + budget
             thread = threading.Thread(
                 target=self._run,
-                args=(job_id, deadline, requirements, trace_context),
+                args=(job_id, deadline, requirements, trace_context, budget),
                 name=f"job-watch-{job_id[:8]}",
                 daemon=True,
             )
@@ -291,17 +306,21 @@ class JobWatcher:
                 if thread.is_alive()
             }
 
-    def set_auto_activate(self, job_id: str, enabled: bool, constraints: list[dict] | None = None) -> str:
+    def set_auto_activate(
+        self, job_id: str, enabled: bool, constraints: list[dict] | None = None, only_if_pending: bool = False,
+    ) -> str:
         """
         Bật/tắt tự kích hoạt cho một job ĐANG được theo dõi (người dùng đổi ý sau khi job đã
-        chạy: nút trên thẻ job, hoặc tool set_auto_activate của Operation Agent).
+        chạy: nút trên thẻ job, thẻ xác nhận, hoặc tool set_auto_activate khi TẮT / siết điều kiện).
 
         constraints (chỉ khi bật): điều kiện người dùng vừa nêu, đã chuẩn hoá - cộng vào ràng
         buộc được kiểm lúc job xong (thay ràng buộc cùng metric).
+        only_if_pending: chỉ đổi khi lời hứa ĐANG chờ - kiểm và đổi trong cùng khoá, nên người dùng
+            vừa bấm Huỷ thì việc siết điều kiện từ tool không bật lại lời hứa.
 
         Returns:
             "ok" | "not_watched" (job không còn được theo dõi) | "in_progress" (đang kích
-            hoạt) | "finished" (lời hứa đã xử lý xong hoặc đã hết hiệu lực).
+            hoạt) | "finished" (lời hứa đã xử lý xong hoặc đã hết hiệu lực) | "not_pending".
         """
         with self._lock:
             thread = self._threads.get(job_id)
@@ -312,6 +331,8 @@ class JobWatcher:
                 return "in_progress"
             if state in ("done", "expired"):
                 return "finished"
+            if only_if_pending and state != "pending":
+                return "not_pending"
             self._auto[job_id] = "pending" if enabled else "cancelled"
             if enabled and constraints:
                 self._added_constraints[job_id] = _merge_constraints(self._added_constraints.get(job_id) or [], constraints)
@@ -406,7 +427,10 @@ class JobWatcher:
     def stop(self) -> None:
         self._stopped.set()
 
-    def _run(self, job_id: str, deadline: float, requirements: dict | None, trace_context: dict | None = None) -> None:
+    def _run(
+        self, job_id: str, deadline: float, requirements: dict | None, trace_context: dict | None = None,
+        budget: float | None = None,
+    ) -> None:
         def emit(type: str, level: str | None = None, with_auto: bool = False, **data) -> None:
             if with_auto:
                 # Chụp trạng thái tự kích hoạt và phát TRONG khoá (như set_auto_activate): một lần huỷ
@@ -419,7 +443,13 @@ class JobWatcher:
                 self._emit(type, agent="operation-agent", **data)
             tracing.log_event(type, trace_context, data, level=level)
 
-        state = {"started": time.time(), "last_status": None, "warned": None}
+        started = time.time()
+        state = {
+            "started": started, "last_status": None, "warned": None, "polls": 0, "phase": None,
+            # Hạn tính từ lúc job THẬT SỰ chạy (audit AG-16): còn "queued" (xếp hàng worker) thì hạn lùi theo,
+            # trong trần tuyệt đối _MAX_WATCH_SECONDS.
+            "deadline": deadline, "budget": budget, "hard_deadline": started + _MAX_WATCH_SECONDS,
+        }
 
         while not self._stopped.is_set():
             # Bọc cả lần hỏi: một lỗi ngoài dự kiến (bản ghi job dị dạng, client
@@ -432,7 +462,7 @@ class JobWatcher:
                 log_exception(_log, "theo dõi job %s lỗi", job_id)
                 self._warn(emit, state, job_id, "error", "Lỗi tạm thời khi theo dõi job, sẽ thử lại.")
 
-            if time.time() >= deadline:
+            if time.time() >= min(state["deadline"], state["hard_deadline"]):
                 summary = {
                     "job_id": job_id,
                     "status": state["last_status"],
@@ -463,7 +493,26 @@ class JobWatcher:
             log_exception(_log, "on_finish lỗi cho job %s", summary.get("job_id"))
 
     def _poll_once(self, job_id: str, requirements: dict | None, emit, state: dict) -> bool:
-        """Hỏi trạng thái job một lần. True khi việc theo dõi đã kết thúc."""
+        """
+        Hỏi trạng thái job một lần. True khi việc theo dõi đã kết thúc.
+
+        Lần đầu và mỗi FULL_CHECK_EVERY lần: đọc bản ghi job từ danh sách job của người dùng (xác nhận chủ job,
+        thấy job bị huỷ / bị xoá). Các lần còn lại chỉ đọc pipeline của job; pipeline còn queued / running là
+        xong lần hỏi, pipeline kết thúc hay không đọc được thì đọc bản ghi đầy đủ ngay.
+        """
+        state["polls"] += 1
+        if state["polls"] > 1 and (state["polls"] - 1) % FULL_CHECK_EVERY != 0:
+            phase = tools.job_pipeline_phase(self._api, job_id)
+            if phase in ("queued", "running"):
+                self._note_phase(state, phase)
+                if state["warned"]:
+                    emit("job_watch_resumed", job_id=job_id)
+                    state["warned"] = None
+                if state["last_status"] != tools.JOB_RUNNING:
+                    emit("job_status", job_id=job_id, status=tools.JOB_RUNNING, phase=phase,
+                         elapsed=round(time.time() - state["started"]), with_auto=True)
+                    state["last_status"] = tools.JOB_RUNNING
+                return False
         job, problem = tools.find_own_job(self._api, job_id)
 
         if problem is None:
@@ -484,8 +533,10 @@ class JobWatcher:
                 state["last_status"] = status
 
             if status in tools.JOB_FINISHED:
+                # Nguồn điểm (holdout / cv) đọc MỘT lần khi job xong - quyết định cả câu báo lẫn việc tự kích hoạt.
+                source = tools.job_score_source(self._api, job_id) if status == tools.JOB_SUCCESS else None
                 try:
-                    summary = summarize_job(job, self.requirements_now(job_id, requirements))
+                    summary = summarize_job(job, self.requirements_now(job_id, requirements), score_source=source)
                 except Exception:  # noqa: BLE001 - bản ghi dị dạng: vẫn phải báo job đã xong
                     log_exception(_log, "tóm tắt job %s lỗi", job_id)
                     summary = {
@@ -501,8 +552,10 @@ class JobWatcher:
                         summary["activation"] = activation
                 self.drop_promise(job_id)
                 failed = status != tools.JOB_SUCCESS or (summary.get("verification") or {}).get("passed") is False
-                emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", level="WARNING" if failed else None, **summary)
+                # Báo phiên (sự kiện cho Manager, thẻ xác nhận kích hoạt nếu có) TRƯỚC job_done: frontend thôi nghe
+                # kênh nền ngay khi nhận job_done của job cuối cùng - thẻ phát sau đó sẽ bị lỡ.
                 self._finish(summary)
+                emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", level="WARNING" if failed else None, **summary)
                 return True
             return False
 
@@ -518,6 +571,13 @@ class JobWatcher:
             self._warn(emit, state, job_id, "auth", "Phiên đăng nhập hết hạn, sẽ thử lại khi có token mới.")
         # Lỗi khác (mất mạng, backend khởi động lại) coi là tạm thời: hỏi lại sau.
         return False
+
+    @staticmethod
+    def _note_phase(state: dict, phase: str) -> None:
+        """Pipeline còn xếp hàng (hoặc vừa bắt đầu chạy): hạn theo dõi tính lại từ lúc này, trong trần tuyệt đối."""
+        if state.get("budget") and (phase == "queued" or state["phase"] != "running"):
+            state["deadline"] = min(state["hard_deadline"], max(state["deadline"], time.time() + state["budget"]))
+        state["phase"] = phase
 
     def activate_if_allowed(self, job_id: str, summary: dict, requirements: dict | None) -> dict:
         """
@@ -554,6 +614,23 @@ class JobWatcher:
                 "error": (
                     f"Không tự kích hoạt vì không kiểm được ràng buộc theo {', '.join(unchecked)} "
                     "(job không có điểm cho metric đó)."
+                ),
+            }
+        source = summary.get("score_source")
+        if checks and source != "holdout":
+            # Audit AG-02: ràng buộc chỉ "đạt" theo điểm cross-validation (dataset ≤ 10.000 dòng: model thắng được
+            # chọn bằng chính điểm đó, không có tập kiểm tra riêng) hoặc không rõ nguồn điểm - con số lạc quan,
+            # không đủ để TỰ đưa model vào phục vụ. Người dùng quyết định qua thẻ xác nhận kích hoạt.
+            return {
+                "ok": False,
+                "skipped": True,
+                "needs_confirmation": True,
+                "score_source": source,
+                "error": (
+                    "Không tự kích hoạt: các ràng buộc chỉ đạt theo "
+                    + ("điểm cross-validation trên chính dữ liệu dùng để chọn model (không có tập kiểm tra riêng)"
+                       if source == "cv" else "điểm không rõ có đo trên tập kiểm tra riêng hay không")
+                    + " - có thể lạc quan. Người dùng tự quyết định kích hoạt."
                 ),
             }
         try:

@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent, useRef, useState } from "react";
+import { DragEvent, useEffect, useRef, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { Bot, PanelRight, PanelRightClose, SquarePen, UploadCloud } from "lucide-react";
@@ -58,6 +58,18 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
   const [pending, setPending] = useState<PendingUpload | null>(null);
   // Bản nháp chung cho composer màn chào và composer khung chat (xem PromptComposer).
   const [draft, setDraft] = useState("");
+  // ?prompt=... (vd từ trang Kết nối database): CHỈ điền sẵn vào ô chat, người dùng tự bấm gửi.
+  // Gỡ tham số khỏi URL để tải lại trang không điền lại.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const prompt = url.searchParams.get("prompt");
+    if (!prompt) return;
+    setDraft(prompt.slice(0, 2000));
+    url.searchParams.delete("prompt");
+    // State null: Next App Router chặn replaceState và đồng bộ URL mới vào router (state có __NA thì
+    // Next coi là thao tác nội bộ và bỏ qua, useSearchParams vẫn còn prompt).
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   const [composerError, setComposerError] = useState<ComposerError | null>(null);
   const [dragging, setDragging] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -104,6 +116,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
       pending={pending}
       onPendingChange={setPending}
       onSend={agent.send}
+      onStop={agent.cancelTurn}
+      stopping={agent.stopping}
       text={draft}
       onTextChange={setDraft}
       onUpload={agent.upload}
@@ -224,7 +238,15 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
             </div>
           ) : (
             <>
-              <ConversationThread items={agent.items} liveTrace={agent.liveTrace} jobs={agent.jobs} actions={actions} />
+              <ConversationThread
+                items={agent.items}
+                liveTrace={agent.liveTrace}
+                jobs={agent.jobs}
+                actions={actions}
+                pendingActions={agent.pendingActions}
+                onDecide={agent.confirmAction}
+                busy={agent.busy}
+              />
               <div className="border-t border-automl-line bg-automl-surface/90 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
                 <div className="mx-auto w-full max-w-[820px]">{composer("docked")}</div>
               </div>

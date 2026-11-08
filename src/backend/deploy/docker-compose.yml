@@ -29,6 +29,9 @@ services:
     container_name: hautoml_service
     restart: unless-stopped
     command: ["python", "-m", "src.main"]
+    volumes:
+      # File SQLite/DuckDB cho SQL Agent đọc (DB_SOURCE_FILES_DIR mặc định /app/data_sources), chỉ-đọc.
+      - ../data_sources:/app/data_sources:ro
     ports:
       - "${PORT_BACK_END:-9999}:9999"
     env_file:

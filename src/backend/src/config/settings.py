@@ -80,6 +80,34 @@ class MapReduceSettings(CommonSettings):
     ACTOR_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_ACTOR_IDLE_TIMEOUT")
 
 
+class DatabaseSourceSettings(CommonSettings):
+    """
+    Nguồn dữ liệu ngoài (SQL / NoSQL) mà người dùng và agent truy vấn qua KẾT NỐI ĐÃ LƯU.
+
+    ENCRYPTION_KEY: khoá Fernet mã hoá mật khẩu kết nối; để trống thì tính năng bị tắt (không có
+        khoá mặc định). Tạo bằng: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    FILES_DIR: chỉ được đọc file SQLite/DuckDB nằm trong thư mục này (chặn đọc file tuỳ ý trên server).
+    MONGO_ALLOWED_HOSTS: host MongoDB được phép kết nối (chặn SSRF), cách nhau bởi dấu phẩy; mặc định
+        rỗng = tắt MongoDB. Database của chính ứng dụng (MONGODB.NAME) luôn bị chặn.
+    SQL_ALLOWED_HOSTS: host PostgreSQL / MySQL được phép kết nối (chặn SSRF), cách nhau bởi dấu phẩy;
+        mặc định rỗng = tắt hai loại này. Tài khoản database khai cho HAutoML phải chỉ có quyền SELECT.
+    """
+    ENCRYPTION_KEY: str = Field(default="", validation_alias="DB_CONNECTION_ENCRYPTION_KEY")
+    FILES_DIR: Path = Field(default=BASE_DIR / "data_sources", validation_alias="DB_SOURCE_FILES_DIR")
+    # Mặc định KHÔNG cho host nào: MongoDB của chính ứng dụng thường không bật xác thực, mở sẵn
+    # localhost/mongodb là cho người dùng đọc tbl_User của mọi người. Quản trị tự khai nguồn ngoài.
+    MONGO_ALLOWED_HOSTS: str = Field(default="", validation_alias="DB_SOURCE_MONGO_ALLOWED_HOSTS")
+    SQL_ALLOWED_HOSTS: str = Field(default="", validation_alias="DB_SOURCE_SQL_ALLOWED_HOSTS")
+    QUERY_TIMEOUT_SECONDS: float = Field(default=10.0, validation_alias="DB_SOURCE_QUERY_TIMEOUT_SECONDS")
+    WORKER_MEMORY_MB: int = Field(default=1536, validation_alias="DB_SOURCE_WORKER_MEMORY_MB")
+    PREVIEW_MAX_ROWS: int = 100
+    PREVIEW_MAX_BYTES: int = 8 * 1024 * 1024
+    IMPORT_MAX_ROWS: int = 50000
+    IMPORT_MAX_BYTES: int = 64 * 1024 * 1024
+    PREVIEW_TTL_SECONDS: int = 900
+    IMPORT_LEASE_SECONDS: int = 600
+
+
 class BackendAddress(CommonSettings):
     HOST: str = Field(default="localhost", validation_alias="BACKEND_HOST")
     PORT: int = Field(default=9999, validation_alias="BACKEND_PORT")
@@ -104,6 +132,9 @@ class Settings(CommonSettings):
 
     # Database Settings
     MONGODB: MongoDB = Field(default_factory=MongoDB)
+
+    # Nguồn dữ liệu ngoài cho kết nối đã lưu (SQL agent)
+    DATABASE_SOURCES: DatabaseSourceSettings = Field(default_factory=DatabaseSourceSettings)
 
     # Minio Settings
     MINIO: MinIOSettings = Field(default_factory=MinIOSettings)

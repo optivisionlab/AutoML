@@ -141,16 +141,24 @@ class BaseDatabaseAdapter(ABC):
         except Exception as e:
             raise QueryExecutionError(f"Failed to read table '{table_name}': {str(e)}") from e
 
+    # Dialect sqlglot cho bộ kiểm truy vấn an toàn; engine chưa có chính sách đọc riêng thì từ chối.
+    query_dialect: Optional[str] = None
+
     def run_sql(self, sql: str, limit: Optional[int] = 1000) -> pd.DataFrame:
-        """Run a read-only SQL query (SELECT / WITH only)."""
-        cleaned_sql = sql.strip().upper()
-        if not (cleaned_sql.startswith("SELECT") or cleaned_sql.startswith("WITH")):
-            raise ValueError("Only read-only queries (SELECT / WITH) are allowed.")
+        """
+        Chạy truy vấn CHỈ ĐỌC. Không còn kiểm tiền tố "SELECT" (lọt `WITH x AS (DELETE ...)`,
+        `SELECT ... INTO`, nhiều câu nối bằng `;`): câu SQL phải qua query_policy.validate_sql
+        (đúng một SELECT, không ghi, không đọc file/extension, chỉ bảng của kết nối), rồi được bọc
+        LIMIT ngay ở database thay vì đọc hết rồi cắt.
+        """
+        from src.adapters.query_policy import UnsafeQueryError, validate_sql  # noqa: PLC0415
+
+        if not self.query_dialect:
+            raise UnsafeQueryError(f"Chưa hỗ trợ truy vấn tự do cho loại database '{self.config.db_type}'.")
+        validated = validate_sql(sql, self.query_dialect, self.get_tables())
+        cap = int(limit or 1000)
         with self.engine.connect() as conn:
-            df = pd.read_sql(text(sql), con=conn)
-            if limit is not None and len(df) > limit:
-                return df.head(limit)
-            return df
+            return pd.read_sql(text(validated.limited(cap)), con=conn)
 
     def get_table_schema(self, table_name: str) -> dict[str, Any]:
         """Return the column names and types of a table."""

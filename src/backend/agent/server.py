@@ -26,12 +26,15 @@ URL - URL hay bị ghi vào log.
 
 # Standard libraries
 import asyncio
+import base64
+import functools
 import json
 import logging
 import os
 import threading
 import time
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 # Third party libraries
@@ -40,11 +43,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 # Local modules
 from agent import providers, tools, uploads
+from agent.actions import ActionError
 from agent.agent_openai import describe_error, log_exception
 from agent.api_client import ApiError, HAutoMLClient
 from agent.chat import ChatSession
@@ -57,6 +63,46 @@ load_dotenv()
 # Phiên không dùng tới quá lâu thì dọn, tránh giữ token trong RAM vô hạn.
 SESSION_TTL_SECONDS = 60 * 60
 MAX_SESSIONS = 200
+# Hạn mức theo NGƯỜI DÙNG (review 2026-11-08): không có thì một tài khoản gửi hàng trăm request không
+# kèm session_id là chiếm hết pool lượt chat, tiêu key LLM của hệ thống và đẩy phiên của người khác ra.
+MAX_SESSIONS_PER_OWNER = 8
+MAX_BUSY_TURNS_PER_OWNER = 2
+# Body JSON (mọi endpoint trừ /agent/upload): chặn TRƯỚC khi FastAPI đọc body và trước khi kiểm token,
+# người chưa đăng nhập không làm server hết RAM được bằng một body vài GB.
+MAX_JSON_BODY_BYTES = 256 * 1024
+
+
+def _user_hourly_tokens() -> int:
+    """Trần token LLM mỗi người dùng trong 60 phút gần nhất (AGENT_USER_TOKENS_PER_HOUR, 0 = tắt)."""
+    raw = os.getenv("AGENT_USER_TOKENS_PER_HOUR", "").strip()
+    return int(raw) if raw.isdigit() else 1_000_000
+
+
+# owner -> các (thời điểm, số token) của lượt chat trong giờ qua. Hạn mức 2 lượt bận / người chặn song song,
+# nhưng một tài khoản chạy liên tục 2 lượt x trần token mỗi lượt vẫn đốt key LLM của hệ thống.
+_owner_spend: dict[str, deque] = {}
+_spend_lock = threading.Lock()
+
+
+def _spent_last_hour(owner: str) -> int:
+    cutoff = time.time() - 3600
+    with _spend_lock:
+        history = _owner_spend.get(owner)
+        if not history:
+            return 0
+        while history and history[0][0] < cutoff:
+            history.popleft()
+        return sum(tokens for _, tokens in history)
+
+
+def _record_spend(owner: str, tokens: int) -> None:
+    if tokens <= 0:
+        return
+    with _spend_lock:
+        _owner_spend.setdefault(owner, deque()).append((time.time(), tokens))
+MAX_MESSAGE_CHARS = 20_000
+_MAX_ID_CHARS = 64
+_MAX_TOKEN_CHARS = 8192
 # Phiên đang theo dõi job thì giữ lâu hơn - dọn đi là watcher chết theo. Vẫn
 # có trần để một job treo không giữ phiên mãi.
 WATCHING_TTL_SECONDS = 26 * 60 * 60
@@ -80,12 +126,16 @@ def _turn_workers() -> int:
 # Lượt chat chạy hàng phút: pool riêng, để các việc ngắn dùng asyncio.to_thread
 # (xác minh token, upload) không phải chờ sau chúng.
 _TURN_POOL = ThreadPoolExecutor(max_workers=_turn_workers(), thread_name_prefix="agent-turn")
+# Lượt đang chạy + đang xếp hàng của MỌI người dùng: quá ngưỡng thì trả 503 thay vì xếp hàng vô hạn.
+MAX_PENDING_TURNS = _turn_workers() * 4
+# Upload gọi backend tới 120 giây: pool riêng, không chiếm pool mặc định mà việc xác minh token dùng.
+_UPLOAD_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-upload")
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    session_id: str | None = None
-    access_token: str | None = None
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_CHARS)
+    session_id: str | None = Field(default=None, max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
     # seq cuối frontend đã nhận. /agent/chat/stream phát lại các sự kiện sau mốc
     # này - sự kiện nền (vd job_done) rơi vào lúc luồng /agent/events đang chờ
     # kết nối lại không bị bỏ qua.
@@ -104,25 +154,47 @@ class ChatResponse(BaseModel):
     total_tokens: int
     # job_id đang được theo dõi nền.
     watching: list[str]
+    # Thẻ đang chờ người dùng bấm xác nhận (kèm token) - client không nghe SSE vẫn xác nhận được.
+    pending_actions: list[dict] = Field(default_factory=list)
+    # seq của EventBus lúc chụp pending_actions: thẻ có action_pending mới hơn mốc này không bị coi là đã hết.
+    pending_seq: int | None = None
 
 
 class EventsRequest(BaseModel):
-    session_id: str
-    access_token: str | None = None
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
     # seq của sự kiện cuối frontend đã nhận.
     after: int = 0
 
 
 class AutoActivateRequest(BaseModel):
-    session_id: str
-    access_token: str | None = None
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
     job_id: str = Field(..., min_length=1, max_length=64)
     enabled: bool
 
 
 class TokenRequest(BaseModel):
-    session_id: str
-    access_token: str | None = None
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+
+
+class CancelRequest(BaseModel):
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+    # Lượt muốn dừng (frontend biết turn_id của lượt nó gửi): không khớp lượt đang chạy thì không dừng gì.
+    turn_id: str | None = Field(default=None, max_length=64)
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+    action_id: str = Field(..., min_length=1, max_length=64)
+    # Mã một lần của thẻ - chỉ có trong sự kiện action_pending gửi frontend, LLM không bao giờ thấy.
+    token: str = Field(..., min_length=1, max_length=128)
+    decision: Literal["confirm", "reject"]
+    # Thẻ huấn luyện có đề nghị tự kích hoạt: người dùng chọn nút "huấn luyện + tự kích hoạt".
+    auto_activate: bool | None = None
 
 
 class _Entry:
@@ -135,6 +207,12 @@ class _Entry:
         # Một phiên chỉ chạy một lượt chat mỗi lúc: hai lượt song song sẽ ghi
         # xen vào cùng lịch sử hội thoại.
         self.turn_lock = threading.Lock()
+        # Số upload đang chạy trên phiên này (gọi backend tới 120 giây): phiên bận, không được dọn - dọn là
+        # đóng HTTP client giữa lúc đang gửi file.
+        self.uploads = 0
+
+    def busy(self) -> bool:
+        return self.turn_lock.locked() or self.uploads > 0
 
 
 _sessions: dict[str, _Entry] = {}
@@ -145,7 +223,7 @@ def _sweep() -> None:
     now = time.time()
     # Phiên đang chạy một lượt chat thì không bao giờ dọn: close() giữa chừng
     # làm đứt mọi lời gọi backend của lượt đó.
-    busy = {key for key, entry in _sessions.items() if entry.turn_lock.locked()}
+    busy = {key for key, entry in _sessions.items() if entry.busy()}
     dead = [
         key
         for key, entry in _sessions.items()
@@ -154,12 +232,13 @@ def _sweep() -> None:
         )
     ]
 
-    # Quá nhiều phiên thì bỏ những cái cũ nhất, chặn rò rỉ bộ nhớ. Phiên đang
-    # theo dõi job bỏ sau cùng - dọn nó là watcher chết, người dùng không được báo.
+    # Quá nhiều phiên thì bỏ những phiên RẢNH cũ nhất, chặn rò rỉ bộ nhớ. Phiên đang theo dõi job
+    # KHÔNG bao giờ bị dọn để nhường chỗ (watcher chết, lời hứa tự kích hoạt mất, người dùng không
+    # được báo) - hết chỗ thì phiên MỚI bị từ chối (_get_session trả 503).
     if len(_sessions) - len(dead) > MAX_SESSIONS:
         alive = sorted(
-            (k for k in _sessions if k not in dead and k not in busy),
-            key=lambda k: (bool(_sessions[k].session.watcher.active()), _sessions[k].touched),
+            (k for k in _sessions if k not in dead and k not in busy and not _sessions[k].session.watcher.active()),
+            key=lambda k: _sessions[k].touched,
         )
         dead.extend(alive[: max(0, len(_sessions) - len(dead) - MAX_SESSIONS)])
 
@@ -167,9 +246,37 @@ def _sweep() -> None:
         _sessions.pop(key).session.close()
 
 
+def _token_exp(token: str | None) -> float | None:
+    """
+    `exp` trong phần payload của JWT, KHÔNG kiểm chữ ký - chỉ để so token nào mới hơn (audit AG-15). Danh tính vẫn
+    do backend xác nhận qua /me; token không phải JWT / không đọc được thì None.
+    """
+    try:
+        payload = str(token or "").split(".")[1]
+        data = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        exp = data.get("exp")
+        return float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else None
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _adopt_token(api, access_token: str | None) -> None:
+    """
+    Gán token (đã được backend xác minh là của đúng chủ phiên) cho client của phiên - trừ khi nó CŨ hơn token đang
+    giữ (audit AG-15): tab cũ còn mở gửi token sắp hết hạn không được hạ cấp token mà watcher đang dùng.
+    """
+    if not access_token:
+        return
+    current_exp, new_exp = _token_exp(api.access_token), _token_exp(access_token)
+    if current_exp is not None and new_exp is not None and new_exp < current_exp:
+        return
+    api.access_token = access_token
+
+
 # token -> (user_id, hết hạn cache). Xác minh qua backend tốn một request, nên
 # nhớ ngắn hạn: frontend gửi cùng token ở mọi lượt chat / kết nối SSE.
 _OWNER_CACHE_SECONDS = 60
+_BAD_TOKEN_CACHE_SECONDS = 5
 _owner_cache: dict[str, tuple[str, float]] = {}
 _owner_lock = threading.Lock()
 
@@ -185,7 +292,8 @@ def _owner_of(access_token: str) -> str | None:
     with _owner_lock:
         cached = _owner_cache.get(access_token)
         if cached and cached[1] > now:
-            return cached[0]
+            # "" = token sai vừa bị backend từ chối: không gọi lại /me liên tục cho cùng token rác.
+            return cached[0] or None
 
     client = HAutoMLClient()
     client.access_token = access_token
@@ -195,6 +303,10 @@ def _owner_of(access_token: str) -> str | None:
         # Chỉ 401/403 mới là token sai/hết hạn. Backend không tới được hoặc lỗi 5xx
         # mà trả 401 thì frontend bảo người dùng đăng nhập lại - sai, và mất tin nhắn.
         if error.status_code in (401, 403):
+            with _owner_lock:
+                if len(_owner_cache) > 1000:
+                    _owner_cache.clear()
+                _owner_cache[access_token] = ("", now + _BAD_TOKEN_CACHE_SECONDS)
             return None
         raise BackendUnavailable(error.detail) from error
     finally:
@@ -241,6 +353,29 @@ def _find_entry(session_id: str | None, owner: str) -> _Entry | None:
     return entry
 
 
+def _make_room_for(owner: str) -> None:
+    """
+    Trước khi tạo phiên MỚI: mỗi người dùng tối đa MAX_SESSIONS_PER_OWNER phiên - vượt thì dọn phiên
+    rảnh, không theo dõi job, cũ nhất của CHÍNH người đó. Không dọn được (mọi phiên đều bận / đang theo
+    dõi job) thì 429; cả server hết chỗ thì 503. Không bao giờ dọn phiên của người khác để nhường chỗ.
+    """
+    mine = [key for key, entry in _sessions.items() if entry.owner == owner]
+    if len(mine) >= MAX_SESSIONS_PER_OWNER:
+        idle = sorted(
+            (k for k in mine if not _sessions[k].busy() and not _sessions[k].session.watcher.active()),
+            key=lambda k: _sessions[k].touched,
+        )
+        for key in idle[: len(mine) - MAX_SESSIONS_PER_OWNER + 1]:
+            _sessions.pop(key).session.close()
+        if sum(1 for entry in _sessions.values() if entry.owner == owner) >= MAX_SESSIONS_PER_OWNER:
+            raise HTTPException(
+                status_code=429,
+                detail="Bạn đang có quá nhiều phiên chat đang chạy / theo dõi job. Dùng lại phiên hiện có hoặc thử lại sau.",
+            )
+    if len(_sessions) >= MAX_SESSIONS:
+        raise HTTPException(status_code=503, detail="Agent đang quá tải, thử lại sau ít phút.")
+
+
 def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple[str, ChatSession]:
     """
     Lấy phiên cũ nếu nó thuộc về `owner`, không thì tạo phiên mới.
@@ -254,8 +389,10 @@ def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple
     if entry is not None:
         entry.touched = time.time()
         # Token được làm mới phía frontend sau mỗi 15 phút.
-        entry.session.api.access_token = access_token
+        _adopt_token(entry.session.api, access_token)
         return session_id, entry.session
+
+    _make_room_for(owner)
 
     # auto_login=False là bắt buộc ở đây: frontend phải gửi token của người dùng
     # đã đăng nhập. Nếu cho phép tự đăng nhập bằng AGENT_USER trong .env thì một
@@ -269,6 +406,56 @@ def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple
 
 
 app = FastAPI(title="HAutoML Agent API")
+
+
+class _JsonBodyLimit:
+    """
+    Middleware ASGI: body của mọi endpoint (trừ /agent/upload có giới hạn riêng) tối đa
+    MAX_JSON_BODY_BYTES. Đọc và đếm body TRƯỚC khi FastAPI parse JSON (vốn chạy trước handler kiểm
+    token), vượt trần thì trả 413 ngay - kể cả gửi chunked không có Content-Length.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") == "/agent/upload":
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        declared = headers.get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > MAX_JSON_BODY_BYTES:
+            return await self._too_large(send)
+        chunks, size, more = [], 0, True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":
+                return  # client ngắt giữa chừng
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > MAX_JSON_BODY_BYTES:
+                return await self._too_large(send)
+            chunks.append(chunk)
+            more = message.get("more_body", False)
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": b"".join(chunks), "more_body": False}
+            return await receive()  # sau body: chờ http.disconnect như bình thường (SSE cần)
+
+        return await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _too_large(send):
+        body = json.dumps({"detail": f"Request quá lớn (tối đa {MAX_JSON_BODY_BYTES // 1024} KB)."}).encode()
+        await send({"type": "http.response.start", "status": 413,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(_JsonBodyLimit)
 
 # Chỉ frontend của hệ thống được gọi agent từ trình duyệt. Không dùng cookie
 # (token nằm trong body) nên không cần allow_credentials.
@@ -295,13 +482,13 @@ async def health() -> dict:
         "llm_ready": False,
         "provider": None,
         "model": None,
-        "sessions": len(_sessions),
-        "watching_jobs": sum(len(e.session.watcher.active()) for e in _sessions.values()),
     }
     try:
         config = providers.resolve()
     except (RuntimeError, ValueError) as error:
-        result.update(status="degraded", configuration_error=str(error))
+        # /health không cần đăng nhập (audit AG-18): chi tiết (tên biến môi trường thiếu...) chỉ vào log server.
+        logging.getLogger("agent.server").warning("Cấu hình LLM lỗi: %s", error)
+        result.update(status="degraded", configuration_error="Agent chưa cấu hình được LLM - xem log của agent server.")
     else:
         result.update(llm_ready=True, provider=config.name, model=config.model)
     return result
@@ -329,19 +516,31 @@ def _start_turn(session_id: str, entry: "_Entry", message: str, turn_id: str | N
     Raises:
         HTTPException 409: phiên đang có lượt chạy hoặc đang chờ chạy.
     """
+    if entry.turn_lock.locked():
+        raise HTTPException(status_code=409, detail="Phiên này đang xử lý một tin nhắn khác.")
+    # Đếm rồi giữ khoá liền nhau trong event loop (không có await ở giữa) nên không có race.
+    busy = [e for e in _sessions.values() if e.turn_lock.locked()]
+    if sum(1 for e in busy if e.owner == entry.owner) >= MAX_BUSY_TURNS_PER_OWNER:
+        raise HTTPException(
+            status_code=429, detail="Bạn đang có tin nhắn khác chưa xử lý xong ở phiên khác - đợi xong rồi gửi tiếp.",
+        )
+    if len(busy) >= MAX_PENDING_TURNS:
+        raise HTTPException(status_code=503, detail="Agent đang quá tải, thử lại sau ít phút.")
+    budget = _user_hourly_tokens()
+    if budget and _spent_last_hour(entry.owner) >= budget:
+        raise HTTPException(
+            status_code=429,
+            detail="Bạn đã dùng hết hạn mức xử lý của agent trong 1 giờ qua - thử lại sau ít phút.",
+        )
     if not entry.turn_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="Phiên này đang xử lý một tin nhắn khác.")
-    # Lượt đang XẾP HÀNG cũng là lượt đang chạy với trang vừa tải lại (hello báo turn_id).
+    # Lượt đang XẾP HÀNG cũng là lượt đang chạy với trang vừa tải lại (hello báo turn_id), và nhận nút Dừng.
     entry.session.current_turn_id = turn_id
-    # Tin đã nhận mà chưa vào lịch sử: nút Huỷ tự kích hoạt bấm trong lúc lượt xếp hàng thì tin này
-    # là cũ hơn lần huỷ (không được dùng làm lời đồng ý bật lại).
-    entry.session.incoming_user_message = True
+    entry.session.turn_pending = True
 
     def never_ran() -> None:
-        entry.session.current_turn_id = None
-        entry.session.incoming_user_message = False
         try:
-            entry.session.team.clamp_auto_marks()
+            entry.session.end_turn()
         finally:
             # Lỗi ở đâu cũng phải nhả khoá, không thì phiên kẹt 409 mãi.
             entry.turn_lock.release()
@@ -371,6 +570,7 @@ def _run_turn(session_id: str, entry: _Entry, message: str, turn_id: str | None 
     vào đây turn_lock ĐÃ được giữ, và được nhả khi lượt xong.
     """
     session = entry.session
+    tokens_before = session.usage["total_tokens"]
     try:
         start = session.events.last_seq
         reply = session.send(message, turn_id=turn_id)
@@ -381,6 +581,7 @@ def _run_turn(session_id: str, entry: _Entry, message: str, turn_id: str | None 
         log_exception(logging.getLogger("agent.server"), "lượt chat lỗi")
         raise HTTPException(status_code=502, detail=describe_error(error))
     finally:
+        _record_spend(entry.owner, session.usage["total_tokens"] - tokens_before)
         entry.turn_lock.release()
 
     happened = session.events.since(start)
@@ -402,6 +603,9 @@ def _run_turn(session_id: str, entry: _Entry, message: str, turn_id: str | None 
         agents=agents,
         total_tokens=session.usage["total_tokens"],
         watching=session.watcher.active(),
+        # Chụp seq TRƯỚC danh sách: thẻ tạo giữa hai lần đọc có trong danh sách, hoặc mới hơn mốc.
+        pending_seq=session.events.last_seq,
+        pending_actions=session.team.actions.pending(),
     )
 
 
@@ -493,7 +697,7 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
 
     entry.touched = time.time()
-    entry.session.api.access_token = request.access_token
+    _adopt_token(entry.session.api, request.access_token)
     bus = entry.session.events
 
     async def stream():
@@ -510,6 +714,8 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
             "auto_activate_constraints": watcher.auto_activate_constraints_map(),
             # Lượt đang chạy: trang vừa tải lại không biết turn_id của nó - phải chờ kết quả.
             "turn_id": entry.session.current_turn_id,
+            # Thẻ đang chờ xác nhận: trang vừa tải lại dựng lại được nút Xác nhận / Từ chối.
+            "pending_actions": entry.session.team.actions.pending(),
         })
 
         while time.monotonic() < deadline:
@@ -530,11 +736,14 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         watching = entry.session.watcher.active()
         auto = entry.session.watcher.auto_activate_map()
         auto_constraints = entry.session.watcher.auto_activate_constraints_map()
+        pending_seq = bus.last_seq
+        pending_actions = entry.session.team.actions.pending()
         for event in bus.since(last):
             last = event["seq"]
             yield _sse(event["type"], event, event["seq"])
         yield _sse("reconnect", {
             "after": last, "watching": watching, "auto_activate": auto, "auto_activate_constraints": auto_constraints,
+            "pending_actions": pending_actions, "pending_seq": pending_seq,
         })
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
@@ -594,6 +803,22 @@ async def upload(request: Request) -> dict:
             detail=f"File vượt giới hạn {uploads.MAX_UPLOAD_MB} MB.",
         )
 
+    if _UPLOADS_IN_FLIGHT.locked():
+        raise HTTPException(status_code=503, detail="Đang có quá nhiều tệp được tải lên, thử lại sau ít phút.")
+    async with _UPLOADS_IN_FLIGHT:
+        return await _read_and_store_upload(request)
+
+
+def _release_upload(entry: "_Entry") -> None:
+    entry.uploads = max(0, entry.uploads - 1)
+
+
+# Token nằm TRONG form nên form (tới 20 MB, ghi tạm xuống đĩa) được đọc trước khi kiểm token: giới hạn số
+# upload đang xử lý cùng lúc để người chưa đăng nhập không mở hàng trăm kết nối 20 MB.
+_UPLOADS_IN_FLIGHT = asyncio.Semaphore(8)
+
+
+async def _read_and_store_upload(request: Request) -> dict:
     request = Request(request.scope, _limit_body(request.receive, _MAX_UPLOAD_BODY))
     try:
         form = await request.form(max_files=1, max_fields=10)
@@ -633,7 +858,7 @@ async def _store_upload(form) -> dict:
     content = await file.read(uploads.MAX_UPLOAD_BYTES + 1)
     await file.close()
 
-    check = uploads.check_dataset_file(file.filename or "", content)
+    check = await asyncio.to_thread(uploads.check_dataset_file, file.filename or "", content)
     if not check.ok:
         raise HTTPException(status_code=check.status_code, detail=check.error)
 
@@ -644,7 +869,12 @@ async def _store_upload(form) -> dict:
 
     # Gọi HTTP đồng bộ (tới 120 giây) - chạy trong thread để không chặn event
     # loop, nếu không mọi request khác kể cả luồng SSE đều đứng chờ.
-    result = await asyncio.to_thread(
+    entry = _sessions[session_id]
+    loop = asyncio.get_running_loop()
+    entry.uploads += 1
+    # Bộ đếm giảm khi THREAD gửi file thật sự xong - client ngắt (coroutine bị huỷ) thì thread vẫn đang dùng
+    # HTTP client của phiên, phiên phải còn "bận" tới lúc đó.
+    work = _UPLOAD_POOL.submit(functools.partial(
         tools.upload_dataset_file,
         session.api,
         filename=check.clean_name,
@@ -652,7 +882,9 @@ async def _store_upload(form) -> dict:
         data_name=data_name,
         data_type=data_type,
         mime_type=check.mime_type,
-    )
+    ))
+    work.add_done_callback(lambda _: loop.call_soon_threadsafe(_release_upload, entry))
+    result = await asyncio.wrap_future(work)
     if not result["ok"] and result.get("outcome_unknown"):
         raise HTTPException(status_code=502, detail=result.get("error"))
     if not result["ok"]:
@@ -693,7 +925,7 @@ async def update_token(request: TokenRequest) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
-    entry.session.api.access_token = request.access_token
+    _adopt_token(entry.session.api, request.access_token)
     return {"ok": True}
 
 
@@ -708,6 +940,8 @@ async def auto_activate(request: AutoActivateRequest) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
+    # Token vừa được xác minh là mới nhất: watcher dùng nó khi kích hoạt (token cũ có thể đã hết hạn).
+    _adopt_token(entry.session.api, request.access_token)
     # Cùng một đường (có khoá) với tool set_auto_activate; ghi mốc huỷ và báo Manager ở lượt sau.
     outcome = entry.session.team.change_auto_activate(request.job_id, request.enabled, by_button=True)
     if outcome == "in_progress":
@@ -717,6 +951,68 @@ async def auto_activate(request: AutoActivateRequest) -> dict:
     if outcome != "ok":
         raise HTTPException(status_code=404, detail="Job không còn được theo dõi trong phiên này.")
     return {"ok": True, "job_id": request.job_id, "auto_activate": request.enabled}
+
+
+@app.post("/agent/cancel")
+async def cancel_turn(request: CancelRequest) -> dict:
+    """
+    Nút Dừng (audit AG-03): lượt đang chạy (hoặc đang xếp hàng) của phiên dừng ở ranh giới bước kế tiếp - trước
+    lời gọi LLM tiếp theo của bất kỳ agent nào. Lời gọi LLM / tool ĐANG chạy không bị cắt ngang (tối đa
+    AGENT_LLM_TIMEOUT); lượt kết thúc bằng turn_done như thường, kèm câu "Đã dừng theo yêu cầu".
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    if not entry.session.request_cancel(request.turn_id):
+        return {"ok": False, "detail": "Không có lượt nào đang chạy."}
+    return {"ok": True}
+
+
+# Mã lỗi xác nhận -> HTTP: thẻ không có / sai mã là 404 / 403; đã xử lý / hết hạn là 409 (frontend cập nhật thẻ).
+_ACTION_ERROR_STATUS = {"not_found": 404, "bad_token": 403, "expired": 409, "resolved": 409, "bad_option": 400}
+
+
+@app.post("/agent/confirm")
+async def confirm_action(request: ConfirmRequest) -> dict:
+    """
+    Người dùng bấm Xác nhận / Từ chối trên thẻ hành động (audit AG-01) - đường DUY NHẤT để huấn luyện, bật / tắt
+    model, bật tự kích hoạt. Kiểm chủ phiên (token người dùng qua backend), mã một lần của thẻ, hạn và trạng thái;
+    team kiểm lại điều kiện của hành động rồi mới thực thi.
+
+    Xác nhận giữ turn_lock: hành động đọc / ghi dữ liệu chuyển giữa các agent (config, job) - không chen giữa một
+    lượt chat đang chạy. Từ chối thì không cần (không đổi gì ngoài thẻ).
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    _adopt_token(entry.session.api, request.access_token)
+    team = entry.session.team
+    # detail có `code` máy đọc được: frontend phân biệt "agent đang bận, bấm lại sau" (thẻ còn dùng được) với
+    # "thẻ đã xử lý / hết hạn" (thẻ hết hiệu lực) - cả hai đều là 409.
+    try:
+        if request.decision == "reject":
+            return team.reject_action(request.action_id, request.token)
+        if not entry.turn_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail={
+                "code": "busy", "message": "Agent đang trả lời - đợi xong rồi bấm xác nhận lại.",
+            })
+        # Nhả khoá khi việc thực thi THẬT SỰ xong (callback của future trong thread), không ở finally của request:
+        # client ngắt kết nối giữa chừng huỷ coroutine nhưng thread vẫn đang tạo job - lượt chat mới không được chen.
+        try:
+            work = _TURN_POOL.submit(team.confirm_action, request.action_id, request.token, request.auto_activate)
+        except BaseException:
+            entry.turn_lock.release()
+            raise
+        work.add_done_callback(lambda _future: entry.turn_lock.release())
+        return await asyncio.shield(asyncio.wrap_future(work))
+    except ActionError as error:
+        raise HTTPException(status_code=_ACTION_ERROR_STATUS.get(error.code, 409), detail={
+            "code": error.code, "status": error.status, "message": str(error),
+        }) from error
 
 
 @app.post("/agent/reset")

@@ -1,0 +1,6 @@
+{
+  "http_status": 401,
+  "body": {
+    "detail": "Not authenticated"
+  }
+}

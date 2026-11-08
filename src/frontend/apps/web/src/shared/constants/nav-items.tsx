@@ -1,5 +1,6 @@
 import {
   Bot,
+  Cable,
   Database,
   DatabaseZap,
   History,
@@ -23,6 +24,14 @@ export function NavItems(role: string) {
       labelKey: "agent",
       icon: <Bot size={18} />,
       href: "/agent",
+      active: false,
+      position: "top",
+      role: ["user", "admin"],
+    },
+    {
+      labelKey: "databaseConnections",
+      icon: <Cable size={18} />,
+      href: "/database-connections",
       active: false,
       position: "top",
       role: ["user", "admin"],

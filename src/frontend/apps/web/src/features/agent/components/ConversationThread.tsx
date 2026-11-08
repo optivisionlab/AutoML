@@ -3,8 +3,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ArrowDown } from "lucide-react";
-import type { ChatItem } from "../hooks/useAgentSession";
+import type { ActionOutcome, ChatItem } from "../hooks/useAgentSession";
+import { visibleActions, type PendingActionView } from "../lib/actions";
 import type { JobView, TurnTrace } from "../lib/eventAdapter";
+import ActionConfirmCard from "./ActionConfirmCard";
 import AgentActivityTimeline from "./AgentActivityTimeline";
 import ChatMessage, { AgentAvatar, TraceArtifacts, type JobActions } from "./ChatMessage";
 
@@ -13,12 +15,16 @@ interface Props {
   liveTrace: TurnTrace | null;
   jobs: Record<string, JobView>;
   actions: JobActions;
+  /** Thẻ xác nhận hành động thật (audit AG-01) - hiện ở cuối khung chat, sau câu trả lời mới nhất. */
+  pendingActions?: Record<string, PendingActionView>;
+  onDecide?: (actionId: string, decision: "confirm" | "reject", autoActivate?: boolean) => Promise<ActionOutcome>;
+  busy?: boolean;
 }
 
 /** Khoảng cách tới đáy (px) vẫn coi là "đang ở cuối" để tự cuộn theo nội dung mới. */
 const STICK_THRESHOLD = 120;
 
-export default function ConversationThread({ items, liveTrace, jobs, actions }: Props) {
+export default function ConversationThread({ items, liveTrace, jobs, actions, pendingActions, onDecide, busy = false }: Props) {
   const t = useTranslations("Agent.thread");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -38,7 +44,7 @@ export default function ConversationThread({ items, liveTrace, jobs, actions }: 
     const newItems = items.slice(lastCount.current);
     lastCount.current = items.length;
     if (atBottomRef.current || newItems.some((item) => item.kind === "user")) scrollToBottom();
-  }, [items, liveTrace, jobs]);
+  }, [items, liveTrace, jobs, pendingActions]);
 
   useEffect(() => {
     scrollToBottom("auto");
@@ -73,6 +79,14 @@ export default function ConversationThread({ items, liveTrace, jobs, actions }: 
                 <TraceArtifacts trace={liveTrace} jobs={jobs} actions={actions} />
               </div>
             </article>
+          )}
+
+          {onDecide && pendingActions && (
+            <div className="space-y-3" aria-live="polite">
+              {visibleActions(pendingActions).map((action) => (
+                <ActionConfirmCard key={action.actionId} action={action} locked={busy || !!liveTrace} onDecide={onDecide} />
+              ))}
+            </div>
           )}
         </div>
       </div>

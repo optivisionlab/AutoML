@@ -2,6 +2,7 @@
 import io
 import re
 import csv
+import zipfile
 import uuid
 import math
 import asyncio
@@ -175,6 +176,9 @@ class DatasetService:
 
         dataset['_id'] = str(dataset['_id'])
 
+        if dataset.get("thumbnail"):
+            dataset["thumbnail"] = await backblaze_service.get_url(dataset.get("thumbnail"))
+
         return DatasetResponse(**dataset)
 
     @staticmethod
@@ -195,6 +199,29 @@ class DatasetService:
             # Fallback
             return ','
 
+    # .xlsx là file ZIP: vài MB nén có thể giải ra hàng GB XML (zip bomb) và làm tiến trình API hết RAM khi
+    # pandas/openpyxl đọc. zipfile không giải quá kích thước khai trong central directory, nên chặn theo đó.
+    XLSX_MAX_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
+    XLSX_MAX_ENTRIES = 10_000
+
+    @classmethod
+    def _check_xlsx_archive(cls, file_stream: Any) -> None:
+        position = file_stream.tell() if hasattr(file_stream, "tell") else 0
+        try:
+            with zipfile.ZipFile(file_stream) as archive:
+                entries = archive.infolist()
+        except zipfile.BadZipFile as error:
+            raise ValueError("File .xlsx hỏng (không phải file ZIP hợp lệ).") from error
+        finally:
+            if hasattr(file_stream, "seek"):
+                file_stream.seek(position)
+        total = sum(entry.file_size for entry in entries)
+        if len(entries) > cls.XLSX_MAX_ENTRIES or total > cls.XLSX_MAX_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                f"File Excel giải nén ra quá lớn ({total // (1024 * 1024)} MB, {len(entries)} thành phần) - "
+                f"tối đa {cls.XLSX_MAX_UNCOMPRESSED_BYTES // (1024 * 1024)} MB. Lưu lại dạng CSV hoặc chia nhỏ file."
+            )
+
     def _process_stream_to_parquet(self, file_obj: Any, filename: str) -> io.BytesIO:
         if isinstance(file_obj, bytes):
             file_stream = io.BytesIO(file_obj)
@@ -207,6 +234,12 @@ class DatasetService:
 
         try:
             if filename.endswith(('.xls', '.xlsx')):
+                # Theo nội dung, không theo đuôi: XLSX đặt tên .xls vẫn được pandas nhận ra và giải nén.
+                head = file_stream.read(4) if hasattr(file_stream, "read") else b""
+                if hasattr(file_stream, "seek"):
+                    file_stream.seek(0)
+                if filename.endswith('.xlsx') or head == b"PK\x03\x04":
+                    self._check_xlsx_archive(file_stream)
                 df = pd.read_excel(file_stream)
                 df = df.loc[:, ~df.columns.str.contains('Unnamed')]
                 df.dropna(axis=1, how='all', inplace=True)
@@ -682,16 +715,44 @@ class DatasetService:
             limit
         )
 
+        return await self._persist_parquet_dataset(
+            current_user=current_user,
+            parquet_buffer=parquet_buffer,
+            data_name=payload.data_name,
+            description=payload.description,
+            public=payload.public,
+        )
+
+    async def _persist_parquet_dataset(
+        self,
+        current_user: dict,
+        parquet_buffer: io.BytesIO,
+        data_name: str,
+        description: str | None,
+        public: bool = False,
+        provenance: dict | None = None,
+        dataset_id: ObjectId | None = None,
+    ) -> DatasetResponse:
+        """
+        Lưu một bảng (parquet) thành dataset của người dùng: MinIO + bản ghi tbl_Data.
+        Dùng chung cho nhập bảng từ database và nhập KẾT QUẢ TRUY VẤN qua kết nối đã lưu.
+
+        _id được cấp TRƯỚC khi ghi: ghi metadata báo lỗi (vd mất phản hồi sau khi Mongo đã ghi) thì
+        tra lại theo _id - đã có thì coi là thành công; chỉ khi chắc chắn CHƯA có mới xoá file.
+        """
         user_id = str(current_user["_id"])
+        dataset_id = dataset_id or ObjectId()
         bucket_name = "dataset"
-        object_name = f"{user_id}/{uuid.uuid4()}.parquet"
+        # File riêng cho MỖI lần thử: hai lượt nhập chồng nhau (lượt cũ quá hạn) không ghi đè file
+        # của nhau; chỉ file của lượt ghi được metadata (_id duy nhất) được dataset trỏ tới.
+        object_name = f"{user_id}/{dataset_id}-{uuid.uuid4().hex[:12]}.parquet"
         await minio_service.upload_dataset(bucket_name, object_name, parquet_buffer)
 
         now = datetime.now(timezone.utc).timestamp()
         data_doc = {
-            "dataName": payload.data_name,
+            "dataName": data_name,
             "dataType": DataTypeEnum.TABLE.value,
-            "public": payload.public,
+            "public": public,
             "data_link": {
                 "bucket_name": bucket_name,
                 "object_name": object_name
@@ -703,13 +764,80 @@ class DatasetService:
             "role": current_user.get("role", "user"),
             "activate": 1,
             "thumbnail": None,
-            "description": payload.description
+            "description": description
         }
+        if provenance:
+            data_doc["source"] = provenance
+        data_doc["_id"] = dataset_id
 
-        inserted_doc = await self.repo.create_dataset(data_doc)
+        try:
+            inserted_doc = await self.repo.create_dataset(data_doc)
+        except Exception:
+            try:
+                existing = await self.repo.get_dataset_by_id(dataset_id, include_data_link=True)
+            except Exception:  # noqa: BLE001 - không kiểm được thì KHÔNG xoá file (có thể đã ghi)
+                raise
+            if existing:
+                # Có metadata rồi: hoặc lần ghi này thật ra đã thành công (mất phản hồi), hoặc một
+                # lượt khác thắng. Thua thì file của lần này không ai trỏ tới - xoá nó.
+                linked = (existing.get("data_link") or {}).get("object_name")
+                if linked and linked != object_name:
+                    try:
+                        await minio_service.remove_object(bucket_name, object_name)
+                    except Exception:  # noqa: BLE001 - dọn dẹp thất bại không che kết quả
+                        pass
+                inserted_doc = {k: v for k, v in existing.items() if k != "data_link"}
+            else:
+                try:
+                    await minio_service.remove_object(bucket_name, object_name)
+                except Exception:  # noqa: BLE001 - dọn dẹp thất bại không che lỗi gốc
+                    pass
+                raise
         inserted_doc["_id"] = str(inserted_doc["_id"])
 
         return DatasetResponse(**inserted_doc)
+
+    async def find_dataset(self, dataset_id: str) -> DatasetResponse | None:
+        """Dataset theo _id (đối soát lần nhập trước) - None nếu chưa có."""
+        try:
+            doc = await self.repo.get_dataset_by_id(ObjectId(dataset_id))
+        except InvalidId:
+            return None
+        if not doc:
+            return None
+        doc["_id"] = str(doc["_id"])
+        return DatasetResponse(**doc)
+
+    async def import_dataframe(
+        self,
+        current_user: dict,
+        df: pd.DataFrame,
+        data_name: str,
+        description: str | None,
+        provenance: dict | None = None,
+        dataset_id: str | None = None,
+    ) -> DatasetResponse:
+        """Kết quả truy vấn (DataFrame) -> dataset riêng tư của người dùng (luôn private)."""
+        if df.empty:
+            raise exceptions.CustomException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kết quả truy vấn rỗng - không có gì để nhập.",
+                error_code=constants.ErrorCode.BAD_REQUEST,
+            )
+        df = df.copy()
+        df.columns = df.columns.astype(str).str.strip()
+        buffer = io.BytesIO()
+        await asyncio.to_thread(df.to_parquet, buffer, index=False)
+        buffer.seek(0)
+        return await self._persist_parquet_dataset(
+            current_user=current_user,
+            parquet_buffer=buffer,
+            data_name=data_name,
+            description=description,
+            public=False,
+            provenance=provenance,
+            dataset_id=ObjectId(dataset_id) if dataset_id else None,
+        )
 
     """
     Create Metadata Of Job

@@ -116,6 +116,7 @@
   },
   "Sidebar": {
     "agent": "Agent AI",
+    "databaseConnections": "Kết nối database",
     "subtitle": "Nền tảng AutoML mở",
     "dashboard": "Bảng điều khiển",
     "publicDatasets": "Bộ dữ liệu có sẵn",
@@ -1109,7 +1110,9 @@
       "removeFile": "Bỏ file",
       "dismiss": "Đóng thông báo",
       "activeDataset": "Dataset đang dùng: {name}",
-      "clearDataset": "Bỏ chọn dataset"
+      "clearDataset": "Bỏ chọn dataset",
+      "stop": "Dừng",
+      "stopping": "Đang dừng…"
     },
     "problemTypes": {
       "classification": "Phân loại",
@@ -1297,7 +1300,9 @@
       "watchPrompt": "Kiểm tra job {id} và theo dõi tiếp tới khi xong.",
       "trackingLost": "Không còn được theo dõi: agent server đã mất phiên theo dõi job này. Job có thể vẫn đang chạy - bấm Làm mới để xem trạng thái thật.",
       "autoActivated": "Model đã được tự động kích hoạt sau khi huấn luyện xong, theo yêu cầu của bạn.",
-      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}"
+      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}",
+      "cvScore": "Theo điểm cross-validation trên chính dữ liệu dùng để chọn model (dataset nhỏ, không có tập kiểm tra riêng) - có thể lạc quan hơn thực tế.",
+      "unknownScore": "Không rõ điểm có đo trên tập kiểm tra riêng không - có thể lạc quan hơn thực tế."
     },
     "predict": {
       "title": "Thử dự đoán",
@@ -1390,6 +1395,181 @@
       "jobDone": "Job {id} đã hoàn tất.",
       "jobFailed": "Job {id} không thành công.",
       "jobTimeout": "Job {id} chạy quá thời gian chờ, agent thôi theo dõi."
+    },
+    "action": {
+      "title": {
+        "train": "Xác nhận huấn luyện",
+        "activate": "Xác nhận kích hoạt model",
+        "deactivate": "Xác nhận tắt model",
+        "autoActivate": "Xác nhận tự kích hoạt khi job xong"
+      },
+      "dataset": "Dataset",
+      "target": "Cột mục tiêu",
+      "problemType": "Loại bài toán",
+      "metric": "Metric",
+      "features": "Số cột đặc trưng",
+      "maxTime": "Thời gian tối đa",
+      "job": "Job",
+      "bestModel": "Model tốt nhất",
+      "score": "Điểm",
+      "featureList": "Đặc trưng: {list}{more, plural, =0 {} other { (+# cột nữa)}}",
+      "autoUnconditional": "Khi job {job} xong, model sẽ được kích hoạt BẤT KỂ điểm.",
+      "autoConditional": "Khi job {job} xong, model chỉ được kích hoạt nếu đạt: {constraints}.",
+      "duplicate": "Cấu hình này giống hệt job {jobs} đã chạy - xác nhận nghĩa là chạy lại.",
+      "cvScore": "Điểm này là điểm cross-validation trên chính dữ liệu dùng để chọn model (dataset nhỏ, không có tập kiểm tra riêng) nên có thể lạc quan hơn thực tế.",
+      "unknownScore": "Không xác định được điểm này đo trên tập kiểm tra riêng hay không - có thể lạc quan hơn thực tế.",
+      "confirmTrain": "Huấn luyện",
+      "confirmTrainAuto": "Huấn luyện + tự kích hoạt ({when})",
+      "always": "bất kể điểm",
+      "confirm": {
+        "train": "Huấn luyện",
+        "activate": "Kích hoạt",
+        "deactivate": "Tắt model",
+        "auto_activate": "Bật tự kích hoạt"
+      },
+      "reject": "Từ chối",
+      "waitForReply": "Đợi agent trả lời xong rồi bấm.",
+      "status": {
+        "pending": "Chờ bạn xác nhận",
+        "submitting": "Đang thực hiện…",
+        "done": "Đã thực hiện",
+        "failed": "Không thực hiện được",
+        "rejected": "Đã từ chối",
+        "expired": "Hết hiệu lực",
+        "superseded": "Đã thay bằng đề nghị mới"
+      },
+      "errors": {
+        "busy": "Agent đang trả lời - đợi xong rồi bấm lại.",
+        "auth": "Phiên đăng nhập hết hạn - đăng nhập lại rồi bấm lại.",
+        "gone": "Thẻ này không còn hiệu lực (đã xử lý, hết hạn hoặc phiên đã làm mới). Nhờ agent đề nghị lại nếu cần.",
+        "network": "Không kết nối được agent - thử lại.",
+        "server": "Agent báo lỗi - thử lại sau."
+      }
+    }
+  },
+  "DatabaseConnections": {
+    "title": "Kết nối database",
+    "subtitle": "Lưu kết nối tới database của bạn để Agent AI tự xem bảng, truy vấn chỉ-đọc và lấy dữ liệu huấn luyện.",
+    "add": "Thêm kết nối",
+    "openAgent": "Mở Agent AI",
+    "searchPlaceholder": "Tìm theo tên, loại, database...",
+    "summary": "Hiển thị {shown}/{total} kết nối",
+    "loadFailed": "Không tải được danh sách kết nối.",
+    "retry": "Thử lại",
+    "noMatch": "Không có kết nối nào khớp từ khoá.",
+    "empty": {
+      "title": "Chưa có kết nối nào",
+      "body": "Thêm kết nối PostgreSQL, MySQL, SQLite, DuckDB hoặc MongoDB. Sau đó hỏi Agent AI, ví dụ: \"Lấy bảng concrete_train để huấn luyện dự đoán strength\"."
+    },
+    "howItWorks": {
+      "title": "Agent dùng kết nối như thế nào?",
+      "step1": "Bạn lưu kết nối ở đây. Mật khẩu được mã hoá, Agent không bao giờ nhìn thấy.",
+      "step2": "Agent tự xem bảng, viết câu SELECT đã được kiểm tra an toàn và cho bạn xem trước.",
+      "step3": "Bạn đồng ý thì kết quả được nhập thành dataset để huấn luyện."
+    },
+    "table": {
+      "name": "Tên kết nối",
+      "type": "Loại",
+      "database": "Database",
+      "status": "Trạng thái",
+      "updatedAt": "Cập nhật"
+    },
+    "status": {
+      "unknown": "Chưa kiểm tra",
+      "testing": "Đang kiểm tra...",
+      "ok": "Kết nối được · {count} bảng",
+      "failed": "Lỗi kết nối"
+    },
+    "actions": {
+      "open": "Mở thao tác cho {name}",
+      "test": "Kiểm tra kết nối",
+      "browse": "Xem bảng",
+      "askAgent": "Hỏi Agent",
+      "edit": "Sửa",
+      "delete": "Xoá"
+    },
+    "toast": {
+      "created": "Đã lưu kết nối \"{name}\"",
+      "createdTestOk": "Đã lưu và kết nối được: thấy {count} bảng.",
+      "createdTestFailed": "Đã lưu kết nối nhưng chưa kết nối được. Sửa lại thông tin rồi bấm \"Kiểm tra kết nối\".",
+      "updated": "Đã cập nhật kết nối \"{name}\"",
+      "deleted": "Đã xoá kết nối",
+      "deleteFailed": "Không xoá được kết nối",
+      "testOk": "\"{name}\" kết nối được: thấy {count} bảng",
+      "testFailed": "\"{name}\" chưa kết nối được",
+      "unknownError": "Có lỗi xảy ra, vui lòng thử lại."
+    },
+    "deleteDialog": {
+      "title": "Xoá kết nối?",
+      "description": "Kết nối \"{name}\" sẽ bị xoá và Agent không dùng được nữa. Các dataset đã nhập từ kết nối này vẫn được giữ nguyên.",
+      "cancel": "Huỷ",
+      "confirm": "Xoá"
+    },
+    "form": {
+      "createTitle": "Thêm kết nối database",
+      "editTitle": "Sửa kết nối",
+      "createDescription": "Thông tin đăng nhập chỉ dùng phía server để Agent đọc dữ liệu (chỉ đọc).",
+      "editDescription": "Vì an toàn, host, tài khoản và mật khẩu cũ không được hiển thị lại. Ô nào để trống sẽ giữ nguyên giá trị cũ.",
+      "type": "Loại database",
+      "typeLocked": "Không đổi được loại sau khi tạo. Muốn đổi loại thì tạo kết nối mới.",
+      "name": "Tên kết nối",
+      "namePlaceholder": "Ví dụ: Bench Postgres",
+      "host": "Host",
+      "port": "Port",
+      "database": "Tên database",
+      "databaseFile": "Tên file",
+      "username": "Tài khoản",
+      "password": "Mật khẩu",
+      "schema": "Schema (tuỳ chọn)",
+      "schemaPlaceholder": "public",
+      "description": "Mô tả (tuỳ chọn)",
+      "descriptionPlaceholder": "Dữ liệu gì, dùng cho việc gì...",
+      "keepCurrent": "Để trống = giữ nguyên",
+      "currentDatabase": "Hiện tại: {label}",
+      "passwordKeep": "Để trống = giữ mật khẩu cũ",
+      "fileHint": "Tên file SQLite / DuckDB nằm trong thư mục nguồn dữ liệu trên server (ví dụ glass.sqlite), không phải đường dẫn trên máy bạn.",
+      "dockerHint": "Server HAutoML chạy trong Docker: dùng tên container và cổng bên trong (ví dụ hautoml-test-postgres, 5432), không dùng localhost.",
+      "securityTitle": "Lưu ý an toàn",
+      "security1": "Dùng tài khoản database chỉ có quyền SELECT.",
+      "security2": "Mật khẩu được mã hoá khi lưu và không bao giờ hiển thị lại.",
+      "security3": "Host phải nằm trong danh sách quản trị viên cho phép.",
+      "saveFailed": "Không lưu được kết nối",
+      "cancel": "Huỷ",
+      "create": "Lưu kết nối",
+      "save": "Lưu thay đổi",
+      "saving": "Đang lưu..."
+    },
+    "errors": {
+      "nameRequired": "Nhập tên kết nối.",
+      "databaseRequired": "Nhập tên database.",
+      "hostRequired": "Nhập host.",
+      "hostInvalid": "Host chỉ gồm một tên máy hoặc IP (không dấu cách, dấu phẩy, dấu /).",
+      "usernameRequired": "Nhập tài khoản.",
+      "portInvalid": "Port phải là số từ 1 đến 65535.",
+      "schemaInvalid": "Schema chỉ gồm chữ, số, dấu _ và $, không bắt đầu bằng số.",
+      "tooLong": "Quá dài."
+    },
+    "explorer": {
+      "title": "Bảng trong \"{name}\"",
+      "description": "Chỉ đọc. Agent cũng chỉ thấy đúng các bảng này.",
+      "loadFailed": "Không tải được danh sách bảng.",
+      "noTables": "Tài khoản này chưa được cấp quyền đọc bảng nào.",
+      "tableCount": "{count} bảng",
+      "filter": "Lọc bảng...",
+      "pickTable": "Chọn một bảng bên trái để xem cột và vài dòng mẫu.",
+      "columns": "Cột",
+      "columnName": "Tên cột",
+      "columnType": "Kiểu",
+      "sampleRows": "Dòng mẫu",
+      "noRows": "Bảng chưa có dữ liệu.",
+      "omitted": "Đã ẩn bớt {count} cột.",
+      "describeFailed": "Không đọc được bảng này.",
+      "askAgent": "Hỏi Agent về bảng này",
+      "close": "Đóng"
+    },
+    "agentPrompt": {
+      "tables": "Trong kết nối database \"{name}\" có những bảng nào?",
+      "table": "Trong kết nối database \"{name}\", bảng {table} có những cột nào? Cho tôi xem vài dòng mẫu."
     }
   }
 }

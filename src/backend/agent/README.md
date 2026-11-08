@@ -8,7 +8,8 @@ Sơ đồ: `docs/hautoml-multi-agent-detailed.drawio`, trang **1 · Tổng quan*
 
 ## Kiến trúc
 
-Agent Manager nói chuyện với người dùng và uỷ thác cho 4 sub-agent chuyên trách.
+Agent Manager nói chuyện với người dùng và uỷ thác cho 5 sub-agent chuyên trách (Prompt, Data, Model,
+Operation, SQL).
 Mỗi agent là **một vòng LLM riêng**: system prompt riêng (SKILL.md của nó), tập
 tool riêng, và chỉ Manager thấy lịch sử hội thoại.
 
@@ -44,7 +45,8 @@ agent/
 ├── cli.py             ← chạy một lượt rồi thoát
 │      │
 │      ▼
-├── team.py            ← uỷ thác cho 4 sub-agent, Handoff giữa các agent
+├── team.py            ← uỷ thác cho 5 sub-agent, Handoff giữa các agent
+├── actions.py         ← hành động thật chờ người dùng bấm xác nhận (PendingAction)
 ├── agent_openai.py    ← sổ đăng ký tool + vòng tool-calling dùng chung
 ├── watcher.py         ← theo dõi job nền, kiểm định kết quả theo R
 ├── events.py          ← kênh sự kiện (tiến độ, job) → SSE
@@ -140,7 +142,11 @@ thật không bị commit.
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
 | `AGENT_JOB_POLL_SECONDS` | Chu kỳ watcher hỏi trạng thái job, mặc định 20 giây |
-| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lời gọi LLM (giây), mặc định 300. SDK vẫn tự thử lại lỗi tạm thời |
+| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lần gọi LLM (giây), mặc định 300 - và không vượt thời gian còn lại của lượt |
+| `AGENT_TURN_DEADLINE_SECONDS` | Thời gian tối đa của MỘT lượt chat, mặc định 600. Quá hạn thì lượt dừng ở bước kế tiếp và báo người dùng (không giữ phiên / thread hàng chục phút khi provider treo) |
+| `AGENT_LLM_MAX_RETRIES` | Số lần thử lại lỗi LLM tạm thời (mạng, timeout, 408/409/429/5xx), mặc định 5; chờ theo `Retry-After` / luỹ thừa, trong hạn của lượt. SDK không tự thử lại (`max_retries=0`) |
+| `AGENT_ACTION_TTL_SECONDS` | Hạn của thẻ xác nhận hành động (huấn luyện, bật / tắt model, bật tự kích hoạt), mặc định 1800 |
+| `AGENT_TEMPERATURE` | Tuỳ chọn, 0-2: gửi kèm mọi lời gọi LLM để kết quả ổn định giữa các lần chạy. Không đặt thì theo mặc định của provider |
 | `AGENT_HISTORY_FULL_TURNS` | Số lượt chat gần nhất Manager giữ đủ các bước tool, mặc định 4. Lượt cũ hơn chỉ còn câu hỏi và câu trả lời cuối, để phiên dài không vượt trần token |
 | `AGENT_MAX_CONCURRENT_TURNS` | Số lượt chat chạy song song tối đa trên server (pool thread riêng), mặc định 32. Lượt vượt mức xếp hàng chờ |
 | `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` / `time_series.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
@@ -253,7 +259,7 @@ python -m agent.cli --provider google "..."
 
 | Agent | Tool | Endpoint / ghi chú |
 |---|---|---|
-| Manager | `ask_prompt_agent` `ask_data_agent` `ask_model_agent` `ask_operation_agent` | Uỷ thác, không gọi API trực tiếp |
+| Manager | `ask_prompt_agent` `ask_data_agent` `ask_model_agent` `ask_operation_agent` `ask_sql_agent` | Uỷ thác, không gọi API trực tiếp |
 | Prompt Agent | *(không tool)* | Một lượt LLM trả JSON R |
 | Data Agent | `list_my_datasets` | `GET /datasets` (lật hết các trang) |
 | | `get_dataset_info` | `GET /datasets/{id}` - metadata, **không có tên cột** |
@@ -261,13 +267,97 @@ python -m agent.cli --provider google "..."
 | Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
 | | `list_models` | Đọc `assets/classification.yml` / `regression.yml` / `time_series.yml` qua `scripts/model_catalog.py` |
 | | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. Chặn cột mục tiêu người dùng chưa chọn khi có nhiều ứng viên. **Không train** |
-| Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
+| Operation Agent | `start_training` | Chỉ nhận `config_id`; tạo **thẻ xác nhận** - `POST /datasets/{id}/training` chạy khi người dùng bấm Xác nhận. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
 | | `list_my_jobs` | `GET /inference/jobs`, chỉ job của chính người dùng |
-| | `get_job_info` | Tìm trong `GET /inference/jobs` (không có endpoint xem một job) |
-| | `activate_model` | `PUT /inference/models/{id}/activation`, chỉ job của mình và đã xong |
+| | `get_job_info` | Bản ghi job tìm trong `GET /inference/jobs` (lọc job của mình); job xong thì kèm `score_source` đọc từ `GET /inference/jobs/{id}` |
+| | `set_auto_activate` | Tắt / siết điều kiện: ngay. Bật / nới điều kiện: thẻ xác nhận |
+| | `activate_model` | Thẻ xác nhận; bấm Xác nhận thì `PUT /inference/models/{id}/activation`. Chỉ job của mình và đã xong |
 | | `predict` | `POST /inference/models/{id}/predict`, tối đa 50 mẫu, soát đủ cột trước khi gửi |
 | Data + Model | `read_reference` | Đọc `skills/<tên>/references/*.md` |
+| SQL Agent | `list_database_connections` | `GET /database-connections` - chỉ id, tên, loại; không host / mật khẩu |
+| | `list_database_tables` `describe_database_table` | `/database-connections/{id}/tables`, `/describe` - metadata + vài dòng mẫu |
+| | `preview_sql_query` `preview_mongo_query` | `/database-connections/{id}/preview` - truy vấn chỉ-đọc đã kiểm, ≤ 100 dòng (LLM thấy 20), trả `preview_id` |
+| | `import_database_query` | `/database-connections/{id}/import` - kết quả thành dataset riêng (trần 50.000 dòng), ghi `Handoff.imported_datasets` |
+
+## Nguồn dữ liệu ngoài: SQL Agent và Database Adapter
+
+Ứng với khối "Database Adapter → SubAgent Generate SQL/NoSQL → Super Agent" của hướng nghiên
+cứu HAgent + AutoML. Hỗ trợ **SQLite, DuckDB, PostgreSQL, MySQL, MongoDB**; các engine SQL khác
+của `src/adapters/` vẫn dùng được cho tính năng nhập nguyên bảng cũ, chưa mở cho truy vấn tự do.
+
+```
+Người dùng tạo kết nối (giao diện / API, có mật khẩu)  ──▶  tbl_DatabaseConnection (mật khẩu mã hoá Fernet)
+Manager ──ask_sql_agent──▶ SQL Agent:
+   list_database_connections → list_database_tables → describe_database_table   (metadata)
+   → preview_sql_query / preview_mongo_query   (backend: query_policy kiểm + query_runner chạy chỉ-đọc)
+   → import_database_query                      (parquet → MinIO → tbl_Data, trả dataset_id thật)
+Manager nhận imported_datasets ──▶ Prompt → Data → Model → Operation Agent (luồng AutoML có sẵn)
+```
+
+An toàn, theo lớp (mỗi lớp tự đứng được nếu lớp khác sót):
+
+1. **Không lộ bí mật**: LLM chỉ cầm `connection_id` / `preview_id`. Mật khẩu mã hoá bằng
+   `DB_CONNECTION_ENCRYPTION_KEY` (thiếu khoá = tính năng tắt), không bao giờ trả qua API.
+   Kết nối của người khác trả 404.
+2. **Bộ kiểm truy vấn** (`src/adapters/query_policy.py`): phân tích cú pháp bằng sqlglot, đúng
+   một câu SELECT/UNION/CTE không đệ quy; chặn mọi lệnh ghi (kể cả trong CTE), `INTO`, `ATTACH`,
+   `PRAGMA`, `COPY`, hàm đọc file/extension (`read_csv`, `load_extension`...), hàm bảng, bảng
+   ngoài kết nối, schema khác. Câu được sqlglot sinh lại rồi bọc `SELECT * FROM (...) LIMIT n` -
+   chạy câu chuẩn hoá, không chạy chuỗi gốc. MongoDB: chỉ `find` và stage
+   `$match/$project/$sort/$limit/$skip/$group/$unwind/$count`; cấm `$where/$function/$out/$merge/$lookup`... ở mọi độ sâu.
+3. **Bộ chạy chỉ-đọc** (`src/adapters/query_runner.py`): mỗi truy vấn chạy trong TIẾN TRÌNH CON
+   có trần bộ nhớ (`DB_SOURCE_WORKER_MEMORY_MB`) và bị kill khi quá hạn - hàm như
+   `repeat('x', 2e9)` cấp phát GB trong một dòng, `memory_limit` của DuckDB không chặn được.
+   SQLite mở `mode=ro` + `query_only` + authorizer chặn ghi, catalog (`sqlite_master`...),
+   database khác `main` và hàm nguy hiểm (danh sách bảng được phép do bộ kiểm ở bước 2 bảo đảm);
+   DuckDB `read_only` + tắt truy cập file/mạng ngoài + khoá cấu hình. Kết quả vượt trần dung lượng
+   (preview 8 MiB, import 64 MiB) bị từ chối. File database chỉ trong `DB_SOURCE_FILES_DIR` (chặn
+   `..`, đường dẫn tuyệt đối, symlink). Endpoint cũ `/datasets/database/*` (giao diện còn dùng) với
+   SQLite/DuckDB cũng đi qua bộ chạy này - view `read_csv('/file-ngoài')` không đọc được.
+   MongoDB **mặc định tắt**: chỉ host trong `DB_SOURCE_MONGO_ALLOWED_HOSTS`, và database của chính
+   HAutoML (`MONGODB.NAME`) luôn bị chặn (nó chứa tài khoản của mọi người).
+   **PostgreSQL / MySQL** (`src/adapters/sql_server.py`, cũng trong tiến trình con) **mặc định tắt**:
+   chỉ `host` / `host:port` trong `DB_SOURCE_SQL_ALLOWED_HOSTS` (ghim cả port; chuỗi nhiều host
+   hay unix socket không lọt); database / schema hệ thống bị chặn. Ở server: transaction CHỈ ĐỌC,
+   `statement_timeout` / `max_execution_time` (server tự dừng truy vấn khi bị huỷ), ép chế độ chuỗi
+   khớp với sqlglot (Postgres `standard_conforming_strings=on`; MySQL bỏ `ANSI_QUOTES`,
+   `NO_BACKSLASH_ESCAPES`, `PIPES_AS_CONCAT`) rồi đọc lại để xác nhận; MySQL tắt `LOAD DATA LOCAL`
+   và nhiều câu một lần. Bộ kiểm thêm cho hai dialect này: cấm hint `/*+ */`, `@@biến` / `@biến`,
+   `$1`, tiền tố bảng mã, hàm đọc file / ngủ / khoá / thông tin server (`pg_read_file`, `pg_sleep`,
+   `dblink`, `query_to_xml`, `LOAD_FILE`, `SLEEP`, `BENCHMARK`, `version()`...) và `REPEAT`/`LPAD`
+   (DoS bộ nhớ server). Tham số `:ten` được gắn thành literal trong cây cú pháp; mọi bảng được viết
+   lại thành đúng tên trong metadata (Postgres kèm schema) để server không phân giải nhầm sang
+   `pg_catalog`. Lỗi đăng nhập không lộ host / tài khoản; IP trong thông báo lỗi bị che.
+4. **Giới hạn và toàn vẹn**: preview ≤ 100 dòng, import ≤ 50.000 dòng; vượt trần thì import trả 409
+   `RESULT_TRUNCATED`. Agent KHÔNG tự gửi `allow_truncated` (LLM không được tự cấp lời đồng ý): người
+   dùng muốn lấy phần đầu thì truy vấn được thêm `LIMIT 50000` (thấy rõ trong bản xem trước); API
+   cho người dùng (giao diện) vẫn có `allow_truncated`. Mỗi preview gắn sẵn một
+   `dataset_id`: gửi lại, hay tiến trình chết giữa chừng rồi thử lại, đều trả đúng dataset cũ;
+   khoá nhập có hạn (10 phút). Ghi metadata báo lỗi thì tra lại theo `_id` trước khi xoá file.
+   Kiểu dữ liệu giữ đúng: số nguyên có NULL dùng Int64, DECIMAL đổi sang số thực có ghi chú,
+   cột trộn kiểu / nhị phân / lồng bị báo rõ. Preview hết hạn sau 15 phút hoặc khi kết nối đổi.
+   Kết quả tối đa 200 cột, tên cột ≤ 128 ký tự (mô tả bảng thì bỏ cột vượt trần và báo
+   `omitted_columns`). Phần đưa vào context LLM còn bị rút gọn thêm: 20 dòng, ô ≤ 200 ký tự, lồng
+   ≤ 3 tầng / 10 phần tử, tổng dòng ≤ 12.000 ký tự, danh sách cột / bảng ≤ 6.000 ký tự; tên cột
+   không bao giờ bị cắt hay đổi - cột không vừa thì ẩn và đếm.
+
+Cấu hình backend (`src/backend/.env`): `DB_CONNECTION_ENCRYPTION_KEY`, `DB_SOURCE_FILES_DIR`,
+`DB_SOURCE_MONGO_ALLOWED_HOSTS` (trống = tắt MongoDB), `DB_SOURCE_SQL_ALLOWED_HOSTS` (trống = tắt
+PostgreSQL / MySQL; vd `pg.lab.local,mysql.lab.local:3307`), `DB_SOURCE_QUERY_TIMEOUT_SECONDS`,
+`DB_SOURCE_WORKER_MEMORY_MB`. Tài khoản database **phải chỉ có quyền SELECT** trên đúng các bảng
+muốn chia sẻ - bộ kiểm cú pháp không thay được quyền của database; view được cấp quyền chạy với
+quyền của chủ view, nên chỉ cấp view mà bạn muốn agent đọc.
+
+Test với PostgreSQL 16 / MySQL 8.4 thật (dữ liệu Glass thật, user chỉ-đọc, user có quyền ghi để
+kiểm transaction chỉ-đọc, bảng canary không cấp quyền, server cố ý để chế độ chuỗi bất lợi):
+
+```bash
+docker compose -f src/backend/tests/sql_sources/docker-compose.yml up -d --wait
+docker run --rm --network host -v $PWD:/repo -w /repo/src/backend/tests hautoml-backend-test:local \
+    python -m pytest integration/test_sql_server_sources.py   # HAUTOML_REQUIRE_SQL_SERVERS=1: bắt buộc có server
+docker compose -f src/backend/tests/sql_sources/docker-compose.yml down -v
+```
 
 ## HTTP API (`agent/server.py`, cổng 9500)
 
@@ -279,7 +369,9 @@ python -m agent.cli --provider google "..."
 | `POST /agent/events` | SSE sự kiện nền, mở đầu bằng `hello` (`last_seq` hiện tại) (`job_watch`, `job_status`, `job_done`, `job_failed`, `job_watch_timeout`, `job_watch_warning` / `job_watch_resumed`, `auto_activate_changed`, `turn_done` / `turn_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới. `hello` / `reconnect` kèm `watching`, `auto_activate` và `auto_activate_constraints` (job -> điều kiện sẽ kiểm trước khi tự kích hoạt; rỗng = bất kể điểm), `job_watch` / `job_status` / `auto_activate_changed` cũng mang `auto_activate_constraints` |
 | `POST /agent/auto-activate` | Bật/tắt TỰ kích hoạt model khi một job đang chạy xong (`job_id`, `enabled`) - nút "Huỷ tự kích hoạt" trên thẻ job. Operation Agent có tool `set_auto_activate` cùng tác dụng khi người dùng đổi ý qua chat (bật kèm `constraints` = điều kiện người dùng nêu, được kiểm lúc job xong; phần trăm đổi sang tỉ lệ 0-1; điều kiện không kiểm được thì không bật và huỷ lời hứa đang bật; kết quả - kể cả khi lỗi - trả `checked_constraints`) |
 | `POST /agent/upload` | Tải dataset từ trang /agent (trang 4 của sơ đồ) |
-| `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi |
+| `POST /agent/confirm` | Người dùng bấm Xác nhận / Từ chối trên thẻ hành động: `action_id`, `token` (mã một lần, chỉ có trong sự kiện `action_pending`), `decision`, `auto_activate` (thẻ huấn luyện). Kiểm chủ phiên, mã, hạn, trạng thái rồi mới thực thi; agent đang trả lời thì 409 |
+| `POST /agent/cancel` | Nút Dừng: lượt đang chạy (hoặc đang xếp hàng) dừng trước lời gọi LLM kế tiếp, kết thúc bằng `turn_done` "Đã dừng theo yêu cầu" (`turn_cancelled`) |
+| `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi; thẻ xác nhận đang chờ hết hiệu lực |
 | `POST /agent/token` | Frontend gửi access token mới ngay khi NextAuth làm mới, kể cả giữa một lượt chat |
 
 SSE dùng POST thay vì `EventSource` để token nằm trong body, không lên URL.
@@ -292,6 +384,51 @@ dài qua lúc token hết hạn sẽ nhận 401 giữa lượt.
 Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy thẳng trong
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request
 khác (kể cả SSE) đứng chờ.
+
+### Hạn mức và chốt an toàn (review bảo mật 2026-11-08, Codex + Claude)
+
+| Chốt | Giá trị |
+|---|---|
+| Body JSON (mọi endpoint trừ upload), chặn TRƯỚC khi parse và kiểm token | 256 KB; `message` ≤ 20.000 ký tự |
+| Phiên / người dùng; lượt đang chạy hoặc chờ / người dùng | 8 phiên (vượt thì dọn phiên rảnh cũ nhất của CHÍNH người đó, không dọn được thì 429); 2 lượt (429) |
+| Toàn server | 200 phiên, lượt chờ ≤ 4 × số worker (503). Không bao giờ dọn phiên đang theo dõi job của người khác để nhường chỗ |
+| Upload | 8 upload xử lý cùng lúc (503), pool riêng 4 thread gọi backend; .xlsx giải nén ≤ 300 MB / 10.000 thành phần (chặn zip bomb, backend kiểm lại) |
+| ID do LLM truyền vào URL (dataset / kết nối / job) | chỉ `[A-Za-z0-9_-]{1,64}`, escape - không thoát sang endpoint khác bằng `../` |
+| Hành động thật cần người dùng BẤM XÁC NHẬN | huấn luyện, bật / tắt model, bật (hay nới điều kiện) tự kích hoạt - xem dưới. Cột mục tiêu khi có nhiều ứng viên vẫn phải do người dùng nói ra. Dữ liệu (tên cột, ô, lỗi job) chỉ là dữ liệu - ngữ cảnh của sub-agent nằm ở tin user, không ở system prompt |
+| Context LLM | mỗi kết quả tool ≤ 40.000 ký tự; ô dữ liệu ≤ 200 ký tự; ≤ 8 tool / bước; lượt cũ ≤ 30, mỗi tin cũ ≤ 2.000 ký tự; sự kiện job ≤ 8.000 ký tự; provider không trả `usage` thì ước lượng token để trần lượt vẫn có hiệu lực |
+
+**Xác nhận có cấu trúc (audit AG-01, thay cho chốt ý định bằng regex từ khoá).** `start_training`,
+`activate_model` và `set_auto_activate(enabled=true)` không làm gì trên backend: code kiểm mọi điều kiện rồi tạo
+một `PendingAction` (`agent/actions.py`) và phát `action_pending` - frontend hiện thẻ dựng từ `summary` do CODE
+viết (dataset, target, metric, job, điểm, điều kiện...), không phải chữ LLM. Hành động chỉ chạy khi người dùng
+bấm Xác nhận (`POST /agent/confirm`) kèm `token` của thẻ; token chỉ đi ra frontend qua SSE, không bao giờ nằm
+trong kết quả tool, nên LLM - kể cả khi bị dữ liệu điều khiển - không tự xác nhận được. Thẻ dùng một lần, có hạn
+(`AGENT_ACTION_TTL_SECONDS`), đề nghị mới cùng việc thay thẻ cũ, và lúc thực thi team kiểm lại điều kiện (config
+đã chạy chưa, job còn của người dùng không...). Thẻ huấn luyện có nút riêng "huấn luyện + tự kích hoạt" khi yêu
+cầu có ý kích hoạt (mặc định KHÔNG tự kích hoạt); cấu hình giống hệt job đã chạy thì thẻ ghi rõ "chạy lại". Hướng
+an toàn vẫn làm ngay: huỷ tự kích hoạt, siết điều kiện của lời hứa đang chờ. `agent.chat` hỏi xác nhận ngay trong
+terminal; `agent.cli` (một lượt) không thực thi thẻ nào.
+
+**Tự kích hoạt và nguồn điểm (audit AG-02).** Khi job xong, watcher đọc `select_best.output.score_source` trong
+pipeline (`GET /inference/jobs/{id}`): `holdout` (dataset > 10.000 dòng có tập kiểm tra riêng), `cv` (điểm
+cross-validation trên chính dữ liệu dùng để chọn model - lạc quan), hoặc không rõ. Lời hứa CÓ điều kiện chỉ tự kích
+hoạt khi các điều kiện đạt trên điểm `holdout`; đạt theo điểm `cv` / không rõ thì không tự kích hoạt mà hiện thẻ
+xác nhận kích hoạt (kèm cảnh báo) cho người dùng quyết. Lời hứa không điều kiện ("train xong kích hoạt luôn") không
+phụ thuộc nguồn điểm. Sự kiện job xong và `get_job_info` luôn kèm `score_source` / `score_note`.
+
+**Hạn lượt và nút Dừng (audit AG-03).** Mỗi lượt có hạn `AGENT_TURN_DEADLINE_SECONDS`; mỗi lần gọi LLM bị kẹp theo
+thời gian còn lại, thử lại lỗi tạm thời trong hạn đó. `POST /agent/cancel` dừng lượt ở ranh giới bước kế tiếp.
+
+**Watcher (audit AG-05, AG-16).** Lần hỏi thường chỉ đọc pipeline của job (`GET /inference/jobs/{id}`, một
+request); danh sách job đầy đủ chỉ đọc lúc đầu, khi pipeline báo kết thúc / không đọc được, và mỗi
+`FULL_CHECK_EVERY` lần (huỷ job không cập nhật `pipeline.status`, chỉ bản ghi job). Endpoint pipeline cho admin
+đọc job của người khác nên chỉ gọi cho job đã được xác nhận là của người dùng. Hạn theo dõi tính từ lúc job rời
+trạng thái `queued`, trong trần tuyệt đối 26 giờ.
+
+**Giới hạn đã biết:** phiên, job đang theo dõi và lời hứa "train xong tự kích hoạt"
+chỉ nằm trong RAM của agent server. Server khởi động lại thì mất - job vẫn chạy trên
+backend nhưng không ai tự kích hoạt; trang `/agent` báo "phiên mới" khi tải lại. Lưu
+bền các trạng thái này (vào MongoDB) là việc riêng chưa làm.
 
 ## Kiểm tra hồi quy
 
@@ -314,10 +451,10 @@ storage và tài khoản thật.
 
 | Backend v1 | Agent xử lý |
 |---|---|
-| Dataset chỉ có `dataType = "table"`, không ghi loại bài toán | `get_dataset_schema` lấy ứng viên target cho cả hai loại; loại bài toán suy từ cột mục tiêu (`tools.infer_problem_type`) hoặc lấy từ lời người dùng |
+| Dataset chỉ có `dataType = "table"`, không ghi loại bài toán (`get_dataset_info` cũng không có) | `get_dataset_schema` lấy ứng viên target cho cả hai loại; loại bài toán suy từ cột mục tiêu (`tools.infer_problem_type`) hoặc lấy từ lời người dùng |
 | Config train dùng `timeout`, không phải `max_time` | Agent vẫn gọi là `max_time`; đổi tên lúc gửi (`tools._backend_training_config`) |
 | Không có endpoint metric | Đọc `metric_list` trong yml, dự phòng bằng `tools.DEFAULT_METRICS` |
-| Không có endpoint xem một job | Tìm trong danh sách job |
+| `GET /inference/jobs/{id}` trả **pipeline JSON** (trạng thái từng bước, trial, `score_source`), KHÔNG phải bản ghi job (không có `best_score`, `activate`, chủ job); admin đọc được job của mọi người; huỷ job không cập nhật `pipeline.status` | Bản ghi job vẫn tìm trong danh sách job của người dùng; pipeline chỉ dùng cho job đã xác nhận là của người dùng - poll nhẹ của watcher và `score_source` |
 | Tài khoản admin nhận job của mọi người ở `GET /inference/jobs` | `tools._own_jobs` lọc theo `user.id` |
 | Mọi response bọc trong `{success, data, meta}` | `api_client` tự bóc và tự lật trang |
 

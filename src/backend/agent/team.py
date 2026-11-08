@@ -1,5 +1,5 @@
 """
-Agent Manager uỷ thác cho 4 sub-agent - các mũi tên trong sơ đồ trang 1.
+Agent Manager uỷ thác cho 5 sub-agent (Prompt, Data, Model, Operation, SQL) - các mũi tên trong sơ đồ trang 1.
 
     Manager ──ask_prompt_agent──▶ ① Prompt Agent   → R (JSON 6 khoá)
             ──ask_data_agent────▶ ② Data Agent     → hồ sơ dữ liệu ──┐ "dữ liệu"
@@ -35,16 +35,21 @@ from agent import prompts, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     SUBAGENT_MAX_STEPS,
     TurnBudgetExceeded,
+    TurnCancelled,
+    TurnDeadlineExceeded,
     create_completion,
     describe_error,
+    first_message,
     log_exception,
     _DISPATCH,
     _accumulate_usage,
+    usage_or_estimate,
     run_tool_loop,
     schemas_for,
 )
-from agent.prompts import DATA_AGENT, MANAGER, MODEL_AGENT, OPERATION_AGENT, PROMPT_AGENT
-from agent.watcher import summarize_job, wants_deploy
+from agent.actions import ActionError, PendingAction, PendingActions
+from agent.prompts import DATA_AGENT, MANAGER, MODEL_AGENT, OPERATION_AGENT, PROMPT_AGENT, SQL_AGENT
+from agent.watcher import _merge_constraints, summarize_job, wants_deploy
 
 
 # Chi tiết lỗi đầy đủ chỉ vào log phía server, không vào prompt hay Langfuse.
@@ -157,39 +162,34 @@ def _named_targets(text: str, columns: list[str]) -> set[str]:
     return chosen
 
 
-# --- Tự kích hoạt model sau khi train (R.service.deploy) ---------------------------------
-# Ý người dùng (muốn / không muốn / rút lại) do LLM hiểu - đoán phủ định tiếng Việt tự do
-# bằng regex không bao giờ đủ tin cậy. Code chỉ giữ ba chốt chắc chắn đúng:
-#   1. LLM không được bịa cờ: người dùng phải có NHẮC tới việc kích hoạt (bất kể ý gì).
-#   2. Cờ chỉ áp cho dataset mà R nói tới (không mang sang job của dataset khác).
-#   3. Hành động hiển thị và huỷ được: thẻ job hiện "sẽ tự kích hoạt" kèm nút huỷ, và
-#      Operation Agent có set_auto_activate khi người dùng đổi ý lúc job đang chạy.
-_DEPLOY_CUE_VI = re.compile(
-    r"(?<!hàm )kích\s*hoạt|triển\s*khai|(?:dùng|sử\s*dụng)\s+(?:model\s+|mô\s*hình\s+)?ngay"
-    r"|đưa\s+vào\s+sử\s*dụng|bật\s+(?:model|mô\s*hình|api)",
-    re.IGNORECASE,
-)
-_DEPLOY_CUE_ASCII = re.compile(
-    r"\bkich\s*hoat\b|\btrien\s*khai\b|\b(?:dung|su\s*dung)\s+(?:model\s+|mo\s*hinh\s+)?ngay\b"
-    r"|\bdua\s+vao\s+su\s*dung\b|\bbat\s+(?:model|mo\s*hinh|api)\b",
-    re.IGNORECASE,
-)
-# Từ tiếng Anh đứng riêng (không phải một phần tên như "deploy_logs", "activation-data").
-_DEPLOY_CUE_EN = re.compile(
-    r"(?<![\w-])(?:deploy(?:s|ed|ing|ment)?|activat(?:e|es|ed|ing|ion)(?!\s+function))(?![\w-])",
-    re.IGNORECASE,
-)
+# --- Hành động thật: chỉ chạy khi NGƯỜI DÙNG bấm xác nhận (audit AG-01, AG-12) ----------------------
+# Trước đây code đoán ý người dùng bằng regex từ khoá tiếng Việt / Anh ("tôi không muốn huấn luyện" vẫn lọt,
+# "có nên kích hoạt không?" bị coi là đồng ý). Nay start_training, activate_model và việc BẬT tự kích hoạt chỉ
+# tạo một PendingAction (agent/actions.py); frontend hiện thẻ do code dựng và hành động chỉ chạy khi người dùng
+# bấm Xác nhận (POST /agent/confirm kèm token mà LLM không bao giờ thấy). Hướng an toàn (huỷ tự kích hoạt, siết
+# điều kiện của lời hứa đang chờ) vẫn làm ngay.
 
 
-def _mentions_activation(messages: list[str]) -> bool:
-    """Người dùng (không tính dòng [Sự kiện] do hệ thống chèn) có nhắc tới việc kích hoạt / triển khai model."""
-    for message in messages:
-        text = unicodedata.normalize(
-            "NFC", "\n".join(line for line in message.splitlines() if not line.startswith(_EVENT_PREFIX))
-        )
-        if any(pattern.search(text) for pattern in (_DEPLOY_CUE_VI, _DEPLOY_CUE_ASCII, _DEPLOY_CUE_EN)):
-            return True
-    return False
+def _user_text(message: str) -> str:
+    """Phần do người dùng gõ (bỏ các dòng [Sự kiện] hệ thống chèn vào)."""
+    return unicodedata.normalize(
+        "NFC", "\n".join(line for line in message.splitlines() if not line.startswith(_EVENT_PREFIX))
+    )
+
+
+def _mentions_any(text: str, labels: list[str]) -> bool:
+    """Văn bản có nhắc một nhãn (tên / id dataset) nào - đúng từ, không phân biệt hoa thường."""
+    return any(
+        re.search(rf"(?<!\w){re.escape(label)}(?!\w)", text, 0 if len(label.strip()) <= 2 else re.IGNORECASE)
+        for label in labels if label.strip()
+    )
+
+
+def _mentions_column(messages: list[str], column: str) -> bool:
+    """Người dùng có gõ tên cột này (đúng từ, không phân biệt hoa thường; '_' coi như dấu cách)."""
+    names = {column, column.replace("_", " ")}
+    patterns = [re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", re.IGNORECASE) for name in names if name.strip()]
+    return any(p.search(_user_text(message)) for message in messages for p in patterns)
 
 
 def _only_tightens(existing: list[dict], added: list[dict]) -> bool:
@@ -236,6 +236,76 @@ _AUTO_ACTIVATE_REFUSED = {
 # coi như chưa tạo được (backend ghi job trong vài giây sau khi nhận request).
 _UNRESOLVED_RECHECK_SECONDS = 120
 
+# Số cột đặc trưng liệt kê trên thẻ xác nhận huấn luyện (đủ để nhận ra; số cột đầy đủ đi kèm).
+_CARD_FEATURES = 30
+_AWAITING_NOTE = (
+    " Báo người dùng bấm nút trên thẻ xác nhận (Xác nhận / Từ chối). KHÔNG nói việc đó đã xong, KHÔNG gọi lại tool "
+    "để \"thử lại\", KHÔNG xin người dùng gõ câu xác nhận - chỉ nút trên thẻ có hiệu lực. Kết quả sẽ tới ở lượt sau "
+    "dưới dạng [Sự kiện]."
+)
+_ACTION_NAMES = {
+    "train": "huấn luyện",
+    "activate": "KÍCH HOẠT model",
+    "deactivate": "TẮT model",
+    "auto_activate": "BẬT tự kích hoạt model",
+}
+
+
+def _constraints_text(constraints: list[dict]) -> str:
+    return ", ".join(f"{c.get('metric')} {c.get('op')} {c.get('value')}" for c in constraints or [])
+
+
+def _describe_action(action: dict) -> str:
+    """Một dòng mô tả thẻ xác nhận (dạng public) cho Manager - không có token."""
+    summary = action.get("summary") or {}
+    kind = action.get("kind")
+    what = _ACTION_NAMES.get(kind, str(kind))
+    if kind == "train":
+        target = f", target {summary.get('target')}" if summary.get("target") else ""
+        return f"{what} dataset {summary.get('dataset_name') or summary.get('dataset_id')}{target}"
+    if kind == "auto_activate":
+        constraints = summary.get("constraints") or []
+        condition = f" nếu đạt {_constraints_text(constraints)}" if constraints else " (bất kể điểm)"
+        return f"{what} cho job {summary.get('job_id')}{condition}"
+    return f"{what} của job {summary.get('job_id')}"
+
+
+def _brief_result(result: dict) -> dict:
+    """Phần kết quả gửi kèm sự kiện action_resolved cho frontend (không kèm dữ liệu lớn)."""
+    keep = ("ok", "job_id", "activated", "endpoint_url", "auto_activate", "auto_activate_constraints",
+            "checked_constraints", "outcome_unknown", "possible_job_ids", "status_code")
+    return {key: result[key] for key in keep if key in result}
+
+
+def _confirmed_note(action: PendingAction, result: dict) -> str:
+    """[Sự kiện] cho Manager sau khi người dùng bấm Xác nhận - nói đúng điều đã THẬT SỰ xảy ra."""
+    what = _describe_action(action.public())
+    if not result.get("ok"):
+        unknown = (
+            f" Chưa rõ job đã được tạo hay chưa (có thể: {', '.join(result.get('possible_job_ids') or []) or 'chưa thấy'})"
+            " - KHÔNG đề nghị chạy lại, kiểm tra danh sách job trước." if result.get("outcome_unknown") else ""
+        )
+        return f"Người dùng đã XÁC NHẬN {what} nhưng KHÔNG thực hiện được: {result.get('error')}.{unknown}"
+    if action.kind == "train":
+        auto = result.get("auto_activate")
+        constraints = result.get("auto_activate_constraints") or []
+        promise = (
+            f" Tự kích hoạt khi xong: CÓ{' nếu đạt ' + _constraints_text(constraints) if constraints else ' (bất kể điểm)'}."
+            if auto else " Tự kích hoạt khi xong: KHÔNG (người dùng chọn chỉ huấn luyện)."
+        )
+        return (
+            f"Người dùng đã XÁC NHẬN {what}: job {result.get('job_id')} đã chạy nền và đang được theo dõi - CHƯA có "
+            f"kết quả.{promise} Báo người dùng job_id; hệ thống tự báo khi xong."
+        )
+    if action.kind in ("activate", "deactivate"):
+        endpoint = f" Endpoint: {result.get('endpoint_url')}." if result.get("endpoint_url") else ""
+        return f"Người dùng đã XÁC NHẬN {what}: đã {'KÍCH HOẠT' if action.params.get('activate') else 'TẮT'} xong.{endpoint}"
+    constraints = result.get("checked_constraints") or []
+    return (
+        f"Người dùng đã XÁC NHẬN {what}: khi job xong sẽ tự kích hoạt"
+        f"{' nếu đạt ' + _constraints_text(constraints) if constraints else ' bất kể điểm'}."
+    )
+
 
 def _config_key(config: dict) -> tuple:
     """Những trường xác định "cùng một lần train" để chống tạo trùng."""
@@ -273,6 +343,29 @@ def parse_json(text: str) -> dict:
     return value
 
 
+def _bounded_candidates(candidates, by_type: dict) -> dict:
+    """target_candidates / theo loại bài toán: tên cột, cùng trần với all_column_names (dataset rất rộng)."""
+    shown, hidden = tools._fit_names([str(c) for c in candidates or []], budget=8_000)
+    by_type_shown, by_type_hidden = {}, 0
+    for kind, names in (by_type or {}).items():
+        kept, extra = tools._fit_names([str(c) for c in names or []], budget=4_000)
+        by_type_shown[kind] = kept
+        by_type_hidden += extra
+    out = {"target_candidates": shown, "target_candidates_by_type": by_type_shown}
+    if hidden or by_type_hidden:
+        out["target_candidates_hidden"] = hidden + by_type_hidden
+    return out
+
+
+def _all_column_names(columns: list) -> dict:
+    """
+    Đủ tên cột của dataset rộng - có TRẦN: file upload không giới hạn số cột / độ dài tên, một header 1 MB thành
+    ~300k token trong MỘT lời gọi (check_budget chỉ chặn trước lời gọi kế tiếp). Tên dài > 128 ký tự bị ẩn.
+    """
+    names, hidden = tools._fit_names([str(c.get("name")) for c in columns], budget=12_000)
+    return {"all_column_names": names, **({"column_names_hidden": hidden} if hidden else {})}
+
+
 def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
     """
     Hồ sơ dữ liệu gọn cho prompt: bỏ sample_rows, cắt bớt giá trị mẫu và số cột.
@@ -285,14 +378,25 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
     known = problem_type if problem_type in by_type else schema.get("problem_type")
     # Chỉ dataset có cột ngày giờ mới có khoá này - hồ sơ của dataset khác giữ nguyên.
     extra = {key: schema[key] for key in ("time_columns", "time_series_note") if schema.get(key)}
+    if extra.get("time_columns"):
+        # Cột ngày giờ cũng có trần: file có hàng nghìn cột ngày giờ tên dài thành ~250k token một lần gọi.
+        kept, used = [], 0
+        for item in extra["time_columns"]:
+            size = len(json.dumps(item, ensure_ascii=False, default=str))
+            if used + size > 4_000:
+                continue  # chỉ ẩn đúng cột không vừa (vd tên quá dài), không ẩn cả các cột sau
+            kept.append(item)
+            used += size
+        if len(kept) < len(extra["time_columns"]):
+            extra["time_columns_hidden"] = len(extra["time_columns"]) - len(kept)
+        extra["time_columns"] = kept
     return {
         "dataset_id": schema.get("dataset_id"),
         "data_name": schema.get("data_name"),
         "problem_type": known,
         "total_rows": schema.get("total_rows"),
         "column_count": schema.get("column_count"),
-        "target_candidates": by_type.get(known) if known else schema.get("target_candidates"),
-        "target_candidates_by_type": by_type,
+        **_bounded_candidates(by_type.get(known) if known else schema.get("target_candidates"), by_type),
         "columns": [
             {
                 "name": c.get("name"),
@@ -303,11 +407,12 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
                 "samples": (c.get("sample_values") or [])[:_SAMPLES_PER_COLUMN],
             }
             for c in columns[:_MAX_PROFILE_COLUMNS]
+            if len(str(c.get("name"))) <= tools._NAME_CHARS_FOR_LLM  # tên cột dài bất thường: ẩn, không tràn context
         ],
         "columns_truncated": len(columns) > _MAX_PROFILE_COLUMNS,
         # Dataset rộng: thống kê chỉ cho 60 cột đầu nhưng TÊN thì đủ hết - thiếu nó
         # thì "dùng tất cả các cột còn lại" bị lặng lẽ cắt còn 60 cột.
-        **({"all_column_names": [c.get("name") for c in columns]} if len(columns) > _MAX_PROFILE_COLUMNS else {}),
+        **(_all_column_names(columns) if len(columns) > _MAX_PROFILE_COLUMNS else {}),
         "note": (
             "distinct/missing tính trên 50 dòng preview, không phải toàn bộ dataset. "
             "target_for: loại bài toán mà cột đó làm biến mục tiêu được."
@@ -494,6 +599,9 @@ class Handoff:
     configs: dict = field(default_factory=dict)
     # job_id -> config_id đã sinh ra job đó.
     jobs: dict = field(default_factory=dict)
+    # dataset_id -> {data_name, connection_id, row_count, columns, truncated}: dataset SQL Agent vừa
+    # nhập từ database ngoài. Code chuyển ID thật cho Manager, không để LLM chép lại.
+    imported_datasets: dict = field(default_factory=dict)
 
 
 class AgentTeam:
@@ -507,71 +615,58 @@ class AgentTeam:
     def __init__(self, session) -> None:
         self.session = session
         self.handoff = Handoff()
-        # job_id -> số tin người dùng lúc tự kích hoạt bị huỷ (bật lại cần lời mới hơn mốc này).
-        self._auto_cancelled_at: dict[str, int] = {}
-        # job_id -> số tin người dùng lúc HỆ THỐNG huỷ lời hứa vì điều kiện không kiểm được: trong
-        # đúng lượt đó được bật lại kèm điều kiện hợp lệ (người dùng vừa yêu cầu), không kèm thì không.
-        self._system_cancelled_at: dict[str, int] = {}
-        # Mốc huỷ (_auto_cancelled_at) ngay TRƯỚC lần hệ thống huỷ - cửa sổ đồng ý của lần thử lại.
-        self._system_prev_mark: dict[str, int] = {}
+        # Hành động thật chờ người dùng bấm xác nhận (train / bật / tắt model / bật tự kích hoạt).
+        self.actions = PendingActions(self._emit)
         # Thay đổi tự kích hoạt do LLM làm trong lượt đang chạy - lượt lỗi thì phải báo lại.
         self._turn_auto_changes: list[tuple[str, bool]] = []
-        # Kiểm đồng ý + đổi trạng thái tự kích hoạt + ghi mốc huỷ phải liền một khối: không thì
-        # tool vừa qua bước kiểm, người dùng bấm Huỷ, tool lại bật lên như chưa có lần huỷ.
-        self._auto_lock = threading.Lock()
         # Lệnh tạo job chưa rõ kết quả, theo dataset + cấu hình (không theo config_id: chốt lại
         # cùng cấu hình là ra config_id mới). Không xoá khi reset - job có thể đã tồn tại thật.
         self._unresolved_creates: list[dict] = []
         self._turn_unknown_creates: list[str] = []
+        # Dataset SQL Agent nhập trong lượt đang chạy - lượt lỗi thì phải báo lại (audit AG-17).
+        self._turn_imports: list[str] = []
+        # Một lần xác nhận chạy tại một thời điểm (hai request xác nhận song song không chen nhau).
+        self._confirm_lock = threading.Lock()
 
     def begin_turn(self) -> None:
         self._turn_auto_changes = []
         self._turn_unknown_creates = []
+        self._turn_imports = []
 
     def after_failed_turn(self) -> list[str]:
         """
-        Lượt chat lỗi bị bỏ khỏi lịch sử: kẹp mốc huỷ về số tin người dùng còn lại (tin của lượt
-        lỗi không còn - không kẹp thì lời "kích hoạt lại" ở lượt sau bị coi là CŨ hơn lần huỷ).
-        Trả câu báo cho các thay đổi tự kích hoạt đã thật sự xảy ra trong lượt đó.
+        Lượt chat lỗi bị bỏ khỏi lịch sử: trả câu báo cho những việc đã THẬT SỰ xảy ra trong lượt đó (đổi tự kích
+        hoạt, lệnh tạo job chưa rõ kết quả, dataset đã nhập) - không báo thì người dùng gửi lại câu cũ là Manager
+        làm lại (nhập trùng dataset, tạo trùng job).
         """
-        self.clamp_auto_marks()
         notes = [
             f"Lượt chat trước bị lỗi giữa chừng NHƯNG đã {'BẬT' if enabled else 'HUỶ'} tự kích hoạt model cho job "
             f"{job_id}. Báo người dùng trạng thái này."
             for job_id, enabled in self._turn_auto_changes
         ] + self._turn_unknown_creates
+        for dataset_id in self._turn_imports:
+            info = self.handoff.imported_datasets.get(dataset_id) or {}
+            notes.append(
+                f"Lượt chat trước bị lỗi giữa chừng NHƯNG đã nhập dữ liệu từ database thành dataset "
+                f"'{info.get('data_name') or dataset_id}' (id: {dataset_id}, {info.get('row_count')} dòng). KHÔNG nhập "
+                "lại - dùng dataset này."
+            )
+        pending = self.actions.pending_public()
+        if pending:
+            notes.append(
+                "Lượt chat trước bị lỗi giữa chừng; đang có thẻ chờ người dùng xác nhận: "
+                + "; ".join(_describe_action(a) for a in pending)
+                + ". Đừng đề nghị lại - nhắc người dùng bấm nút trên thẻ."
+            )
         self._turn_auto_changes = []
         self._turn_unknown_creates = []
+        self._turn_imports = []
         return notes
-
-    def clamp_auto_marks(self) -> None:
-        """
-        Kẹp mốc huỷ về số tin người dùng còn trong lịch sử (lượt lỗi bị bỏ, hoặc tin đã nhận nhưng
-        không bao giờ vào lịch sử). Cùng khoá với change_auto_activate: nút Huỷ (luồng event loop)
-        ghi mốc đúng lúc này thì không bị mất, và dict không đổi kích thước giữa lúc duyệt.
-        """
-        with self._auto_lock:
-            remaining = len(self._user_messages())
-            self._auto_cancelled_at = {
-                job_id: min(mark, remaining) for job_id, mark in self._auto_cancelled_at.items()
-            }
-            # Mốc "hệ thống vừa huỷ trong lượt này" của lượt lỗi: lượt đó đã bị bỏ - không để lượt sau
-            # trùng số tin mà được coi là chính lượt ấy.
-            self._system_cancelled_at = {
-                job_id: mark for job_id, mark in self._system_cancelled_at.items() if mark <= remaining
-            }
-            self._system_prev_mark = {
-                job_id: min(mark, remaining) for job_id, mark in self._system_prev_mark.items()
-                if job_id in self._system_cancelled_at
-            }
 
     def reset(self) -> None:
         self.handoff = Handoff()
-        # Lịch sử được làm lại từ đầu: mọi tin sau reset đều mới hơn lần huỷ.
-        with self._auto_lock:
-            self._auto_cancelled_at = {job_id: 0 for job_id in self._auto_cancelled_at}
-            self._system_cancelled_at = {}
-            self._system_prev_mark = {}
+        # Thẻ chờ xác nhận dựa trên config / R vừa bị xoá: hết hiệu lực.
+        self.actions.drop_all("Phiên chat vừa được làm mới.")
 
     # ------------------------------------------------------------------ dispatch
 
@@ -588,6 +683,9 @@ class AgentTeam:
             "start_training": self.start_training,
             "watch_job": self.watch_job,
             "set_auto_activate": self.set_auto_activate,
+            "activate_model": self.activate_model,
+            "ask_sql_agent": self.ask_sql_agent,
+            "import_database_query": self.import_database_query,
         }
         dispatch = {
             name: bound.get(name) or _DISPATCH[name]
@@ -605,8 +703,8 @@ class AgentTeam:
         """Chạy một sub-agent tới khi nó báo cáo xong. Không raise."""
         schemas, dispatch = self.tools_for(agent)
         messages = [
-            {"role": "system", "content": prompts.agent_prompt(agent, context)},
-            {"role": "user", "content": task},
+            {"role": "system", "content": prompts.agent_prompt(agent)},
+            {"role": "user", "content": prompts.with_context(task, context)},
         ]
 
         self._emit("agent_start", agent=agent, task=task[:300])
@@ -629,11 +727,15 @@ class AgentTeam:
                 emit=self.session.events.emit,
                 max_steps=SUBAGENT_MAX_STEPS,
                 check_budget=self.session.check_budget,
+                time_left=getattr(self.session, "time_left", None),
             )
         except Exception as error:  # noqa: BLE001 - sub-agent hỏng không được làm chết Manager
             # Vượt trần token cũng về đây (không raise tiếp: Manager đang giữ một
             # tool_call chờ kết quả). Manager tự dừng ở lần kiểm trần kế tiếp.
-            if isinstance(error, TurnBudgetExceeded):
+            if isinstance(error, (TurnDeadlineExceeded, TurnCancelled)):
+                # Quá hạn lượt hoặc người dùng bấm Dừng - nói đúng lý do, không gọi là "lỗi LLM".
+                message = f"{prompts.title(agent)} dừng giữa chừng: {error}"
+            elif isinstance(error, TurnBudgetExceeded):
                 message = f"{prompts.title(agent)} dừng vì lượt chat đã vượt trần token: {error}"
             else:
                 log_exception(_log, "%s lỗi", agent)
@@ -647,6 +749,16 @@ class AgentTeam:
             return {"ok": False, "agent": agent, "error": message}
 
         self._emit("agent_done", agent=agent, ok=True)
+        if not report.strip():
+            # Audit AG-10: sub-agent xong mà không viết gì. Không gọi là lỗi (việc nó làm - config, thẻ xác nhận,
+            # dataset đã nhập - đã được code chuyển trong các trường đi kèm), nhưng nói rõ để Manager không bịa.
+            return {
+                "ok": True, "agent": agent, "empty_report": True,
+                "report": (
+                    f"({prompts.title(agent)} không viết báo cáo. Chỉ dựa vào các trường dữ liệu đi kèm kết quả này; "
+                    "đừng suy diễn thêm, cần thì giao lại việc kèm yêu cầu báo cáo.)"
+                ),
+            }
         return {"ok": True, "agent": agent, "report": report}
 
     def _ask_json(self, agent: str, system: str, user: str) -> dict:
@@ -659,19 +771,20 @@ class AgentTeam:
         for attempt in range(2):
             self.session.check_budget(agent)
             response = create_completion(
-                self.session.llm, model=self.session.config.model, messages=messages,
+                self.session.llm, time_left=getattr(self.session, "time_left", None),
+                model=self.session.config.model, messages=messages,
             )
-            _accumulate_usage(self.session.usage, response.usage)
-            if response.usage is not None:
-                self._emit(
-                    "llm_call",
-                    agent=agent,
-                    prompt_tokens=response.usage.prompt_tokens or 0,
-                    completion_tokens=response.usage.completion_tokens or 0,
-                    total_tokens=response.usage.total_tokens or 0,
-                )
+            spent = usage_or_estimate(response, messages)
+            _accumulate_usage(self.session.usage, spent)
+            self._emit(
+                "llm_call",
+                agent=agent,
+                prompt_tokens=spent.prompt_tokens or 0,
+                completion_tokens=spent.completion_tokens or 0,
+                total_tokens=spent.total_tokens or 0,
+            )
 
-            text = response.choices[0].message.content or ""
+            text = first_message(response).content or ""
             try:
                 return parse_json(text)
             except ValueError as error:
@@ -710,7 +823,7 @@ class AgentTeam:
         self._emit("agent_start", agent=PROMPT_AGENT, task=request[:300])
         with tracing.observe(PROMPT_AGENT, as_type="agent", input={"request": request, "context": context}) as observation:
             try:
-                raw = self._ask_json(PROMPT_AGENT, prompts.agent_prompt(PROMPT_AGENT, context), request)
+                raw = self._ask_json(PROMPT_AGENT, prompts.agent_prompt(PROMPT_AGENT), prompts.with_context(request, context))
             except TurnBudgetExceeded as error:
                 message = f"Prompt Agent dừng vì lượt chat đã vượt trần token: {error}"
                 self._emit("agent_done", agent=PROMPT_AGENT, ok=False, error=message)
@@ -724,17 +837,8 @@ class AgentTeam:
                 return {"ok": False, "agent": PROMPT_AGENT, "error": message}
 
             requirements, missing, notes = normalize_requirements(raw, datasets)
-            # service.deploy làm watcher TỰ kích hoạt model - một hành động thật trên hệ thống.
-            # LLM có thể bịa cờ này hoặc mang nó từ một yêu cầu cũ: chỉ giữ khi vài tin gần
-            # nhất của người dùng thật sự nói tới việc kích hoạt / triển khai.
-            if requirements["service"].get("deploy") and not _mentions_activation(
-                self.session.recent_user_messages(_RECENT_USER_MESSAGES)
-            ):
-                requirements["service"]["deploy"] = False
-                notes.append(
-                    "Sẽ KHÔNG tự kích hoạt model sau khi train: người dùng không nhắc gì tới kích hoạt. "
-                    "Nếu họ có vẻ muốn dùng model ngay thì đề nghị kích hoạt khi job xong."
-                )
+            # service.deploy chỉ là ĐỀ NGHỊ: thẻ xác nhận huấn luyện có nút riêng "huấn luyện + tự kích hoạt",
+            # người dùng phải chọn nút đó thì lời hứa mới có (LLM có bịa cờ này cũng không tự kích hoạt được).
             # Ghi cả bản LLM trả lẫn bản sau khi code soát, để thấy code đã sửa gì.
             tracing.end(observation, output={"raw": raw, "requirements": requirements, "missing": missing, "notes": notes})
 
@@ -763,6 +867,56 @@ class AgentTeam:
         before = set(self.handoff.profiles)
         result = self._run_subagent(DATA_AGENT, task, context)
         result["profiled_datasets"] = sorted(set(self.handoff.profiles) - before)
+        return result
+
+    def ask_sql_agent(self, api, task: str, connection_id: str = "") -> dict:
+        """
+        ⑥ SQL Agent: lấy dữ liệu từ database người dùng đã kết nối (metadata -> preview -> import).
+        Dataset vừa nhập được trả kèm (ID thật, do code ghi) để Manager đi tiếp luồng huấn luyện.
+        """
+        if connection_id:
+            task = f"{task}\n\nconnection_id: {connection_id}"
+        before = set(self.handoff.imported_datasets)
+        result = self._run_subagent(SQL_AGENT, task)
+        new = [
+            {"dataset_id": dataset_id, **self.handoff.imported_datasets[dataset_id]}
+            for dataset_id in self.handoff.imported_datasets
+            if dataset_id not in before
+        ]
+        result["imported_datasets"] = new
+        if new:
+            result["note"] = (
+                "Dataset đã nhập là dataset thường của người dùng: muốn huấn luyện thì đi tiếp "
+                "ask_prompt_agent (nêu dataset_id) -> ask_data_agent -> ask_model_agent -> ask_operation_agent."
+            )
+        return result
+
+    def import_database_query(self, api, connection_id: str, preview_id: str, data_name: str,
+                              allow_truncated: bool = False) -> dict:
+        """
+        import_database_query của SQL Agent, ghi dataset vừa tạo vào Handoff.
+
+        allow_truncated KHÔNG nhận từ LLM (review 2026-11-08): "đồng ý chỉ nhập phần đầu" phải là ý người
+        dùng, mà code không kiểm được LLM có hỏi thật hay không - và backend ghi chú dataset là "đã được
+        người dùng đồng ý". Kết quả quá trần thì SQL Agent thêm điều kiện lọc / LIMIT vào câu truy vấn (người
+        dùng thấy rõ trong bản xem trước) rồi preview lại.
+        """
+        result = tools.import_database_query(api, connection_id, preview_id, data_name, False)
+        if result.get("ok") and result.get("dataset_id"):
+            if result["dataset_id"] not in self.handoff.imported_datasets:
+                self._turn_imports.append(result["dataset_id"])
+            self.handoff.imported_datasets[result["dataset_id"]] = {
+                "data_name": result.get("data_name", data_name),
+                "connection_id": connection_id,
+                "row_count": result.get("row_count"),
+                "columns": result.get("columns"),
+                "truncated": bool(result.get("truncated")),
+            }
+            self._emit(
+                "dataset_imported", agent=SQL_AGENT, dataset_id=result["dataset_id"],
+                data_name=result.get("data_name", data_name), row_count=result.get("row_count"),
+                truncated=bool(result.get("truncated")),
+            )
         return result
 
     def _check_dataset_id(self, api, dataset_id: str) -> dict | None:
@@ -876,6 +1030,7 @@ class AgentTeam:
             }
             for job_id, config_id in self.handoff.jobs.items()
         ]
+        pending_before = self.actions.pending_public()
         context = "\n\n".join([
             "## Config đã qua validate_config (chỉ chạy được các config_id này)",
             json.dumps(ready, ensure_ascii=False, indent=1) if ready else "Chưa có config nào.",
@@ -884,12 +1039,25 @@ class AgentTeam:
             else "Chưa có - phiên chat này chưa tạo job nào.",
             "## Job đang được theo dõi nền",
             ", ".join(self.session.watcher.active()) or "Không có.",
+            "## Thẻ đang chờ người dùng bấm xác nhận (đừng đề nghị lại việc đã có thẻ)",
+            json.dumps(pending_before, ensure_ascii=False, indent=1) if pending_before else "Không có.",
         ])
 
         before = set(self.handoff.jobs)
         unresolved_before = {record["record_id"] for record in self._unresolved_creates}
         result = self._run_subagent(OPERATION_AGENT, task, context)
         result["jobs_started"] = sorted(set(self.handoff.jobs) - before)
+        # Hành động thật Operation Agent vừa ĐỀ NGHỊ: chưa chạy, chờ người dùng bấm xác nhận trên thẻ.
+        before_ids = {a["action_id"] for a in pending_before}
+        awaiting = [a for a in self.actions.pending_public() if a["action_id"] not in before_ids]
+        if awaiting:
+            result["awaiting_confirmation"] = [
+                {"action_id": a["action_id"], "kind": a["kind"], "what": _describe_action(a)} for a in awaiting
+            ]
+            result["confirmation_note"] = (
+                "Các việc trong awaiting_confirmation CHƯA được thực hiện: người dùng phải bấm Xác nhận trên thẻ hiện "
+                "trong khung chat. Nói rõ điều đó; đừng nói đã chạy / đã kích hoạt."
+            )
         # Lệnh tạo job chưa rõ kết quả trong lần chạy này - báo cả khi Operation Agent lỗi sau đó,
         # không thì Manager bảo "thử lại" trong khi job có thể đang chạy.
         unknown = [record for record in self._unresolved_creates if record["record_id"] not in unresolved_before]
@@ -931,6 +1099,11 @@ class AgentTeam:
         rationale: str = "",
     ) -> dict:
         """Model Agent chốt config. Kiểm bằng validate_config.py; hợp lệ mới có config_id."""
+        # Dataset phải nằm trong kho CỦA người dùng (không phải dataset public / của người khác, hay ID
+        # chép sai) - ask_model_agent đã kiểm, nhưng Model Agent có thể submit với ID khác.
+        wrong_dataset = self._check_dataset_id(api, dataset_id)
+        if wrong_dataset:
+            return wrong_dataset
         if not problem_type and self.handoff.requirements:
             problem_type = self.handoff.requirements["problem"].get("type") or ""
 
@@ -1025,19 +1198,16 @@ class AgentTeam:
         """
         R áp cho config của dataset này.
 
-        Tự kích hoạt (service.deploy) là hành động thật trên hệ thống: chỉ giữ khi R nói về
-        CHÍNH dataset này (hoặc không nêu dataset) và vài tin gần nhất của người dùng vẫn có
-        yêu cầu kích hoạt. Manager có thể bỏ qua Prompt Agent và dùng lại R của một yêu cầu
-        cũ ("train A, xong kích hoạt" rồi vài lượt sau "giờ train B") - B không được tự kích hoạt.
-        Ý đồng ý / từ chối do LLM hiểu; code chỉ đòi người dùng CÓ nhắc tới việc kích hoạt.
+        Đề nghị tự kích hoạt (service.deploy) chỉ giữ khi R nói về CHÍNH dataset này (hoặc không nêu
+        dataset). Manager có thể bỏ qua Prompt Agent và dùng lại R của một yêu cầu cũ ("train A, xong
+        kích hoạt" rồi vài lượt sau "giờ train B") - thẻ xác nhận của B không được đề nghị tự kích hoạt.
+        Đề nghị còn giữ cũng chỉ thành lời hứa khi người dùng chọn nút "huấn luyện + tự kích hoạt".
         """
         requirements = self.handoff.requirements
         if not requirements or not (requirements.get("service") or {}).get("deploy"):
             return requirements
         named = (requirements.get("dataset") or {}).get("id")
-        if named in (None, dataset_id) and _mentions_activation(
-            self.session.recent_user_messages(_RECENT_USER_MESSAGES)
-        ):
+        if named in (None, dataset_id):
             return requirements
         return _without_deploy(requirements)
 
@@ -1058,11 +1228,21 @@ class AgentTeam:
         target = (target or "").strip()
         if not target:
             return None  # validate_config tự báo thiếu target
-        problem = (self.handoff.requirements or {}).get("problem") or {}
-        if str(problem.get("target") or "").strip().lower() == target.lower():
+        requirements = self.handoff.requirements or {}
+        problem = requirements.get("problem") or {}
+        schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
+        columns = [c["name"] for c in schema.get("columns") or []] if schema.get("ok") else []
+        recent = self._messages_about_dataset(api, dataset_id, columns)
+        # R là output LLM, dựng từ việc Manager viết: Manager chép gợi ý của Data Agent ("Age hợp lý
+        # nhất") vào yêu cầu là R có target dù người dùng chưa chọn. Chỉ tin R khi R nói về CHÍNH dataset
+        # này và người dùng có gõ tên cột đó; không thì xét như chưa chọn (ít ứng viên vẫn qua bên dưới).
+        if (
+            str(problem.get("target") or "").strip().lower() == target.lower()
+            and (requirements.get("dataset") or {}).get("id") == dataset_id
+            and _mentions_column(recent, target)
+        ):
             return None
 
-        schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
         if not schema.get("ok"):
             return None  # không đọc được dữ liệu thì để validate_config báo lỗi
         by_type = schema.get("target_candidates_by_type") or {}
@@ -1073,12 +1253,10 @@ class AgentTeam:
         if len(candidates) <= 1:
             return None
 
-        columns = [c["name"] for c in schema.get("columns") or []]
         if target.lower() not in {name.lower() for name in columns}:
             return None  # cột không có thật: validate_config báo đúng lỗi đó
-        for message in self.session.recent_user_messages(_RECENT_USER_MESSAGES):
-            text = "\n".join(line for line in message.splitlines() if not line.startswith(_EVENT_PREFIX))
-            if target.lower() in {name.lower() for name in _named_targets(text, columns)}:
+        for message in recent:
+            if target.lower() in {name.lower() for name in _named_targets(_user_text(message), columns)}:
                 return None
         return {
             "ok": False,
@@ -1090,26 +1268,125 @@ class AgentTeam:
             "target_candidates": candidates,
         }
 
+    def _messages_about_dataset(self, api, dataset_id: str, columns: list[str] | tuple = ()) -> list[str]:
+        """
+        Tin gần đây của người dùng, bỏ những tin nói về dataset KHÁC (nhắc tên / id dataset khác của họ mà không
+        nhắc dataset này): "Dataset sales, target y" không mở khoá cột y khi train dataset demo - cả khi Prompt
+        Agent gán nhầm target đó vào R của demo.
+        """
+        recent = self.session.recent_user_messages(_RECENT_USER_MESSAGES)
+        listing = tools.list_my_datasets(api)
+        if not listing.get("ok"):
+            return recent
+        datasets = listing.get("datasets") or []
+        # Tên dataset khác trùng TÊN CỘT của dataset này ("Target là sales" khi có dataset tên sales) thì không
+        # coi là nhắc dataset khác - mơ hồ, nghiêng về không chặn nhầm.
+        column_names = {str(c).lower() for c in columns}
+        others = [
+            label for d in datasets if str(d.get("_id")) != dataset_id
+            for label in (str(d.get("_id") or ""), str(d.get("dataName") or ""))
+            if label and label.lower() not in column_names
+        ]
+        own = [dataset_id] + [str(d.get("dataName") or "") for d in datasets if str(d.get("_id")) == dataset_id]
+        return [
+            message for message in recent
+            if not (_mentions_any(_user_text(message), others) and not _mentions_any(_user_text(message), own))
+        ]
+
     def start_training(self, api, config_id: str) -> dict:
-        """Operation Agent chạy config theo config_id. Không nhận config tự điền."""
+        """
+        Operation Agent ĐỀ NGHỊ chạy config theo config_id - KHÔNG chạy ngay (audit AG-01).
+
+        Huấn luyện chiếm worker dùng chung tới max_time (≤ 24 giờ). Code kiểm mọi điều kiện (config đã qua
+        validate_config, chưa chạy, không có lệnh tạo trùng chưa rõ kết quả...) rồi tạo thẻ xác nhận; job chỉ
+        được tạo khi người dùng bấm Xác nhận (confirm_action). Không nhận config tự điền.
+        """
+        entry, problem, duplicates = self._runnable_config(api, config_id, executing=False)
+        if problem:
+            return problem
+        requirements = self._aligned_requirements(entry)
+        config = entry["config"]
+        dataset_name = ((self.handoff.profiles.get(entry["dataset_id"]) or {}).get("dataset") or {}).get("name")
+        offers_auto = wants_deploy(requirements)
+        summary = {
+            "dataset_id": entry["dataset_id"],
+            "dataset_name": dataset_name,
+            "target": config.get("target"),
+            "feature_count": len(config.get("list_feature") or []),
+            "features": list(config.get("list_feature") or [])[:_CARD_FEATURES],
+            "problem_type": config.get("problem_type"),
+            "metric_sort": config.get("metric_sort"),
+            "search_algorithm": config.get("search_algorithm"),
+            "max_time": config.get("max_time"),
+        }
+        if offers_auto:
+            summary["auto_activate_constraints"] = ((requirements or {}).get("problem") or {}).get("constraints") or []
+        if duplicates:
+            summary["duplicate_of"] = duplicates
+        action = self.actions.propose(
+            "train", key=f"train:{entry['dataset_id']}", params={"config_id": config_id}, summary=summary,
+            offers={"auto_activate": offers_auto}, api=api,
+        )
+        return self._awaiting(action, (
+            "CHƯA chạy. Đã gửi thẻ xác nhận huấn luyện cho người dùng; job chỉ được tạo khi họ bấm Xác nhận trên "
+            "thẻ." + (" Thẻ có nút riêng để huấn luyện KÈM tự kích hoạt khi xong - người dùng tự chọn." if offers_auto
+                      else "")
+            + (f" Lưu ý: cấu hình này GIỐNG HỆT job {', '.join(summary['duplicate_of'])} đã chạy - thẻ có ghi rõ."
+               if summary.get("duplicate_of") else "")
+        ))
+
+    def _awaiting(self, action: PendingAction, note: str) -> dict:
+        """Kết quả tool khi hành động đã thành thẻ chờ xác nhận (không có token)."""
+        return {
+            "ok": True,
+            "awaiting_confirmation": True,
+            "executed": False,
+            **action.public(),
+            "note": note + _AWAITING_NOTE,
+        }
+
+    def _aligned_requirements(self, entry: dict) -> dict | None:
+        """
+        R của config, theo đúng R mới nhất về việc tự kích hoạt: người dùng rút lại yêu cầu kích hoạt sau lúc chốt
+        config ("à thôi đừng kích hoạt") và Prompt Agent đã dựng lại R cho CÙNG dataset với deploy = false thì
+        không đề nghị tự kích hoạt nữa.
+        """
+        current = self.handoff.requirements or {}
+        requirements = entry.get("requirements")
+        if (
+            wants_deploy(requirements)
+            and (current.get("dataset") or {}).get("id") == entry["dataset_id"]
+            and not wants_deploy(current)
+        ):
+            return _without_deploy(requirements)
+        return requirements
+
+    def _runnable_config(self, api, config_id: str, executing: bool) -> tuple[dict | None, dict | None, list[str]]:
+        """
+        Config chạy được không: (entry, None, job trùng) hoặc (None, lỗi, []). Kiểm cả lúc đề nghị lẫn lúc người
+        dùng bấm xác nhận (bối cảnh có thể đã đổi: config khác đã chạy, config bị thay, lệnh tạo chưa rõ kết quả).
+
+        Lúc đề nghị, cấu hình giống hệt một job đã chạy KHÔNG bị chặn mà trả danh sách job đó để thẻ xác nhận nói
+        rõ - người dùng bấm xác nhận nghĩa là họ muốn chạy lại.
+        """
         entry = self.handoff.configs.get(config_id)
         if entry is None:
-            return {
+            return None, {
                 "ok": False,
                 "error": (
                     f"Không có config '{config_id}'. Chỉ chạy được config đã được Model Agent "
                     "chốt qua submit_config (đã kiểm bằng validate_config)."
                 ),
                 "available_config_ids": sorted(self.handoff.configs),
-            }
+            }, []
         if entry.get("job_id"):
-            return {
+            return None, {
                 "ok": False,
                 "error": f"Config '{config_id}' đã chạy thành job {entry['job_id']}. Không chạy lại trùng.",
                 "job_id": entry["job_id"],
-            }
+            }, []
         if entry.get("outcome_unknown"):
-            return {
+            return None, {
                 "ok": False,
                 "outcome_unknown": True,
                 "error": (
@@ -1117,29 +1394,42 @@ class AgentTeam:
                     "(có thể ra job trùng). Kiểm tra list_my_jobs; có job khớp thì watch_job; chắc chắn "
                     "không có thì nhờ Model Agent chốt lại config."
                 ),
-            }
-        blocked = self._blocked_by_unresolved_create(api, entry)
-        if blocked:
-            return blocked
+            }, []
         if entry.get("superseded_by"):
-            return {
+            return None, {
                 "ok": False,
                 "error": (
                     f"Config '{config_id}' đã bị thay bằng config mới hơn "
                     f"'{entry['superseded_by']}' của cùng dataset. Chạy config mới đó."
                 ),
                 "config_id": entry["superseded_by"],
-            }
+            }, []
+        blocked, finished_matches = self._unresolved_create_check(api, entry, executing)
+        if blocked:
+            return None, blocked, []
+        duplicates: list[str] = []
+        if not executing:
+            # So theo TẬP cột (đổi thứ tự cột vẫn là cùng một lần train) cộng thuật toán và thời gian - đổi thuật
+            # toán theo yêu cầu "thử thuật toán khác" là lần train khác.
+            def run_key(config: dict) -> tuple:
+                return _config_key(config), config.get("search_algorithm"), config.get("max_time")
 
-        # Người dùng rút lại yêu cầu kích hoạt sau lúc chốt config ("à thôi đừng kích hoạt") và
-        # Prompt Agent đã dựng lại R cho CÙNG dataset này với deploy = false: theo R mới nhất.
-        current = self.handoff.requirements or {}
-        if (
-            wants_deploy(entry.get("requirements"))
-            and (current.get("dataset") or {}).get("id") == entry["dataset_id"]
-            and not wants_deploy(current)
-        ):
-            entry["requirements"] = _without_deploy(entry["requirements"])
+            same = [
+                other["job_id"] for other in self.handoff.configs.values()
+                if other is not entry and other.get("job_id") and other.get("dataset_id") == entry["dataset_id"]
+                and run_key(other.get("config") or {}) == run_key(entry["config"])
+            ]
+            duplicates = list(dict.fromkeys(same + finished_matches))
+        return entry, None, duplicates
+
+    def _execute_training(self, api, config_id: str, auto_activate: bool) -> dict:
+        """Người dùng đã bấm xác nhận: kiểm lại rồi tạo job thật, bật theo dõi (và lời hứa tự kích hoạt nếu chọn)."""
+        entry, problem, _ = self._runnable_config(api, config_id, executing=True)
+        if problem:
+            return problem
+        requirements = self._aligned_requirements(entry)
+        if not auto_activate:
+            requirements = _without_deploy(requirements) if wants_deploy(requirements) else requirements
 
         config = entry["config"]
         attempt_started = time.time()
@@ -1160,50 +1450,46 @@ class AgentTeam:
                 "dataset_id": entry["dataset_id"], "key": _config_key(config), "started_at": attempt_started,
                 "possible_job_ids": result.get("possible_job_ids") or [],
             })
-            self._turn_unknown_creates.append(
-                f"Lượt chat trước bị lỗi giữa chừng NHƯNG đã gửi lệnh tạo job cho dataset {entry['dataset_id']} "
-                f"(target {config['target']}) mà chưa rõ kết quả; job có thể đã được tạo "
-                f"({', '.join(result.get('possible_job_ids') or []) or 'chưa thấy trong danh sách'}). KHÔNG chạy "
-                "lại; kiểm tra list_my_jobs trước."
-            )
         if not result.get("ok") or not result.get("job_id"):
             return result
 
         job_id = result["job_id"]
         entry["job_id"] = job_id
+        # Chỉ ghi lựa chọn tự kích hoạt khi job đã tạo: tạo hỏng thì thẻ đề nghị lại vẫn có nút "+ tự kích hoạt".
+        entry["requirements"] = requirements
         self.handoff.jobs[job_id] = config_id
         self._emit(
             "job_started", agent=OPERATION_AGENT, job_id=job_id, config_id=config_id,
-            dataset_id=entry["dataset_id"], config=config, auto_activate=wants_deploy(entry.get("requirements")),
+            dataset_id=entry["dataset_id"], config=config, auto_activate=wants_deploy(requirements),
         )
         self.session.watcher.watch(
             job_id,
             max_time=config.get("max_time"),
-            requirements=entry.get("requirements"),
+            requirements=requirements,
             trace_context=tracing.current_context(),
             dataset_id=entry["dataset_id"],
             problem_type=config.get("problem_type"),
         )
 
         result["watching"] = True
-        # Manager chỉ được hứa tự kích hoạt khi cờ này true.
         result["auto_activate"] = self.session.watcher.auto_activate(job_id)
-        result["note"] = (
-            "Job đã vào hàng đợi và chạy nền. Hệ thống tự theo dõi tới khi xong và báo "
-            "cho người dùng - KHÔNG có kết quả ngay."
+        result["auto_activate_constraints"] = (
+            self.session.watcher.checked_constraints(job_id) if result["auto_activate"] else []
         )
         return result
 
-    def _blocked_by_unresolved_create(self, api, entry: dict) -> dict | None:
+    def _unresolved_create_check(self, api, entry: dict, executing: bool) -> tuple[dict | None, list[str]]:
         """
-        Đã có lệnh tạo job CÙNG dataset + cấu hình chưa rõ kết quả: không gửi lệnh thứ hai khi
-        chưa chắc lần trước không tạo được job (sẽ ra job trùng chạy hàng giờ).
+        Đã có lệnh tạo job CÙNG dataset + cấu hình chưa rõ kết quả: không gửi lệnh thứ hai khi chưa chắc lần
+        trước không tạo được job (sẽ ra job trùng chạy hàng giờ). Trả (lỗi chặn | None, job khớp đã XONG).
 
-        Có job khớp (tạo sau lần gửi đó) -> từ chối, trả job đó để theo dõi. Chưa thấy mà mới
-        chưa tới _UNRESOLVED_RECHECK_SECONDS -> từ chối, đợi. Quá lâu vẫn không thấy -> lần
-        trước coi như chưa tạo được: cho chạy, xoá ghi nhận.
+        Có job khớp đang chạy -> chặn, trả job đó để theo dõi. Job khớp đã xong thành công -> không chặn, nhưng
+        báo lại để thẻ xác nhận ghi "giống hệt job đã chạy" (người dùng xác nhận là muốn chạy lại); chỉ khi
+        thực thi mới xoá ghi nhận. Chưa thấy mà mới chưa tới _UNRESOLVED_RECHECK_SECONDS -> chặn, đợi. Quá lâu
+        vẫn không thấy -> lần trước coi như chưa tạo được: cho chạy, xoá ghi nhận.
         """
         key = _config_key(entry["config"])
+        finished: list[str] = []
         for record in list(self._unresolved_creates):
             if record["dataset_id"] != entry["dataset_id"] or record["key"] != key:
                 continue
@@ -1217,7 +1503,7 @@ class AgentTeam:
                         "Lệnh tạo job trước với CÙNG cấu hình chưa rõ kết quả và hiện không đọc được danh sách "
                         "job để kiểm. Thử lại sau - đừng chạy lại khi chưa kiểm được."
                     ),
-                }
+                }, []
             running = [job["job_id"] for job in found if job.get("status") == tools.JOB_RUNNING]
             if running:
                 return {
@@ -1228,10 +1514,15 @@ class AgentTeam:
                         f"Lệnh tạo job trước với CÙNG cấu hình chưa rõ kết quả và có job khớp ĐANG CHẠY: "
                         f"{', '.join(running)}. KHÔNG chạy lại - watch_job job đó."
                     ),
-                }
+                }, []
             if found:
-                # Job khớp đã kết thúc: lần gửi trước đã có kết quả - chạy lại giờ là ý người dùng.
-                self._unresolved_creates.remove(record)
+                # Job khớp đã kết thúc. Thành công (hay thiếu / lạ status) = lần gửi trước ĐÃ là lần train này:
+                # chạy nữa là chạy lại - thẻ phải nói rõ. Chỉ toàn job lỗi thì chạy lại là khắc phục.
+                succeeded = [job["job_id"] for job in found
+                             if job.get("status") not in (tools.JOB_FAILED, tools.JOB_CANCELLED)]
+                finished += succeeded
+                if executing or not succeeded:
+                    self._unresolved_creates.remove(record)
                 continue
             waited = time.time() - record["started_at"]
             if waited < _UNRESOLVED_RECHECK_SECONDS:
@@ -1242,63 +1533,100 @@ class AgentTeam:
                         f"Lệnh tạo job trước với CÙNG cấu hình chưa rõ kết quả (mới {int(waited)} giây). Đợi ít nhất "
                         f"{_UNRESOLVED_RECHECK_SECONDS} giây rồi kiểm tra list_my_jobs; không có job khớp thì mới chạy lại."
                     ),
-                }
+                }, []
             self._unresolved_creates.remove(record)
-        return None
+        return None, finished
 
     def set_auto_activate(self, api, job_id: str, enabled: bool = False, constraints=None) -> dict:
         """
         Bật/tắt tự kích hoạt cho một job đang chạy (người dùng đổi ý: "à thôi đừng kích hoạt").
 
-        Bật lại chỉ được khi người dùng có nhắc tới việc kích hoạt - LLM không tự bật.
-        constraints: điều kiện người dùng nêu kèm khi bật ("đạt accuracy >= 0.9 thì kích hoạt") -
-        được kiểm lúc job xong. Điều kiện không kiểm được thì KHÔNG bật (bật là kích hoạt bất kể điểm).
+        TẮT (và siết điều kiện của lời hứa đang chờ) là hướng an toàn - làm ngay. BẬT (hoặc nới điều kiện) là
+        hứa một hành động thật về sau - chỉ tạo thẻ xác nhận; lời hứa có khi người dùng bấm Xác nhận.
+        constraints: điều kiện người dùng nêu kèm ("đạt accuracy >= 0.9 thì kích hoạt") - kiểm lúc job xong.
+        Điều kiện không kiểm được thì KHÔNG đề nghị (bật là kích hoạt bất kể điểm).
         """
         enabled = tools.as_bool(enabled)
         if enabled is None:
             return self._auto_refusal(job_id, "enabled phải là true hoặc false.")
-        added, notes = None, []
-        if enabled and constraints not in (None, []):
+        watcher = self.session.watcher
+        if not enabled:
+            outcome = self.change_auto_activate(job_id, False, by_button=False)
+            if outcome != "ok":
+                return self._auto_refusal(job_id, _AUTO_ACTIVATE_REFUSED[outcome].format(job_id=job_id))
+            return {"ok": True, "job_id": job_id, "auto_activate": False}
+
+        added, notes = [], []
+        if constraints not in (None, []):
             added, notes, problem, transient = self._activation_constraints(api, job_id, constraints)
             if problem:
-                # Lời hứa đang bật mà điều kiện mới không áp được (điều kiện sai, hay tạm không đọc được
-                # job): để nguyên thì job xong vẫn kích hoạt theo điều kiện CŨ mà người dùng vừa đổi -
-                # huỷ cho chắc, nói rõ. Thử lại trong cùng lượt với điều kiện hợp lệ thì bật lại được.
-                if self.change_auto_activate(job_id, False, by_button=False, only_if_pending=True, system=True) == "ok":
+                # Lời hứa đang chờ mà điều kiện mới không áp được (điều kiện sai, hay tạm không đọc được job): để
+                # nguyên thì job xong vẫn kích hoạt theo điều kiện CŨ mà người dùng vừa đổi - huỷ cho chắc, nói rõ.
+                if watcher.set_auto_activate(job_id, False, only_if_pending=True) == "ok":
+                    self.record_auto_activate_change(job_id, False, by_button=False)
                     problem += (
                         " Đã HUỶ tự kích hoạt đang bật của job này (chưa áp được điều kiện người dùng vừa đặt)"
                         + ("; thử lại set_auto_activate với cùng điều kiện khi đọc được job." if transient else ".")
                     )
                 return self._auto_refusal(job_id, problem)
-        outcome = self.change_auto_activate(job_id, enabled, by_button=False, constraints=added)
-        if outcome == "no_request":
-            if self.session.watcher.auto_state(job_id) == "pending":
-                return self._auto_refusal(job_id, (
-                    "Điều kiện mới NỚI LỎNG điều kiện người dùng đã đồng ý mà người dùng không yêu cầu - giữ "
-                    "nguyên. Hỏi lại người dùng nếu họ muốn đổi."
-                ))
-            return self._auto_refusal(job_id, "Người dùng không yêu cầu kích hoạt (kể từ lần huỷ gần nhất) - không tự bật.")
-        if outcome == "needs_constraints":
-            return self._auto_refusal(job_id, (
-                "Tự kích hoạt vừa bị huỷ vì điều kiện người dùng đặt không kiểm được - chỉ bật lại kèm constraints "
-                "hợp lệ (metric job có điểm). Không bật vô điều kiện khi người dùng vừa đặt điều kiện."
-            ))
-        if outcome != "ok":
-            return self._auto_refusal(job_id, _AUTO_ACTIVATE_REFUSED[outcome].format(job_id=job_id))
-        result = {"ok": True, "job_id": job_id, "auto_activate": enabled}
+
+        state = watcher.auto_state(job_id)
+        current = watcher.checked_constraints(job_id)
+        if state == "pending" and _only_tightens(current, added):
+            # Lời hứa đang chờ, điều kiện mới chỉ làm việc kích hoạt KHÓ hơn: an toàn, áp ngay. Nguyên tử trong
+            # watcher - người dùng vừa bấm Huỷ thì không bật lại ("not_pending" -> đi đường đề nghị).
+            if not added:
+                return self._auto_ok(job_id, notes)
+            if watcher.set_auto_activate(job_id, True, added, only_if_pending=True) == "ok":
+                self.record_auto_activate_change(job_id, True, by_button=False)
+                return self._auto_ok(job_id, notes)
+            state = watcher.auto_state(job_id)
+        if job_id not in watcher.active():
+            return self._auto_refusal(job_id, _AUTO_ACTIVATE_REFUSED["not_watched"].format(job_id=job_id))
+        if state == "activating":
+            return self._auto_refusal(job_id, _AUTO_ACTIVATE_REFUSED["in_progress"].format(job_id=job_id))
+        if state in ("done", "expired"):
+            return self._auto_refusal(job_id, _AUTO_ACTIVATE_REFUSED["finished"].format(job_id=job_id))
+        will_check = _merge_constraints(current, added)
+        action = self.actions.propose(
+            "auto_activate", key=f"auto:{job_id}", params={"job_id": job_id, "constraints": added},
+            summary={
+                "job_id": job_id,
+                "dataset_id": self._job_dataset(job_id),
+                "constraints": will_check,
+                "unconditional": not will_check,
+            }, api=api,
+        )
+        result = self._awaiting(action, (
+            "CHƯA bật. Đã gửi thẻ xác nhận BẬT tự kích hoạt cho người dùng; lời hứa chỉ có khi họ bấm Xác nhận."
+            + (f" Khi job xong sẽ kiểm: {_constraints_text(will_check)}." if will_check
+               else " Không có điều kiện: nếu được xác nhận, model kích hoạt khi job xong BẤT KỂ điểm.")
+        ))
         if notes:
             result["notes"] = notes
-        if enabled:
-            # Báo đúng điều kiện sẽ được kiểm - Manager không được hứa điều kiện hệ thống không kiểm.
-            checked = self.session.watcher.checked_constraints(job_id)
-            result["checked_constraints"] = checked
-            result["note"] = (
+        return result
+
+    def _auto_ok(self, job_id: str, notes: list[str]) -> dict:
+        """Lời hứa đang chờ (vừa siết điều kiện, hoặc không đổi gì): báo ĐÚNG điều kiện sẽ kiểm."""
+        checked = self.session.watcher.checked_constraints(job_id)
+        result = {
+            "ok": True,
+            "job_id": job_id,
+            "auto_activate": True,
+            "checked_constraints": checked,
+            "note": (
                 "Khi job xong chỉ kích hoạt nếu đạt MỌI ràng buộc trong checked_constraints."
                 if checked else
-                "Không có ràng buộc nào: model sẽ được kích hoạt khi job xong BẤT KỂ điểm. Người dùng "
-                "có đặt điều kiện thì gọi lại với constraints."
-            )
+                "Không có ràng buộc nào: model sẽ được kích hoạt khi job xong BẤT KỂ điểm."
+            ),
+        }
+        if notes:
+            result["notes"] = notes
         return result
+
+    def _job_dataset(self, job_id: str) -> str | None:
+        config_id = self.handoff.jobs.get(job_id)
+        return (self.handoff.configs.get(config_id) or {}).get("dataset_id") if config_id else None
 
     def _auto_refusal(self, job_id: str, error: str) -> dict:
         """Lỗi của set_auto_activate kèm trạng thái THẬT (lỗi không có nghĩa là đã tắt)."""
@@ -1353,84 +1681,180 @@ class AgentTeam:
         return constraints, notes, None, False
 
     def change_auto_activate(
-        self,
-        job_id: str,
-        enabled: bool,
-        by_button: bool,
-        constraints: list[dict] | None = None,
-        only_if_pending: bool = False,
-        system: bool = False,
+        self, job_id: str, enabled: bool, by_button: bool, constraints: list[dict] | None = None,
     ) -> str:
         """
-        Đổi tự kích hoạt - đường DUY NHẤT, cho cả tool lẫn nút trên thẻ, giữ khoá suốt khối.
-
-        Tool (by_button=False) bật lên chỉ khi người dùng nhắc tới việc kích hoạt SAU lần huỷ gần
-        nhất; nút trên thẻ là chính người dùng bấm nên không cần kiểm. Lời hứa ĐANG bật thì thêm
-        điều kiện (chỉ chặt hơn) không cần kiểm lại. only_if_pending: chỉ đổi khi đang bật.
-        Trả mã của watcher.set_auto_activate, hoặc "no_request" / "not_pending".
+        Đổi tự kích hoạt ngay (không qua thẻ xác nhận): TẮT từ tool hay nút, hoặc BẬT bằng nút trên thẻ job /
+        thẻ xác nhận - đều là người dùng tự bấm, hoặc hướng an toàn. Tool muốn BẬT thì phải qua set_auto_activate
+        (tạo thẻ xác nhận). Trả mã của watcher.set_auto_activate.
         """
-        with self._auto_lock:
-            watcher = self.session.watcher
-            state = watcher.auto_state(job_id)
-            if only_if_pending and state != "pending":
-                return "not_pending"
-            current = watcher.checked_constraints(job_id)
-            tightening = state == "pending" and _only_tightens(current, constraints or [])
-            # Hệ thống vừa huỷ trong CHÍNH lượt này vì điều kiện sai (vẫn đang "cancelled"): bật lại chỉ
-            # khi kèm điều kiện hợp lệ, và không cần lời mới khi điều kiện đó chặt hơn lời hứa đã huỷ
-            # hoặc chính tin này nhắc tới kích hoạt. Nới lỏng mà người dùng không nói -> luật thường.
-            messages = self._user_messages()
-            same_turn_retry = (
-                state == "cancelled"
-                and self._system_cancelled_at.get(job_id) == len(messages)
-            )
-            if enabled and not by_button and same_turn_retry and not constraints:
-                return "needs_constraints"
-            # Lần thử lại được đúng "cửa sổ đồng ý" của lần gọi đầu (mốc huỷ TRƯỚC lần hệ thống huỷ).
-            retry_ok = same_turn_retry and (
-                _only_tightens(current, constraints or [])
-                or _mentions_activation(messages[self._system_prev_mark.get(job_id, 0):][-_RECENT_USER_MESSAGES:])
-            )
-            if enabled and not by_button and not tightening and not retry_ok:
-                since = self._auto_cancelled_at.get(job_id, 0)
-                if not _mentions_activation(messages[since:][-_RECENT_USER_MESSAGES:]):
-                    return "no_request"
-            mark_before = self._auto_cancelled_at.get(job_id, 0)
-            outcome = watcher.set_auto_activate(job_id, enabled, constraints)
-            if outcome == "ok":
-                self.record_auto_activate_change(job_id, enabled, by_button=by_button)
-                if system:
-                    self._system_cancelled_at[job_id] = len(self._user_messages())
-                    self._system_prev_mark[job_id] = mark_before
-                else:
-                    if enabled and same_turn_retry and job_id in self._system_prev_mark:
-                        # Thử lại thành công: lần huỷ của hệ thống coi như chưa có - trả cửa sổ đồng ý về
-                        # như trước (không thu hẹp lời đồng ý cũ của người dùng vì một lần gọi sai).
-                        self._auto_cancelled_at[job_id] = self._system_prev_mark[job_id]
-                    self._system_cancelled_at.pop(job_id, None)
-                    self._system_prev_mark.pop(job_id, None)
-            return outcome
-
-    def _user_messages(self) -> list[str]:
-        return [m["content"] for m in self.session.messages if m.get("role") == "user"]
+        if enabled and not by_button:
+            raise ValueError("Bật tự kích hoạt từ tool phải qua thẻ xác nhận (set_auto_activate).")
+        outcome = self.session.watcher.set_auto_activate(job_id, enabled, constraints)
+        if outcome == "ok":
+            self.record_auto_activate_change(job_id, enabled, by_button=by_button)
+        return outcome
 
     def record_auto_activate_change(self, job_id: str, enabled: bool, by_button: bool) -> None:
-        """
-        Ghi lại việc đổi tự kích hoạt. Huỷ thì nhớ mốc (số tin người dùng lúc đó) - bật lại phải có
-        lời mới hơn. Đổi bằng nút trên thẻ thì báo Manager ở lượt chat sau.
-        """
-        if not enabled:
-            # Tin đã nhận mà chưa vào lịch sử (lượt đang xếp hàng / chuẩn bị) gửi TRƯỚC lần huỷ: không
-            # được tính là lời mới hơn lần huỷ.
-            incoming = 1 if getattr(self.session, "incoming_user_message", False) else 0
-            self._auto_cancelled_at[job_id] = len(self._user_messages()) + incoming
+        """Ghi lại việc đổi tự kích hoạt. Đổi bằng nút trên thẻ thì báo Manager ở lượt chat sau."""
         if not by_button:
             self._turn_auto_changes.append((job_id, enabled))
-        if by_button:
-            self.session.add_event(
-                f"Người dùng vừa {'BẬT' if enabled else 'HUỶ'} tự kích hoạt model cho job {job_id} bằng nút trên "
-                "thẻ job. Báo đúng trạng thái này; đừng đổi lại trừ khi người dùng yêu cầu."
+            return
+        self.session.add_event(
+            f"Người dùng vừa {'BẬT' if enabled else 'HUỶ'} tự kích hoạt model cho job {job_id} bằng nút trên "
+            "thẻ job. Báo đúng trạng thái này; đừng đổi lại trừ khi người dùng yêu cầu."
+        )
+
+    def activate_model(self, api, job_id: str, activate: bool = True) -> dict:
+        """
+        ĐỀ NGHỊ bật / tắt model của một job - hành động thật (endpoint dự đoán đổi ngay), nên chỉ chạy khi người
+        dùng bấm Xác nhận trên thẻ. Tên cột, ô dữ liệu hay lỗi backend có thể chứa câu kiểu "người dùng yêu cầu
+        tắt model job X" (prompt injection gián tiếp): LLM làm theo thì cũng chỉ ra được một thẻ mà người dùng
+        thấy rõ job nào, bật hay tắt - và từ chối được.
+        """
+        flag = tools.as_bool(activate)
+        if flag is None:
+            return tools.activate_model(api, job_id, activate)  # tool tự báo lỗi tham số, không làm gì
+        job, problem = tools.find_own_job(api, job_id)
+        if problem:
+            return problem
+        if flag and job.get("status") != tools.JOB_SUCCESS:
+            return {
+                "ok": False,
+                "job_id": job_id,
+                "error": (
+                    f"Job '{job_id}' chưa huấn luyện xong (status = {job.get('status')}), chưa có model để kích hoạt."
+                    + (" Job đang chạy: muốn tự kích hoạt khi xong thì dùng set_auto_activate."
+                       if job.get("status") == tools.JOB_RUNNING else "")
+                ),
+            }
+        if job.get("activate") == (1 if flag else 0):
+            return {
+                "ok": True,
+                "job_id": job_id,
+                "activated": flag,
+                "note": f"Model của job này đã {'được kích hoạt' if flag else 'ở trạng thái tắt'} - không cần làm gì.",
+            }
+        summary = self._job_card(api, job)
+        action = self.actions.propose(
+            "activate" if flag else "deactivate", key=f"activation:{job_id}",
+            params={"job_id": job_id, "activate": flag}, summary=summary, api=api,
+        )
+        return self._awaiting(action, (
+            f"CHƯA {'kích hoạt' if flag else 'tắt'}. Đã gửi thẻ xác nhận {'KÍCH HOẠT' if flag else 'TẮT'} model của "
+            f"job {job_id} cho người dùng; chỉ làm khi họ bấm Xác nhận trên thẻ."
+        ))
+
+    def propose_activation_after_job(self, summary: dict) -> bool:
+        """
+        Job xong, ràng buộc chỉ đạt theo điểm cross-validation (audit AG-02): không tự kích hoạt mà đưa thẻ xác
+        nhận kích hoạt cho người dùng (watcher gọi qua ChatSession._on_job_finished). Trả True nếu đã tạo thẻ.
+        """
+        job_id = summary.get("job_id")
+        if not job_id:
+            return False
+        checks = (summary.get("verification") or {}).get("checks") or []
+        try:
+            self.actions.propose(
+                "activate", key=f"activation:{job_id}", params={"job_id": job_id, "activate": True},
+                summary={
+                    "job_id": job_id,
+                    "dataset_id": summary.get("dataset_id"),
+                    "dataset_name": summary.get("dataset"),
+                    "problem_type": summary.get("problem_type"),
+                    "best_model": summary.get("best_model"),
+                    "metric_sort": summary.get("metric_sort"),
+                    "best_score": summary.get("best_score"),
+                    "score_source": summary.get("score_source"),
+                    "constraints": [{k: c.get(k) for k in ("metric", "op", "value", "score")} for c in checks],
+                    "currently_active": False,
+                },
+                api=self.session.api,
             )
+        except Exception:  # noqa: BLE001 - thẻ là phần thêm; không được làm hỏng việc báo job xong
+            log_exception(_log, "tạo thẻ kích hoạt cho job %s lỗi", job_id)
+            return False
+        return True
+
+    def _job_card(self, api, job: dict) -> dict:
+        """Thông tin job cho thẻ xác nhận bật / tắt model - do code dựng từ bản ghi job thật."""
+        config = job.get("config") or {}
+        card = {
+            "job_id": job.get("job_id"),
+            "dataset_id": (job.get("data") or {}).get("id"),
+            "dataset_name": (job.get("data") or {}).get("name"),
+            "target": config.get("target"),
+            "problem_type": config.get("problem_type"),
+            "best_model": job.get("best_model"),
+            "metric_sort": config.get("metric_sort"),
+            "best_score": job.get("best_score"),
+            "currently_active": job.get("activate") == 1,
+        }
+        if job.get("status") == tools.JOB_SUCCESS:
+            # Audit AG-02: thẻ nói rõ điểm là CV (lạc quan) hay holdout - người dùng quyết định có dữ kiện.
+            card["score_source"] = tools.job_score_source(api, str(job.get("job_id")))
+        return card
+
+    # ------------------------------------------------- xác nhận của người dùng
+
+    def confirm_action(self, action_id: str, token: str, auto_activate: bool | None = None) -> dict:
+        """
+        Người dùng bấm Xác nhận trên thẻ (POST /agent/confirm, hoặc lệnh trong agent.chat): thực thi đúng hành
+        động đã đề nghị, sau khi kiểm lại điều kiện. Raise ActionError khi thẻ không xác nhận được (sai token,
+        hết hạn, đã xử lý). Không gọi LLM.
+
+        auto_activate: chỉ cho thẻ huấn luyện có đề nghị tự kích hoạt - True = người dùng chọn nút "huấn luyện +
+        tự kích hoạt"; mặc định KHÔNG tự kích hoạt.
+        """
+        with self._confirm_lock:
+            action = self.actions.get(action_id)
+            if action is not None and action.kind == "train" and auto_activate and not action.offers.get("auto_activate"):
+                raise ActionError("bad_option", "Thẻ này không có lựa chọn tự kích hoạt.")
+            action = self.actions.claim(action_id, token)
+            action.choice = {"auto_activate": bool(auto_activate)} if action.kind == "train" else {}
+            try:
+                result = self._execute(action)
+            except Exception as error:  # noqa: BLE001 - thẻ không được kẹt ở "executing"
+                log_exception(_log, "thực thi hành động %s lỗi", action.action_id)
+                result = {"ok": False, "error": f"Lỗi nội bộ khi thực hiện ({type(error).__name__})."}
+            ok = bool(result.get("ok"))
+            self.actions.resolve(action, ok, result=_brief_result(result), error=None if ok else str(result.get("error")))
+            self.session.add_event(_confirmed_note(action, result))
+            return {**result, "action_id": action.action_id, "kind": action.kind}
+
+    def reject_action(self, action_id: str, token: str) -> dict:
+        """Người dùng bấm Từ chối: không làm gì, báo Manager ở lượt sau."""
+        action = self.actions.reject(action_id, token)
+        self.session.add_event(
+            f"Người dùng đã TỪ CHỐI {_describe_action(action.public())}. Không làm việc đó; đừng đề nghị lại trừ khi "
+            "người dùng tự yêu cầu."
+        )
+        return {"ok": True, "action_id": action.action_id, "kind": action.kind, "status": "rejected"}
+
+    def _execute(self, action: PendingAction) -> dict:
+        api = action.api or self.session.api
+        params = action.params
+        if action.kind == "train":
+            return self._execute_training(api, params["config_id"], bool(action.choice.get("auto_activate")))
+        if action.kind in ("activate", "deactivate"):
+            result = tools.activate_model(api, params["job_id"], params["activate"])
+            if result.get("ok"):
+                self._emit(
+                    "model_activation", agent=OPERATION_AGENT, job_id=params["job_id"], activated=params["activate"],
+                    endpoint_url=result.get("endpoint_url"),
+                )
+            return result
+        if action.kind == "auto_activate":
+            job_id = params["job_id"]
+            # Thẳng vào watcher: _confirmed_note đã báo Manager (không báo thêm câu "bấm nút trên thẻ job").
+            outcome = self.session.watcher.set_auto_activate(job_id, True, params.get("constraints"))
+            if outcome != "ok":
+                return {"ok": False, "job_id": job_id, "error": _AUTO_ACTIVATE_REFUSED[outcome].format(job_id=job_id)}
+            return {
+                "ok": True, "job_id": job_id, "auto_activate": True,
+                "checked_constraints": self.session.watcher.checked_constraints(job_id),
+            }
+        return {"ok": False, "error": f"Loại hành động lạ: {action.kind}"}
 
     def watch_job(self, api, job_id: str) -> dict:
         """Bật theo dõi nền cho một job có sẵn của người dùng."""
@@ -1450,7 +1874,10 @@ class AgentTeam:
                 # không phát thêm một bản kết quả nữa. watch_job KHÔNG BAO GIỜ tự kích hoạt: lời hứa
                 # chỉ sống khi watcher còn theo dõi (hết giờ là hết hiệu lực).
                 if job_id not in self.session.watcher.active():
-                    summary = summarize_job(job, self.session.watcher.requirements_now(job_id, own_requirements))
+                    source = tools.job_score_source(api, job_id) if status == tools.JOB_SUCCESS else None
+                    summary = summarize_job(
+                        job, self.session.watcher.requirements_now(job_id, own_requirements), score_source=source,
+                    )
                     self._emit("job_done" if status == tools.JOB_SUCCESS else "job_failed", agent=OPERATION_AGENT, **summary)
             except Exception:  # noqa: BLE001 - chỉ là cập nhật giao diện, không được làm hỏng tool
                 log_exception(_log, "báo kết quả job %s lỗi", job_id)
@@ -1461,7 +1888,6 @@ class AgentTeam:
                 "note": "Job đã kết thúc, không cần theo dõi. Dùng get_job_info để xem kết quả.",
             }
 
-        state_before = self.session.watcher.auto_state(job_id)
         # Ràng buộc chỉ áp cho job do chính phiên này khởi tạo, theo R lúc chốt config của job.
         config_id = self.handoff.jobs.get(job_id)
         requirements = (self.handoff.configs.get(config_id) or {}).get("requirements") if config_id else None
@@ -1474,12 +1900,6 @@ class AgentTeam:
             dataset_id=(job.get("data") or {}).get("id"),
             problem_type=(job.get("config") or {}).get("problem_type"),
         )
-        if state_before in ("pending", "expired") and self.session.watcher.auto_state(job_id) == "off":
-            # Lời hứa cũ đã hết hiệu lực (theo dõi lại thành "off" - kể cả khi nó vừa hết giờ ngay trước
-            # lần theo dõi này): bật lại cần lời người dùng từ tin hiện tại trở đi, lời cũ không tính.
-            with self._auto_lock:
-                mark = max(len(self._user_messages()) - 1, 0)
-                self._auto_cancelled_at[job_id] = max(self._auto_cancelled_at.get(job_id, 0), mark)
         return {"ok": True, "job_id": job_id, "status": 0, "watching": True, "already_watching": not started}
 
 
