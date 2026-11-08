@@ -39,6 +39,13 @@ def test_files_outside_the_source_directory_are_refused(sources, tmp_path):
     os.symlink(outside, base / "link.sqlite")
     with pytest.raises(SourceAccessError):
         resolve_source_file("link.sqlite", base)
+    # Thư mục "anh em" trùng tiền tố tên (sources2 vs sources): so tiền tố phải kèm dấu phân cách.
+    sibling = tmp_path / "sources2"
+    sibling.mkdir()
+    (sibling / "secret.sqlite").write_bytes(sqlite_path.read_bytes())
+    with pytest.raises(SourceAccessError):
+        resolve_source_file("../sources2/secret.sqlite", base)
+    assert resolve_source_file("./sub/../glass.sqlite", base) == sqlite_path.resolve()
 
 
 @pytest.mark.parametrize("engine", ["sqlite", "duckdb"])

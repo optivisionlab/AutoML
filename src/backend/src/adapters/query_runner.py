@@ -18,6 +18,7 @@ import base64
 import datetime as dt
 import decimal
 import math
+import os
 import pickle
 import resource
 import sqlite3
@@ -72,13 +73,16 @@ def resolve_source_file(name: str, base_dir: Path) -> Path:
     """
     if not isinstance(name, str) or not name.strip() or "\x00" in name:
         raise SourceAccessError("Tên file database không hợp lệ.")
-    base = Path(base_dir).resolve()
-    candidate = (base / name.strip()).resolve()
-    if candidate != base and base not in candidate.parents:
+    # realpath (giải cả symlink) rồi so tiền tố TRƯỚC mọi thao tác trên file - đúng mẫu chống path
+    # traversal mà CodeQL (py/path-injection) nhận ra. Tên tuyệt đối làm os.path.join bỏ base -> bị từ chối.
+    base = os.path.realpath(base_dir)
+    prefix = base if base.endswith(os.sep) else base + os.sep
+    candidate = os.path.realpath(os.path.join(base, name.strip()))
+    if not candidate.startswith(prefix):
         raise SourceAccessError("File database phải nằm trong thư mục nguồn dữ liệu được cấu hình.")
-    if not candidate.is_file():
+    if not os.path.isfile(candidate):
         raise SourceAccessError(f"Không có file database '{name}' trong thư mục nguồn dữ liệu.")
-    return candidate
+    return Path(candidate)
 
 
 def json_safe(value: Any) -> Any:
