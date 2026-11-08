@@ -2,6 +2,7 @@ import axios from "axios";
 import {
   type ActivateModelPayload,
   type ActiveModelsResponse,
+  type BaseResponse,
   type DeploymentInfoResponse,
   type JobsListParams,
   type JobsListResponse,

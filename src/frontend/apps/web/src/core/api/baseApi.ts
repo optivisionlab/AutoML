@@ -56,6 +56,6 @@ const axiosBaseQuery =
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: axiosBaseQuery(),
-  tagTypes: ["Auth", "User", "Dataset", "AutoML", "Job", "Inference", "Notification"],
+  tagTypes: ["Auth", "User", "Dataset", "AutoML", "Job", "Inference", "Notification", "DatabaseConnection"],
   endpoints: () => ({}),
 });

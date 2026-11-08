@@ -1,0 +1,1005 @@
+"""
+Sổ đăng ký tool và vòng lặp tool-calling dùng chung cho mọi agent.
+
+Hệ thống có 6 agent (xem docs/hautoml-multi-agent-detailed.drawio, trang 1):
+
+    Agent Manager ─┬─ ① Prompt Agent     hiểu yêu cầu → R (JSON 6 khoá)
+                   ├─ ② Data Agent       đặc điểm dữ liệu
+                   ├─ ③ Model Agent      ra quyết định config (không bấm chạy)
+                   ├─ ④ Operation Agent  đề nghị chạy / kích hoạt (người dùng bấm xác nhận), theo dõi, dự đoán
+                   └─ ⑤ SQL Agent        lấy dữ liệu từ database người dùng đã kết nối
+
+Agent nào dùng tool nào do `tools:` trong SKILL.md của nó quyết định - file này
+chỉ khai schema và nối tên tool với hàm Python. Mọi agent đều chạy qua cùng một
+hàm `run_tool_loop`, chỉ khác system prompt và tập tool.
+
+Dùng được với OpenRouter, Google AI Studio, OpenAI và Azure - cả bốn đều nói
+chuẩn Chat Completions (xem providers.py). Vòng lặp tự viết thay vì dùng helper
+của SDK để chen được vào từng bước: báo tiến độ, đếm token, và giữ
+thought_signature của Gemini.
+
+Chạy:
+    cd src/backend
+    python -m agent.cli "tôi có dataset nào"
+"""
+
+# Standard libraries
+import inspect
+import json
+from types import SimpleNamespace
+import logging
+import os
+import random
+import time
+import traceback
+
+# Local modules
+from agent import tools, tracing
+from agent.api_client import HAutoMLClient
+from agent.providers import llm_timeout, redact_secrets
+
+
+_log = logging.getLogger("agent.tools")
+
+# Số vòng lặp tối đa của Agent Manager, chặn model gọi tool luẩn quẩn.
+MAX_STEPS = 12
+# Sub-agent làm một việc hẹp, cần ít bước hơn.
+SUBAGENT_MAX_STEPS = 8
+
+# Trần token cho MỘT lượt chat, cộng cả Manager lẫn sub-agent. Giới hạn số bước
+# ở trên không đủ: 12 lần uỷ thác x 8 bước mỗi sub-agent vẫn có thể đốt vài
+# trăm nghìn token. Lượt nặng nhất đo thật (huấn luyện trọn luồng) khoảng 40k,
+# nên 150k chỉ chặn vòng lặp vô ích chứ không chặn việc bình thường.
+DEFAULT_TURN_TOKEN_BUDGET = 150_000
+
+
+class TurnBudgetExceeded(RuntimeError):
+    """Lượt chat tiêu quá trần token - dừng trước khi gọi LLM thêm lần nữa."""
+
+
+class LLMOutputError(RuntimeError):
+    """Provider trả phản hồi không dùng được (vd `choices` rỗng khi bộ lọc nội dung chặn) - audit AG-10."""
+
+
+def first_message(response):
+    """message của lựa chọn đầu; `choices` rỗng / thiếu thì raise LLMOutputError (không phải IndexError khó hiểu)."""
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise LLMOutputError(
+            "LLM trả phản hồi rỗng (không có lựa chọn nào) - thường do bộ lọc nội dung của provider chặn."
+        )
+    return choices[0].message
+
+
+class TurnDeadlineExceeded(TurnBudgetExceeded):
+    """Lượt chat chạy quá AGENT_TURN_DEADLINE_SECONDS (audit AG-03) - dừng như vượt trần token."""
+
+
+class TurnCancelled(TurnBudgetExceeded):
+    """Người dùng bấm Dừng (POST /agent/cancel) - dừng ở ranh giới bước kế tiếp (audit AG-03)."""
+
+
+def describe_error(error: Exception) -> str:
+    """
+    Mô tả lỗi AN TOÀN để đưa cho người dùng, cho LLM và lên Langfuse.
+
+    Không dùng str(error) của SDK LLM: lỗi xác thực của OpenAI/OpenRouter có kèm
+    MỘT PHẦN API key ("Incorrect API key provided: sk-proj-...XYZ9"). Chỉ giữ
+    loại lỗi và mã HTTP; chi tiết đầy đủ ghi vào log phía server.
+    """
+    # Lỗi do chính agent tạo ra: thông báo tự viết, không chứa gì nhạy cảm.
+    if isinstance(error, TurnBudgetExceeded) or type(error).__module__.startswith("agent."):
+        return str(error)
+
+    status = getattr(error, "status_code", None)
+    name = type(error).__name__
+    if status == 401 or name == "AuthenticationError":
+        return "Dịch vụ LLM từ chối API key (HTTP 401) - kiểm tra key trong .env"
+    if status == 429 or name == "RateLimitError":
+        return "Dịch vụ LLM đang giới hạn tần suất hoặc hết hạn mức (HTTP 429) - thử lại sau"
+    if name in ("APIConnectionError", "APITimeoutError"):
+        return "Không kết nối được tới dịch vụ LLM"
+    return f"{name} (HTTP {status})" if status else name
+
+
+def log_exception(logger: logging.Logger, message: str, *args) -> None:
+    """
+    Như logger.exception nhưng che bí mật trong cả thông báo lỗi lẫn traceback.
+
+    Lỗi của SDK LLM có thể chứa (một phần) API key - describe_error đã lược bản
+    gửi người dùng, nhưng logger.exception vẫn ghi nguyên văn vào log server.
+    """
+    logger.error("%s\n%s", message % args if args else message, redact_secrets(traceback.format_exc()).rstrip())
+
+
+# Thử lại lỗi LLM tạm thời (audit AG-03). SDK được dựng với max_retries=0 (providers.build_client) và vòng thử lại
+# nằm ở đây: SDK dùng CÙNG một timeout cho mọi lần thử và không có trần tổng thời gian, nên provider treo giữ lượt
+# chat tới (max_retries + 1) × timeout (~30 phút). Ở đây mỗi lần thử bị kẹp theo thời gian còn lại của lượt.
+DEFAULT_LLM_MAX_RETRIES = 5
+_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+_TRANSIENT_ERRORS = ("APIConnectionError", "APITimeoutError")
+_BACKOFF_BASE = 0.5
+_BACKOFF_MAX = 8.0
+_RETRY_AFTER_MAX = 60.0
+# Lần thử ngắn hơn thế này thì không đáng gọi (chỉ tốn tiền rồi timeout).
+_MIN_ATTEMPT_SECONDS = 5.0
+
+
+def llm_temperature() -> float | None:
+    """
+    AGENT_TEMPERATURE trong .env (audit AG-19): đặt thì mọi lời gọi LLM gửi kèm temperature (0..2) để kết quả ổn
+    định, so sánh được giữa các lần chạy; không đặt thì giữ mặc định của provider (vài model reasoning từ chối
+    tham số này).
+    """
+    raw = os.getenv("AGENT_TEMPERATURE", "").strip()
+    try:
+        value = float(raw) if raw else None
+    except ValueError:
+        return None
+    return value if value is not None and 0.0 <= value <= 2.0 else None
+
+
+def llm_max_retries() -> int:
+    """AGENT_LLM_MAX_RETRIES trong .env, không đặt hoặc sai thì 5 (tier miễn phí Gemini / OpenRouter hay trả 503)."""
+    raw = os.getenv("AGENT_LLM_MAX_RETRIES", "").strip()
+    return int(raw) if raw.isdigit() else DEFAULT_LLM_MAX_RETRIES
+
+
+def _retry_delay(error: Exception, attempt: int) -> float:
+    """Chờ trước lần thử lại: theo Retry-After của provider nếu hợp lý, không thì luỹ thừa có nhiễu (như SDK)."""
+    headers = getattr(getattr(error, "response", None), "headers", None) or {}
+    try:
+        retry_after = float(headers.get("retry-after", ""))
+    except (TypeError, ValueError, AttributeError):
+        retry_after = None
+    if retry_after is not None and 0 <= retry_after <= _RETRY_AFTER_MAX:
+        return retry_after
+    return min(_BACKOFF_BASE * (2 ** attempt), _BACKOFF_MAX) * (1 - 0.25 * random.random())
+
+
+def create_completion(llm, time_left=None, **request):
+    """
+    Gọi LLM, tự thử lại lỗi tạm thời trong giới hạn thời gian của lượt chat.
+
+    - Lỗi mạng, timeout, 408/409/429/5xx: thử lại tối đa llm_max_retries() lần, chờ theo Retry-After / luỹ thừa.
+    - Lỗi HTTP khác (sai key, sai tham số): gọi lại vẫn hỏng - raise ngay.
+    - Lỗi ngoài HTTP (provider trả dữ liệu hỏng, lỗi giữa chừng): gửi lại MỘT lần - trước đây một lần như vậy ở
+      sub-agent làm hỏng cả việc được giao.
+
+    time_left: hàm trả số giây còn lại của lượt (None = không giới hạn). Mỗi lần thử có timeout = min(AGENT_LLM_TIMEOUT,
+    thời gian còn lại); hết giờ thì raise TurnDeadlineExceeded thay vì thử tiếp.
+    """
+    temperature = llm_temperature()
+    if temperature is not None and "temperature" not in request:
+        request["temperature"] = temperature
+    attempt = 0
+    resent = False
+    while True:
+        remaining = time_left() if time_left is not None else None
+        if remaining is not None and remaining < _MIN_ATTEMPT_SECONDS:
+            raise TurnDeadlineExceeded("lượt chat đã hết thời gian cho phép trước khi gọi được LLM")
+        clamped = remaining is not None and remaining < llm_timeout()
+        timeout = llm_timeout() if remaining is None else min(llm_timeout(), remaining)
+        try:
+            return llm.chat.completions.create(**request, timeout=timeout)
+        except TurnBudgetExceeded:
+            raise
+        except Exception as error:  # noqa: BLE001 - lọc bên dưới, không hợp thì raise lại
+            status = getattr(error, "status_code", None)
+            transient = type(error).__name__ in _TRANSIENT_ERRORS or status in _RETRYABLE_STATUS
+            if status is None and not transient and not resent:
+                resent = True
+                _log.warning("Gọi LLM lỗi (%s), thử lại một lần", describe_error(error))
+                continue
+            if clamped and type(error).__name__ == "APITimeoutError":
+                # Lần thử bị cắt ngắn theo hạn lượt rồi hết giờ: lý do dừng là HẠN LƯỢT - dừng êm (lịch sử giữ
+                # nguyên, có câu trả lời) thay vì làm hỏng cả lượt bằng lỗi timeout gốc.
+                raise TurnDeadlineExceeded("lượt chat hết thời gian cho phép trong lúc chờ LLM trả lời") from error
+            if not transient or attempt >= llm_max_retries():
+                raise
+            delay = _retry_delay(error, attempt)
+            left = time_left() if time_left is not None else None
+            if left is not None and left - delay < _MIN_ATTEMPT_SECONDS:
+                # Không còn đủ thời gian cho một lần thử nữa: lý do dừng là hạn lượt (lỗi gốc giữ trong __cause__).
+                raise TurnDeadlineExceeded(
+                    f"lượt chat hết thời gian cho phép khi LLM còn lỗi tạm thời ({describe_error(error)})"
+                ) from error
+            _log.warning("LLM lỗi tạm thời (%s), thử lại sau %.1fs", describe_error(error), delay)
+            time.sleep(delay)
+            attempt += 1
+
+
+def turn_token_budget() -> int:
+    """AGENT_TURN_TOKEN_BUDGET trong .env, không đặt hoặc sai thì dùng mặc định."""
+    raw = os.getenv("AGENT_TURN_TOKEN_BUDGET", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_TURN_TOKEN_BUDGET
+
+# Những khoá bị che khi in log, tránh lộ mật khẩu ra terminal.
+_SECRET_KEYS = {"password", "new_password", "confirm_password"}
+
+_DATASET_ID = {
+    "type": "string",
+    "description": "ID dataset, lấy từ trường _id trong kết quả list_my_datasets.",
+}
+_PROBLEM_TYPE = {
+    "type": "string",
+    "enum": list(tools.PROBLEM_TYPES),
+    "description": "Loại bài toán: time_series là dự báo giá trị số theo thời gian.",
+}
+_JOB_ID = {"type": "string", "description": "job_id, lấy từ list_my_jobs hoặc start_training."}
+_TASK = {
+    "type": "string",
+    "description": (
+        "Việc giao cho agent, viết đủ ngữ cảnh: agent này KHÔNG thấy lịch sử hội thoại. "
+        "Nêu rõ ID, tên cột, ràng buộc người dùng đã nói."
+    ),
+}
+
+
+def _tool(name: str, description: str, properties: dict | None = None, required=None) -> dict:
+    """
+    Schema theo định dạng OpenAI function calling.
+
+    Cố ý không dùng "additionalProperties" vì một số provider (Gemini) chỉ nhận
+    một tập con của JSON Schema.
+    """
+    parameters: dict = {"type": "object", "properties": properties or {}}
+    if required:
+        parameters["required"] = list(required)
+    return {
+        "type": "function",
+        "function": {"name": name, "description": description, "parameters": parameters},
+    }
+
+
+TOOL_SCHEMAS = [
+    # --- Agent Manager: uỷ thác cho 5 sub-agent ---------------------------------
+    _tool(
+        "ask_prompt_agent",
+        (
+            "Giao cho Prompt Agent chuẩn hoá yêu cầu thành R (JSON 6 khoá: user, problem, "
+            "dataset, model, knowledge, service) và liệt kê thông tin còn thiếu. Gọi ĐẦU TIÊN "
+            "khi người dùng muốn huấn luyện model mới. Không dùng cho tra cứu hay thao tác "
+            "trên job đã có."
+        ),
+        {"request": {
+            "type": "string",
+            "description": "Yêu cầu của người dùng, kèm mọi chi tiết họ đã nêu ở các lượt trước.",
+        }},
+        ["request"],
+    ),
+    _tool(
+        "ask_data_agent",
+        (
+            "Giao cho Data Agent tra cứu dataset: liệt kê, xem metadata, phân tích cột. Kết quả "
+            "phân tích được tự chuyển cho Model Agent."
+        ),
+        {"task": _TASK, "dataset_id": {**_DATASET_ID, "description": "Bỏ trống nếu chưa biết."}},
+        ["task"],
+    ),
+    _tool(
+        "ask_model_agent",
+        (
+            "Giao cho Model Agent ra quyết định config huấn luyện (target, đặc trưng, metric, "
+            "thuật toán tìm kiếm, max_time) - config được kiểm bằng code trước khi trả về "
+            "config_id, Model Agent KHÔNG bấm chạy. Cũng dùng để hỏi tư vấn chung: có những "
+            "metric nào, model nào, thuật toán tìm kiếm nào."
+        ),
+        {
+            "task": _TASK,
+            "dataset_id": {
+                **_DATASET_ID,
+                "description": (
+                    "ID dataset, chép NGUYÊN VĂN từ _id (24 ký tự hex). Bắt buộc khi chốt config; "
+                    "bỏ trống khi chỉ hỏi tư vấn chung không gắn dataset."
+                ),
+            },
+        },
+        ["task"],
+    ),
+    _tool(
+        "ask_operation_agent",
+        (
+            "Giao cho Operation Agent thực thi: chạy config đã kiểm (config_id), theo dõi job, "
+            "xem kết quả, kích hoạt model, dự đoán."
+        ),
+        {"task": _TASK},
+        ["task"],
+    ),
+
+    # --- Data Agent ---------------------------------------------------------------
+    _tool(
+        "list_my_datasets",
+        "Liệt kê các dataset của tài khoản đang đăng nhập. Không cần truyền user_id, tool tự lấy.",
+    ),
+    _tool(
+        "get_dataset_info",
+        (
+            "Xem metadata một dataset (tên, ngày tạo; backend không ghi loại bài toán). "
+            "KHÔNG có tên cột - muốn biết các thuộc tính thì dùng get_dataset_schema."
+        ),
+        {"dataset_id": _DATASET_ID},
+        ["dataset_id"],
+    ),
+    _tool(
+        "get_dataset_schema",
+        (
+            "Lấy danh sách thuộc tính (cột) của một dataset, kèm kiểu dữ liệu, số giá trị "
+            "khác nhau, số giá trị thiếu, vài giá trị mẫu, và cột nào dùng được làm biến "
+            "mục tiêu."
+        ),
+        {
+            "dataset_id": _DATASET_ID,
+            "problem_type": {
+                "type": "string",
+                "description": (
+                    "classification, regression hoặc time_series. Bỏ trống thì trả ứng viên target cho "
+                    "mọi loại; dataset có cột ngày giờ thì có thêm time_columns."
+                ),
+            },
+        },
+        ["dataset_id"],
+    ),
+
+    # --- Model Agent --------------------------------------------------------------
+    _tool(
+        "list_metrics",
+        "Danh sách metric hợp lệ để xếp hạng model, theo loại bài toán.",
+        {"problem_type": _PROBLEM_TYPE},
+        ["problem_type"],
+    ),
+    _tool(
+        "list_models",
+        (
+            "Các model engine sẽ huấn luyện (đọc từ file yml của loại bài toán), kèm số tổ hợp tham "
+            "số. Engine luôn train TẤT CẢ các model này rồi xếp hạng."
+        ),
+        {"problem_type": _PROBLEM_TYPE},
+        ["problem_type"],
+    ),
+    _tool(
+        "submit_config",
+        (
+            "Chốt một config huấn luyện. Config được kiểm bằng code (validate_config.py) dựa "
+            "trên schema thật: hợp lệ thì trả config_id cho Operation Agent, không hợp lệ thì "
+            "trả errors kèm valid_columns / target_candidates / valid_metrics để sửa."
+        ),
+        {
+            "dataset_id": _DATASET_ID,
+            "target": {"type": "string", "description": "Cột mục tiêu, phải nằm trong target_candidates."},
+            "list_feature": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Các cột đặc trưng đầu vào. Không được chứa cột mục tiêu.",
+            },
+            "metric_sort": {"type": "string", "description": "Metric xếp hạng model, lấy từ list_metrics."},
+            "problem_type": {
+                **_PROBLEM_TYPE,
+                "description": (
+                    "Bỏ trống thì suy từ cột mục tiêu; cột hợp cả hai loại thì BẮT BUỘC truyền. "
+                    "time_series không bao giờ được suy ra, phải truyền."
+                ),
+            },
+            "search_algorithm": {
+                "type": "string",
+                "enum": ["grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm"],
+                "description": "Mặc định grid_search.",
+            },
+            "max_time": {
+                "type": "integer",
+                "description": "Giới hạn thời gian tính bằng giây, 60 đến 86400. Mặc định 900.",
+            },
+            "rationale": {
+                "type": "string",
+                "description": "Một hai câu: vì sao chọn target, metric, thuật toán này.",
+            },
+        },
+        ["dataset_id", "target", "list_feature", "metric_sort"],
+    ),
+
+    # --- Operation Agent ----------------------------------------------------------
+    _tool(
+        "start_training",
+        (
+            "Đề nghị chạy một config ĐÃ được Model Agent chốt và kiểm hợp lệ: tạo THẺ XÁC NHẬN cho người dùng "
+            "(awaiting_confirmation), CHƯA chạy. Job chỉ được tạo khi người dùng bấm Xác nhận trên thẻ; job_id tới "
+            "ở lượt sau dưới dạng [Sự kiện]. Job chạy nền vài phút tới hàng giờ, hệ thống tự theo dõi và báo khi xong."
+        ),
+        {"config_id": {"type": "string", "description": "config_id do Model Agent trả về."}},
+        ["config_id"],
+    ),
+    _tool(
+        "watch_job",
+        "Bật theo dõi nền cho một job đang chạy: hệ thống tự báo khi job đổi trạng thái.",
+        {"job_id": _JOB_ID},
+        ["job_id"],
+    ),
+    _tool(
+        "set_auto_activate",
+        (
+            "Bật/tắt TỰ kích hoạt model khi một job ĐANG CHẠY của phiên này xong. Dùng khi người dùng "
+            "đổi ý sau khi job đã chạy (\"à thôi đừng kích hoạt\" -> enabled=false). TẮT (và siết điều kiện của lời "
+            "hứa đang chờ) có hiệu lực ngay; BẬT / nới điều kiện chỉ tạo thẻ xác nhận cho người dùng bấm. Job đã xong "
+            "thì dùng activate_model."
+        ),
+        {
+            "job_id": _JOB_ID,
+            "enabled": {"type": "boolean", "description": "false = không tự kích hoạt nữa, true = tự kích hoạt khi xong."},
+            "constraints": {
+                "type": "array",
+                "description": (
+                    "Điều kiện người dùng nêu kèm khi bật (\"đạt accuracy >= 0.9 thì kích hoạt\" -> "
+                    "[{metric: accuracy, op: >=, value: 0.9}]; phần trăm viết thành tỉ lệ 0-1). Thay ràng buộc "
+                    "cùng metric đặt lúc tạo job. [] khi tắt hoặc người dùng không nêu điều kiện nào."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "metric": {"type": "string"},
+                        "op": {"type": "string", "enum": [">=", ">", "<=", "<"]},
+                        "value": {"type": "number"},
+                    },
+                    "required": ["metric", "op", "value"],
+                },
+            },
+        },
+        ["job_id", "enabled", "constraints"],
+    ),
+    _tool(
+        "list_my_jobs",
+        (
+            "Liệt kê các job huấn luyện của tài khoản đang đăng nhập, mới nhất trước (tối đa "
+            "`limit` job, mặc định 20). Không cần truyền user_id."
+        ),
+        {
+            "dataset_id": {**_DATASET_ID, "description": "Chỉ lấy job của dataset này. Bỏ trống = mọi dataset."},
+            "status": {
+                "type": "integer",
+                "description": "Chỉ lấy job có trạng thái này: 0 đang chạy, 1 xong, -1 lỗi, -2 bị huỷ.",
+            },
+            "limit": {"type": "integer", "description": "Số job mới nhất tối đa, 1 đến 50. Mặc định 20."},
+        },
+    ),
+    _tool(
+        "get_job_info",
+        "Xem chi tiết một job huấn luyện, gồm trạng thái và kết quả các model.",
+        {"job_id": _JOB_ID},
+        ["job_id"],
+    ),
+    _tool(
+        "activate_model",
+        "Đề nghị kích hoạt (hoặc tắt) model của một job đã huấn luyện xong: tạo THẺ XÁC NHẬN, chỉ làm khi người "
+        "dùng bấm Xác nhận trên thẻ.",
+        {
+            "job_id": _JOB_ID,
+            "activate": {"type": "boolean", "description": "true = kích hoạt, false = tắt. Mặc định true."},
+        },
+        ["job_id"],
+    ),
+    _tool(
+        "predict",
+        (
+            "Dự đoán cho vài mẫu (tối đa 50) bằng model của một job đã kích hoạt. Mỗi mẫu là "
+            "object {tên cột: giá trị} chứa đủ các cột đặc trưng của job."
+        ),
+        {
+            "job_id": _JOB_ID,
+            "rows": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Các mẫu cần dự đoán.",
+            },
+        },
+        ["job_id", "rows"],
+    ),
+
+    # --- Dùng chung ---------------------------------------------------------------
+    _tool(
+        "read_reference",
+        (
+            "Đọc một tài liệu tra cứu của skill. Các tài liệu này không nằm sẵn trong "
+            "hướng dẫn, chỉ có tên và mô tả. Dùng khi cần chi tiết mà hướng dẫn không đủ."
+        ),
+        {"ref_id": {
+            "type": "string",
+            "description": "Định danh tài liệu, dạng <skill>/<tên>, ví dụ data-agent/dataset_schema.",
+        }},
+        ["ref_id"],
+    ),
+]
+
+_CONNECTION_ID = {"type": "string", "description": "id kết nối, lấy từ list_database_connections."}
+
+TOOL_SCHEMAS += [
+    # --- Agent Manager: nguồn dữ liệu ngoài -----------------------------------
+    _tool(
+        "ask_sql_agent",
+        (
+            "Giao SQL Agent lấy dữ liệu từ DATABASE người dùng đã kết nối (SQLite / DuckDB / PostgreSQL / MySQL / MongoDB): "
+            "xem kết nối, bảng, cột; viết và chạy thử truy vấn chỉ-đọc; nhập kết quả thành dataset. "
+            "Kết quả có imported_datasets (dataset_id thật) để đi tiếp luồng huấn luyện."
+        ),
+        {"task": _TASK, "connection_id": {**_CONNECTION_ID, "description": "id kết nối nếu đã biết; bỏ trống nếu chưa."}},
+        ["task"],
+    ),
+    # --- SQL Agent -------------------------------------------------------------
+    _tool(
+        "list_database_connections",
+        "Liệt kê kết nối database người dùng đã lưu (id, tên, loại). Không có host hay mật khẩu.",
+        {"search": {"type": "string", "description": "Lọc theo một phần tên kết nối (không phân biệt hoa thường); bỏ trống = tất cả."}},
+    ),
+    _tool(
+        "list_database_tables",
+        "Liệt kê bảng (SQL) hoặc collection (MongoDB) của một kết nối.",
+        {"connection_id": _CONNECTION_ID,
+         "search": {"type": "string", "description": "Lọc theo một phần tên bảng; bỏ trống = tất cả."}},
+        ["connection_id"],
+    ),
+    _tool(
+        "describe_database_table",
+        "Cột (tên, kiểu) và vài dòng mẫu của một bảng / collection. Gọi TRƯỚC khi viết truy vấn.",
+        {
+            "connection_id": _CONNECTION_ID,
+            "table": {"type": "string", "description": "Tên bảng / collection, đúng như list_database_tables trả."},
+            "sample_rows": {"type": "integer", "description": "Số dòng mẫu, 1-10 (mặc định 5)."},
+        },
+        ["connection_id", "table"],
+    ),
+    _tool(
+        "preview_sql_query",
+        (
+            "Chạy thử MỘT câu SELECT chỉ-đọc trên kết nối SQL (SQLite / DuckDB / PostgreSQL / MySQL - viết đúng "
+            "dialect theo db_type của kết nối); trả vài dòng, truncated và "
+            "preview_id. Backend từ chối mọi câu ghi, nhiều câu, đọc file hay bảng không tồn tại."
+        ),
+        {
+            "connection_id": _CONNECTION_ID,
+            "sql": {"type": "string", "description": "Một câu SELECT (có thể WITH / JOIN / GROUP BY), chỉ dùng bảng và cột có thật."},
+            "params": {"type": "object", "description": "Tham số đặt tên (:ten) nếu câu SQL có; bỏ trống nếu không."},
+            "row_limit": {"type": "integer", "description": "Số dòng xem trước, 1-100 (mặc định 20)."},
+        },
+        ["connection_id", "sql"],
+    ),
+    _tool(
+        "preview_mongo_query",
+        (
+            "Chạy thử truy vấn MongoDB chỉ-đọc; trả vài dòng, truncated và preview_id. query: "
+            "{kind:'find', collection, filter?, projection?, sort?, row_limit?} hoặc "
+            "{kind:'aggregate', collection, pipeline, row_limit?} - stage chỉ $match/$project/$sort/$limit/"
+            "$skip/$group/$unwind/$count."
+        ),
+        {"connection_id": _CONNECTION_ID, "query": {"type": "object", "description": "Truy vấn MongoDB như mô tả."}},
+        ["connection_id", "query"],
+    ),
+    _tool(
+        "import_database_query",
+        (
+            "Lưu KẾT QUẢ của một preview thành dataset riêng của người dùng (trần 50.000 dòng). "
+            "Trả dataset_id để huấn luyện. Gửi lại cùng preview_id không tạo dataset thứ hai."
+        ),
+        {
+            "connection_id": _CONNECTION_ID,
+            "preview_id": {"type": "string", "description": "preview_id từ preview_sql_query / preview_mongo_query."},
+            "data_name": {"type": "string", "description": "Tên dataset mới, ngắn gọn, mô tả nội dung."},
+        },
+        ["connection_id", "preview_id", "data_name"],
+    ),
+]
+
+_SCHEMA_BY_NAME = {schema["function"]["name"]: schema for schema in TOOL_SCHEMAS}
+
+# Tool không cần trạng thái phiên: tên -> hàm trong tools.py, nhận client làm
+# tham số đầu. Không có tool xác thực nào ở đây: đăng nhập làm ở tầng phiên,
+# LLM không biết tới token.
+_DISPATCH = {
+    "list_my_datasets": tools.list_my_datasets,
+    "get_dataset_info": tools.get_dataset_info,
+    "get_dataset_schema": tools.get_dataset_schema,
+    "list_metrics": tools.list_metrics,
+    "list_models": tools.list_models,
+    "list_my_jobs": tools.list_my_jobs,
+    "get_job_info": tools.get_job_info,
+    "activate_model": tools.activate_model,
+    "predict": tools.predict,
+    "read_reference": tools.read_reference,
+    "list_database_connections": tools.list_database_connections,
+    "list_database_tables": tools.list_database_tables,
+    "describe_database_table": tools.describe_database_table,
+    "preview_sql_query": tools.preview_sql_query,
+    "preview_mongo_query": tools.preview_mongo_query,
+}
+
+# Tool cần trạng thái của phiên (dữ liệu chuyển giữa các agent, job đang theo
+# dõi). Hàm thật do agent.team.AgentTeam dựng cho từng phiên.
+SESSION_TOOLS = {
+    "ask_prompt_agent",
+    "ask_data_agent",
+    "ask_model_agent",
+    "ask_operation_agent",
+    "submit_config",
+    "start_training",
+    "watch_job",
+    "set_auto_activate",
+    "ask_sql_agent",
+    "import_database_query",
+}
+
+
+def known_tools() -> set[str]:
+    return set(_SCHEMA_BY_NAME)
+
+
+def schemas_for(names: list[str]) -> list[dict]:
+    """Schema của đúng các tool một agent được dùng, theo thứ tự khai trong SKILL.md."""
+    return [_SCHEMA_BY_NAME[name] for name in names if name in _SCHEMA_BY_NAME]
+
+
+def _redact(tool_input: dict) -> dict:
+    return {
+        key: ("***" if key in _SECRET_KEYS else value)
+        for key, value in tool_input.items()
+    }
+
+
+_JSON_TYPES = {"object": dict, "array": list, "boolean": bool}
+
+
+def _normalize_arguments(name: str, parameters: dict | None, arguments: dict) -> tuple[dict, str | None]:
+    """
+    Soát tham số tool theo JSON Schema đã khai (audit AG-10) - bản nhẹ, không thêm thư viện.
+
+    Khoan dung với cách LLM hay viết mà tool tự hiểu được (số gửi dạng chuỗi, cờ "true"): để tool tự ép kiểu như
+    cũ. Chỉ sửa / chặn chỗ tool KHÔNG xử lý được: số đứng chỗ chuỗi (job_id 123, list_feature [1, 2]) thì đổi
+    sang chuỗi; mảng / object sai chỗ, phần tử mảng là object, giá trị ngoài enum thì trả lỗi rõ ràng thay vì
+    "lỗi nội bộ". Thiếu tham số do bước khớp chữ ký hàm bắt (_call_tool) - không theo `required` của schema, vì
+    vài tool có mặc định an toàn (set_auto_activate(enabled=false) không cần constraints).
+    """
+    properties = (parameters or {}).get("properties") or {}
+    fixed = dict(arguments)
+    for key, value in arguments.items():
+        spec = properties.get(key)
+        if not spec or value is None:
+            continue
+        kind = spec.get("type")
+        if kind == "string":
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                fixed[key] = str(value)
+            elif isinstance(value, (list, dict)):
+                return arguments, f"Tham số '{key}' của {name} phải là chuỗi, không phải {type(value).__name__}."
+        elif kind in _JSON_TYPES and kind != "boolean" and not isinstance(value, _JSON_TYPES[kind]):
+            return arguments, f"Tham số '{key}' của {name} phải là {'mảng' if kind == 'array' else 'object'}."
+        if kind == "array" and isinstance(value, list) and (spec.get("items") or {}).get("type") == "string":
+            items = []
+            for item in value:
+                if isinstance(item, str):
+                    items.append(item)
+                elif isinstance(item, (int, float)) and not isinstance(item, bool):
+                    items.append(str(item))
+                else:
+                    return arguments, f"Mọi phần tử của '{key}' ({name}) phải là chuỗi; gặp {item!r}."
+            fixed[key] = items
+        enum = spec.get("enum")
+        if enum and isinstance(fixed[key], str) and fixed[key] not in enum:
+            return arguments, f"Tham số '{key}' của {name} phải là một trong: {', '.join(map(str, enum))}."
+    return fixed, None
+
+
+def _call_tool(api: HAutoMLClient, dispatch: dict, name: str, arguments: dict, parameters: dict | None = None) -> dict:
+    """Gọi tool và bọc mọi lỗi thành dict, để một tool hỏng không làm chết vòng lặp."""
+    handler = dispatch.get(name)
+    if handler is None:
+        return {"ok": False, "error": f"Tool không tồn tại hoặc agent này không được dùng: {name}"}
+
+    arguments, problem = _normalize_arguments(name, parameters, arguments)
+    if problem:
+        return {"ok": False, "error": problem}
+    # Chỉ lỗi KHỚP THAM SỐ mới là "tham số không hợp lệ"; TypeError bên trong tool là lỗi nội bộ (audit AG-10).
+    try:
+        inspect.signature(handler).bind(api, **arguments)
+    except TypeError as error:
+        return {"ok": False, "error": f"Tham số không hợp lệ cho {name}: {error}"}
+    except ValueError:
+        pass  # không đọc được chữ ký (hàm C, bản giả): để lời gọi thật tự báo
+
+    try:
+        result = handler(api, **arguments)
+    except TurnBudgetExceeded:
+        # Không phải lỗi của tool: lượt chat phải dừng hẳn.
+        raise
+    except Exception as error:  # noqa: BLE001 - tool không được làm chết cả lượt chat
+        # Chi tiết vào log server; LLM chỉ nhận loại lỗi để tự quyết bước sau.
+        log_exception(_log, "tool %s lỗi", name)
+        return {"ok": False, "error": f"Tool {name} gặp lỗi nội bộ ({type(error).__name__})."}
+
+    if not isinstance(result, dict):
+        return {"ok": False, "error": f"Tool {name} trả kết quả không đúng định dạng."}
+    return result
+
+
+def _assistant_message(message) -> dict:
+    """
+    Dựng lại assistant message để gửi kèm lượt sau.
+
+    Chỉ lấy các field chuẩn thay vì model_dump() toàn bộ, vì một số provider từ
+    chối các field null lạ (annotations, refusal, audio...) khi nhận lại chính
+    response của mình.
+
+    NHƯNG phải giữ nguyên các field lạ do provider tự thêm (model_extra):
+    Gemini gắn `extra_content.google.thought_signature` vào từng tool call và
+    BẮT BUỘC nhận lại nó ở lượt sau - thiếu là lỗi 400 INVALID_ARGUMENT. Provider
+    khác không sinh field này nên copy nguyên khối vẫn an toàn.
+    """
+    payload: dict = {"role": "assistant", "content": message.content or ""}
+    payload.update(message.model_extra or {})
+
+    if message.tool_calls:
+        calls = []
+        for call in message.tool_calls:
+            entry = {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.function.name,
+                    "arguments": call.function.arguments,
+                },
+            }
+            entry.update(call.model_extra or {})
+            calls.append(entry)
+        payload["tool_calls"] = calls
+
+    return payload
+
+
+def _new_usage() -> dict:
+    return {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+def usage_or_estimate(response, messages: list):
+    """
+    response.usage, hoặc ƯỚC LƯỢNG (khoảng 3 ký tự / token) khi provider không trả usage. Không có bước này
+    thì trần token của lượt chat (check_budget) không bao giờ chạm với provider như vậy.
+    """
+    if response.usage is not None:
+        return response.usage
+    message = response.choices[0].message if response.choices else None
+    produced = (getattr(message, "content", None) or "") + "".join(
+        (call.function.arguments or "") for call in (getattr(message, "tool_calls", None) or [])
+    )
+    prompt = len(json.dumps(messages, ensure_ascii=False, default=str)) // 3
+    completion = len(produced) // 3 + 1
+    return SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion, total_tokens=prompt + completion)
+
+
+def _accumulate_usage(total: dict, usage) -> None:
+    """
+    Cộng dồn token qua các lượt gọi LLM.
+
+    Một lần chạy agent gọi LLM nhiều lần (mỗi vòng lặp một lần, cộng các
+    sub-agent), nên con số của lượt cuối không phản ánh chi phí thật.
+    """
+    if usage is None:
+        return
+
+    total["calls"] += 1
+    total["prompt_tokens"] += usage.prompt_tokens or 0
+    total["completion_tokens"] += usage.completion_tokens or 0
+    total["total_tokens"] += usage.total_tokens or 0
+
+
+def _print_usage(total: dict) -> None:
+    if not total["calls"]:
+        return
+
+    # Với model có thinking, total lớn hơn prompt + completion vì token suy luận
+    # nội bộ được tính riêng. total mới là con số dùng để tính tiền.
+    accounted = total["prompt_tokens"] + total["completion_tokens"]
+    hidden = total["total_tokens"] - accounted
+
+    line = (
+        f"  [cost] {total['calls']} lượt gọi LLM | "
+        f"prompt {total['prompt_tokens']} + completion {total['completion_tokens']}"
+    )
+    if hidden > 0:
+        line += f" + thinking {hidden}"
+    print(f"{line} = {total['total_tokens']} token")
+
+
+def _no_event(_type: str, **_data) -> None:
+    pass
+
+
+def run_tool_loop(
+    llm,
+    model: str,
+    messages: list[dict],
+    tool_schemas: list,
+    dispatch: dict,
+    api: HAutoMLClient,
+    usage: dict,
+    agent: str = "manager",
+    emit=None,
+    max_steps: int = MAX_STEPS,
+    check_budget=None,
+    time_left=None,
+) -> str | None:
+    """
+    Vòng tool-calling: gọi LLM, chạy tool nó yêu cầu, lặp tới khi có câu trả lời.
+
+    `messages` được nối thêm tại chỗ, nên phiên chat giữ được lịch sử còn
+    sub-agent thì truyền vào một list mới mỗi lần được giao việc.
+
+    Args:
+        agent: Tên agent đang chạy, gắn vào mọi sự kiện để frontend biết bước
+            nào thuộc agent nào.
+        emit: emit(type, **data) - nhận sự kiện "llm_call" và "tool_call".
+        check_budget: check_budget(agent) - gọi trước mỗi lời gọi LLM, raise
+            TurnBudgetExceeded khi lượt chat đã tiêu quá trần token, quá hạn, hoặc bị huỷ.
+        time_left: số giây còn lại của lượt (xem create_completion).
+
+    Returns:
+        Câu trả lời cuối, hoặc None nếu chạy hết max_steps mà chưa xong.
+    """
+    emit = emit or _no_event
+    parameters = {
+        schema["function"]["name"]: schema["function"].get("parameters") or {}
+        for schema in tool_schemas or [] if isinstance(schema, dict) and "function" in schema
+    }
+
+    for _ in range(max_steps):
+        # Kiểm ở ĐẦU vòng: mọi kết quả tool của vòng trước đã vào lịch sử, nên
+        # dừng ở đây không để lại assistant tool_calls thiếu câu trả lời.
+        if check_budget is not None:
+            check_budget(agent)
+        request: dict = {"model": model, "messages": messages}
+        if tool_schemas:
+            request.update(tools=tool_schemas, tool_choice="auto")
+
+        response = create_completion(llm, time_left=time_left, **request)
+        spent = usage_or_estimate(response, messages)
+        _accumulate_usage(usage, spent)
+        emit(
+            "llm_call",
+            agent=agent,
+            prompt_tokens=spent.prompt_tokens or 0,
+            completion_tokens=spent.completion_tokens or 0,
+            total_tokens=spent.total_tokens or 0,
+            # Phiên bản model provider THẬT SỰ dùng (audit AG-19) - tên cấu hình có thể trỏ tới bản mới hơn.
+            model=getattr(response, "model", None) if isinstance(getattr(response, "model", None), str) else None,
+        )
+
+        message = first_message(response)
+        messages.append(_assistant_message(message))
+
+        # Không gọi tool nữa nghĩa là agent đã có câu trả lời cuối.
+        if not message.tool_calls:
+            return message.content or ""
+
+        for index, call in enumerate(message.tool_calls):
+            if index >= MAX_TOOL_CALLS_PER_STEP:
+                # Vẫn phải trả lời MỌI tool_call (thiếu là lỗi 400 ở lượt sau) - nhưng không chạy.
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps({"ok": False, "error": (
+                        f"Quá {MAX_TOOL_CALLS_PER_STEP} tool trong một bước - tool này KHÔNG được chạy. "
+                        "Gọi ít tool hơn mỗi bước.")}, ensure_ascii=False),
+                })
+                continue
+            # Gán trước: nếu json.loads ném lỗi thì nhánh báo sự kiện bên dưới
+            # vẫn có biến để dùng, thay vì NameError hoặc lấy nhầm giá trị còn
+            # sót của tool trước đó.
+            arguments: dict = {}
+            try:
+                arguments = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError as error:
+                result = {"ok": False, "error": f"Tham số tool không phải JSON hợp lệ: {error}"}
+            else:
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                emit(
+                    "tool_start",
+                    agent=agent,
+                    name=call.function.name,
+                    arguments=_redact(arguments),
+                )
+                with tracing.observe(
+                    call.function.name, as_type="tool", input=_redact(arguments), metadata={"agent": agent},
+                ) as observation:
+                    result = _call_tool(
+                        api, dispatch, call.function.name, arguments, parameters.get(call.function.name),
+                    )
+                    tracing.end(observation, output=result, warning=None if result.get("ok") else result.get("error"))
+
+            emit(
+                "tool_call",
+                agent=agent,
+                name=call.function.name,
+                arguments=_redact(arguments),
+                ok=bool(result.get("ok")),
+                error=result.get("error"),
+            )
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": call.id,
+                "content": _bounded_tool_content(result),
+            })
+
+    return None
+
+
+# Trần chung cho MỘT kết quả tool đưa vào hội thoại (~10k token). Các tool đã tự rút gọn; đây là lưới an
+# toàn cho đường chưa rút gọn (dữ liệu người dùng dài bất thường): một kết quả khổng lồ làm lượt chat vượt
+# context / tốn tiền, và check_budget chỉ chặn được TRƯỚC lời gọi LLM kế tiếp.
+MAX_TOOL_RESULT_CHARS = 40_000
+# Một bước LLM xin chạy quá nhiều tool cùng lúc (vd 200 lời gọi) thì chỉ chạy bấy nhiêu cái đầu.
+MAX_TOOL_CALLS_PER_STEP = 8
+
+
+def _bounded_tool_content(result: dict) -> str:
+    content = json.dumps(result, ensure_ascii=False, default=str)
+    if len(content) <= MAX_TOOL_RESULT_CHARS:
+        return content
+    keep = {key: result[key] for key in ("ok", "status_code") if isinstance(result, dict) and key in result}
+    if isinstance(result, dict) and result.get("error") is not None:
+        error = str(result["error"])
+        keep["error"] = error if len(error) <= 2_000 else error[:1_999] + "…"
+    note = (
+        f"Kết quả tool dài {len(content)} ký tự, vượt trần {MAX_TOOL_RESULT_CHARS} nên chỉ giữ phần đầu. "
+        "Đừng gọi lại y hệt; thu hẹp yêu cầu (ít cột / ít dòng / lọc) nếu cần thêm."
+    )
+    size = MAX_TOOL_RESULT_CHARS - 4_000
+    while True:
+        bounded = json.dumps({**keep, "result_truncated": True, "note": note, "partial": content[:size]},
+                             ensure_ascii=False)
+        if len(bounded) <= MAX_TOOL_RESULT_CHARS or size <= 0:
+            return bounded
+        size = int(size * 0.7)  # escape JSON (dấu ", \) làm phần partial dài hơn số ký tự gốc
+
+
+def run_agent(
+    prompt: str,
+    base_url: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    verbose: bool = True,
+    on_event=None,
+) -> str:
+    """
+    Chạy hệ thống agent trên MỘT prompt rồi trả câu trả lời cuối.
+
+    Dựng một phiên chat dùng một lần - cùng đường đi với khung chat trên web,
+    nên CLI cho kết quả đúng như người dùng thật nhận được.
+
+    Args:
+        prompt: Yêu cầu của người dùng, bằng ngôn ngữ tự nhiên.
+        base_url: URL backend HAutoML. None = HAUTOML_BASE_URL hoặc localhost:9999.
+        provider: openrouter | google | openai | azure. None = LLM_PROVIDER.
+        model: Slug model. None = LLM_MODEL hoặc mặc định của provider.
+        verbose: In ra từng bước của các agent và tổng token đã dùng.
+        on_event: Hàm nhận từng sự kiện (dict có "type", "agent"...), dùng để
+            đo đạc. Xem agent/events.py.
+    """
+    # Import ở đây: chat.py import ngược lại module này.
+    from agent.chat import ChatSession, _flush_tracer
+
+    session = ChatSession(base_url=base_url, provider=provider, model=model, verbose=verbose)
+    if on_event is not None:
+        session.events.subscribe(on_event)
+
+    try:
+        if verbose:
+            print(f"  [llm] {session.config.name} / {session.config.model}")
+            if not session.auth.get("ok"):
+                print(f"  [auth] {session.auth.get('error')}")
+        return session.send(prompt)
+    finally:
+        if verbose:
+            _print_usage(session.usage)
+            if session.watcher.active():
+                print(
+                    "  [job] Job vẫn chạy nền trên backend. Hỏi lại sau "
+                    "(\"job của tôi tới đâu rồi\") để xem kết quả."
+                )
+        session.close()
+        _flush_tracer()

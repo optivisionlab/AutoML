@@ -1,0 +1,83 @@
+# Cách đọc kết quả get_dataset_schema và chọn cột cho huấn luyện
+
+Tài liệu này không nằm trong system prompt. Chỉ đọc khi cần chọn `target` /
+`list_feature`, hoặc khi người dùng hỏi sâu về ý nghĩa các con số.
+
+## Các trường trả về
+
+| Trường | Ý nghĩa |
+|---|---|
+| `total_rows` | Tổng số dòng của cả dataset |
+| `column_count` | Số cột |
+| `problem_type` | Loại bài toán đã truyền vào, hoặc `null` nếu chưa rõ |
+| `target_candidates` | Các cột làm biến mục tiêu được (theo `problem_type`, hoặc cho ít nhất một loại nếu `null`) |
+| `target_candidates_by_type` | Ứng viên target tách theo `classification` / `regression` |
+| `columns[].target_for` | Loại bài toán mà cột này làm mục tiêu được |
+| `columns[].can_be_target` | Cột này có làm mục tiêu được không |
+| `columns[].python_type` | Kiểu suy ra từ dòng preview: `float`, `int`, `str` |
+| `columns[].distinct_in_preview` | Số giá trị khác nhau, **tính trên 50 dòng đầu** |
+| `columns[].missing_in_preview` | Số giá trị thiếu, **tính trên 50 dòng đầu** |
+| `columns[].sample_values` | Tối đa 5 giá trị mẫu |
+| `sample_rows` | 3 dòng dữ liệu đầu |
+
+## Hiểu đúng `target_for` / `can_be_target`
+
+Dataset KHÔNG ghi loại bài toán. Cột nằm trong `target_for` của cả hai loại
+(thường là số nguyên ít giá trị) thì loại bài toán tuỳ ý người dùng.
+
+`false` KHÔNG có nghĩa là cột vô dụng. Phần lớn cột `can_be_target: false`
+chính là **đặc trưng đầu vào** tốt.
+
+Backend đánh `false` trong các trường hợp:
+
+- Tên cột khớp mẫu ID (`id`, `stt`, `no`, `key`, `uuid`, `*_id`, `ID_*`)
+- Cột toàn giá trị rỗng, hoặc chỉ có một giá trị duy nhất
+- Kiểu dữ liệu không hợp với `problem_type` đang xét — ví dụ cột số thực liên
+  tục thì không làm target cho classification
+
+Lưu ý quan trọng: cột bị đánh `false` vì **là ID** thì cũng không nên dùng làm
+đặc trưng đầu vào — nó không mang thông tin dự đoán, chỉ gây nhiễu. Nhìn tên cột
+để phân biệt hai trường hợp.
+
+## Chọn cột cho huấn luyện
+
+**Chọn `target`:**
+1. Người dùng nói rõ cột nào → dùng cột đó, nhưng kiểm tra nó có trong
+   `target_candidates` không. Không có thì báo lại kèm danh sách hợp lệ.
+2. Người dùng không nói → nếu `target_candidates` chỉ có đúng một cột, dùng nó
+   và nói rõ. Nếu nhiều hơn một, HỎI người dùng chọn.
+
+**Chọn `list_feature`:**
+1. Mặc định: mọi cột trừ `target`, và trừ các cột trông như ID.
+2. Bỏ thêm cột có `missing_in_preview` cao — thiếu quá nửa số dòng preview thì
+   nêu cho người dùng biết trước khi dùng.
+3. Không bao giờ đưa `target` vào `list_feature`.
+4. Người dùng đã chỉ định đặc trưng (liệt kê cột, hoặc "tất cả các cột còn lại")
+   → dùng đúng như vậy. Bộ cột one-hot giữ đủ, không bỏ bớt một cột.
+
+## Dữ liệu chuỗi thời gian (time_series)
+
+Kết quả có `time_columns` khi có cột mà mọi giá trị preview đọc được thành ngày
+giờ. Mỗi phần tử gồm `name`, `first_in_preview`, `step` (bước thời gian phổ biến
+nhất), `duplicated_in_preview`, `regular_in_preview`, và `estimated_last` (mốc cuối
+ước tính = mốc đầu + bước × (số dòng − 1), đúng khi file sắp theo thời gian).
+`target_candidates_by_type.time_series` là các cột số làm được mục tiêu, trừ cột
+thời gian.
+
+Điều kiện của backend (src/modules/preprocessing/time_series.py):
+- Một chuỗi duy nhất: mỗi mốc thời gian một dòng, không trùng.
+- Các mốc cách đều. Dữ liệu theo tháng (28–31 ngày) không đạt điều kiện này.
+- `list_feature` có ĐÚNG MỘT cột thời gian. Backend tự tạo lag, trung bình trượt,
+  thứ trong tuần và tháng từ cột mục tiêu và cột thời gian.
+- Cột khác trong `list_feature` là biến ngoài: khi dự báo phải biết trước giá trị
+  của nó ở tương lai.
+
+Dự báo: mỗi mẫu là một mốc thời gian SAU mốc cuối của dữ liệu train, đúng bước
+thời gian, tối đa 365 bước; model tự giữ phần lịch sử cần cho lag.
+
+## Vì sao thống kê chỉ tính trên 50 dòng
+
+Endpoint `GET /datasets/{id}/data` trả 50 dòng preview. Đọc cả dataset để thống kê
+sẽ chậm và tốn bộ nhớ. Hệ quả: `distinct_in_preview` của một dataset lớn có thể
+thấp hơn nhiều so với thực tế. Khi báo cáo con số này cho người dùng, luôn nói
+rõ là tính trên preview.
