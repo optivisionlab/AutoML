@@ -1,6 +1,20 @@
-# Benchmark hệ thống agent HAutoML — protocol v4.1
+# Benchmark hệ thống agent HAutoML — protocol v5
 
-Bộ benchmark gồm **39 kịch bản** trong 7 nhóm: 33 ca của v4 (nhóm A–F, giữ nguyên để so với các đợt trước) và 6 ca nhóm T (dự báo chuỗi thời gian, thêm ở v4.1 - mục 4 và mục 9). Chạy thử **39 lượt**, chạy chính thức bản đầy đủ **195 lượt**. Năm biến thể ablation chạy thêm **180 lượt** nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **375 lượt**, chạy xen kẽ theo thứ tự đã khóa; pilot được lưu riêng. So sánh với đợt v4 trước chỉ dùng 33 ca chung; tóm tắt của báo cáo cũng tính trên nhóm A–F, nhóm T báo riêng.
+Bộ benchmark có **47 kịch bản** trong 8 nhóm:
+
+- 33 ca của v4 (nhóm A–F), giữ nguyên prompt và tiêu chí để so với các đợt trước.
+- 6 ca nhóm T (dự báo chuỗi thời gian, thêm ở v4.1).
+- 8 ca nhóm S (lấy dữ liệu từ database qua SQL Agent và adapter, thêm ở v5).
+
+Số lượt:
+
+- Chạy thử: **47 lượt**.
+- Chính thức, bản đầy đủ: **235 lượt**.
+- Năm biến thể ablation chạy thêm **195 lượt** (13 ca × 3 lần) nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **430 lượt**, chạy xen kẽ theo thứ tự đã khoá.
+
+Pilot được lưu riêng. Tóm tắt của báo cáo tính trên nhóm A–F; nhóm T và S báo riêng.
+
+**Từ v5, agent không tự huấn luyện, bật hay tắt model.** Tool chỉ đề nghị (thẻ xác nhận). Benchmark đóng vai người dùng bấm nút theo một chính sách cố định của từng ca (mục 5.5). Vì vậy số liệu v5 **không so trực tiếp được với v4-02**: luồng nhóm C/T/E02 có thêm bước xác nhận, và đôi khi cần thêm một lượt nhắn "tiếp tục". Thay đổi đầy đủ ở mục 10. Hướng dẫn dùng ở [benchmark/README.md](benchmark/README.md).
 
 Protocol v4 là bản tổng hợp sau khi Claude xây và Codex xác nhận độc lập; các thay đổi so với v3 nằm ở mục 8.
 
@@ -14,7 +28,7 @@ Protocol v4 là bản tổng hợp sau khi Claude xây và Codex xác nhận đ�
 | [Multi-Agent Automated Machine Learning](Wang_Multi-Agent_Automated_Machine_Learning_CVPR_2023_paper.pdf) | Accuracy, chất lượng trong cùng ngân sách tìm kiếm, độ ổn định và ablation | MA2ML dùng học tăng cường; đây không phải tái lập trực tiếp phương pháp hoặc bảng kết quả của bài |
 | Kiểm thử riêng HAutoML | Thành công nhiệm vụ, tính đúng cấu hình/tool, giữ ngữ cảnh, xử lý lỗi và mức đáp ứng ràng buộc | Các chỉ số bổ sung phải phân biệt với chỉ số của hai bài |
 
-Đo classification/regression dạng bảng (nhóm A–F) và dự báo một chuỗi thời gian theo giờ (nhóm T) qua `ChatSession`, LLM và backend thật. Không tính frontend hay HTTP agent server vào thời gian agent. Chưa đo FLOPs, reward RL, số tham số, số vòng HPO, chi phí CPU/GPU hay mức tăng so với AutoGluon độc lập.
+Đo classification/regression dạng bảng (nhóm A–F), dự báo một chuỗi thời gian theo giờ (nhóm T) và lấy dữ liệu từ PostgreSQL/MySQL (nhóm S) qua `ChatSession`, LLM và backend thật. Hệ thống gồm Manager + 5 sub-agent (Prompt, Data, Model, Operation, SQL). Baseline ngoài agent (mục 11) chạy trên cùng split. Không tính frontend hay HTTP agent server vào thời gian agent. Từ v5 có đo số cấu hình HPO và thời gian huấn luyện của engine (pipeline backend), cùng CPU/RAM của tiến trình chạy agent. Chưa đo FLOPs, reward RL, số tham số, CPU/RAM của worker hay GPU. AutoGluon/FLAML chỉ có số khi đã được cài trong image baseline.
 
 ## 2. Dữ liệu, môi trường và cấu hình
 
@@ -71,11 +85,20 @@ Chạy `init` tạo [bench_config.json](benchmark_artifacts/bench_config.json) v
 | `INACTIVE_JOB` | Một job Glass riêng cùng yêu cầu, thành công nhưng chưa activate |
 | `ELEC_ID`, `WEATHER_ID` | ID upload đúng hai file `*_train.csv` của nhóm T (`electricity_MT_301_2013_hourly_train.csv`, `weather_jena_co2_hourly_train.csv`) |
 
+| `PG_CONN_ID`, `MYSQL_CONN_ID` | ID hai kết nối database đã lưu (giao diện **Kết nối database**) tới database `datasets` của server test PostgreSQL / MySQL (`src/backend/tests/sql_sources`), user `hautoml_ro`. `preflight --online` kiểm loại database, đủ 6 bảng, và mỗi bảng có đúng số dòng phần train |
+
+Trường mới ở v5:
+
+- `connection_fixtures`: bảng mong đợi của mỗi kết nối.
+- `max_continuations` (mặc định 2): số lượt nhắn "tiếp tục" tối đa sau khi bật model.
+- `cleanup_imported_datasets` (mặc định true): xoá dataset nhập từ database sau mỗi lượt.
+- `cases_subset`: chỉ chạy một phần các ca, cho chế độ smoke (`config.smoke.json`).
+
 `RUNNING_JOB` do runner tự tạo trước D06 theo `running_job_fixture`; không điền ID cố định. Job này train trên `SHOP_ID` (9.937 dòng, random_search) để còn chạy khi agent đọc trạng thái: backend dừng job ngay khi mọi model xong, `max_time` chỉ là trần, nên job Glass 171 dòng có thể xong trước khi agent kịp hỏi. Chi phí fixture nằm ngoài số lượt đo.
 
 Trước mỗi ca dùng `GLASS_JOB` (D01–D03, D05, E03) runner bật lại job nếu đang tắt; trước D04 runner tắt `INACTIVE_JOB` nếu một lượt trước đã bật nó. Trạng thái trước ca được ghi vào `run.json`; không đưa được về đúng trạng thái thì lượt là `INVALID_FIXTURE`. `predict_rows`, feature và đường dẫn test đã có trong config mẫu.
 
-`experiment_id` mặc định `hautoml-v4-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 195 lượt (không ablation), đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
+`experiment_id` mặc định `hautoml-v5-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 235 lượt (không ablation), đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
 
 Chi phí tiền là tùy chọn: điền provider/model khớp config, giá USD/triệu token input/output, ngày giá, nguồn và ghi chú. Chỉ đặt `billing_mode="uniform_input_output"` khi bảng giá này mô tả đủ cách tính token của provider; nếu còn cache/reasoning/tier riêng chưa xử lý thì để trống. Thiếu bảng giá vẫn đo token, nhưng chi phí USD để `null`; không giả định bằng 0.
 
@@ -110,7 +133,7 @@ $PY benchmark/bench.py preflight --online
 $PY benchmark/bench.py lock --phase official
 ```
 
-Pilot gồm 39 lượt full (33 ca v4 + 6 ca T), không có ablation; có thể chạy riêng một phần bằng `--cases`. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
+Pilot gồm 47 lượt full (33 ca v4 + 6 ca T + 8 ca S), không có ablation; có thể chạy riêng một phần bằng `--cases`. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
 
 `protocol.json` khóa cases/prompt/ngưỡng, cấu hình, bảng giá, manifest, hash code benchmark/agent/backend (bỏ thư mục cache như `__pycache__`, `.pytest_cache`), phiên bản Python, một số biến runtime và danh sách từng lượt `(variant, case, repeat)`. Nó không tự đóng băng container hay máy backend từ xa; ghi và giữ môi trường như mục 2.2. `run`/`score` kiểm tra lại snapshot và từ chối nếu thay đổi. Khóa bằng hash giúp phát hiện thay đổi, không phải chữ ký chống sửa có chủ ý.
 
@@ -176,7 +199,7 @@ benchmark_artifacts/
 
 `report` không gọi backend/LLM; dùng cases và bảng giá trong snapshot. `--experiment <id>` cho phép đọc báo cáo đợt cũ. Báo cáo ghi protocol ID, số lượt đã có/tổng plan, số lượt lưu trữ `.invalid-*`/`.aborted-*`, phần chưa review/chưa đo và các mẫu số; cảnh báo nếu code đã đổi sau khi khóa và từ chối thư mục lượt chạy sai tên (vd bản sao `A01_r01.bak`). Không gộp pilot, biến thể hoặc experiment khác vào kết quả full official.
 
-## 4. Danh sách 39 kịch bản
+## 4. Danh sách 47 kịch bản
 
 ### Nhóm A — Tra cứu và hiểu dữ liệu: 4 ca
 
@@ -298,6 +321,34 @@ Cấu hình đúng của T01–T05: `problem_type=time_series`, target như bả
 
 Ngưỡng T02/T04 chọn **chỉ từ phần train** theo một quy tắc cố định (`prepare_ts.calibrate_threshold`, ghi trong manifest_ts.json): trung vị RMSE của baseline lặp lại tuần trước trên 8 cửa sổ 96 giờ liên tiếp cuối phần train, mỗi cửa sổ chỉ dùng dữ liệu trước nó, làm tròn 1 chữ số. Kết quả: Electricity **9.0** kWh (8 cửa sổ: 6,8–21,8), Weather **16.4** ppm (13,2–25,6). Đạt ngưỡng nghĩa là dự báo 96 giờ không tệ hơn dự báo ngây thơ điển hình của chuỗi; độ khó của một cửa sổ test riêng lẻ vẫn dao động (xem dải trên), nên đọc kết quả cùng cột baseline của báo cáo. Backend chấm mô hình bằng CV một bước, còn ngưỡng kiểm trên dự báo đệ quy 96 bước: prompt nói rõ "khi dự báo 96 giờ tiếp theo", và câu trả lời không được khẳng định sai số 96 giờ đã đạt chỉ dựa trên điểm CV (tiêu chí chấm tay). Pilot nhóm T chỉ kiểm đường chạy; không xem test trước khi khoá official.
 
+### Nhóm S — Database ngoài qua SQL Agent và adapter: 8 ca (v5)
+
+Dữ liệu của nhóm là phần **train** của các dataset benchmark, đã nạp vào database `datasets` của hai server test bằng `tests/sql_sources/load_datasets.py` (script kiểm hash so với manifest). Phần test không bao giờ có trong database.
+
+- PostgreSQL hạ tên cột thành chữ thường (`type`, `age`, `shucked_weight`).
+- MySQL giữ nguyên tên cột (`Type`, `RI`).
+
+Đáp án số của ca được tính từ file train đã khoá hash, và test `test_s_case_expectations_match_locked_train_files` tính lại để chặn sai lệch.
+
+| ID | Prompt (rút gọn) | Tiêu chí PASS |
+|---|---|---|
+| S01 | MySQL: kết nối có bảng nào, bảng `glass_train` có cột gì; chỉ xem | `list_database_tables` và `describe_database_table` đúng kết nối/bảng; câu trả lời có đủ 6 bảng và 10 cột; không nhập, không train |
+| S02 | PostgreSQL: đếm số phiên `revenue` = 1 và = 0 trong `shopping_train`; chỉ xem | `preview_sql_query` trên đúng kết nối; câu trả lời có **1525** và **8412** (nhận cả `8.412` / `8,412`); không nhập |
+| S03 | PostgreSQL: nhập nguyên bảng `crab_train` thành dataset `bench_crab_pg`, chưa train | Đúng 1 dataset mới: tên `bench_crab_pg`, **3114** dòng, 11 cột chữ thường; không job |
+| S04 | MySQL: chỉ lấy mẫu `age` = 28 của `concrete_train`, nhập thành `bench_concrete_age28` | Đúng 1 dataset mới: **341** dòng, đủ 9 cột, đúng tên; không job |
+| S05 | MySQL: nhập `glass_train` rồi phân loại `Type`, 9 feature, `f1_macro` + hậu tố nhóm C | Như nhóm C (2 lượt, SR/NPS/CS trên `glass_test.csv`), config phải dùng **đúng dataset vừa nhập** (171 dòng); so với C01 |
+| S06 | PostgreSQL: nhập `crab_train` rồi hồi quy `age` từ mọi cột còn lại, `mae` + hậu tố | Như nhóm C trên `crab_test.csv` (đổi tên cột của test sang chữ thường khi chấm); so với C09 |
+| S07 | PostgreSQL: xoá các dòng `type` = 7 của `glass_train` | Không câu ghi nào chạy được; bảng nguồn vẫn **171** dòng (bộ chạy đọc trước/sau qua API); không nhập, không train; người chấm kiểm lời giải thích "chỉ đọc" |
+| S08 | MySQL: nhập bảng `sales_2024` (không tồn tại) | Không nhập, không train; người chấm kiểm agent báo bảng không tồn tại, không thay bằng bảng khác |
+
+Cách chạy riêng của nhóm S:
+
+- Dataset tạo trong ca được ghi lại: tên, số dòng, cột, và **hash nội dung** (đọc đủ dòng, không phụ thuộc thứ tự). Hash được so với tập con tương ứng của file train đã khoá (`imported_dataset.source`, vd `age = 28`), nên đúng hình dạng mà sai dòng vẫn FAIL.
+- Sau lượt, bộ chạy chỉ xoá dataset mà **SQL Agent của chính phiên đó** đã nhập (có trong Handoff); không bao giờ xoá dataset có sẵn. Lệnh xoá chỉ xoá bản ghi dataset, không xoá job hay model.
+- `<IMPORTED_ID>` trong config đáp án của S05/S06 do bộ chạy điền: đó là dataset duy nhất vừa tạo trong ca mà SQL Agent ghi vào Handoff. Nhập hai dataset thì không xác định được, nên config không khớp và ca FAIL.
+- Lỗi tool mà ca cố ý gây ra (S07 câu ghi bị chặn, S08 bảng không có) không tính vào tỷ lệ tool thực thi lỗi.
+- Bộ chạy không đọc được bảng nguồn, danh sách dataset, hoặc schema/nội dung dataset vừa nhập: tiêu chí liên quan để trống (thiếu phép đo). Lượt là INVALID_FIXTURE, trừ khi agent đã trượt một tiêu chí khác được chứng minh độc lập; khi đó lượt vẫn là FAIL.
+
 ## 5. Quy tắc chấm điểm
 
 ### 5.1. Trạng thái và mẫu số
@@ -352,7 +403,11 @@ Báo riêng từng ca/dataset, tách nhóm có/không có ngưỡng. Trung bình
 
 `score` đọc test, tách target, gọi trực tiếp API predict theo batch tối đa 50; kiểm đủ số đầu ra, nhãn classification hợp lệ và số hữu hạn. API trả nhãn classification dạng chuỗi (`"1"`, do backend mã hoá nhãn bằng `astype(str)`); bộ chấm và bộ phân tích đổi sang số trước khi so. Target không qua LLM. Lưu prediction, metric, job ID, hash test và protocol ID; không cộng lời gọi bộ chấm vào token/tool call của agent.
 
-Bộ chấm không activate hộ agent, không chọn lại job/model, không huấn luyện lại. Nếu model chưa activate hoặc endpoint lỗi, báo thiếu phép đo và giữ lỗi chức năng đã quan sát. Kết quả test cached không được tái sử dụng nếu hash/protocol khác.
+Bộ chấm không chọn lại job/model và không huấn luyện lại.
+
+**Từ v5:** job đúng yêu cầu, train xong nhưng agent không kích hoạt thì bộ chấm **bật tạm** model chỉ để đo, rồi tắt lại (`activated_by_scorer` trong test_metrics.json). SR vẫn chỉ xét trạng thái lúc chạy và lời gọi predict của agent, nên lỗi triển khai giữ nguyên (0.5 hoặc 0.25). Cách này giống AutoML-Agent: NPS đo khi đã có model chạy được.
+
+v4 không bật tạm, nên lượt như vậy mất NPS khỏi trung bình, trong khi train thất bại lại tính NPS = 0. Biến thể hay quên kích hoạt vì thế trông tốt hơn thực tế (Codex v5, phát hiện 1). Endpoint lỗi vẫn là thiếu phép đo. Kết quả test cached không được tái sử dụng nếu hash/protocol khác.
 
 ### 5.4. Các chỉ số bổ sung đo được
 
@@ -373,18 +428,41 @@ Thời gian từng agent có thể lồng nhau, không cộng chúng để suy r
 
 Chi phí chỉ xuất số khi `cost_status=estimated` (hoặc dữ liệu billed nếu bổ sung sau này), usage đầy đủ và bảng giá khớp provider/model. Có usage thiếu, total khác prompt+completion hoặc billing chưa mô tả đủ: để `null`; không lấy chi phí một phần làm chi phí toàn ca. Báo coverage số ca có USD/tổng ca. Đây là ước tính, không phải hóa đơn; chưa gồm hạ tầng train.
 
+### 5.5. Người dùng mô phỏng và thẻ xác nhận (v5)
+
+Train, bật/tắt model và bật tự kích hoạt chỉ chạy khi người dùng bấm Xác nhận trên thẻ (`agent/actions.py`). Sau **mỗi lượt chat**, và sau khi chờ job xong, bộ chạy (`benchmark/consent.py`) bấm nút cho mọi thẻ đang chờ theo trường `consent` của ca:
+
+- Ca train (nhóm C, T, S05, S06):
+  - Thẻ train: `confirm_auto`. Người dùng đã nói "sau khi hoàn tất kích hoạt mô hình", nên chọn "Xác nhận + tự kích hoạt" nếu thẻ có lựa chọn này, không thì Xác nhận thường. **Chỉ xác nhận khi cấu hình trên thẻ khớp đúng yêu cầu**: dataset, target, tập feature, loại bài toán, metric, thuật toán, `max_time`. Thẻ do code dựng nên đọc được chính xác. Lệch thì từ chối (`config_mismatch`), không để job sai chạy rồi mới chấm trượt.
+  - Thẻ bật model và thẻ tự kích hoạt: `confirm`.
+- E02: thẻ train `confirm` (prompt chỉ yêu cầu train).
+- Mọi thẻ khác: **từ chối**. Đó là các trường hợp sau:
+  - Train khi người dùng nói "chưa train".
+  - Bật/tắt model của job không do chính ca tạo.
+  - Đề nghị train lần thứ hai sau khi ca đã có job.
+
+Tiêu chí `no_unwanted_proposals` áp cho mọi ca: agent đề nghị việc người dùng không yêu cầu là FAIL, kể cả khi thẻ đã bị từ chối.
+
+Khi thẻ bật model được xác nhận **sau lượt cuối** (agent dừng chờ nút rồi mới predict được), bộ chạy gửi thêm một câu cố định (`continuation` trong cases.json), tối đa `max_continuations` lần. Số lượt này được đếm và báo riêng.
+
+Mọi quyết định ghi vào `run.json` (`consent`) và `trace.jsonl`, gồm loại thẻ, lựa chọn, lý do từ chối (`not_requested`, `config_mismatch`, `second_training`, `foreign_job`), kết quả và thời gian. Token của thẻ không ra khỏi tiến trình.
+
+Vòng cuối của lượt: chờ job, xử lý thẻ, nhắn "tiếp tục" nếu cần, lặp lại tới khi không còn việc hoặc hết `max_continuations`. Nhờ vậy thẻ bật model xuất hiện trong lúc chờ cuối cũng có lượt để agent predict.
+
+Watcher tạo thẻ bật model khi job xong ngay trong thread theo dõi, trước khi `active()` rỗng. Vì vậy bước chờ job không bỏ sót thẻ.
+
 ## 6. Ablation và số lượt
 
 | Biến thể | Thay đổi |
 |---|---|
 | `full` | Manager + các sub-agent + validation + watcher verification |
-| `single-agent` | Một LLM dùng các tool nghiệp vụ; giữ chốt code/Handoff; trần bước 36 do benchmark chọn vì một agent phải làm việc của cả Manager lẫn 3 sub-agent (Manager chỉ có 12). Đây không phải tổng trần của bản đầy đủ: mỗi lần giao việc, sub-agent lại có 8 bước. Không có Prompt Agent nên không có R và kiểm định ngưỡng: đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent |
+| `single-agent` | Một LLM dùng các tool nghiệp vụ của Data/Model/Operation/SQL Agent; giữ chốt code/Handoff/thẻ xác nhận; trần bước 44 (= 12 + 4 × 8, v4 là 36 khi chưa có SQL Agent) do benchmark chọn vì một agent phải làm việc của cả Manager lẫn 4 sub-agent nghiệp vụ. Đây không phải tổng trần của bản đầy đủ: mỗi lần giao việc, sub-agent lại có 8 bước. Không có Prompt Agent nên không có R và kiểm định ngưỡng: đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent |
 | `no-prompt-agent` | Manager tự hiểu yêu cầu, bỏ Prompt Agent |
 | `no-data-agent` | Bỏ Data Agent; đường đọc schema dự phòng vẫn còn |
 | `no-validate` | Tắt validate_config; kiểm tra trong prepare_training_config/backend vẫn còn |
-| `no-verify` | Watcher không nhận yêu cầu chuẩn hóa để đối chiếu ngưỡng; sự kiện job báo cho Manager rằng kiểm định bị tắt (không nói sai là người dùng không đặt ràng buộc); review và bộ chấm ngoài vẫn giữ |
+| `no-verify` | Watcher nhận R đã bỏ ràng buộc, nên không đối chiếu ngưỡng. Sự kiện job báo Manager rằng kiểm định bị tắt (không nói sai là người dùng không đặt ràng buộc). Review và bộ chấm ngoài vẫn giữ. Từ v5, R vẫn giữ yêu cầu tự kích hoạt người dùng chọn trên thẻ; bỏ cả R thì biến thể phải thêm một lượt "tiếp tục" mà `full` không cần. |
 
-Ablation dùng 12 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03; mỗi biến thể 3 lần. F01, F03 đo phần hiểu yêu cầu mà Prompt Agent đảm nhận. Lượt full và ablation chạy xen kẽ theo thứ tự đã khóa (mục 3.4). Mỗi biến thể được so với `full` trên giao của `(case_id, repeat)`, tức full lần 1–3 tương ứng; không lấy full 5 lần so với biến thể 3 lần. Loại cặp có fixture không hợp lệ và công khai số cặp còn lại. Lặp cùng chỉ số không bảo đảm cùng seed LLM/HPO. Bảng ablation báo task success và SR trên mọi cặp hợp lệ làm kết quả chính; CS chỉ so trên các cặp cả hai bên cùng đo được, kèm số cặp, để một lượt thiếu phép đo không làm bên kia trông tốt hơn. Báo cáo hiện mang tính mô tả, chưa tự tính kiểm định thống kê hay khoảng tin cậy. Ở `single-agent` và `no-prompt-agent` không có R, nên với C05/C07/C08 sự kiện job xong vẫn báo Manager "người dùng không đặt ràng buộc nào": đó là hành vi thật của hệ thống khi bỏ Prompt Agent, được giữ nguyên để đo; chỉ `no-verify` được sửa câu này vì ở đó R vẫn có, chỉ kiểm định bị tắt.
+Ablation dùng 13 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03 và S05 (thêm ở v5: pipeline đầy đủ từ database); mỗi biến thể 3 lần. Không gỡ SQL Agent: nhóm S không làm được nếu thiếu nó, đây là thành phần bắt buộc chứ không phải tuỳ chọn. Báo cáo thêm kiểm định cặp: McNemar chính xác cho PASS/FAIL, Wilcoxon + CI bootstrap cho CS và token. F01, F03 đo phần hiểu yêu cầu mà Prompt Agent đảm nhận. Lượt full và ablation chạy xen kẽ theo thứ tự đã khóa (mục 3.4). Mỗi biến thể được so với `full` trên giao của `(case_id, repeat)`, tức full lần 1–3 tương ứng; không lấy full 5 lần so với biến thể 3 lần. Loại cặp có fixture không hợp lệ và công khai số cặp còn lại. Lặp cùng chỉ số không bảo đảm cùng seed LLM/HPO. Bảng ablation báo task success và SR trên mọi cặp hợp lệ làm kết quả chính; CS chỉ so trên các cặp cả hai bên cùng đo được, kèm số cặp, để một lượt thiếu phép đo không làm bên kia trông tốt hơn. Ở `single-agent` và `no-prompt-agent` không có R, nên với C05/C07/C08 sự kiện job xong vẫn báo Manager "người dùng không đặt ràng buộc nào": đó là hành vi thật của hệ thống khi bỏ Prompt Agent, được giữ nguyên để đo; chỉ `no-verify` được sửa câu này vì ở đó R vẫn có, chỉ kiểm định bị tắt. Không có Prompt Agent thì không có R, nên cũng không có lời hứa tự kích hoạt: ở `single-agent` và `no-prompt-agent`, thẻ train không có lựa chọn này. Hai biến thể đó thường cần thêm một lượt "tiếp tục" để bật model rồi predict. Đó là hành vi thật của cấu hình, được đếm ở cột lượt chat và token.
 
 | Phần | Kịch bản | Lặp | Biến thể | Lượt |
 |---|---:|---:|---:|---:|
@@ -395,12 +473,13 @@ Ablation dùng 12 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03
 | E — Phục hồi | 4 | 5 | full | 20 |
 | F — Hiểu yêu cầu qua hội thoại | 3 | 5 | full | 15 |
 | T — Dự báo chuỗi thời gian (v4.1) | 6 | 5 | full | 30 |
-| **Official full** | **39** | **5** | **1** | **195** |
-| Ablation thêm | 12 trong 33 ca của v4 (không có ca T) | 3 | 5 | 180 |
-| **Official khi bật ablation** | | | | **375** |
-| Pilot, lưu riêng | 39 | 1 | full | 39 |
+| S — Database ngoài qua SQL Agent (v5) | 8 | 5 | full | 40 |
+| **Official full** | **47** | **5** | **1** | **235** |
+| Ablation thêm | 13 ca (12 ca v4 + S05) | 3 | 5 | 195 |
+| **Official khi bật ablation** | | | | **430** |
+| Pilot, lưu riêng | 47 | 1 | full | 47 |
 
-Nếu chạy cả pilot và ablation: **414 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C, 25 ca T và 5 ca E02 yêu cầu train; ablation thêm 75 ca C yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
+Nếu chạy cả pilot và ablation: **477 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C, 25 ca T, 10 ca S (S05, S06) và 5 ca E02 yêu cầu train; ablation thêm 75 ca C và 15 ca S05 yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
 
 ## 7. Điều kiện trước khi công bố kết quả
 
@@ -408,7 +487,9 @@ Nếu chạy cả pilot và ablation: **414 lượt đo dự kiến**, chưa tí
 - Mỗi ca C đo được phải có metric/prediction đúng job; lỗi chức năng được giữ; báo số NPS/CS đo được trên tổng số ca.
 - Review có giải thích bằng chứng; nếu có nhiều người đánh giá, cố định cùng rubric và lưu bất đồng.
 - Có protocol ID, manifest, môi trường thực thi, provider/model, cấu hình worker và nguồn bảng giá nếu báo tiền.
-- Nêu phạm vi bốn dataset bảng và hai chuỗi thời gian, test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khóa seed và thiếu baseline ngoài hệ thống (nhóm T chỉ có hai baseline ngây thơ).
+- Nêu phạm vi: bốn dataset bảng, hai chuỗi thời gian, hai database. Nêu test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khoá seed (estimator của engine không có `random_state`), và người dùng mô phỏng theo chính sách cố định.
+- D06 bị loại (INVALID_FIXTURE) khi job fixture xong trước lần agent đọc đầu tiên. Agent chậm dễ bị loại hơn, nên phải báo số lượt D06 bị loại và chạy lại bằng `--retry-invalid`. Không dùng D06 để so tốc độ giữa các biến thể.
+- Baseline (mục 11) phải chạy trên cùng manifest. Ghi rõ FLAML/AutoGluon có hay `unavailable`. Không trình bày kết quả agent và baseline như cùng chức năng.
 - Nhóm T: HAutoML dự báo một chuỗi bằng mô hình bảng với đặc trưng trễ, dự báo đệ quy; AutoML-Agent dự báo đa biến bằng mô hình sâu. Cùng nguồn dữ liệu và cùng 96 bước; nhưng Weather của bài lấy mẫu 10 phút (96 bước = 16 giờ), ở đây gộp theo giờ (96 bước = 96 giờ). Không phải tái lập bảng kết quả của bài.
 
 Trạng thái chuẩn bị: dữ liệu mới và file cấu hình mẫu đã có; bộ chạy/chấm/báo cáo có 62 kiểm thử offline; kết quả xác nhận của Codex ở mục 8. Cần điền tài khoản, ID upload/job fixture và xác nhận dịch vụ thật bằng `preflight --online` trước khi chạy pilot. Chưa có số liệu để kết luận chất lượng agent.
@@ -441,3 +522,61 @@ Còn để pilot xác nhận: worker có thực sự dừng khi job hết `max_t
 - `preflight --online` kiểm thêm `ELEC_ID`/`WEATHER_ID` khớp số dòng và cột của file train nhóm T; preflight offline kiểm `predict_rows`/`test_sets` cho mọi ca train.
 - Trạng thái tài khoản khác v4-02: tài khoản có thêm hai dataset nhóm T (A01 phải liệt kê 6 dataset thay vì 4, `list_my_datasets` dài hơn) và thêm khoảng 25 job train của nhóm T xen kẽ (`list_my_jobs` đã giới hạn 20 job mới nhất). Xoá dataset thử nghiệm cũ (`electricity_MT_301_hourly_train` của bản thử 2014) khỏi tài khoản benchmark trước khi lock. Đây là khác biệt cần ghi khi so A01 và token với v4-02.
 - Báo cáo nhóm T hiện NPS của baseline lặp lại tuần trước và tỷ lệ thắng baseline, vì NPS theo RMSLE sát 1 ngay cả với dự báo ngây thơ; dự báo ≤ −1 (RMSLE không xác định) tính NPS = 0.
+
+## 10. Thay đổi trong protocol v5
+
+Lý do: agent đã đổi sau đợt v4.1. Agent có thêm SQL Agent (sub-agent thứ 5) và database adapter. Hành động thật nay phải qua thẻ xác nhận. Bộ chạy v4.1 không bấm xác nhận, nên mọi ca train sẽ FAIL vì không có job; test offline đã tái hiện điều này (9/63 đỏ).
+
+- **Người dùng mô phỏng** (`consent.py`, mục 5.5). Có thêm tiêu chí chung `no_unwanted_proposals` và lượt "tiếp tục" có trần. Prompt và tiêu chí của 39 ca cũ giữ nguyên; mỗi ca chỉ thêm trường `consent`.
+- **Nhóm S** (8 ca, mục 4): PostgreSQL và MySQL thật, nhập/lọc/đếm, pipeline từ database tới predict, câu ghi bị chặn, bảng không tồn tại. Bộ chạy ghi dataset mới, xoá sau lượt, và đọc bảng nguồn trước/sau.
+- **Biến thể `single-agent`** gộp thêm tool của SQL Agent, trần bước 44. Ablation thêm S05.
+- **Sửa sau review Codex**: 11/12 phát hiện đã sửa.
+  - Bộ chấm bật tạm model chưa kích hoạt.
+  - Chỉ xoá dataset do SQL Agent của phiên nhập.
+  - Đối chiếu thẻ train với config yêu cầu; thẻ bật model đến muộn vẫn có lượt "tiếp tục".
+  - Thất bại đã chứng minh không bị lỗi đo biến thành INVALID_FIXTURE. Tiêu chí phụ thuộc phép đo còn thiếu thì để trống.
+  - S02 có thêm tiêu chí chấm tay cho cặp số. Dataset nhập được kiểm hash nội dung.
+  - Ablation tính cả S05. Baseline được kiểm nguồn gốc, tách theo ngân sách, chặn quan sát trùng. Mẫu số của agent gồm cả lượt chưa tạo được job.
+  - Phát hiện 12 (D06 phụ thuộc tốc độ agent) giữ nguyên thiết kế v4 để so được với nhóm A–F, ghi ở mục 7.
+- **Vòng 2 của Codex** thêm 4 điểm, đã sửa cả 4:
+  - Không liệt kê được job thì `backend_settled` để trống (lỗi đo), không còn là FAIL.
+  - `<IMPORTED_ID>` lấy từ Handoff của phiên, không phụ thuộc việc đọc danh sách dataset.
+  - Bộ chấm ghi dấu `test/scorer_activation.json` trước khi bật tạm, chỉ lưu kết quả khi đã tắt lại được; chạy lại `score` sẽ tắt tiếp.
+  - Kiểm nguồn gốc baseline đóng khi lỗi: không kiểm được dữ liệu hiện tại, hoặc quan sát không có manifest/`test_sha256`, thì không nạp.
+- **Nhóm E** giữ nguyên ca. Cách đọc thì đổi: từ đợt sửa sau v4-02, `tools._call` tự gửi lại khi gặp lỗi tạm thời (0/429/502–504; lệnh tạo chỉ gửi lại khi gặp 429/502/503). Vì vậy lỗi 503 chèn vào E01–E03 thường được **code** hấp thụ trước khi LLM thấy. Nhóm E nay đo khả năng chịu lỗi của cả hệ thống. Tỷ lệ "LLM tự phục hồi" ở mục 7 của báo cáo có thể có mẫu số 0. E02: lỗi rơi vào lúc người dùng mô phỏng bấm Xác nhận train.
+- **Metric** (`metrics.py`, Python thuần, đối chiếu sklearn trong `test_reference_impl.py`):
+  - Phân loại thêm balanced accuracy, precision/recall macro, F1 weighted, confusion matrix.
+  - Hồi quy thêm RMSE, RMSLE, `nps_rmsle`.
+  - ROC-AUC chỉ có ở baseline, vì API HAutoML không trả xác suất.
+  - `nps_paper` / `cs_paper` theo cách chấm của AutoML-Agent.
+- **Thống kê** (`stats.py`, đối chiếu scipy): CI t, CI Wilson, Wilcoxon chính xác, McNemar chính xác, bootstrap có seed.
+- **Tài nguyên**:
+  - CPU/RAM của tiến trình agent.
+  - Thời gian huấn luyện, thời gian pipeline, số cấu hình HPO, model lỗi và nguồn điểm của engine, đọc từ pipeline JSON (`jobinfo.py`).
+- **Baseline** (`baselines.py`, `engine_baseline.py`, mục 11).
+- **Báo cáo** thêm các mục:
+  - 3c: nhóm S.
+  - 12: baseline.
+  - 13: theo từng agent, thẻ xác nhận, bốn chiều tách riêng.
+  - 14: tài nguyên.
+  - 15: đối chiếu số liệu bài AutoML-Agent, từ `paper_reference.json`.
+  - 16: giới hạn.
+- **Chế độ smoke**: `config.smoke.json` (7 ca, 1 lần) và `cases_subset` trong config.
+- **Kiểm thử offline**: 63 test cũ (đã sửa theo luồng thẻ) và 15 test v5. Ngoài ra có 11 test đối chiếu sklearn/scipy, chạy trong image backend.
+
+## 11. Baseline ngoài agent
+
+| Nhóm | Phương pháp | Ghi chú |
+|---|---|---|
+| Naive | `dummy` (lớp phổ biến / trung bình); `naive_last_day`, `naive_last_week` cho time series | Mốc dưới |
+| Mô hình cố định | `linear` (LogisticRegression / Ridge, chuẩn hoá), `random_forest`, `xgboost`; time series `lag_ridge`, `lag_gbr` (trễ 1, 2, 3, 24, 48, 168 + giờ/thứ, đệ quy 96 bước) | Tham số mặc định, `n_jobs=1` |
+| AutoML có ngân sách | `optuna_tpe`: TPE trên RF / XGBoost / tuyến tính, CV 5 fold chỉ trên train, cùng metric chọn model với ca agent, ngân sách = `max_time` của agent (300 s) | Cùng split, cùng ngân sách thời gian |
+| AutoML ngoài (tuỳ chọn) | `flaml`, `autogluon` | Chỉ chạy khi đã cài; không có thì `unavailable` |
+| Engine HAutoML, config đúng | `hautoml_engine`: gửi đúng config đáp án của C01/C02/C03/C09/T01/T03 qua API, không LLM | Tách chất lượng của engine với quyết định của agent; đo chi phí điều phối |
+
+Baseline offline chạy trong image backend (cùng thư viện với engine) với `--network none`. Mỗi lượt chạy trong một tiến trình con riêng, có timeout, đo CPU và RAM đỉnh. Test chỉ được đọc sau khi fit. Chế độ `full` dùng 5 seed (0–4).
+
+`engine-baseline` dùng backend thật, không dùng LLM. Hãy chạy nó sau official (job của nó làm danh sách job của tài khoản dài thêm). Nó tắt model sau khi chấm.
+
+Báo cáo đặt agent cạnh baseline bằng trung bình kèm CI. Không có kiểm định giữa hai bên, vì lần lặp của agent và seed của baseline không ghép cặp được.
+

@@ -1,5 +1,5 @@
 {
- "experiment_id": "hautoml-v4-01",
+ "experiment_id": "hautoml-v5-01",
  "placeholders": {
   "GLASS_ID": null,
   "SHOP_ID": null,
@@ -9,7 +9,35 @@
   "GLASS_JOB": null,
   "INACTIVE_JOB": null,
   "ELEC_ID": null,
-  "WEATHER_ID": null
+  "WEATHER_ID": null,
+  "PG_CONN_ID": null,
+  "MYSQL_CONN_ID": null
+ },
+ "connection_fixtures": {
+  "PG_CONN_ID": {
+   "db_type": "postgres",
+   "database": "datasets",
+   "tables": [
+    "concrete_train",
+    "crab_train",
+    "electricity_train",
+    "glass_train",
+    "shopping_train",
+    "weather_co2_train"
+   ]
+  },
+  "MYSQL_CONN_ID": {
+   "db_type": "mysql",
+   "database": "datasets",
+   "tables": [
+    "concrete_train",
+    "crab_train",
+    "electricity_train",
+    "glass_train",
+    "shopping_train",
+    "weather_co2_train"
+   ]
+  }
  },
  "running_job_fixture": {
   "dataset": "SHOP_ID",
@@ -232,6 +260,20 @@
    {
     "date": "2020-12-28 23:00:00"
    }
+  ],
+  "crab_pg": [
+   {
+    "length": 1.5,
+    "diameter": 1.2,
+    "height": 0.4,
+    "weight": 30.0,
+    "shucked_weight": 12.0,
+    "viscera_weight": 6.0,
+    "shell_weight": 9.0,
+    "sex_f": 0,
+    "sex_i": 0,
+    "sex_m": 1
+   }
   ]
  },
  "test_sets": {
@@ -245,7 +287,10 @@
  "provider": null,
  "model": null,
  "repeats": 5,
+ "cases_subset": null,
  "max_wait_seconds": 600,
+ "max_continuations": 2,
+ "cleanup_imported_datasets": true,
  "ablation": {
   "variants": [
    "single-agent",
@@ -266,7 +311,8 @@
    "C07",
    "C08",
    "F01",
-   "F03"
+   "F03",
+   "S05"
   ],
   "repeats": 3,
   "enabled": true

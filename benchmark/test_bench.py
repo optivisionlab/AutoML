@@ -80,6 +80,10 @@ class FakeBackend:
         return {"endpoint_url": "http://model"}
 
     def predict(self, job_id, rows, timeout=120.0):
+        job = self.jobs.get(job_id)
+        if job is not None and not job.get("activate"):
+            # Như backend thật (inference/service.py): model chưa kích hoạt thì 403.
+            raise ApiError(403, "Model is not activated")
         return {"model_name": "RF", "predictions": [1.0 for _ in rows]}
 
 
@@ -152,20 +156,24 @@ SCRIPTS = {
         reply("Bạn muốn dùng thuật toán tìm kiếm nào?"),
     ],
     ("full", "C01"): [
-        # Lượt 1: chốt config rồi chạy train.
+        # Lượt 1: chốt config rồi ĐỀ NGHỊ train (thẻ xác nhận); người dùng mô phỏng bấm Xác nhận sau lượt.
         reply(tool="ask_model_agent", task="Tạo config", dataset_id=GLASS),
         reply(tool="submit_config", **GOOD_CONFIG),
         reply("Config hợp lệ"),
         reply(tool="ask_operation_agent", task="Chạy config vừa chốt"),
         lambda m: reply(tool="start_training", config_id=found(r"cfg_[0-9a-f]{6}")(m)),
-        reply("Đã tạo job"),
-        reply("Job đang chạy."),
-        # Lượt 2: kích hoạt và dự đoán.
+        reply("Đã gửi thẻ xác nhận"),
+        reply("Bạn bấm Xác nhận trên thẻ để chạy train."),
+        # Lượt 2: đề nghị kích hoạt (thẻ) - chưa predict được vì model chưa bật.
         lambda m: reply(tool="ask_operation_agent", task=f"Kích hoạt và dự đoán job {found(r'job-[0-9]{4}')(m)}"),
         lambda m: reply(tool="activate_model", job_id=found(r"job-[0-9]{4}")(m)),
+        reply("Đã gửi thẻ kích hoạt"),
+        reply("Job xong, f1_macro 0.7. Bạn bấm Xác nhận trên thẻ để kích hoạt."),
+        # Lượt "tiếp tục" sau khi người dùng mô phỏng xác nhận kích hoạt: predict.
+        lambda m: reply(tool="ask_operation_agent", task=f"Dự đoán bằng job {found(r'job-[0-9]{4}')(m)}"),
         lambda m: reply(tool="predict", job_id=found(r"job-[0-9]{4}")(m), rows=[{f: 1.0 for f in FEATURES}]),
-        reply("Đã kích hoạt, dự đoán 1"),
-        reply("Job xong, f1_macro 0.7. Đã kích hoạt và dự đoán: 1."),
+        reply("Dự đoán 1"),
+        reply("Đã kích hoạt và dự đoán: 1."),
     ],
 }
 
@@ -210,12 +218,18 @@ def bench(tmp_path, monkeypatch):
 def test_cases_file_is_consistent():
     cases = load_json(CASES_PATH)["cases"]
     ids = [c["id"] for c in cases]
-    assert len(ids) == len(set(ids)) == 39
-    # 33 ca của v4 giữ nguyên để so với đợt trước; nhóm T (time series) thêm riêng.
-    assert sum(c["group"] != "T" for c in cases) == 33
+    assert len(ids) == len(set(ids)) == 47
+    # 33 ca của v4 giữ nguyên để so với đợt trước; nhóm T (v4.1) và S (v5, SQL Agent) thêm riêng.
+    assert sum(c["group"] not in ("T", "S") for c in cases) == 33
     assert [c["id"] for c in cases if c["group"] == "T"] == ["T01", "T02", "T03", "T04", "T05", "T06"]
+    assert [c["id"] for c in cases if c["group"] == "S"] == [f"S0{i}" for i in range(1, 9)]
+    from benchmark import consent
+    doc = load_json(CASES_PATH)
     for case in cases:
         assert case["flow"] in ("chat", "train", "train_start")
+        policy = consent.policy_for(case, doc)
+        # Người dùng mô phỏng chỉ đồng ý train khi prompt yêu cầu train.
+        assert (policy["train"] != "reject") == (case["flow"] in ("train", "train_start")), case["id"]
         if case["flow"] in ("train", "train_start") or case["expect"].get("config") == "match_task":
             assert case.get("task"), case["id"]
         if case.get("task", {}).get("problem_type") == "time_series":
@@ -458,11 +472,11 @@ def test_protocol_counts_immutability_and_completion(tmp_path, monkeypatch):
     monkeypatch.setattr(protocol, "check_ts_data", lambda *_: {})
     monkeypatch.setattr(protocol, "source_hashes", lambda: {"agent.py": "first"})
     monkeypatch.setattr(protocol, "provider_settings", lambda _cfg: {"name": "test", "model": "m"})
-    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 39
-    # (33 ca v4 + 6 ca T) x 5 lần + 12 ca ablation x 5 biến thể x 3 lần.
-    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 375
+    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 47
+    # (33 ca v4 + 6 ca T + 8 ca S) x 5 lần + 13 ca ablation x 5 biến thể x 3 lần.
+    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 430
     cfg["ablation"]["enabled"] = False
-    assert len(protocol.plan(cfg, cases)) == 195
+    assert len(protocol.plan(cfg, cases)) == 235
     cfg["ablation"]["enabled"] = True
     payload = protocol.snapshot(cfg, cases, None, "official")
     locked = protocol.freeze(tmp_path, payload)
@@ -836,7 +850,8 @@ def test_single_agent_gets_the_full_step_budget_and_restores_it():
     before = chat_module.MAX_STEPS
     with ExitStack() as stack:
         variants.apply_variant(session, "single-agent", stack)
-        assert chat_module.MAX_STEPS == 12 + 3 * 8
+        # Một agent làm việc của Manager và 4 sub-agent nghiệp vụ (Data, Model, Operation, SQL).
+        assert chat_module.MAX_STEPS == 12 + 4 * 8
     assert chat_module.MAX_STEPS == before
 
 

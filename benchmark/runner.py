@@ -13,6 +13,7 @@ Chấm điểm KHÔNG nằm ở đây (xem analyze.py) để chấm lại đư�
 # Standard libraries
 import json
 import os
+import resource
 import subprocess
 import threading
 import time
@@ -25,7 +26,7 @@ from agent import tools
 from agent.api_client import HAutoMLClient
 from agent.chat import ChatSession
 
-from benchmark import variants
+from benchmark import consent, jobinfo, variants
 from benchmark.common import REPO, read_trace, substitute
 from benchmark.auth import install_reauthentication
 
@@ -137,12 +138,77 @@ def _set_activation(api, job_id: str, wanted: int) -> dict:
     return {"job_id": job_id, "activate_before": job.get("activate")}
 
 
+def _datasets(api) -> dict | None:
+    """{dataset_id: tên} của tài khoản benchmark; None khi không đọc được."""
+    listing = tools.list_my_datasets(api)
+    if not listing.get("ok"):
+        return None
+    return {d.get("_id"): d.get("dataName") for d in listing.get("datasets") or []}
+
+
+_CONTENT_ROWS_LIMIT = 60_000
+
+
+def _describe_dataset(api, dataset_id: str) -> dict:
+    """
+    Số dòng, tên cột và dấu vân tay NỘI DUNG của dataset vừa tạo trong ca (nhóm S): đúng hình dạng chưa đủ,
+    phải đúng các dòng cần nhập (vd đúng các mẫu age = 28). Chỉ lưu hash, không chép dữ liệu vào run.json.
+    """
+    from benchmark.common import content_fingerprint
+
+    schema = tools.get_dataset_schema(api, dataset_id)
+    if not schema.get("ok"):
+        return {"ok": False, "error": schema.get("error")}
+    info = {"ok": True, "rows": schema.get("total_rows"), "columns": [c.get("name") for c in schema.get("columns") or []]}
+    if isinstance(info["rows"], int) and 0 < info["rows"] <= _CONTENT_ROWS_LIMIT:
+        try:
+            records = (api.get_dataset_preview(dataset_id, num_rows=info["rows"]) or {}).get("records") or []
+            info["content_rows"] = len(records)
+            info["content_sha256"] = content_fingerprint(records)
+        except Exception as error:  # noqa: BLE001 - thiếu bằng chứng nội dung là lỗi đo, không phải lỗi agent
+            info["content_error"] = f"{type(error).__name__}: {error}"
+    return info
+
+
+def _delete_dataset(api, dataset_id: str) -> dict:
+    """Xoá dataset ca vừa tạo (chỉ bản ghi tbl_Data; job và model đã train không bị xoá)."""
+    try:
+        api._request("DELETE", f"/datasets/{dataset_id}")
+        return {"ok": True}
+    except Exception as error:  # noqa: BLE001 - dọn dẹp lỗi thì ghi lại, không đổi kết quả đo
+        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
+
+
+def _db_probe(api, probe: dict, values: dict) -> dict:
+    """
+    Đọc trạng thái bảng nguồn qua API của backend (cùng đường chỉ đọc mà agent dùng), trước và sau ca
+    S07: chứng minh database KHÔNG bị ghi - kể cả khi agent cố gửi câu lệnh ghi.
+    """
+    connection = substitute(probe["connection"], values)
+    try:
+        result = api.preview_database_query(connection, {"kind": "sql", "sql": probe["sql"], "params": {}, "row_limit": 5})
+        return {"ok": True, "rows": [list(r.values()) if isinstance(r, dict) else r for r in result.get("rows") or []]}
+    except Exception as error:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
+
+
+def _usage_now() -> dict:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    # Linux: ru_maxrss tính bằng KB, là đỉnh của CẢ tiến trình (tăng dần qua các lượt, không reset được).
+    return {"cpu": usage.ru_utime + usage.ru_stime, "maxrss_mb": usage.ru_maxrss / 1024, "wall": time.monotonic()}
+
+
+def rows_key(case: dict) -> str:
+    """Khoá của predict_rows trong config: mặc định theo dataset; S06 (cột chữ thường từ PostgreSQL) có khoá riêng."""
+    return case["task"].get("rows_key", case["task"]["dataset"])
+
+
 def build_turns(case: dict, cases_doc: dict, cfg: dict) -> list:
     """Danh sách lượt; None = chờ job do lượt trước tạo ra chạy xong."""
     values = cfg["placeholders"]
     turns = [substitute(t, values) for t in case["turns"]]
     if case["flow"] == "train":
-        rows = json.dumps(cfg["predict_rows"][case["task"]["dataset"]], ensure_ascii=False, separators=(",", ":"))
+        rows = json.dumps(cfg["predict_rows"][rows_key(case)], ensure_ascii=False, separators=(",", ":"))
         turns = [
             f"{turns[0]} {cases_doc['train_suffix']}",
             None,
@@ -218,12 +284,13 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
         jobs_before = _own_job_ids(harness_api)
         # Số job đã có ảnh hưởng độ dài kết quả list_my_jobs (token, thời gian): ghi để so sánh công bằng.
         run["account_job_count"] = len(jobs_before) if jobs_before is not None else None
-        datasets = tools.list_my_datasets(harness_api)
-        listed = datasets.get("datasets") or [] if datasets.get("ok") else None
-        run["account_dataset_ids"] = [d.get("_id") for d in listed] if listed is not None else None
-        run["account_datasets"] = {d.get("_id"): d.get("dataName") for d in listed} if listed is not None else None
+        datasets_before = _datasets(harness_api)
+        run["account_dataset_ids"] = list(datasets_before) if datasets_before is not None else None
+        run["account_datasets"] = datasets_before
         if case["flow"] == "train":
-            run["expected_predict_rows"] = cfg["predict_rows"][case["task"]["dataset"]]
+            run["expected_predict_rows"] = cfg["predict_rows"][rows_key(case)]
+        if case.get("db_probe"):
+            run["db_probe_before"] = _db_probe(harness_api, case["db_probe"], values)
 
         session = ChatSession(provider=cfg.get("provider"), model=cfg.get("model"), verbose=False)
         stack.callback(session.close)
@@ -238,20 +305,29 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
         variants.instrument_llm(session, record, case.get("faults", []))
         variants.inject_api_faults(session.api, record, case.get("faults", []))
 
-        # Từ đây agent đã nhận yêu cầu. Bị ngắt thì lượt được giữ và tính FAIL, không chạy
-        # lại: chạy lại sẽ xoá một kết quả đã quan sát được và mở đường chọn lượt tốt.
-        run["interrupted"] = "Lượt bị ngắt sau khi agent đã nhận prompt; không chạy lại."
-        save()
-        run_cfg = {**cfg, "placeholders": values}
-        for prompt in build_turns(case, cases_doc, run_cfg):
-            if prompt is None:
-                waited = _wait_watchers(session, max_wait)
-                record("wait", waited)
-                run["job_wait"] = waited
-                continue
+        # Người dùng mô phỏng bấm nút trên thẻ xác nhận theo chính sách cố định của ca (consent.py).
+        policy = consent.policy_for(case, cases_doc)
+        run["consent_policy"] = policy
+        run["consent"] = []
+        own_jobs: set[str] = set()
+        max_continuations = int(cfg.get("max_continuations", 2))
+        usage_start = _usage_now()
+
+        def expected_config() -> dict | None:
+            """Config người dùng đã yêu cầu (đáp án của ca); dataset nhập trong ca thay cho <IMPORTED_ID>."""
+            from benchmark.analyze import task_config
+            imports = list(session.team.handoff.imported_datasets)
+            return task_config(case, {**values, **({"IMPORTED_ID": imports[0]} if len(imports) == 1 else {})})
+
+        def process(stage: str) -> list[dict]:
+            decisions = consent.process_pending(session, policy, record, own_jobs, stage, expected_config())
+            run["consent"].extend(decisions)
+            return decisions
+
+        def send(prompt: str, kind: str) -> None:
             record("user", prompt)
             before = time.monotonic()
-            turn = {"prompt": prompt}
+            turn = {"prompt": prompt, "kind": kind}
             try:
                 turn["answer"] = session.send(prompt)
             except Exception as error:  # noqa: BLE001 - lỗi lượt chat là kết quả cần ghi, không dừng benchmark
@@ -263,11 +339,55 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
             run["usage"] = dict(session.usage)
             save()
 
-        # Không để job của ca này tranh tài nguyên với ca sau.
-        run["final_wait"] = _wait_watchers(session, max_wait)
+        # Từ đây agent đã nhận yêu cầu. Bị ngắt thì lượt được giữ và tính FAIL, không chạy
+        # lại: chạy lại sẽ xoá một kết quả đã quan sát được và mở đường chọn lượt tốt.
+        run["interrupted"] = "Lượt bị ngắt sau khi agent đã nhận prompt; không chạy lại."
+        save()
+        run_cfg = {**cfg, "placeholders": values}
+        turns = build_turns(case, cases_doc, run_cfg)
+        decisions: list[dict] = []
+        for index, prompt in enumerate(turns):
+            if prompt is None:
+                waited = _wait_watchers(session, max_wait)
+                record("wait", waited)
+                run["job_wait"] = waited
+                # Watcher có thể đưa thẻ kích hoạt khi job xong (ràng buộc chỉ đạt theo điểm CV).
+                process("after_job")
+                continue
+            send(prompt, "scripted")
+            decisions = process(f"turn{index + 1}")
+        # Thẻ bật/tắt model được xác nhận SAU lượt cuối (kể cả thẻ watcher đưa ra khi job xong trong lúc chờ
+        # cuối): người dùng thật sẽ nhắn tiếp để agent làm nốt việc (vd đã bật model thì gọi predict). Câu nhắn
+        # cố định, tối đa max_continuations lần, đếm vào lượt chat. Mỗi vòng hoặc dừng, hoặc tăng bộ đếm.
+        continuations = 0
+        while True:
+            if not consent.needs_followup(decisions):
+                # Không để job của ca này tranh tài nguyên với ca sau.
+                run["final_wait"] = _wait_watchers(session, max_wait)
+                decisions = process("final")
+                if not consent.needs_followup(decisions):
+                    break
+            if continuations >= max_continuations:
+                break
+            continuations += 1
+            send(cases_doc["continuation"], "continuation")
+            decisions = process(f"continuation{continuations}")
+        if "final_wait" not in run:
+            # Dừng vì đã hết lượt "tiếp tục": vẫn chờ job và xử lý thẻ lần cuối (không nhắn thêm nữa).
+            run["final_wait"] = _wait_watchers(session, max_wait)
+            process("final")
+        run["continuation_turns"] = continuations
         run["usage"] = dict(session.usage)
+        usage_end = _usage_now()
+        run["resources"] = {
+            "harness_cpu_seconds": usage_end["cpu"] - usage_start["cpu"],
+            "harness_wall_seconds": usage_end["wall"] - usage_start["wall"],
+            "harness_peak_rss_mb": usage_end["maxrss_mb"],
+        }
         handoff = session.team.handoff
-        run["handoff"] = {"requirements": handoff.requirements, "configs": handoff.configs, "jobs": handoff.jobs}
+        run["handoff"] = {"requirements": handoff.requirements, "configs": handoff.configs, "jobs": handoff.jobs,
+                          "imported_datasets": handoff.imported_datasets}
+        run["pending_actions_left"] = session.team.actions.pending_public()
 
         jobs_after = _own_job_ids(harness_api)
         fixture_job = run["fixtures"].get("running_job", {}).get("job_id")
@@ -277,6 +397,21 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
         else:
             run["new_jobs"] = sorted(jobs_after - jobs_before - {fixture_job})
         run["job_snapshots"] = {job_id: _job(harness_api, job_id) for job_id in run["new_jobs"] or []}
+
+        # Dataset tạo trong ca (nhóm S nhập từ database): kiểm số dòng/cột rồi dọn để tài khoản giữ nguyên.
+        datasets_after = _datasets(harness_api)
+        if datasets_before is None or datasets_after is None:
+            run["new_datasets"] = None
+            run["errors"].append("Không liệt kê được dataset để đếm dataset mới.")
+        else:
+            run["new_datasets"] = {d: {"name": datasets_after[d], **_describe_dataset(harness_api, d)}
+                                   for d in sorted(set(datasets_after) - set(datasets_before))}
+        # Dataset SQL Agent nhập trong phiên (ID thật do backend trả, ghi trong Handoff): không phụ thuộc việc bộ
+        # chạy đọc được danh sách dataset hay không.
+        if len(handoff.imported_datasets) == 1:
+            values["IMPORTED_ID"] = next(iter(handoff.imported_datasets))
+        if case.get("db_probe"):
+            run["db_probe_after"] = _db_probe(harness_api, case["db_probe"], values)
 
         if "inactive_job" in run["fixtures"]:
             run["fixtures"]["inactive_job"]["activate_after"] = _job(harness_api, values["INACTIVE_JOB"]).get("activate")
@@ -299,6 +434,13 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
         pending = settle_jobs(harness_api, list(run["new_jobs"] or []) + ([fixture_job] if fixture_job else []), max_wait)
         if pending or run["new_jobs"] is None:
             run["halt_reason"] = f"Không xác nhận được mọi job đã kết thúc: {pending}; new_jobs={run['new_jobs']}"
+        # Bằng chứng về quá trình train của engine (thời gian, số ứng viên HPO, nguồn điểm) - sau khi job kết thúc.
+        run["job_pipelines"] = {job_id: jobinfo.fetch_summary(harness_api, job_id) for job_id in run["new_jobs"] or []}
+        # Chỉ xoá dataset mà SQL Agent của CHÍNH phiên này nhập (có trong Handoff) và mới xuất hiện trong ca:
+        # không bao giờ đụng dataset có sẵn hay dataset ai đó tải lên cùng lúc.
+        imported_now = [d for d in handoff.imported_datasets if datasets_before is not None and d not in datasets_before]
+        if cfg.get("cleanup_imported_datasets", True) and imported_now:
+            run["dataset_cleanup"] = {d: _delete_dataset(harness_api, d) for d in imported_now}
 
     run.pop("interrupted", None)
     run["finished_at"] = datetime.now(timezone.utc).isoformat()

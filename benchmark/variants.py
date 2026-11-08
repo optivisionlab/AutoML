@@ -16,7 +16,7 @@ from agent import chat as chat_module, prompts, tools
 from agent import skills as skills_module
 from agent.agent_openai import MAX_STEPS, SUBAGENT_MAX_STEPS
 from agent.api_client import ApiError
-from agent.prompts import DATA_AGENT, MANAGER, MODEL_AGENT, OPERATION_AGENT
+from agent.prompts import DATA_AGENT, MANAGER, MODEL_AGENT, OPERATION_AGENT, SQL_AGENT
 
 from benchmark.variants_doc import VARIANT_DOCS
 
@@ -29,11 +29,15 @@ _REMOVED_AGENT = {
 }
 
 _SINGLE_AGENT_INTRO = """Bạn là agent DUY NHẤT của hệ thống HAutoML. Bạn nói chuyện
-với người dùng và tự làm mọi việc: tra cứu dataset, chốt config bằng
-submit_config, chạy train bằng start_training(config_id), theo dõi job, kích
-hoạt model và dự đoán. Các SKILL bên dưới viết cho hệ thống nhiều agent: bỏ qua
-mọi chỉ dẫn nói rằng một việc thuộc agent khác hoặc phải báo cáo cho Agent
-Manager - trong phiên này bạn làm tất cả."""
+với người dùng và tự làm mọi việc: lấy dữ liệu từ database đã kết nối và nhập
+thành dataset, tra cứu dataset, chốt config bằng submit_config, đề nghị train
+bằng start_training(config_id), theo dõi job, kích hoạt model và dự đoán. Các
+SKILL bên dưới viết cho hệ thống nhiều agent: bỏ qua mọi chỉ dẫn nói rằng một
+việc thuộc agent khác hoặc phải báo cáo cho Agent Manager - trong phiên này bạn
+làm tất cả."""
+
+# Sub-agent nghiệp vụ mà single-agent gộp tool (Prompt Agent không có tool nghiệp vụ - xem VARIANT_DOCS).
+_BUSINESS_AGENTS = (DATA_AGENT, MODEL_AGENT, OPERATION_AGENT, SQL_AGENT)
 
 
 def apply_variant(session, name: str, stack: ExitStack) -> None:
@@ -43,11 +47,11 @@ def apply_variant(session, name: str, stack: ExitStack) -> None:
 
     if name == "single-agent":
         _single_agent(session)
-        # Một agent duy nhất làm cả việc của Manager và 3 sub-agent nghiệp vụ, nên trần 12
-        # bước của Manager quá chật. 36 (12 + 3 x 8) là ngân sách benchmark chọn cho biến thể
-        # này, không phải tổng trần của bản đầy đủ (mỗi lần giao việc sub-agent lại có 8 bước).
+        # Một agent duy nhất làm cả việc của Manager và 4 sub-agent nghiệp vụ, nên trần bước của
+        # Manager quá chật. MAX_STEPS + 4 x SUBAGENT_MAX_STEPS là ngân sách benchmark chọn cho biến thể
+        # này, không phải tổng trần của bản đầy đủ (mỗi lần giao việc sub-agent lại có trần riêng).
         stack.callback(setattr, chat_module, "MAX_STEPS", chat_module.MAX_STEPS)
-        chat_module.MAX_STEPS = MAX_STEPS + 3 * SUBAGENT_MAX_STEPS
+        chat_module.MAX_STEPS = single_agent_max_steps()
     elif name in _REMOVED_AGENT:
         _remove_subagent(session, *_REMOVED_AGENT[name])
     elif name == "no-validate":
@@ -61,7 +65,10 @@ def apply_variant(session, name: str, stack: ExitStack) -> None:
         on_finish = session.watcher._on_finish
 
         def watch_without_requirements(job_id, *args, **kwargs):
-            kwargs["requirements"] = None
+            # Bỏ RÀNG BUỘC (không kiểm định), giữ phần còn lại của R - nhất là service.deploy: người dùng mô phỏng
+            # đã chọn "train + tự kích hoạt" trên thẻ; bỏ cả R thì biến thể mất luôn lời hứa đó và phải thêm một
+            # lượt "tiếp tục" so với full - nhiễu không thuộc về việc tắt kiểm định.
+            kwargs["requirements"] = _without_constraints(kwargs.get("requirements"))
             return watch(job_id, *args, **kwargs)
 
         def finish_without_verification(summary):
@@ -79,6 +86,18 @@ def apply_variant(session, name: str, stack: ExitStack) -> None:
         session.watcher._on_finish = finish_without_verification
 
 
+def _without_constraints(requirements: dict | None) -> dict | None:
+    if not requirements:
+        return None
+    problem = dict(requirements.get("problem") or {})
+    problem["constraints"] = []
+    return {**requirements, "problem": problem}
+
+
+def single_agent_max_steps() -> int:
+    return MAX_STEPS + len(_BUSINESS_AGENTS) * SUBAGENT_MAX_STEPS
+
+
 def _single_agent(session) -> None:
     team = session.team
     original = team.tools_for
@@ -86,9 +105,9 @@ def _single_agent(session) -> None:
     def tools_for(agent: str):
         if agent != MANAGER:
             return original(agent)
-        # Ghép đúng các tool (đã bind với Handoff) của 3 sub-agent nghiệp vụ.
+        # Ghép đúng các tool (đã bind với Handoff) của 4 sub-agent nghiệp vụ.
         schemas, dispatch, seen = [], {}, set()
-        for sub in (DATA_AGENT, MODEL_AGENT, OPERATION_AGENT):
+        for sub in _BUSINESS_AGENTS:
             sub_schemas, sub_dispatch = original(sub)
             for schema in sub_schemas:
                 tool = schema["function"]["name"]
@@ -102,7 +121,7 @@ def _single_agent(session) -> None:
     loaded = skills_module.load_skills()
     prompt = skills_module.build_prompt(
         f"{_SINGLE_AGENT_INTRO}\n\n{prompts.BASE_PROMPT}",
-        [skills_module.get_skill(agent, loaded) for agent in (DATA_AGENT, MODEL_AGENT, OPERATION_AGENT)],
+        [skills_module.get_skill(agent, loaded) for agent in _BUSINESS_AGENTS],
     )
     session.messages[0] = {"role": "system", "content": prompt}
 

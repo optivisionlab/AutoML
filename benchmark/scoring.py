@@ -3,8 +3,12 @@ Chấm mô hình của nhóm C và T trên tập test độc lập (file *_test.
 Nhóm T (time series): dự báo đúng 96 mốc thời gian của phần test, RMSLE như AutoML-Agent.
 
 Gọi predict trực tiếp từ bộ chấm, không qua agent, nên không tính vào token hay
-số tool call của agent. Không tự kích hoạt model: model chưa kích hoạt là lỗi
-triển khai của agent và phải hiện ra trong SR.
+số tool call của agent.
+
+Từ v5: job đúng yêu cầu, train xong nhưng agent không kích hoạt thì bộ chấm BẬT TẠM model để đo chất lượng
+rồi tắt lại (`activated_by_scorer`). Lỗi triển khai vẫn nằm nguyên trong SR (0.5 / 0.25, chỉ xét snapshot lúc
+chạy và lời gọi predict của agent) - như AutoML-Agent: NPS đo khi có model chạy được, SR đo mức triển khai.
+Không đo thì lượt đó mất NPS khỏi trung bình, làm biến thể hay quên kích hoạt trông tốt hơn.
 """
 
 # Standard libraries
@@ -17,6 +21,7 @@ from pathlib import Path
 from agent import tools
 from agent.api_client import HAutoMLClient
 
+from benchmark import metrics as metrics_module
 from benchmark.common import REPO, load_json
 from benchmark.auth import install_reauthentication
 from benchmark.protocol import file_hash
@@ -26,24 +31,29 @@ from benchmark.analyze import task_config, _job_matches_task
 _BATCH = tools.MAX_PREDICT_ROWS
 
 
-def _read_test(path: Path, target: str, time_column: str | None = None) -> tuple[list[dict], list[float]]:
-    """time_column: cột ngày giờ của time series - giữ nguyên chuỗi (backend dự báo theo mốc thời gian)."""
+def _read_test(path: Path, target: str, time_column: str | None = None,
+               column_case: str | None = None) -> tuple[list[dict], list[float]]:
+    """
+    time_column: cột ngày giờ của time series - giữ nguyên chuỗi (backend dự báo theo mốc thời gian).
+    column_case="lower": dataset nhập từ PostgreSQL có tên cột chữ thường (S06) - đổi tên cột của test cho
+    khớp, không đổi giá trị.
+    """
     with path.open(newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
+    if column_case == "lower":
+        rows = [{k.lower(): v for k, v in row.items()} for row in rows]
     y_true = [float(row[target]) for row in rows]
     x = [{k: (v if k == time_column else float(v)) for k, v in row.items() if k != target} for row in rows]
     return x, y_true
 
 
 def _rmse(y_true: list[float], y_pred: list[float]) -> float:
-    return math.sqrt(sum((t - p) ** 2 for t, p in zip(y_true, y_pred)) / len(y_true))
+    return metrics_module.rmse(y_true, y_pred)
 
 
 def _rmsle(y_true: list[float], y_pred: list[float]) -> float:
     """RMSLE như AutoML-Agent (sklearn mean_squared_log_error): chỉ xác định khi mọi giá trị > -1."""
-    if not all(v > -1 for v in y_true + y_pred):
-        raise ValueError("RMSLE không xác định: có giá trị thật/dự báo <= -1.")
-    return math.sqrt(sum((math.log1p(p) - math.log1p(t)) ** 2 for t, p in zip(y_true, y_pred)) / len(y_true))
+    return metrics_module.rmsle(y_true, y_pred)
 
 
 def naive_baselines(history: list[float], y_true: list[float]) -> dict:
@@ -64,46 +74,16 @@ def naive_baselines(history: list[float], y_true: list[float]) -> dict:
 
 def f1_macro(y_true: list, y_pred: list) -> float:
     """F1-macro trên đủ tập nhãn của test, nhãn thiếu dự đoán cho 0 (như zero_division=0 của sklearn)."""
-    scores = []
-    for label in sorted(set(y_true)):
-        tp = sum(1 for t, p in zip(y_true, y_pred) if t == label and p == label)
-        fp = sum(1 for t, p in zip(y_true, y_pred) if t != label and p == label)
-        fn = sum(1 for t, p in zip(y_true, y_pred) if t == label and p != label)
-        precision = tp / (tp + fp) if tp + fp else 0.0
-        recall = tp / (tp + fn) if tp + fn else 0.0
-        scores.append(2 * precision * recall / (precision + recall) if precision + recall else 0.0)
-    return sum(scores) / len(scores)
+    return metrics_module.f1_macro(y_true, y_pred)
 
 
 def compute_metrics(problem_type: str, y_true: list[float], y_pred: list[float]) -> dict:
-    n = len(y_true)
-    if not n or len(y_pred) != n or not all(math.isfinite(v) for v in y_true + y_pred):
-        raise ValueError("Test/prediction rỗng, sai số lượng hoặc chứa NaN/Inf.")
-    if problem_type not in {"classification", "regression", "time_series"}:
-        raise ValueError("Loại bài toán không hợp lệ.")
-    if problem_type == "time_series":
-        # AutoML-Agent chấm dự báo bằng RMSLE, NPS = 1/(1+RMSLE); thêm RMSE/MAE (metric engine tính).
-        metrics = {"rmse": _rmse(y_true, y_pred), "mae": sum(abs(t - p) for t, p in zip(y_true, y_pred)) / n}
-        if all(p > -1 for p in y_pred):
-            metrics["rmsle"] = _rmsle(y_true, y_pred)
-            metrics["nps"] = 1 / (1 + metrics["rmsle"])
-        else:
-            # Dự báo <= -1 cho chuỗi dương: lỗi của MÔ HÌNH (không phải của phép đo) - NPS = 0, không loại khỏi trung bình.
-            metrics.update({"rmsle": None, "rmsle_undefined": True, "nps": 0.0})
-        if all(t > 0 for t in y_true):
-            metrics["mape"] = sum(abs(t - p) / t for t, p in zip(y_true, y_pred)) / n
-        return metrics
-    if problem_type == "classification":
-        if not set(y_pred) <= set(y_true):
-            raise RuntimeError("Nhãn dự đoán nằm ngoài tập nhãn test cố định")
-        f1 = f1_macro(y_true, y_pred)
-        return {"accuracy": sum(t == p for t, p in zip(y_true, y_pred)) / n, "f1_macro": f1, "nps": f1}
-    mae = sum(abs(t - p) for t, p in zip(y_true, y_pred)) / n
-    mean = sum(y_true) / n
-    total = sum((t - mean) ** 2 for t in y_true)
-    residual = sum((t - p) ** 2 for t, p in zip(y_true, y_pred))
-    r2 = 1 - residual / total if total else None
-    return {"mae": mae, "r2": r2, "nps": 1 / (1 + mae)}
+    """
+    Đủ bộ chỉ số trên test (benchmark/metrics.py). `nps` giữ đúng định nghĩa protocol v4 (F1-macro;
+    1/(1+MAE) cho hồi quy; 1/(1+RMSLE) cho time series); thêm `nps_rmsle` cho hồi quy để đối chiếu bài báo.
+    API HAutoML chỉ trả nhãn nên không có ROC-AUC cho agent.
+    """
+    return metrics_module.compute(problem_type, y_true, y_pred)
 
 
 def _train_series(task: dict) -> list[float]:
@@ -133,13 +113,54 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
     snapshot = (run.get("job_snapshots") or {}).get(job_id) or {}
     if snapshot.get("status") != 1:
         return "job không thành công"
-    if snapshot.get("activate") != 1:
-        return "model chưa được agent kích hoạt"
     if _job_matches_task(snapshot, task_config(case, run.get("placeholders") or {})):
         return "job sai yêu cầu; bộ chấm ghi FAIL, không chọn lại model"
+    current = tools.get_job_info(api, job_id)
+    if not current.get("ok"):
+        raise RuntimeError(f"{folder.name}: không đọc được job {job_id}: {current.get('error')}")
+    out.mkdir(exist_ok=True)
+    # Dấu "bộ chấm đã bật tạm" ghi TRƯỚC khi bật: lần chấm trước bật mà chưa tắt lại được thì lần này biết đó
+    # không phải trạng thái agent để lại, và phải tắt.
+    marker_path = out / "scorer_activation.json"
+    marker = load_json(marker_path) or {}
+    left_on_by_scorer = marker.get("job_id") == job_id and marker.get("activated") and not marker.get("restored")
+    agent_active = (current.get("job") or {}).get("activate") == 1 and not left_on_by_scorer
+    activated_by_scorer = not agent_active
+    if activated_by_scorer:
+        marker_path.write_text(json.dumps({"job_id": job_id, "activated": True, "restored": False}), encoding="utf-8")
+        if (current.get("job") or {}).get("activate") != 1:
+            result = tools.activate_model(api, job_id, True)
+            if not result.get("ok"):
+                raise RuntimeError(f"{folder.name}: không bật tạm được model để chấm: {result.get('error')}")
+    restored = None
+    try:
+        metrics = _predict_and_measure(api, folder, job_id, task, test_path)
+    finally:
+        if activated_by_scorer:
+            # Trả model về đúng trạng thái agent để lại.
+            restored = bool(tools.activate_model(api, job_id, False).get("ok"))
+            marker_path.write_text(json.dumps({"job_id": job_id, "activated": True, "restored": restored}),
+                                   encoding="utf-8")
+    if activated_by_scorer and not restored:
+        # Không lưu kết quả: chạy lại `score` sẽ đo lại và thử tắt lại (dấu cho biết model đang bật là do bộ chấm).
+        raise RuntimeError(f"{folder.name}: đã chấm nhưng KHÔNG tắt lại được model job {job_id} - chạy lại score.")
+    metrics["activated_by_scorer"] = activated_by_scorer
+    y_true, y_pred = metrics.pop("_y_true"), metrics.pop("_y_pred")
+    marker_path.unlink(missing_ok=True)
+    with (out / "test_predictions.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["row", "y_true", "y_pred"])
+        writer.writerows((i, a, p) for i, (a, p) in enumerate(zip(y_true, y_pred)))
+    metrics.update({"job_id": job_id, "n_test": len(y_true), "score_source": "external_test",
+                    "test_sha256": file_hash(test_path), "protocol_id": run.get("protocol_id")})
+    (out / "test_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    (out / "error.json").unlink(missing_ok=True)
+    return "đã chấm" + (" (bộ chấm bật tạm model)" if activated_by_scorer else "")
 
+
+def _predict_and_measure(api, folder: Path, job_id: str, task: dict, test_path: Path) -> dict:
     time_column = task.get("time_column") if task["problem_type"] == "time_series" else None
-    x, y_true = _read_test(test_path, task["target"], time_column)
+    x, y_true = _read_test(test_path, task["target"], time_column, task.get("column_case"))
     y_pred = []
     for start in range(0, len(x), _BATCH):
         batch = x[start:start + _BATCH]
@@ -154,16 +175,8 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
     metrics = compute_metrics(task["problem_type"], y_true, y_pred)
     if task["problem_type"] == "time_series":
         metrics.update(naive_baselines(_train_series(task), y_true))
-    out.mkdir(exist_ok=True)
-    with (out / "test_predictions.csv").open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["row", "y_true", "y_pred"])
-        writer.writerows((i, a, p) for i, (a, p) in enumerate(zip(y_true, y_pred)))
-    metrics.update({"job_id": job_id, "n_test": len(y_true), "score_source": "external_test",
-                    "test_sha256": file_hash(test_path), "protocol_id": run.get("protocol_id")})
-    (out / "test_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    (out / "error.json").unlink(missing_ok=True)
-    return "đã chấm"
+    metrics["_y_true"], metrics["_y_pred"] = y_true, y_pred
+    return metrics
 
 
 def score_all(runs_root: Path, cases_doc: dict, cfg: dict, include_pilot: bool) -> None:

@@ -127,10 +127,22 @@ def provider_settings(cfg):
     return {k: getattr(resolved, k) for k in ("name", "kind", "model", "base_url", "endpoint", "api_version")}
 
 
+def selected_cases(cfg, cases):
+    """Ca của plan: mọi ca, hoặc `cases_subset` (chế độ smoke) theo đúng thứ tự trong cases.json."""
+    subset = cfg.get("cases_subset")
+    known = [c["id"] for c in cases["cases"]]
+    if subset is None:
+        return known
+    if not subset or not set(subset) <= set(known):
+        raise ValueError(f"cases_subset chứa mã ca không tồn tại: {sorted(set(subset or []) - set(known))}")
+    return [c for c in known if c in set(subset)]
+
+
 def plan(cfg, cases):
     if int(cfg["repeats"]) < 1:
         raise ValueError("repeats phải >= 1")
-    result = [("full", c["id"], r) for r in range(1, int(cfg["repeats"]) + 1) for c in cases["cases"]]
+    chosen = selected_cases(cfg, cases)
+    result = [("full", c, r) for r in range(1, int(cfg["repeats"]) + 1) for c in chosen]
     ab = cfg.get("ablation", {})
     if ab.get("enabled", True):
         known = {c["id"] for c in cases["cases"]}
@@ -139,7 +151,8 @@ def plan(cfg, cases):
         from benchmark.variants_doc import VARIANT_DOCS
         if not set(ab["variants"]) <= (set(VARIANT_DOCS) - {"full"}):
             raise ValueError("Biến thể ablation không hợp lệ.")
-        result += [(v, c, r) for r in range(1, int(ab["repeats"]) + 1) for v in ab["variants"] for c in ab["cases"]]
+        ab_cases = [c for c in ab["cases"] if c in set(chosen)]
+        result += [(v, c, r) for r in range(1, int(ab["repeats"]) + 1) for v in ab["variants"] for c in ab_cases]
     if len(result) != len(set(result)):
         raise ValueError("Plan có ca/biến thể trùng.")
     # Xen kẽ full và ablation trong từng khối lần lặp, thứ tự ngẫu nhiên có seed: trạng thái
@@ -162,20 +175,34 @@ def preflight(cfg, cases, case_ids=None):
             errors.append(str(exc))
     if not re.fullmatch(r"[A-Za-z0-9_-]+", str(cfg.get("experiment_id", ""))):
         errors.append("experiment_id chỉ gồm chữ, số, '_' và '-'.")
+    if case_ids is None:
+        # Chế độ smoke (cases_subset): chỉ đòi placeholder / fixture của các ca nằm trong plan.
+        try:
+            case_ids = selected_cases(cfg, cases)
+        except ValueError as exc:
+            errors.append(str(exc))
+            case_ids = None
     selected = [c for c in cases["cases"] if case_ids is None or c["id"] in case_ids]
     if case_ids and set(case_ids) - {c["id"] for c in cases["cases"]}:
         errors.append("Danh sách --cases chứa mã ca không tồn tại.")
-    needed = set(re.findall(r"<([A-Z_]+)>", json.dumps(selected))) - {"ROWS", "RUNNING_JOB"}
+    # IMPORTED_ID do bộ chạy điền (dataset SQL Agent nhập trong ca), ROWS/RUNNING_JOB cũng vậy.
+    needed = set(re.findall(r"<([A-Z_]+)>", json.dumps(selected))) - {"ROWS", "RUNNING_JOB", "IMPORTED_ID"}
     if any("running_job" in c.get("fixtures", []) for c in selected):
         needed.add(cfg["running_job_fixture"]["dataset"])
     for key in sorted(needed):
         if not cfg.get("placeholders", {}).get(key):
             errors.append(f"Chưa điền placeholders.{key}")
     # Ca train cần mẫu dự đoán và tập test của dataset - thiếu thì runner/bộ chấm hỏng giữa chừng.
-    for dataset in sorted({c["task"]["dataset"] for c in selected if c["flow"] == "train"}):
-        for section in ("predict_rows", "test_sets"):
-            if dataset not in (cfg.get(section) or {}):
-                errors.append(f"bench_config.json thiếu {section}.{dataset} (chép từ benchmark/config.example.json).")
+    train_cases = [c for c in selected if c["flow"] == "train"]
+    for section, keys in (("predict_rows", {c["task"].get("rows_key", c["task"]["dataset"]) for c in train_cases}),
+                          ("test_sets", {c["task"]["dataset"] for c in train_cases})):
+        for key in sorted(keys):
+            if key not in (cfg.get(section) or {}):
+                errors.append(f"bench_config.json thiếu {section}.{key} (chép từ benchmark/config.example.json).")
+    if any(c["group"] == "S" for c in selected):
+        for key in ("PG_CONN_ID", "MYSQL_CONN_ID"):
+            if key in needed and key not in (cfg.get("connection_fixtures") or {}):
+                errors.append(f"bench_config.json thiếu connection_fixtures.{key} (chép từ benchmark/config.example.json).")
     for key in ("provider", "model"):
         if not cfg.get(key):
             errors.append(f"Điền {key} rõ ràng để khóa model; không dùng mặc định thay đổi theo .env.")
@@ -274,6 +301,8 @@ def check_online(cfg):
             errors.append(str(exc))
         for name, placeholder in (("glass", "GLASS_ID"), ("shopping", "SHOP_ID"),
                                   ("concrete", "CONCRETE_ID"), ("crab", "CRAB_ID")):
+            if not cfg["placeholders"].get(placeholder):
+                continue  # preflight offline đã báo nếu ca trong plan cần placeholder này
             info = tools.get_dataset_schema(api, cfg["placeholders"][placeholder])
             expected = manifest[name]
             if not info.get("ok") or info.get("total_rows") != expected["n_train"] or \
@@ -281,16 +310,21 @@ def check_online(cfg):
                 errors.append(f"{name}: ID không đọc được hoặc số dòng/schema không khớp file train mới.")
         ts_manifest = check_ts_data(cfg)
         for name, placeholder in TS_PLACEHOLDERS.items():
+            if not cfg["placeholders"].get(placeholder):
+                continue
             info = tools.get_dataset_schema(api, cfg["placeholders"][placeholder])
             expected = ts_manifest["datasets"][name]
             if not info.get("ok") or info.get("total_rows") != expected["n_train"] or \
                     {c["name"] for c in info.get("columns", [])} != {expected["time_column"], expected["target"]}:
                 errors.append(f"{name}: ID không đọc được hoặc số dòng/schema không khớp file *_train.csv của nhóm T.")
-        missing = cfg["placeholders"]["MISSING_ID"]
+        errors += check_connections(api, cfg, manifest)
+        missing = cfg["placeholders"].get("MISSING_ID")
         listing = tools.list_my_datasets(api)
-        if not listing.get("ok") or any(d.get("_id") == missing for d in listing.get("datasets", [])):
+        if missing and (not listing.get("ok") or any(d.get("_id") == missing for d in listing.get("datasets", []))):
             errors.append("MISSING_ID chưa được xác nhận không tồn tại trong tài khoản.")
         for key, activated in (("GLASS_JOB", 1), ("INACTIVE_JOB", 0)):
+            if not cfg["placeholders"].get(key):
+                continue
             result = tools.get_job_info(api, cfg["placeholders"][key])
             job = result.get("job") or {}
             expected = manifest["glass"]
@@ -300,4 +334,53 @@ def check_online(cfg):
                     dataset != cfg["placeholders"]["GLASS_ID"] or \
                     config.get("target") != expected["target"] or set(config.get("list_feature", [])) != set(expected["features"]):
                 errors.append(f"{key}: fixture phải là Glass train thành công, activate={activated}, đủ feature.")
+    return errors
+
+
+def check_connections(api, cfg, manifest) -> list[str]:
+    """
+    Nhóm S: kết nối database đã lưu đúng loại, thấy đủ bảng, và mỗi bảng có ĐÚNG số dòng phần train
+    (database chỉ được chứa phần train - phần test không được để agent đọc tới). Chỉ đọc qua API.
+    """
+    from agent import tools
+    from benchmark.prepare_ts import MANIFEST as TS_MANIFEST
+
+    errors = []
+    fixtures = cfg.get("connection_fixtures") or {}
+    if not fixtures:
+        return errors
+    listing = tools.list_database_connections(api)
+    if not listing.get("ok"):
+        return [f"Không đọc được danh sách kết nối database: {listing.get('error')}"]
+    connections = {c.get("connection_id") or c.get("id") or c.get("_id"): c for c in listing.get("connections") or []}
+    ts_manifest = load_json(TS_MANIFEST) or {}
+    expected_rows = {f"{name}_train": manifest[name]["n_train"] for name in DATASETS}
+    expected_rows["electricity_train"] = ts_manifest.get("datasets", {}).get("electricity", {}).get("n_train")
+    expected_rows["weather_co2_train"] = ts_manifest.get("datasets", {}).get("weather", {}).get("n_train")
+    for key, spec in fixtures.items():
+        connection_id = cfg["placeholders"].get(key)
+        if not connection_id:
+            continue
+        info = connections.get(connection_id)
+        if info is None:
+            errors.append(f"{key}: không có kết nối {connection_id} trong tài khoản benchmark.")
+            continue
+        if spec.get("db_type") and info.get("db_type") != spec["db_type"]:
+            errors.append(f"{key}: loại database {info.get('db_type')} khác {spec['db_type']}.")
+        tables = tools.list_database_tables(api, connection_id)
+        names = {t.get("name") if isinstance(t, dict) else t for t in tables.get("tables") or []} if tables.get("ok") else set()
+        if not tables.get("ok") or not set(spec.get("tables") or []) <= names:
+            errors.append(f"{key}: không thấy đủ bảng {spec.get('tables')} (thấy {sorted(names)}).")
+            continue
+        for table in spec.get("tables") or []:
+            try:
+                result = api.preview_database_query(
+                    connection_id, {"kind": "sql", "sql": f"SELECT COUNT(*) AS n FROM {table}", "params": {}, "row_limit": 1})
+                rows = result.get("rows") or []
+                count = list(rows[0].values())[0] if rows and isinstance(rows[0], dict) else (rows[0][0] if rows else None)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{key}.{table}: không đếm được dòng ({exc}).")
+                continue
+            if expected_rows.get(table) is not None and int(count) != int(expected_rows[table]):
+                errors.append(f"{key}.{table}: {count} dòng, phần train có {expected_rows[table]} - database phải chỉ chứa phần train.")
     return errors

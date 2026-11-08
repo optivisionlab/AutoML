@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Local modules
+from benchmark import report_sections as sections
 from benchmark.analyze import analyze_run
 from benchmark.common import load_json
 from benchmark.variants_doc import VARIANT_DOCS
@@ -26,9 +27,10 @@ GROUP_TITLES = {
     "E": "Chèn lỗi (error recovery)",
     "F": "Hiểu yêu cầu qua hội thoại",
     "T": "Dự báo chuỗi thời gian (time series)",
+    "S": "Database ngoài qua SQL Agent (adapter)",
 }
 # Nhóm thêm sau v4: tóm tắt và các chỉ số tổng tính trên A–F để so được với các đợt trước.
-_ADDED_GROUPS = {"T"}
+_ADDED_GROUPS = {"T", "S"}
 _LIST_FIELDS = ("checks", "llm_latencies", "tool_latencies")
 _CSV_SKIP = _LIST_FIELDS
 
@@ -166,7 +168,7 @@ def write_data(rows: list[dict], out: Path) -> None:
 
 # ------------------------------------------------------------------------ báo cáo
 
-def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
+def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: list[dict] | None = None) -> str:
     full = [r for r in rows if r["variant"] == "full"]
     titles = {c["id"]: c.get("title", "") for c in cases_doc["cases"]}
     lines = ["# Báo cáo benchmark hệ thống agent HAutoML", ""]
@@ -204,7 +206,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
     episodes = sum(r["error_episodes"] for r in full)
     e_rows = [r for r in full if r["group"] == "E"]
     e_counts = _status_counts(e_rows)
-    lines += ["## 1. Tóm tắt (bản đầy đủ" + (", nhóm A–F; nhóm T ở cuối bảng và mục 3b)" if t_rows else ")"), ""]
+    lines += ["## 1. Tóm tắt (bản đầy đủ" + (", nhóm A–F; nhóm T, S ở cuối bảng và mục 3b, 3c)" if t_rows else ")"), ""]
     summary = [
         ["Task success rate", _success_rate(full), "PASS / (PASS + FAIL), nhóm A–F" if t_rows else "PASS / (PASS + FAIL), mọi nhóm"],
         ["SR nhóm C", _mean_std([r["sr"] for r in c_rows]), "Thang điều chỉnh từ AutoML-Agent cho HAutoML"],
@@ -234,6 +236,10 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
             ["CS nhóm T", _mean_std([r["cs"] for r in t_train]), "0.5·SR + 0.5·NPS"],
             ["Đạt mọi ràng buộc nhóm T", constraint_rate(t_train), "Ngưỡng rmse kiểm trên test"],
         ]
+    s_rows = [r for r in all_full if r["group"] == "S"]
+    if s_rows:
+        summary += [["Task success nhóm S", _success_rate(s_rows), "SQL Agent + adapter database (v5), báo riêng"]]
+    summary += sections.summary_ci_rows(c_rows, full)
     lines += _table(["Chỉ số", "Kết quả", "Ghi chú"], summary)
 
     # ---- 2. Task success rate theo nhóm
@@ -301,6 +307,9 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
                   "và tỷ lệ thắng baseline lặp lại tuần trước (168 giờ cuối của train). RMSE theo đơn vị của từng chuỗi (kWh, ppm), không so giữa "
                   "hai dataset; baseline lặp lại ngày trước có trong results.csv. T06 là ca từ chối đúng (dataset không có cột thời gian), "
                   "không có SR/NPS; task success của nó ở mục 2.", ""]
+
+    # ---- 3c. Nhóm S
+    lines += sections.section_s(all_full, titles, cases_doc)
 
     # ---- 4. Số bước
     lines += ["## 4. Số vòng lặp / bước để hoàn thành", ""]
@@ -381,7 +390,8 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
         lines += ["Chưa chạy biến thể ablation (`python benchmark/bench.py run --ablation`).", ""]
     else:
         table = []
-        full_map = {(r["scenario_id"], r["repeat"]): r for r in full if r["task_status"] != "INVALID_FIXTURE"}
+        # Từ all_full (không chỉ A–F): S05 nằm trong plan ablation của v5.
+        full_map = {(r["scenario_id"], r["repeat"]): r for r in all_full if r["task_status"] != "INVALID_FIXTURE"}
         for variant in others:
             other_map = {(r["scenario_id"], r["repeat"]): r for r in rows
                          if r["variant"] == variant and r["task_status"] != "INVALID_FIXTURE"}
@@ -401,8 +411,16 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
                     _mean([r["agent_seconds"] for r in v_rows]), acc_v["schema"],
                 ])
         lines += _table(["Biến thể", "Lượt", "Task success", "SR nhóm C", "CS nhóm C (cặp cùng đo được)", "Chặn config sai (B03–B06)", "Token / ca", "Agent (s)", "Tool đúng schema"], table)
+        lines += _table(["Biến thể", "Kiểm định cặp: lượt có kết luận", "Chỉ full đạt / chỉ biến thể đạt", "McNemar p",
+                         "Cặp CS", "CS biến thể − full", "Cặp token", "Token biến thể − full"],
+                        [sections.ablation_tests(full_map, {(r["scenario_id"], r["repeat"]): r for r in rows
+                                                            if r["variant"] == v and r["task_status"] != "INVALID_FIXTURE"}, v)
+                         for v in others])
         lines += _table(["Biến thể", "Thay đổi"], [[v, VARIANT_DOCS.get(v, "")] for v in ["full"] + others])
-        lines += ["Mỗi cặp full/biến thể chỉ dùng giao của (mã ca, lần lặp), loại cặp có INVALID_FIXTURE. Không trộn full 5 lần với biến thể 3 lần. Hệ thống không có SQL agent hay critic agent riêng.", ""]
+        lines += ["Mỗi cặp full/biến thể chỉ dùng giao của (mã ca, lần lặp), loại cặp có INVALID_FIXTURE. Không trộn full 5 lần với biến thể 3 lần. "
+                  "Cặp ghép theo lịch chạy xen kẽ đã khoá, không chung seed LLM/HPO; với vài chục cặp, p > 0.05 nghĩa là chưa đủ bằng chứng, "
+                  "không phải \"không khác nhau\". Không gỡ SQL Agent trong ablation: nhóm S không làm được nếu thiếu nó (thành phần bắt buộc, "
+                  "không phải tuỳ chọn); hệ thống không có critic agent riêng.", ""]
 
     # ---- 9. Ổn định và độ nhạy prompt
     lines += ["## 9. Độ ổn định và độ nhạy prompt", ""]
@@ -434,12 +452,23 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
     else:
         lines += ["Không có.", ""]
 
-    # ---- 11. Giới hạn
+    # ---- 12-15. Baseline, cấp agent, tài nguyên, bài báo
+    lines += sections.section_baselines(all_full, baselines or [])
+    lines += sections.section_agents(all_full)
+    lines += sections.section_resources(all_full, baselines or [])
+    lines += sections.section_paper(all_full, sections.paper_reference())
+
+    # ---- 16. Giới hạn
     lines += [
-        "## 11. Giới hạn khi đọc báo cáo", "",
+        "## 16. Giới hạn khi đọc báo cáo", "",
         "- Quy mô nhỏ (4 dataset tabular); kết quả là kiểm chứng chức năng và độ ổn định, không phải khẳng định hiệu quả tổng quát.",
         "- Test set cố định (seed 42): các lần lặp chỉ đo biến thiên do LLM và HPO.",
-        "- Chưa có baseline ngoài hệ thống (AutoGluon, mô hình thủ công).",
+        ("- Baseline ngoài hệ thống: xem mục 12; FLAML/AutoGluon chỉ có khi đã cài (không tự cài)." if baselines else
+         "- Chưa nạp kết quả baseline ngoài hệ thống (mục 12)."),
+        "- Từ v5, train/bật/tắt model chỉ chạy khi người dùng bấm Xác nhận: benchmark đóng vai người dùng theo chính sách cố định "
+        "của từng ca (consent.py). Người dùng thật có thể bấm khác; lượt 'tiếp tục' sau khi bật model là một tin nhắn cố định.",
+        "- Nhóm S dùng hai server test (PostgreSQL 16, MySQL 8.4) chứa phần train của các dataset benchmark; chưa đo MongoDB, "
+        "SQLite/DuckDB qua kết nối đã lưu, hay database lớn/nhiều bảng.",
         "- `single-agent` khác bản đầy đủ ở nhiều điểm cùng lúc (một vòng LLM, không có Prompt Agent nên không có R và kiểm định ngưỡng; trần bước 36 do benchmark chọn): đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent.",
         "- Tự phục hồi tự nhiên phụ thuộc lỗi phát sinh thật; số tập lỗi nhỏ thì tỷ lệ không ổn định - xem mẫu số.",
     ]
@@ -453,12 +482,16 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None) -> str:
     return "\n".join(lines)
 
 
-def write_report(runs_root: Path, out: Path, cases_doc: dict, pricing: dict | None) -> Path:
+def write_report(runs_root: Path, out: Path, cases_doc: dict, pricing: dict | None,
+                 baseline_ids: list[str] | None = None) -> Path:
     rows = build_rows(runs_root, cases_doc, pricing)
+    baselines = sections.load_baselines(baseline_ids)
     out.mkdir(parents=True, exist_ok=True)
     write_data(rows, out)
+    if baselines:
+        sections.write_json(out / "baselines.json", [{k: v for k, v in b.items() if k != "traceback"} for b in baselines])
     path = out / "report.md"
-    text = render(rows, cases_doc, pricing)
+    text = render(rows, cases_doc, pricing, baselines)
     if (runs_root / "protocol.json").exists():
         from benchmark.protocol import read_lock, source_hashes
         locked = read_lock(runs_root)

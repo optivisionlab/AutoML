@@ -49,3 +49,25 @@ def read_trace(path: Path) -> list[dict]:
                 break
             raise
     return records
+
+
+def canonical_value(value) -> str:
+    """Giá trị ô theo một dạng chung cho mọi nguồn (CSV, PostgreSQL, MySQL, JSON): số -> 10 chữ số có nghĩa."""
+    if value is None:
+        return ""
+    try:
+        return format(float(value), ".10g")
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
+def content_fingerprint(records: list[dict]) -> str:
+    """
+    Hash nội dung không phụ thuộc thứ tự dòng hay thứ tự cột: mỗi dòng là các cặp cột=giá trị (cột sắp
+    theo tên), rồi sắp các dòng. So được dataset nhập từ database với tập con của file train.
+    """
+    import hashlib
+
+    lines = sorted("\x1f".join(f"{k}={canonical_value(row[k])}" for k in sorted(row)) for row in records)
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+

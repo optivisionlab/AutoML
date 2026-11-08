@@ -11,8 +11,12 @@ Chạy từ thư mục gốc repository:
     python benchmark/bench.py run --phase pilot        # chạy thử mỗi ca 1 lần
     python benchmark/bench.py lock                    # khóa plan chính thức
     python benchmark/bench.py run                      # chạy cả plan (full + ablation xen kẽ)
-    python benchmark/bench.py score                    # chấm nhóm C trên *_test.csv
+    python benchmark/bench.py score                    # chấm nhóm C, T, S trên *_test.csv
     python benchmark/bench.py report                   # -> report/<experiment>/<phase>/report.md
+    python benchmark/bench.py baselines --mode full    # baseline offline (Docker, không mạng, không LLM)
+    python benchmark/bench.py engine-baseline --id X   # engine HAutoML với config đúng (backend thật, không LLM)
+
+Lệnh tốn tiền LLM: chỉ `run`. `engine-baseline` và `score` dùng backend (không LLM).
 
 Chi tiết protocol: benchmark.md.
 """
@@ -167,8 +171,39 @@ def cmd_report(args) -> None:
     root = _runs_root(args.phase, cfg)
     locked = protocol.read_lock(root)
     out = ARTIFACTS / "report" / cfg["experiment_id"] / args.phase
-    path = write_report(root, out, locked["payload"]["cases"], locked["payload"]["pricing"])
+    baseline_ids = args.baselines.split(",") if args.baselines else list(cfg.get("baseline_ids") or [])
+    path = write_report(root, out, locked["payload"]["cases"], locked["payload"]["pricing"], baseline_ids=baseline_ids)
     print(f"Đã ghi {path}\n       {out / 'results.csv'}\n       {out / 'results.jsonl'}")
+
+
+def cmd_baselines(args) -> None:
+    """Baseline offline (sklearn/xgboost/optuna). Venv agent không có sklearn: mặc định chạy trong image backend."""
+    import importlib.util
+    import os
+    import subprocess
+
+    forwarded = ["--mode", args.mode] + sum(([f"--{k}", str(v)] for k, v in
+                                             (("id", args.id), ("methods", args.methods), ("datasets", args.datasets),
+                                              ("seeds", args.seeds), ("budget", args.budget)) if v is not None), [])
+    if args.no_docker:
+        if importlib.util.find_spec("sklearn") is None:
+            raise SystemExit("Interpreter này không có sklearn. Bỏ --no-docker để chạy trong image backend.")
+        from benchmark.baselines import main as run_baselines
+        run_baselines(forwarded)
+        return
+    command = ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}",
+               "-e", "HOME=/tmp", "-v", f"{_REPO}:/repo", "-w", "/repo", args.image,
+               "python", "-I", "benchmark/baselines.py", *forwarded]
+    print("Chạy trong container không mạng (cùng thư viện với engine HAutoML):\n  " + " ".join(command))
+    raise SystemExit(subprocess.run(command, check=False).returncode)
+
+
+def cmd_engine_baseline(args) -> None:
+    from benchmark.engine_baseline import run
+
+    cfg = selected_config(args)
+    root = run(cfg, load_json(CASES_PATH), args.id, args.datasets.split(",") if args.datasets else None, args.repeats)
+    print(f"Kết quả: {root}")
 
 
 def main() -> None:
@@ -196,15 +231,34 @@ def main() -> None:
     run.add_argument("--experiment")
     run.add_argument("--retry-invalid", action="store_true", help="Lưu trữ và chạy lại riêng lượt INVALID_FIXTURE; giữ nguyên FAIL")
 
-    for name, help_text in (("score", "Chấm nhóm C và T trên tập test"), ("report", "Xuất báo cáo")):
+    for name, help_text in (("score", "Chấm nhóm C, T, S trên tập test"), ("report", "Xuất báo cáo")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--phase", choices=("pilot", "official"), default="official")
         p.add_argument("--experiment")
+        if name == "report":
+            p.add_argument("--baselines", help="Mã đợt baseline để so sánh, cách nhau dấu phẩy (thư mục benchmark_artifacts/baselines/)")
+
+    base = sub.add_parser("baselines", help="Baseline offline trên split đã khoá (không LLM, không backend)")
+    base.add_argument("--mode", choices=("smoke", "full"), default="smoke")
+    base.add_argument("--id")
+    base.add_argument("--methods")
+    base.add_argument("--datasets")
+    base.add_argument("--seeds")
+    base.add_argument("--budget", type=float)
+    base.add_argument("--image", default="hautoml-backend-test:local", help="Image có sklearn/xgboost/optuna của backend")
+    base.add_argument("--no-docker", action="store_true", help="Chạy bằng interpreter hiện tại (phải có sklearn)")
+
+    engine = sub.add_parser("engine-baseline", help="Engine HAutoML với config đúng, gọi bằng code (backend thật, không LLM)")
+    engine.add_argument("--id", required=True, help="Mã đợt baseline (dùng chung thư mục với baseline offline được)")
+    engine.add_argument("--datasets", help="vd glass,crab,electricity; mặc định mọi dataset có ca train không ràng buộc")
+    engine.add_argument("--repeats", type=int, default=5)
+    engine.add_argument("--experiment")
 
     args = parser.parse_args()
     try:
         {"init": cmd_init, "prepare": cmd_prepare, "prepare-ts": cmd_prepare_ts, "preflight": cmd_preflight, "lock": cmd_lock,
-         "run": cmd_run, "score": cmd_score, "report": cmd_report}[args.command](args)
+         "run": cmd_run, "score": cmd_score, "report": cmd_report, "baselines": cmd_baselines,
+         "engine-baseline": cmd_engine_baseline}[args.command](args)
     except (ValueError, RuntimeError, OSError) as exc:
         raise SystemExit(str(exc))
 

@@ -1,0 +1,328 @@
+{
+ "experiment_id": "hautoml-v5-smoke",
+ "placeholders": {
+  "GLASS_ID": null,
+  "SHOP_ID": null,
+  "CONCRETE_ID": null,
+  "CRAB_ID": null,
+  "MISSING_ID": null,
+  "GLASS_JOB": null,
+  "INACTIVE_JOB": null,
+  "ELEC_ID": null,
+  "WEATHER_ID": null,
+  "PG_CONN_ID": null,
+  "MYSQL_CONN_ID": null
+ },
+ "connection_fixtures": {
+  "PG_CONN_ID": {
+   "db_type": "postgres",
+   "database": "datasets",
+   "tables": [
+    "concrete_train",
+    "crab_train",
+    "electricity_train",
+    "glass_train",
+    "shopping_train",
+    "weather_co2_train"
+   ]
+  },
+  "MYSQL_CONN_ID": {
+   "db_type": "mysql",
+   "database": "datasets",
+   "tables": [
+    "concrete_train",
+    "crab_train",
+    "electricity_train",
+    "glass_train",
+    "shopping_train",
+    "weather_co2_train"
+   ]
+  }
+ },
+ "running_job_fixture": {
+  "dataset": "SHOP_ID",
+  "target": "Revenue",
+  "features": [
+   "Administrative",
+   "Administrative_Duration",
+   "Informational",
+   "Informational_Duration",
+   "ProductRelated",
+   "ProductRelated_Duration",
+   "BounceRates",
+   "ExitRates",
+   "PageValues",
+   "SpecialDay"
+  ],
+  "metric": "f1_macro",
+  "problem_type": "classification",
+  "search_algorithm": "random_search",
+  "max_time": 300
+ },
+ "predict_rows": {
+  "glass": [
+   {
+    "RI": 1.52101,
+    "Na": 13.64,
+    "Mg": 4.49,
+    "Al": 1.1,
+    "Si": 71.78,
+    "K": 0.06,
+    "Ca": 8.75,
+    "Ba": 0.0,
+    "Fe": 0.0
+   }
+  ],
+  "shopping": [
+   {
+    "Administrative": 0,
+    "Administrative_Duration": 0,
+    "Informational": 0,
+    "Informational_Duration": 0,
+    "ProductRelated": 1,
+    "ProductRelated_Duration": 0,
+    "BounceRates": 0.2,
+    "ExitRates": 0.2,
+    "PageValues": 0,
+    "SpecialDay": 0
+   }
+  ],
+  "concrete": [
+   {
+    "cement": 540.0,
+    "blast_furnace_slag": 0.0,
+    "fly_ash": 0.0,
+    "water": 162.0,
+    "superplasticizer": 2.5,
+    "coarse_aggregate": 1040.0,
+    "fine_aggregate": 676.0,
+    "age": 28
+   }
+  ],
+  "crab": [
+   {
+    "Length": 1.5,
+    "Diameter": 1.2,
+    "Height": 0.4,
+    "Weight": 30.0,
+    "Shucked_Weight": 12.0,
+    "Viscera_Weight": 6.0,
+    "Shell_Weight": 9.0,
+    "Sex_F": 0,
+    "Sex_I": 0,
+    "Sex_M": 1
+   }
+  ],
+  "electricity": [
+   {
+    "date": "2013-09-27 00:00:00"
+   },
+   {
+    "date": "2013-09-27 01:00:00"
+   },
+   {
+    "date": "2013-09-27 02:00:00"
+   },
+   {
+    "date": "2013-09-27 03:00:00"
+   },
+   {
+    "date": "2013-09-27 04:00:00"
+   },
+   {
+    "date": "2013-09-27 05:00:00"
+   },
+   {
+    "date": "2013-09-27 06:00:00"
+   },
+   {
+    "date": "2013-09-27 07:00:00"
+   },
+   {
+    "date": "2013-09-27 08:00:00"
+   },
+   {
+    "date": "2013-09-27 09:00:00"
+   },
+   {
+    "date": "2013-09-27 10:00:00"
+   },
+   {
+    "date": "2013-09-27 11:00:00"
+   },
+   {
+    "date": "2013-09-27 12:00:00"
+   },
+   {
+    "date": "2013-09-27 13:00:00"
+   },
+   {
+    "date": "2013-09-27 14:00:00"
+   },
+   {
+    "date": "2013-09-27 15:00:00"
+   },
+   {
+    "date": "2013-09-27 16:00:00"
+   },
+   {
+    "date": "2013-09-27 17:00:00"
+   },
+   {
+    "date": "2013-09-27 18:00:00"
+   },
+   {
+    "date": "2013-09-27 19:00:00"
+   },
+   {
+    "date": "2013-09-27 20:00:00"
+   },
+   {
+    "date": "2013-09-27 21:00:00"
+   },
+   {
+    "date": "2013-09-27 22:00:00"
+   },
+   {
+    "date": "2013-09-27 23:00:00"
+   }
+  ],
+  "weather": [
+   {
+    "date": "2020-12-28 00:00:00"
+   },
+   {
+    "date": "2020-12-28 01:00:00"
+   },
+   {
+    "date": "2020-12-28 02:00:00"
+   },
+   {
+    "date": "2020-12-28 03:00:00"
+   },
+   {
+    "date": "2020-12-28 04:00:00"
+   },
+   {
+    "date": "2020-12-28 05:00:00"
+   },
+   {
+    "date": "2020-12-28 06:00:00"
+   },
+   {
+    "date": "2020-12-28 07:00:00"
+   },
+   {
+    "date": "2020-12-28 08:00:00"
+   },
+   {
+    "date": "2020-12-28 09:00:00"
+   },
+   {
+    "date": "2020-12-28 10:00:00"
+   },
+   {
+    "date": "2020-12-28 11:00:00"
+   },
+   {
+    "date": "2020-12-28 12:00:00"
+   },
+   {
+    "date": "2020-12-28 13:00:00"
+   },
+   {
+    "date": "2020-12-28 14:00:00"
+   },
+   {
+    "date": "2020-12-28 15:00:00"
+   },
+   {
+    "date": "2020-12-28 16:00:00"
+   },
+   {
+    "date": "2020-12-28 17:00:00"
+   },
+   {
+    "date": "2020-12-28 18:00:00"
+   },
+   {
+    "date": "2020-12-28 19:00:00"
+   },
+   {
+    "date": "2020-12-28 20:00:00"
+   },
+   {
+    "date": "2020-12-28 21:00:00"
+   },
+   {
+    "date": "2020-12-28 22:00:00"
+   },
+   {
+    "date": "2020-12-28 23:00:00"
+   }
+  ],
+  "crab_pg": [
+   {
+    "length": 1.5,
+    "diameter": 1.2,
+    "height": 0.4,
+    "weight": 30.0,
+    "shucked_weight": 12.0,
+    "viscera_weight": 6.0,
+    "shell_weight": 9.0,
+    "sex_f": 0,
+    "sex_i": 0,
+    "sex_m": 1
+   }
+  ]
+ },
+ "test_sets": {
+  "glass": "benchmark_artifacts/datasets/glass_test.csv",
+  "shopping": "benchmark_artifacts/datasets/shopping_test.csv",
+  "concrete": "benchmark_artifacts/datasets/concrete_test.csv",
+  "crab": "benchmark_artifacts/datasets/crab_test.csv",
+  "electricity": "benchmark_artifacts/datasets/timeseries/electricity_MT_301_2013_hourly_test.csv",
+  "weather": "benchmark_artifacts/datasets/timeseries/weather_jena_co2_hourly_test.csv"
+ },
+ "provider": null,
+ "model": null,
+ "repeats": 1,
+ "cases_subset": [
+  "A02",
+  "B01",
+  "C01",
+  "D02",
+  "S01",
+  "S05",
+  "T01"
+ ],
+ "max_wait_seconds": 600,
+ "max_continuations": 2,
+ "cleanup_imported_datasets": true,
+ "ablation": {
+  "variants": [
+   "single-agent",
+   "no-prompt-agent",
+   "no-data-agent",
+   "no-validate",
+   "no-verify"
+  ],
+  "cases": [
+   "A02",
+   "B01",
+   "B03",
+   "B04",
+   "B05",
+   "C01",
+   "C03",
+   "C05",
+   "C07",
+   "C08",
+   "F01",
+   "F03",
+   "S05"
+  ],
+  "repeats": 3,
+  "enabled": false
+ }
+}

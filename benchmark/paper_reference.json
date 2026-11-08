@@ -1,0 +1,72 @@
+{
+ "source": "Trirat, Jeong, Hwang. AutoML-Agent: A Multi-Agent LLM Framework for Full-Pipeline AutoML. ICML 2025 (PMLR 267). File: 8647_AutoML_Agent_A_Multi_Agen.pdf",
+ "extracted": "2026-11-08, chép tay từ Bảng 6 (SR), 7 (NPS), 8 (CS), 11 (thời gian, chi phí), Phụ lục F; mean (±std) của 5 lần chạy.",
+ "backbone": "GPT-4o (gpt-4o-2024-05-13) cho mọi agent, Prompt Agent là Mixtral-8x7B đã instruction-tune.",
+ "sr_scale": {
+  "constraint_free": {"0.0": "code không chạy", "0.5": "có model chạy được", "1.0": "có model + endpoint triển khai (Gradio)"},
+  "constraint_aware": {"0.0": "code không chạy", "0.25": "có model chạy được", "0.5": "có model + endpoint", "0.75": "đạt một phần ràng buộc", "1.0": "đạt mọi ràng buộc"}
+ },
+ "nps": "Metric càng cao càng tốt giữ nguyên (accuracy, F1); metric sai số s: NPS = 1/(1+s). Hồi quy bảng và time series dùng RMSLE.",
+ "datasets": {
+  "crab": {
+   "task": "Tabular Regression (RMSLE)",
+   "their_data": "Crab Age của Kaggle Playground (bản của DS-Agent): 53,316 train / 13,329 valid / 66,646 test, 8 feature",
+   "our_data": "Crab Age sidhus/crab-age-prediction (3,893 dòng, Sex one-hot thành 3 cột); split feature-group-v1 3,114/779",
+   "constraint_free": {
+    "AutoML-Agent": {"sr": [1.000, 0.000], "nps": [0.859, 0.003], "cs": [0.929, 0.001]},
+    "AutoGluon": {"nps": [0.875, 0.000]},
+    "Human Models": {"nps": [0.328, 0.000]},
+    "DS-Agent": {"sr": [0.000, 0.000], "nps": [0.000, 0.000], "cs": [0.000, 0.000]},
+    "GPT-4": {"sr": [0.400, 0.548], "nps": [0.328, 0.450], "cs": [0.364, 0.499]}
+   },
+   "constraint_aware": {
+    "AutoML-Agent": {"sr": [1.000, 0.000], "nps": [0.861, 0.002], "cs": [0.930, 0.001]},
+    "constraint_text": "training time không quá 30 phút và dự đoán test trong 5 giây"
+   }
+  },
+  "weather": {
+   "task": "Time-Series Forecasting (RMSLE)",
+   "their_data": "Weather (Time-Series-Library): 21 biến, 10 phút/bước, INPUT_SEQ_LEN=96, PRED_SEQ_LEN=96 (16 giờ), đa biến",
+   "our_data": "Cùng trạm MPI Jena 2020, chỉ CO2 (đơn biến), gộp theo giờ; 96 bước = 96 giờ; split time-holdout-v1",
+   "constraint_free": {
+    "AutoML-Agent": {"sr": [1.000, 0.000], "nps": [0.995, 0.003], "cs": [0.998, 0.002]},
+    "AutoGluon": {"nps": [0.992, 0.000]},
+    "Human Models": {"nps": [0.970, 0.000]}
+   },
+   "constraint_aware": {
+    "AutoML-Agent": {"sr": [0.900, 0.224], "nps": [0.982, 0.028], "cs": [0.941, 0.126]},
+    "constraint_text": "RMSLE < 0.05"
+   }
+  },
+  "electricity": {
+   "task": "Time-Series Forecasting (RMSLE)",
+   "their_data": "Electricity (Time-Series-Library): 321 khách hàng, theo giờ, PRED_SEQ_LEN=96, đa biến",
+   "our_data": "Cùng nguồn UCI 321, một khách hàng MT_301 năm 2013 (đơn biến), theo giờ; 96 bước; split time-holdout-v1",
+   "constraint_free": {
+    "AutoML-Agent": {"sr": [1.000, 0.000], "nps": [0.937, 0.093], "cs": [0.969, 0.047]},
+    "AutoGluon": {"nps": [0.908, 0.002]},
+    "Human Models": {"nps": [0.916, 0.005]}
+   },
+   "constraint_aware": {
+    "AutoML-Agent": {"sr": [1.000, 0.000], "nps": [0.978, 0.001], "cs": [0.989, 0.001]},
+    "constraint_text": "RMSLE < 0.1 và training không quá 1 giờ trên GPU"
+   }
+  }
+ },
+ "averages_all_14_datasets": {
+  "constraint_free": {"AutoML-Agent": {"sr": 1.000, "nps": 0.804, "cs": 0.902}},
+  "constraint_aware": {"AutoML-Agent": {"sr": 0.871, "nps": 0.810, "cs": 0.841}}
+ },
+ "cost_per_run": {
+  "constraint_free": {"seconds": 538.25, "usd": 0.27},
+  "constraint_aware": {"seconds": 512.35, "usd": 0.32},
+  "note": "Thời gian tạo code cuối cùng của một lượt, gồm lập kế hoạch có truy xuất (≈185 s); KHÔNG gồm huấn luyện/chạy code. Giá GPT-4o."
+ },
+ "protocol_differences": [
+  "AutoML-Agent sinh code Python rồi chạy; HAutoML gọi engine AutoML có sẵn qua API - SR của HAutoML đo việc agent cấu hình, huấn luyện, triển khai và gọi endpoint, không đo khả năng viết code.",
+  "Dữ liệu chỉ trùng nguồn ở Crab (khác bản và cỡ), Weather và Electricity (đơn biến theo giờ thay cho đa biến): không so trực tiếp con số NPS giữa hai bài như cùng một bài toán.",
+  "Bài báo báo mean ± std trên 5 lần chạy, không có khoảng tin cậy hay kiểm định; ở đây báo thêm CI 95% và n.",
+  "Thời gian của bài báo không gồm huấn luyện; thời gian agent của HAutoML (agent_seconds) cũng không gồm chờ job, end-to-end thì gồm.",
+  "Backbone LLM khác nhau (bài báo: GPT-4o); chi phí phụ thuộc bảng giá của provider dùng khi chạy."
+ ]
+}
