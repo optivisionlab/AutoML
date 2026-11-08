@@ -4,8 +4,9 @@ Chat nhiều lượt với hệ thống agent HAutoML.
     cd src/backend
     python -m agent.chat
 
-Người dùng nói chuyện với Agent Manager. Manager uỷ thác cho 4 sub-agent
-(Prompt / Data / Model / Operation - xem team.py) rồi tổng hợp câu trả lời.
+Người dùng nói chuyện với Agent Manager. Manager uỷ thác cho 5 sub-agent
+(Prompt / Data / Model / Operation / SQL - xem team.py) rồi tổng hợp câu trả lời.
+Hành động thật (huấn luyện, bật / tắt model) chỉ chạy khi người dùng xác nhận ngay trong terminal.
 Terminal hiện từng bước: agent nào được giao việc gì, nó gọi tool nào.
 
 Khác `agent.cli`: cli chạy một lượt rồi thoát. Ở đây một phiên giữ nguyên lịch
@@ -25,6 +26,7 @@ import argparse
 import json
 import os
 import threading
+import time
 import uuid
 
 # Local modules
@@ -32,6 +34,8 @@ from agent import providers, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     MAX_STEPS,
     TurnBudgetExceeded,
+    TurnCancelled,
+    TurnDeadlineExceeded,
     describe_error,
     _new_usage,
     _print_usage,
@@ -47,6 +51,22 @@ from agent.watcher import JobWatcher
 
 # Ranh giới giữa câu tóm tắt và JSON chi tiết trong một dòng sự kiện job.
 _EVENT_DETAIL = " Chi tiết: "
+
+
+DEFAULT_TURN_DEADLINE_SECONDS = 600
+
+
+def turn_deadline_seconds() -> float:
+    """
+    AGENT_TURN_DEADLINE_SECONDS (mặc định 600): thời gian tối đa của MỘT lượt chat (audit AG-03). Lượt bình thường
+    mất vài chục giây; provider treo / lặp thì lượt dừng đúng hạn, nhả phiên và thread thay vì giữ hàng chục phút.
+    """
+    raw = os.getenv("AGENT_TURN_DEADLINE_SECONDS", "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_TURN_DEADLINE_SECONDS
+    except ValueError:
+        return DEFAULT_TURN_DEADLINE_SECONDS
+    return value if value > 0 else DEFAULT_TURN_DEADLINE_SECONDS
 
 
 def _full_turns() -> int:
@@ -126,9 +146,13 @@ class ChatSession:
         self._pending_lock = threading.Lock()
         # turn_id của lượt đang chạy (None khi rảnh) - /agent/events báo trong `hello`.
         self.current_turn_id: str | None = None
-        # Có tin người dùng đã nhận (lượt đang xếp hàng / chuẩn bị) mà CHƯA vào self.messages: nút
-        # Huỷ tự kích hoạt bấm lúc này phải coi tin đó là cũ hơn lần huỷ (team.record_auto_activate_change).
-        self.incoming_user_message = False
+        # Hạn của lượt đang chạy (time.monotonic) và cờ "người dùng bấm Dừng" (audit AG-03). Cờ chỉ xoá khi lượt
+        # KẾT THÚC: bấm Dừng lúc lượt còn xếp hàng thì lượt đó dừng ngay ở bước đầu.
+        self._turn_deadline: float | None = None
+        self.cancel_requested = threading.Event()
+        # Có lượt chat đang chạy hoặc đang xếp hàng (server đặt lúc nhận lượt, xoá khi lượt xong / không bao giờ
+        # chạy): nút Dừng chỉ có hiệu lực lúc này - turn_lock còn bị giữ bởi xác nhận / reset nữa.
+        self.turn_pending = False
 
         # Gom các lượt chat cùng phiên thành một Session trên Langfuse. server.py
         # đặt lại bằng session_id của nó để hai bên khớp nhau.
@@ -216,7 +240,6 @@ class ChatSession:
             elif role == "assistant" and not message.get("tool_calls"):
                 compacted.append({"role": "assistant", "content": _clip(message.get("content") or "(không có nội dung)")})
         starts_old = [i for i, m in enumerate(compacted) if m["role"] == "user"]
-        shift = 0
         if len(starts_old) > _MAX_OLD_TURNS:
             dropped = len(starts_old) - _MAX_OLD_TURNS
             compacted = [
@@ -224,16 +247,7 @@ class ChatSession:
                 {"role": "assistant", "content": "(Đã ghi nhận.)"},
                 *compacted[starts_old[-_MAX_OLD_TURNS]:],
             ]
-            shift = dropped - 1  # bỏ `dropped` tin người dùng, thêm 1 tin ghi chú
-        team = getattr(self, "team", None)
-        lock = getattr(team, "_auto_lock", None)
-        # Đổi lịch sử và dời mốc huỷ tự kích hoạt (đếm theo số tin người dùng) trong CÙNG khoá với nút Huỷ.
-        if lock is not None:
-            with lock:
-                self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
-                team.rebase_auto_marks(shift)
-        else:
-            self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
+        self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
 
     def recent_user_messages(self, limit: int) -> list[str]:
         """
@@ -280,6 +294,14 @@ class ChatSession:
                     if verification["passed"]
                     else "KHÔNG đạt ràng buộc người dùng đặt ra"
                 )
+                if verification["passed"] and summary.get("score_source") != "holdout":
+                    # Audit AG-02: "đạt" theo điểm CV không phải cam kết hiệu năng thật.
+                    judged += (
+                        " - nhưng THEO ĐIỂM CROSS-VALIDATION trên chính dữ liệu dùng để chọn model, có thể lạc quan; "
+                        "đừng nói như cam kết hiệu năng thật"
+                        if summary.get("score_source") == "cv" else
+                        " - nhưng không rõ điểm có đo trên tập kiểm tra riêng không, có thể lạc quan"
+                    )
                 if unchecked:
                     judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
             # Chỉ có khi người dùng dặn "train xong kích hoạt luôn" (watcher tự kích hoạt).
@@ -290,9 +312,12 @@ class ChatSession:
                 activated = " Model ĐÃ được tự kích hoạt theo yêu cầu của người dùng, dự đoán được ngay."
             else:
                 activated = f" Model CHƯA được kích hoạt: {activation.get('error')}"
+                if activation.get("needs_confirmation") and self.team.propose_activation_after_job(summary):
+                    activated += " Đã hiện thẻ xác nhận KÍCH HOẠT cho người dùng - họ bấm thì model mới được bật."
+            source = f" Nguồn điểm: {summary.get('score_note')}" if summary.get("score_note") else ""
             text = (
                 f"Job {job_id} đã huấn luyện xong: model tốt nhất {summary.get('best_model')}, "
-                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated} "
+                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated}{source} "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
                 f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
             )
@@ -305,8 +330,38 @@ class ChatSession:
                 )
         self.add_event(text)
 
+    def time_left(self) -> float | None:
+        """Số giây còn lại của lượt đang chạy (None = không trong lượt nào)."""
+        return None if self._turn_deadline is None else self._turn_deadline - time.monotonic()
+
+    def request_cancel(self, turn_id: str | None = None) -> bool:
+        """
+        Người dùng bấm Dừng: lượt đang chạy (hoặc đang xếp hàng) dừng ở ranh giới bước kế tiếp. False nếu không có
+        lượt nào, hoặc turn_id không khớp lượt đang chạy (cờ huỷ cũ không được giết lượt SAU).
+        """
+        if not self.turn_pending:
+            return False
+        if turn_id and self.current_turn_id and turn_id != self.current_turn_id:
+            return False
+        self.cancel_requested.set()
+        return True
+
+    def end_turn(self) -> None:
+        """Lượt kết thúc (hay không bao giờ chạy): thôi nhận nút Dừng, xoá cờ huỷ."""
+        self.turn_pending = False
+        self.current_turn_id = None
+        self._turn_deadline = None
+        self.cancel_requested.clear()
+
     def check_budget(self, agent: str) -> None:
-        """Gọi trước MỖI lời gọi LLM trong lượt, của mọi agent."""
+        """Gọi trước MỖI lời gọi LLM trong lượt, của mọi agent: trần token, hạn lượt, và nút Dừng."""
+        if self.cancel_requested.is_set():
+            raise TurnCancelled(f"người dùng đã bấm Dừng (trước khi {title(agent)} gọi LLM)")
+        left = self.time_left()
+        if left is not None and left <= 0:
+            raise TurnDeadlineExceeded(
+                f"lượt chat chạy quá {int(turn_deadline_seconds())} giây (dừng trước khi {title(agent)} gọi LLM)"
+            )
         spent = self.usage["total_tokens"] - self._turn_start
         if spent >= self.turn_budget:
             raise TurnBudgetExceeded(
@@ -317,15 +372,12 @@ class ChatSession:
     def send(self, user_message: str, turn_id: str | None = None) -> str:
         """Như _send; giữ turn_id của lượt ĐANG chạy để trang vừa tải lại còn chờ được kết quả."""
         self.current_turn_id = turn_id
-        self.incoming_user_message = True
+        self.turn_pending = True
+        self._turn_deadline = time.monotonic() + turn_deadline_seconds()
         try:
             return self._send(user_message, turn_id)
         finally:
-            self.current_turn_id = None
-            if self.incoming_user_message:
-                # Hỏng trước khi tin vào lịch sử: mốc huỷ đã tính trước tin đó thì kẹp lại.
-                self.incoming_user_message = False
-                self.team.clamp_auto_marks()
+            self.end_turn()
 
     def _send(self, user_message: str, turn_id: str | None = None) -> str:
         """
@@ -356,10 +408,7 @@ class ChatSession:
         jobs_before = set(self.team.handoff.jobs)
         self.team.begin_turn()
         self._turn_start = self.usage["total_tokens"]
-        # Cùng khoá với việc ghi mốc huỷ: tin vào lịch sử và cờ "đang tới" đổi cùng lúc.
-        with self.team._auto_lock:
-            self.messages.append({"role": "user", "content": user_message})
-            self.incoming_user_message = False
+        self.messages.append({"role": "user", "content": user_message})
         self.events.emit("turn_start", agent=MANAGER, turn_id=turn_id)
 
         # Gộp mọi bước của lượt này - kể cả của sub-agent - vào một trace, để
@@ -380,6 +429,7 @@ class ChatSession:
                     emit=self.events.emit,
                     max_steps=MAX_STEPS,
                     check_budget=self.check_budget,
+                    time_left=self.time_left,
                 )
                 if answer is None:
                     answer = (
@@ -389,14 +439,23 @@ class ChatSession:
                     self.messages.append({"role": "assistant", "content": answer})
                 tracing.end(observation, output=answer)
         except TurnBudgetExceeded as error:
-            # Lịch sử vẫn hợp lệ (dừng ở đầu vòng lặp), chỉ cần thêm câu trả lời.
-            # Việc sub-agent đã làm xong (vd job đã tạo) vẫn giữ nguyên.
-            answer = (
-                "Yêu cầu này tốn quá nhiều xử lý nên tôi đã dừng lại "
-                f"({error}). Bạn thử hỏi cụ thể hơn, hoặc chia thành từng bước."
-            )
+            # Lịch sử vẫn hợp lệ (dừng ở đầu vòng lặp / trước lời gọi LLM), chỉ cần thêm câu trả lời.
+            # Việc sub-agent đã làm xong (vd thẻ xác nhận đã tạo) vẫn giữ nguyên.
+            if isinstance(error, TurnCancelled):
+                answer = "Đã dừng theo yêu cầu của bạn. Những việc đã làm xong trước lúc dừng vẫn giữ nguyên."
+                self.events.emit("turn_cancelled", agent=MANAGER, error=str(error))
+            elif isinstance(error, TurnDeadlineExceeded):
+                answer = (
+                    f"Yêu cầu này chạy quá lâu nên tôi đã dừng lại ({error}). Bạn thử lại sau, hoặc chia thành từng bước."
+                )
+                self.events.emit("turn_budget_exceeded", agent=MANAGER, error=str(error))
+            else:
+                answer = (
+                    "Yêu cầu này tốn quá nhiều xử lý nên tôi đã dừng lại "
+                    f"({error}). Bạn thử hỏi cụ thể hơn, hoặc chia thành từng bước."
+                )
+                self.events.emit("turn_budget_exceeded", agent=MANAGER, error=str(error))
             self.messages.append({"role": "assistant", "content": answer})
-            self.events.emit("turn_budget_exceeded", agent=MANAGER, error=str(error))
         except Exception as error:
             # Bỏ dở lượt này khỏi lịch sử, kể cả tin của người dùng: để lại thì
             # lượt sau có hai tin "user" liền nhau. Sự kiện chưa kịp đọc thì
@@ -453,6 +512,35 @@ def _print_event(event: dict) -> None:
         print(f"  [job] {kind}: {json.dumps(details, ensure_ascii=False, default=str)[:200]}")
 
 
+def _ask_pending(session: ChatSession) -> None:
+    """
+    Thẻ xác nhận trong terminal: hành động thật (huấn luyện, bật / tắt model, bật tự kích hoạt) chỉ chạy khi
+    người dùng gõ đúng lựa chọn ở đây - giống nút Xác nhận trên web, LLM không tự làm được.
+    """
+    from agent.actions import ActionError
+    from agent.team import _describe_action
+
+    for action in session.team.actions.pending():
+        offers_auto = bool((action.get("offers") or {}).get("auto_activate"))
+        print(f"  [xác nhận] {_describe_action(action)}")
+        print(f"    {json.dumps(action.get('summary') or {}, ensure_ascii=False, default=str)[:400]}")
+        options = "c = xác nhận" + (", a = xác nhận + tự kích hoạt khi xong" if offers_auto else "") + ", n = từ chối"
+        try:
+            choice = input(f"    ({options}, Enter = để sau) > ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        try:
+            if choice in {"c", "a"} and (choice == "c" or offers_auto):
+                result = session.team.confirm_action(action["action_id"], action["token"], auto_activate=choice == "a")
+                print(f"    -> {'đã thực hiện' if result.get('ok') else 'không thực hiện được: ' + str(result.get('error'))}\n")
+            elif choice == "n":
+                session.team.reject_action(action["action_id"], action["token"])
+                print("    -> đã từ chối\n")
+        except ActionError as error:
+            print(f"    -> {error}\n")
+
+
 def _print_tools() -> None:
     for agent in (MANAGER, *SUBAGENTS):
         skill = skills_module.get_skill(agent)
@@ -468,7 +556,7 @@ def _print_banner(session: ChatSession) -> None:
     print("=" * 66)
     print(f"  Model  : {session.config.name} / {session.config.model}")
     print(f"  Backend: {session.api.base_url}")
-    print("  Agent  : Manager → Prompt · Data · Model · Operation")
+    print("  Agent  : Manager → Prompt · Data · Model · Operation · SQL")
     if providers.tracing_enabled():
         print("  Langfuse: đang theo dõi chi phí")
     print()
@@ -540,6 +628,7 @@ def main() -> None:
                 continue
 
             print(f"\nAgent > {answer}\n")
+            _ask_pending(session)
     finally:
         if session.usage["calls"]:
             print("\nTổng cả phiên:")

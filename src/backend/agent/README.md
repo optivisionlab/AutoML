@@ -8,7 +8,8 @@ Sơ đồ: `docs/hautoml-multi-agent-detailed.drawio`, trang **1 · Tổng quan*
 
 ## Kiến trúc
 
-Agent Manager nói chuyện với người dùng và uỷ thác cho 4 sub-agent chuyên trách.
+Agent Manager nói chuyện với người dùng và uỷ thác cho 5 sub-agent chuyên trách (Prompt, Data, Model,
+Operation, SQL).
 Mỗi agent là **một vòng LLM riêng**: system prompt riêng (SKILL.md của nó), tập
 tool riêng, và chỉ Manager thấy lịch sử hội thoại.
 
@@ -44,7 +45,8 @@ agent/
 ├── cli.py             ← chạy một lượt rồi thoát
 │      │
 │      ▼
-├── team.py            ← uỷ thác cho 4 sub-agent, Handoff giữa các agent
+├── team.py            ← uỷ thác cho 5 sub-agent, Handoff giữa các agent
+├── actions.py         ← hành động thật chờ người dùng bấm xác nhận (PendingAction)
 ├── agent_openai.py    ← sổ đăng ký tool + vòng tool-calling dùng chung
 ├── watcher.py         ← theo dõi job nền, kiểm định kết quả theo R
 ├── events.py          ← kênh sự kiện (tiến độ, job) → SSE
@@ -140,7 +142,11 @@ thật không bị commit.
 | `AGENT_CORS_ORIGINS` | Website được gọi agent từ trình duyệt, cách nhau dấu phẩy. Mặc định `http://localhost:3000` |
 | `AGENT_TURN_TOKEN_BUDGET` | Trần token cho một lượt chat (Manager + sub-agent cộng lại), mặc định 150000. Vượt trần thì agent dừng và báo người dùng |
 | `AGENT_JOB_POLL_SECONDS` | Chu kỳ watcher hỏi trạng thái job, mặc định 20 giây |
-| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lời gọi LLM (giây), mặc định 300. SDK vẫn tự thử lại lỗi tạm thời |
+| `AGENT_LLM_TIMEOUT` | Thời gian chờ tối đa của MỘT lần gọi LLM (giây), mặc định 300 - và không vượt thời gian còn lại của lượt |
+| `AGENT_TURN_DEADLINE_SECONDS` | Thời gian tối đa của MỘT lượt chat, mặc định 600. Quá hạn thì lượt dừng ở bước kế tiếp và báo người dùng (không giữ phiên / thread hàng chục phút khi provider treo) |
+| `AGENT_LLM_MAX_RETRIES` | Số lần thử lại lỗi LLM tạm thời (mạng, timeout, 408/409/429/5xx), mặc định 5; chờ theo `Retry-After` / luỹ thừa, trong hạn của lượt. SDK không tự thử lại (`max_retries=0`) |
+| `AGENT_ACTION_TTL_SECONDS` | Hạn của thẻ xác nhận hành động (huấn luyện, bật / tắt model, bật tự kích hoạt), mặc định 1800 |
+| `AGENT_TEMPERATURE` | Tuỳ chọn, 0-2: gửi kèm mọi lời gọi LLM để kết quả ổn định giữa các lần chạy. Không đặt thì theo mặc định của provider |
 | `AGENT_HISTORY_FULL_TURNS` | Số lượt chat gần nhất Manager giữ đủ các bước tool, mặc định 4. Lượt cũ hơn chỉ còn câu hỏi và câu trả lời cuối, để phiên dài không vượt trần token |
 | `AGENT_MAX_CONCURRENT_TURNS` | Số lượt chat chạy song song tối đa trên server (pool thread riêng), mặc định 32. Lượt vượt mức xếp hàng chờ |
 | `HAUTOML_SYSTEM_MODELS_DIR` | Thư mục chứa `classification.yml` / `regression.yml` / `time_series.yml` khi agent chạy tách khỏi backend. Mặc định tự tìm trong `src/backend/assets/` (rồi `assets/system_models/` của cấu trúc cũ) |
@@ -261,11 +267,12 @@ python -m agent.cli --provider google "..."
 | Model Agent | `list_metrics` | Đọc `metric_list` trong yml (backend v1 không có endpoint metric) |
 | | `list_models` | Đọc `assets/classification.yml` / `regression.yml` / `time_series.yml` qua `scripts/model_catalog.py` |
 | | `submit_config` | Dựng config + `validate_config.py`. Hợp lệ → `config_id`. Chặn cột mục tiêu người dùng chưa chọn khi có nhiều ứng viên. **Không train** |
-| Operation Agent | `start_training` | `POST /datasets/{id}/training`, chỉ nhận `config_id`. Tự bật watcher |
+| Operation Agent | `start_training` | Chỉ nhận `config_id`; tạo **thẻ xác nhận** - `POST /datasets/{id}/training` chạy khi người dùng bấm Xác nhận. Tự bật watcher |
 | | `watch_job` | Bật theo dõi nền cho job đang chạy |
 | | `list_my_jobs` | `GET /inference/jobs`, chỉ job của chính người dùng |
-| | `get_job_info` | Tìm trong `GET /inference/jobs` (không có endpoint xem một job) |
-| | `activate_model` | `PUT /inference/models/{id}/activation`, chỉ job của mình và đã xong |
+| | `get_job_info` | Bản ghi job tìm trong `GET /inference/jobs` (lọc job của mình); job xong thì kèm `score_source` đọc từ `GET /inference/jobs/{id}` |
+| | `set_auto_activate` | Tắt / siết điều kiện: ngay. Bật / nới điều kiện: thẻ xác nhận |
+| | `activate_model` | Thẻ xác nhận; bấm Xác nhận thì `PUT /inference/models/{id}/activation`. Chỉ job của mình và đã xong |
 | | `predict` | `POST /inference/models/{id}/predict`, tối đa 50 mẫu, soát đủ cột trước khi gửi |
 | Data + Model | `read_reference` | Đọc `skills/<tên>/references/*.md` |
 | SQL Agent | `list_database_connections` | `GET /database-connections` - chỉ id, tên, loại; không host / mật khẩu |
@@ -362,7 +369,9 @@ docker compose -f src/backend/tests/sql_sources/docker-compose.yml down -v
 | `POST /agent/events` | SSE sự kiện nền, mở đầu bằng `hello` (`last_seq` hiện tại) (`job_watch`, `job_status`, `job_done`, `job_failed`, `job_watch_timeout`, `job_watch_warning` / `job_watch_resumed`, `auto_activate_changed`, `turn_done` / `turn_failed`). Đóng sau ~55 giây bằng `reconnect`; frontend mở lại kèm token mới. `hello` / `reconnect` kèm `watching`, `auto_activate` và `auto_activate_constraints` (job -> điều kiện sẽ kiểm trước khi tự kích hoạt; rỗng = bất kể điểm), `job_watch` / `job_status` / `auto_activate_changed` cũng mang `auto_activate_constraints` |
 | `POST /agent/auto-activate` | Bật/tắt TỰ kích hoạt model khi một job đang chạy xong (`job_id`, `enabled`) - nút "Huỷ tự kích hoạt" trên thẻ job. Operation Agent có tool `set_auto_activate` cùng tác dụng khi người dùng đổi ý qua chat (bật kèm `constraints` = điều kiện người dùng nêu, được kiểm lúc job xong; phần trăm đổi sang tỉ lệ 0-1; điều kiện không kiểm được thì không bật và huỷ lời hứa đang bật; kết quả - kể cả khi lỗi - trả `checked_constraints`) |
 | `POST /agent/upload` | Tải dataset từ trang /agent (trang 4 của sơ đồ) |
-| `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi |
+| `POST /agent/confirm` | Người dùng bấm Xác nhận / Từ chối trên thẻ hành động: `action_id`, `token` (mã một lần, chỉ có trong sự kiện `action_pending`), `decision`, `auto_activate` (thẻ huấn luyện). Kiểm chủ phiên, mã, hạn, trạng thái rồi mới thực thi; agent đang trả lời thì 409 |
+| `POST /agent/cancel` | Nút Dừng: lượt đang chạy (hoặc đang xếp hàng) dừng trước lời gọi LLM kế tiếp, kết thúc bằng `turn_done` "Đã dừng theo yêu cầu" (`turn_cancelled`) |
+| `POST /agent/reset` | Xoá lịch sử, giữ đăng nhập và job đang theo dõi; thẻ xác nhận đang chờ hết hiệu lực |
 | `POST /agent/token` | Frontend gửi access token mới ngay khi NextAuth làm mới, kể cả giữa một lượt chat |
 
 SSE dùng POST thay vì `EventSource` để token nằm trong body, không lên URL.
@@ -385,17 +394,36 @@ khác (kể cả SSE) đứng chờ.
 | Toàn server | 200 phiên, lượt chờ ≤ 4 × số worker (503). Không bao giờ dọn phiên đang theo dõi job của người khác để nhường chỗ |
 | Upload | 8 upload xử lý cùng lúc (503), pool riêng 4 thread gọi backend; .xlsx giải nén ≤ 300 MB / 10.000 thành phần (chặn zip bomb, backend kiểm lại) |
 | ID do LLM truyền vào URL (dataset / kết nối / job) | chỉ `[A-Za-z0-9_-]{1,64}`, escape - không thoát sang endpoint khác bằng `../` |
-| Hành động thật cần người dùng nói ra | bật / tắt model (`activate_model`), tự kích hoạt, chạy lại đúng cấu hình đã chạy, cột mục tiêu khi có nhiều ứng viên. Dữ liệu (tên cột, ô, lỗi job) chỉ là dữ liệu - ngữ cảnh của sub-agent nằm ở tin user, không ở system prompt |
+| Hành động thật cần người dùng BẤM XÁC NHẬN | huấn luyện, bật / tắt model, bật (hay nới điều kiện) tự kích hoạt - xem dưới. Cột mục tiêu khi có nhiều ứng viên vẫn phải do người dùng nói ra. Dữ liệu (tên cột, ô, lỗi job) chỉ là dữ liệu - ngữ cảnh của sub-agent nằm ở tin user, không ở system prompt |
 | Context LLM | mỗi kết quả tool ≤ 40.000 ký tự; ô dữ liệu ≤ 200 ký tự; ≤ 8 tool / bước; lượt cũ ≤ 30, mỗi tin cũ ≤ 2.000 ký tự; sự kiện job ≤ 8.000 ký tự; provider không trả `usage` thì ước lượng token để trần lượt vẫn có hiệu lực |
 
-**Chốt ý định (train / bật / tắt model / chạy lại cấu hình trùng)** nhận ra yêu cầu của người dùng bằng
-từ khoá tiếng Việt / Anh trong 6 tin gần nhất (bỏ dòng `[Sự kiện]`), bắt thêm phủ định đứng sát ("đừng
-train", "không kích hoạt", "hủy kích hoạt"). Mục đích là chặn prompt injection - hành động chỉ do dữ liệu
-/ kết quả tool ra lệnh. Câu ghép nhiều mệnh đề và chọn job nào trong số job người dùng đã biết là việc của
-LLM. Cách nói lạ mà từ khoá không bắt được thì agent chỉ DỪNG và hỏi lại người dùng, không làm sai.
-Trả lời "Có" / "OK" một mình KHÔNG đủ: người dùng phải nói rõ hành động ("Kích hoạt model", "Train lại") -
-Manager được dặn gợi ý đúng câu xác nhận đó. Mỗi lời "chạy lại" chỉ cho MỘT lần chạy lại (phải mới hơn job
-trùng gần nhất; mốc này được dời theo khi lịch sử bị lược / lượt lỗi bị bỏ / reset).
+**Xác nhận có cấu trúc (audit AG-01, thay cho chốt ý định bằng regex từ khoá).** `start_training`,
+`activate_model` và `set_auto_activate(enabled=true)` không làm gì trên backend: code kiểm mọi điều kiện rồi tạo
+một `PendingAction` (`agent/actions.py`) và phát `action_pending` - frontend hiện thẻ dựng từ `summary` do CODE
+viết (dataset, target, metric, job, điểm, điều kiện...), không phải chữ LLM. Hành động chỉ chạy khi người dùng
+bấm Xác nhận (`POST /agent/confirm`) kèm `token` của thẻ; token chỉ đi ra frontend qua SSE, không bao giờ nằm
+trong kết quả tool, nên LLM - kể cả khi bị dữ liệu điều khiển - không tự xác nhận được. Thẻ dùng một lần, có hạn
+(`AGENT_ACTION_TTL_SECONDS`), đề nghị mới cùng việc thay thẻ cũ, và lúc thực thi team kiểm lại điều kiện (config
+đã chạy chưa, job còn của người dùng không...). Thẻ huấn luyện có nút riêng "huấn luyện + tự kích hoạt" khi yêu
+cầu có ý kích hoạt (mặc định KHÔNG tự kích hoạt); cấu hình giống hệt job đã chạy thì thẻ ghi rõ "chạy lại". Hướng
+an toàn vẫn làm ngay: huỷ tự kích hoạt, siết điều kiện của lời hứa đang chờ. `agent.chat` hỏi xác nhận ngay trong
+terminal; `agent.cli` (một lượt) không thực thi thẻ nào.
+
+**Tự kích hoạt và nguồn điểm (audit AG-02).** Khi job xong, watcher đọc `select_best.output.score_source` trong
+pipeline (`GET /inference/jobs/{id}`): `holdout` (dataset > 10.000 dòng có tập kiểm tra riêng), `cv` (điểm
+cross-validation trên chính dữ liệu dùng để chọn model - lạc quan), hoặc không rõ. Lời hứa CÓ điều kiện chỉ tự kích
+hoạt khi các điều kiện đạt trên điểm `holdout`; đạt theo điểm `cv` / không rõ thì không tự kích hoạt mà hiện thẻ
+xác nhận kích hoạt (kèm cảnh báo) cho người dùng quyết. Lời hứa không điều kiện ("train xong kích hoạt luôn") không
+phụ thuộc nguồn điểm. Sự kiện job xong và `get_job_info` luôn kèm `score_source` / `score_note`.
+
+**Hạn lượt và nút Dừng (audit AG-03).** Mỗi lượt có hạn `AGENT_TURN_DEADLINE_SECONDS`; mỗi lần gọi LLM bị kẹp theo
+thời gian còn lại, thử lại lỗi tạm thời trong hạn đó. `POST /agent/cancel` dừng lượt ở ranh giới bước kế tiếp.
+
+**Watcher (audit AG-05, AG-16).** Lần hỏi thường chỉ đọc pipeline của job (`GET /inference/jobs/{id}`, một
+request); danh sách job đầy đủ chỉ đọc lúc đầu, khi pipeline báo kết thúc / không đọc được, và mỗi
+`FULL_CHECK_EVERY` lần (huỷ job không cập nhật `pipeline.status`, chỉ bản ghi job). Endpoint pipeline cho admin
+đọc job của người khác nên chỉ gọi cho job đã được xác nhận là của người dùng. Hạn theo dõi tính từ lúc job rời
+trạng thái `queued`, trong trần tuyệt đối 26 giờ.
 
 **Giới hạn đã biết:** phiên, job đang theo dõi và lời hứa "train xong tự kích hoạt"
 chỉ nằm trong RAM của agent server. Server khởi động lại thì mất - job vẫn chạy trên
@@ -423,10 +451,10 @@ storage và tài khoản thật.
 
 | Backend v1 | Agent xử lý |
 |---|---|
-| Dataset chỉ có `dataType = "table"`, không ghi loại bài toán | `get_dataset_schema` lấy ứng viên target cho cả hai loại; loại bài toán suy từ cột mục tiêu (`tools.infer_problem_type`) hoặc lấy từ lời người dùng |
+| Dataset chỉ có `dataType = "table"`, không ghi loại bài toán (`get_dataset_info` cũng không có) | `get_dataset_schema` lấy ứng viên target cho cả hai loại; loại bài toán suy từ cột mục tiêu (`tools.infer_problem_type`) hoặc lấy từ lời người dùng |
 | Config train dùng `timeout`, không phải `max_time` | Agent vẫn gọi là `max_time`; đổi tên lúc gửi (`tools._backend_training_config`) |
 | Không có endpoint metric | Đọc `metric_list` trong yml, dự phòng bằng `tools.DEFAULT_METRICS` |
-| Không có endpoint xem một job | Tìm trong danh sách job |
+| `GET /inference/jobs/{id}` trả **pipeline JSON** (trạng thái từng bước, trial, `score_source`), KHÔNG phải bản ghi job (không có `best_score`, `activate`, chủ job); admin đọc được job của mọi người; huỷ job không cập nhật `pipeline.status` | Bản ghi job vẫn tìm trong danh sách job của người dùng; pipeline chỉ dùng cho job đã xác nhận là của người dùng - poll nhẹ của watcher và `score_source` |
 | Tài khoản admin nhận job của mọi người ở `GET /inference/jobs` | `tools._own_jobs` lọc theo `user.id` |
 | Mọi response bọc trong `{success, data, meta}` | `api_client` tự bóc và tự lật trang |
 

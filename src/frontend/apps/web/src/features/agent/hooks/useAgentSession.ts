@@ -21,6 +21,7 @@ import {
   type TurnTrace,
 } from "../lib/eventAdapter";
 import { OrphanTurns, isTurnEnd, turnEnd } from "../lib/orphanTurns";
+import { applyActionEvent, reconcileActions, type PendingActionView } from "../lib/actions";
 import type { AgentEvent, ChatReply, HealthInfo, UploadedDataset } from "../lib/events";
 
 // Cùng danh sách PROBLEM_TYPES của agent (src/backend/agent/tools.py).
@@ -34,6 +35,9 @@ export interface PendingUpload {
   name: string;
   dataType: ProblemType;
 }
+
+/** Kết quả bấm Xác nhận / Từ chối trên thẻ hành động - mã để dịch (Agent.action.errors.*). */
+export type ActionOutcome = "ok" | "busy" | "auth" | "gone" | "network" | "server";
 
 /** Lỗi hiển thị cho người dùng: mã để dịch (Agent.errors.*) + chi tiết từ server nếu có. */
 export interface AgentError {
@@ -132,6 +136,10 @@ export function useAgentSession(token: string, userKey: string) {
   const [restoring, setRestoring] = useState(false);
   const [liveTrace, setLiveTrace] = useState<TurnTrace | null>(null);
   const [jobs, setJobs] = useState<Record<string, JobView>>({});
+  // Thẻ xác nhận hành động thật (huấn luyện, bật / tắt model, bật tự kích hoạt) - audit AG-01.
+  const [pendingActions, setPendingActions] = useState<Record<string, PendingActionView>>({});
+  const actionsRef = useRef(pendingActions);
+  actionsRef.current = pendingActions;
   const [watching, setWatching] = useState<string[]>([]);
   const [stream, setStream] = useState<StreamState>("idle");
   const [health, setHealth] = useState<HealthState>({ state: "checking" });
@@ -144,6 +152,8 @@ export function useAgentSession(token: string, userKey: string) {
   const [probeEvents, setProbeEvents] = useState(false);
   // Đang chờ /agent/reset (xem reset): tính vào busy.
   const [resetting, setResetting] = useState(false);
+  // Đã bấm Dừng, chờ lượt kết thúc (audit AG-03).
+  const [stopping, setStopping] = useState(false);
   const resettingRef = useRef(false);
 
   const nextId = useRef(1);
@@ -189,7 +199,9 @@ export function useAgentSession(token: string, userKey: string) {
   const sessionRef = useRef<string | null>(null);
 
   const uploading = uploadProgress !== null;
-  const busy = sending || uploading || restoring || resetting;
+  // Đang chờ server thực thi một thẻ xác nhận: server giữ phiên (409 nếu gửi tin lúc này).
+  const confirming = Object.values(pendingActions).some((action) => action.status === "submitting");
+  const busy = sending || uploading || restoring || resetting || confirming;
 
   const push = useCallback((item: NewChatItem): number => {
     const id = nextId.current++;
@@ -364,6 +376,7 @@ export function useAgentSession(token: string, userKey: string) {
       }
 
       setJobs((prev) => applyJobEvent(prev, event));
+      setPendingActions((prev) => applyActionEvent(prev, event));
 
       const jobId = event.job_id ? String(event.job_id) : null;
       if (!jobId) return;
@@ -430,6 +443,7 @@ export function useAgentSession(token: string, userKey: string) {
             if (name === "hello" || name === "reconnect") {
               if (Array.isArray(data.watching)) setWatching(data.watching);
               setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              setPendingActions((prev) => reconcileActions(prev, data.pending_actions, name === "hello" ? data.last_seq : data.pending_seq));
               if (name === "hello") adoptRunningTurn(data.turn_id);
               return;
             }
@@ -539,6 +553,7 @@ export function useAgentSession(token: string, userKey: string) {
                 unreplayed.current = false;
               }
               setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              setPendingActions((prev) => reconcileActions(prev, data.pending_actions, data.last_seq));
               adoptRunningTurn(data.turn_id);
               return;
             }
@@ -546,6 +561,7 @@ export function useAgentSession(token: string, userKey: string) {
               reconnected = true;
               if (Array.isArray(data.watching)) setWatching(data.watching);
               setJobs((prev) => applyWatchState(prev, data.watching, data.auto_activate, data.auto_activate_constraints));
+              setPendingActions((prev) => reconcileActions(prev, data.pending_actions, data.pending_seq));
               // Còn chờ kết quả của lượt bị đứt thì giữ kênh mở tiếp - có hạn (expireOrphans).
               expireOrphans();
               if (!orphans.current.size) setProbeEvents(false);
@@ -675,6 +691,7 @@ export function useAgentSession(token: string, userKey: string) {
         push({ kind: "agent", text: done.reply, trace: traceRef.current, agents: done.agents ?? [] });
         announce("reply");
         if (Array.isArray(done.watching)) setWatching(done.watching);
+        setPendingActions((prev) => reconcileActions(prev, done.pending_actions, done.pending_seq ?? undefined));
         // Chỉ dataset của tool gọi THÀNH CÔNG mới thành dataset đang làm việc (id sai/bịa thì không).
         const datasetId = traceRef.current.activeDatasetId;
         if (datasetId) setActiveDataset((prev) => (prev?.id === datasetId ? prev : { id: datasetId }));
@@ -815,6 +832,7 @@ export function useAgentSession(token: string, userKey: string) {
       if (body?.ok === true) {
         setItems([]);
         setActiveDataset(null);
+        setPendingActions({});
         // Câu trả lời muộn của lượt cũ không được rơi vào cuộc trò chuyện mới.
         dropOrphans(false);
         setProbeEvents(false);
@@ -829,6 +847,7 @@ export function useAgentSession(token: string, userKey: string) {
     // Server không còn phiên này (hoặc chưa có phiên): tin nhắn sau tạo phiên mới.
     setItems([]);
     setActiveDataset(null);
+    setPendingActions({});
     forgetSession();
     setJobs({});
     finishedJobs.current.clear();
@@ -879,6 +898,102 @@ export function useAgentSession(token: string, userKey: string) {
     return true;
   }, []);
 
+  /**
+   * Nút Dừng: lượt đang chạy dừng ở ranh giới bước kế tiếp trên server (trước lời gọi LLM tiếp theo) và vẫn kết
+   * thúc bằng câu trả lời như thường ("Đã dừng theo yêu cầu") - không cắt luồng phía trình duyệt.
+   */
+  const cancelTurn = useCallback(async () => {
+    const session = sessionRef.current;
+    if (!session || !sendController.current) return;
+    setStopping(true);
+    const res = await postJson("/agent/cancel", {
+      session_id: session,
+      access_token: tokenRef.current,
+      turn_id: currentTurnId.current,
+    }).catch(() => null);
+    const body = res?.ok ? await res.json().catch(() => null) : null;
+    // Không có lượt nào đang chạy (vừa xong) hay lỗi mạng: thả nút ra để bấm lại được.
+    if (!unmounted.current && body?.ok !== true) setStopping(false);
+  }, []);
+
+  useEffect(() => {
+    if (!sending) setStopping(false);
+  }, [sending]);
+
+  /**
+   * Người dùng bấm Xác nhận / Từ chối trên thẻ hành động. Hành động thật CHỈ chạy qua đường này (server kiểm
+   * token một lần của thẻ, chủ phiên, hạn). autoActivate: nút "huấn luyện + tự kích hoạt" của thẻ huấn luyện.
+   */
+  const confirmAction = useCallback(
+    async (actionId: string, decision: "confirm" | "reject", autoActivate = false): Promise<ActionOutcome> => {
+      const session = sessionRef.current;
+      const action = actionsRef.current[actionId];
+      if (!session || !action || action.status !== "pending") return "gone";
+      const patch = (change: Partial<PendingActionView>) =>
+        setPendingActions((prev) => (prev[actionId] ? { ...prev, [actionId]: { ...prev[actionId], ...change } } : prev));
+      patch({ status: "submitting", error: undefined });
+      const res = await postJson("/agent/confirm", {
+        session_id: session,
+        access_token: tokenRef.current,
+        action_id: actionId,
+        token: action.token,
+        decision,
+        auto_activate: action.kind === "train" && action.offersAutoActivate ? autoActivate : null,
+      }).catch(() => null);
+      if (unmounted.current) return "network";
+      if (!res) {
+        patch({ status: "pending" });
+        return "network";
+      }
+      const body = await res.json().catch(() => null);
+      if (res.ok) {
+        const ok = decision === "reject" || body?.ok === true;
+        patch({
+          status: decision === "reject" ? "rejected" : ok ? "done" : "failed",
+          result: body ?? undefined,
+          error: ok ? undefined : String(body?.error ?? ""),
+        });
+        const jobId = typeof body?.job_id === "string" ? body.job_id : null;
+        if (decision === "confirm" && ok && jobId) {
+          if (action.kind === "train") {
+            // Job chạy ngoài lượt chat: mở kênh nền (nhận job_started / job_done) và hiện thẻ job ngay.
+            finishedJobs.current.delete(jobId);
+            setWatching((prev) => (prev.includes(jobId) ? prev : [...prev, jobId]));
+            push({ kind: "job", jobId });
+          } else if (action.kind === "activate" || action.kind === "deactivate") {
+            setJobs((prev) => (prev[jobId] ? { ...prev, [jobId]: { ...prev[jobId], activated: action.kind === "activate" } } : prev));
+          }
+        }
+        return "ok";
+      }
+      // Server trả detail {code, message} cho /agent/confirm (chuỗi với các lỗi chung như 401 / 422).
+      const code = typeof body?.detail?.code === "string" ? body.detail.code : null;
+      const detail =
+        typeof body?.detail === "string" ? body.detail : typeof body?.detail?.message === "string" ? body.detail.message : `HTTP ${res.status}`;
+      if (res.status === 401) {
+        patch({ status: "pending" });
+        return "auth";
+      }
+      if (code === "busy") {
+        // Agent đang trả lời (lượt ở tab này hay tab khác): thẻ vẫn còn, bấm lại sau.
+        patch({ status: "pending", error: detail });
+        return "busy";
+      }
+      if (code === "bad_option") {
+        patch({ status: "pending", error: detail });
+        return "server";
+      }
+      if (res.status === 409 || res.status === 404 || res.status === 403) {
+        // Thẻ đã xử lý / hết hạn / bị thay, sai mã, hoặc phiên không còn: không bấm lại được nữa.
+        patch({ status: "expired", error: detail });
+        return "gone";
+      }
+      patch({ status: "pending", error: detail });
+      return "server";
+    },
+    [push],
+  );
+
   return {
     items,
     sending,
@@ -899,6 +1014,10 @@ export function useAgentSession(token: string, userKey: string) {
     applyJobFromApi,
     setJobActivated,
     setAutoActivate,
+    pendingActions,
+    confirmAction,
+    cancelTurn,
+    stopping,
   };
 }
 

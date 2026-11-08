@@ -491,15 +491,68 @@ def find_own_job(client: HAutoMLClient, job_id: str) -> tuple[dict | None, dict 
     }
 
 
+SCORE_SOURCES = ("holdout", "cv")
+
+
+def job_score_source(client: HAutoMLClient, job_id: str) -> str | None:
+    """
+    Điểm của job đo trên đâu (audit AG-02): "holdout" (tập kiểm tra tách riêng, dataset > 10.000 dòng) hay
+    "cv" (cross-validation trên CHÍNH dữ liệu dùng để chọn model - lạc quan); None = không rõ (job cũ chưa
+    ghi, hay không đọc được pipeline). Gọi SAU khi find_own_job đã xác nhận job là của người dùng.
+    """
+    try:
+        pipeline = _call(client.get_job_pipeline, job_id)
+    except ApiError:
+        return None
+    except Exception:  # noqa: BLE001 - client thiếu method (bản giả cũ) / dữ liệu lạ: coi như không rõ
+        return None
+    output = ((pipeline or {}).get("select_best") or {}).get("output") if isinstance(pipeline, dict) else None
+    source = (output or {}).get("score_source") if isinstance(output, dict) else None
+    return source if source in SCORE_SOURCES else None
+
+
+PIPELINE_PHASES = ("queued", "running", "succeeded", "failed", "cancelled", "skipped")
+
+
+def job_pipeline_phase(client: HAutoMLClient, job_id: str) -> str | None:
+    """
+    Trạng thái pipeline của job (queued / running / succeeded / failed / cancelled) - MỘT request nhẹ, thay cho lật
+    toàn bộ danh sách job ở mỗi lần watcher hỏi (audit AG-05). None = không đọc được (lỗi, backend cũ) - người gọi
+    phải quay về đọc bản ghi job. Không thử lại ở đây: lần đọc bản ghi đầy đủ ngay sau đó đã tự thử lại.
+    Chỉ gọi cho job đã được find_own_job xác nhận là của người dùng (admin đọc được pipeline của mọi job).
+    """
+    try:
+        pipeline = client.get_job_pipeline(job_id)
+    except Exception:  # noqa: BLE001 - ApiError, client giả thiếu method, dữ liệu lạ: đều là "không đọc được"
+        return None
+    phase = pipeline.get("status") if isinstance(pipeline, dict) else None
+    return phase if phase in PIPELINE_PHASES else None
+
+
+SCORE_SOURCE_NOTES = {
+    "holdout": "Điểm đo trên tập kiểm tra tách riêng (holdout).",
+    "cv": (
+        "Điểm là cross-validation trên chính dữ liệu dùng để chọn model (dataset nhỏ, không có tập kiểm tra riêng) "
+        "- có thể LẠC QUAN hơn hiệu năng thật. Nói rõ điều này khi báo điểm hay kết luận đạt ràng buộc."
+    ),
+    None: "Không rõ điểm đo trên tập kiểm tra riêng hay cross-validation - có thể lạc quan hơn hiệu năng thật.",
+}
+
+
 def get_job_info(client: HAutoMLClient, job_id: str) -> dict:
-    """Xem chi tiết một job huấn luyện theo job_id."""
+    """Xem chi tiết một job huấn luyện theo job_id (kèm nguồn điểm khi job đã xong)."""
     job, problem = find_own_job(client, job_id)
     if problem:
         return problem
 
     # Vị trí file model trên MinIO không giúp gì cho LLM.
     job.pop("model", None)
-    return {"ok": True, "job": job}
+    result = {"ok": True, "job": job}
+    if job.get("status") == JOB_SUCCESS:
+        source = job_score_source(client, job_id)
+        result["score_source"] = source
+        result["score_note"] = SCORE_SOURCE_NOTES[source]
+    return result
 
 
 def activate_model(client: HAutoMLClient, job_id: str, activate: bool = True) -> dict:

@@ -26,6 +26,7 @@ URL - URL hay bị ghi vào log.
 
 # Standard libraries
 import asyncio
+import base64
 import functools
 import json
 import logging
@@ -42,11 +43,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 # Local modules
 from agent import providers, tools, uploads
+from agent.actions import ActionError
 from agent.agent_openai import describe_error, log_exception
 from agent.api_client import ApiError, HAutoMLClient
 from agent.chat import ChatSession
@@ -150,6 +154,10 @@ class ChatResponse(BaseModel):
     total_tokens: int
     # job_id đang được theo dõi nền.
     watching: list[str]
+    # Thẻ đang chờ người dùng bấm xác nhận (kèm token) - client không nghe SSE vẫn xác nhận được.
+    pending_actions: list[dict] = Field(default_factory=list)
+    # seq của EventBus lúc chụp pending_actions: thẻ có action_pending mới hơn mốc này không bị coi là đã hết.
+    pending_seq: int | None = None
 
 
 class EventsRequest(BaseModel):
@@ -169,6 +177,24 @@ class AutoActivateRequest(BaseModel):
 class TokenRequest(BaseModel):
     session_id: str = Field(..., max_length=_MAX_ID_CHARS)
     access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+
+
+class CancelRequest(BaseModel):
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+    # Lượt muốn dừng (frontend biết turn_id của lượt nó gửi): không khớp lượt đang chạy thì không dừng gì.
+    turn_id: str | None = Field(default=None, max_length=64)
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str = Field(..., max_length=_MAX_ID_CHARS)
+    access_token: str | None = Field(default=None, max_length=_MAX_TOKEN_CHARS)
+    action_id: str = Field(..., min_length=1, max_length=64)
+    # Mã một lần của thẻ - chỉ có trong sự kiện action_pending gửi frontend, LLM không bao giờ thấy.
+    token: str = Field(..., min_length=1, max_length=128)
+    decision: Literal["confirm", "reject"]
+    # Thẻ huấn luyện có đề nghị tự kích hoạt: người dùng chọn nút "huấn luyện + tự kích hoạt".
+    auto_activate: bool | None = None
 
 
 class _Entry:
@@ -218,6 +244,33 @@ def _sweep() -> None:
 
     for key in dead:
         _sessions.pop(key).session.close()
+
+
+def _token_exp(token: str | None) -> float | None:
+    """
+    `exp` trong phần payload của JWT, KHÔNG kiểm chữ ký - chỉ để so token nào mới hơn (audit AG-15). Danh tính vẫn
+    do backend xác nhận qua /me; token không phải JWT / không đọc được thì None.
+    """
+    try:
+        payload = str(token or "").split(".")[1]
+        data = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        exp = data.get("exp")
+        return float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else None
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _adopt_token(api, access_token: str | None) -> None:
+    """
+    Gán token (đã được backend xác minh là của đúng chủ phiên) cho client của phiên - trừ khi nó CŨ hơn token đang
+    giữ (audit AG-15): tab cũ còn mở gửi token sắp hết hạn không được hạ cấp token mà watcher đang dùng.
+    """
+    if not access_token:
+        return
+    current_exp, new_exp = _token_exp(api.access_token), _token_exp(access_token)
+    if current_exp is not None and new_exp is not None and new_exp < current_exp:
+        return
+    api.access_token = access_token
 
 
 # token -> (user_id, hết hạn cache). Xác minh qua backend tốn một request, nên
@@ -336,7 +389,7 @@ def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple
     if entry is not None:
         entry.touched = time.time()
         # Token được làm mới phía frontend sau mỗi 15 phút.
-        entry.session.api.access_token = access_token
+        _adopt_token(entry.session.api, access_token)
         return session_id, entry.session
 
     _make_room_for(owner)
@@ -433,7 +486,9 @@ async def health() -> dict:
     try:
         config = providers.resolve()
     except (RuntimeError, ValueError) as error:
-        result.update(status="degraded", configuration_error=str(error))
+        # /health không cần đăng nhập (audit AG-18): chi tiết (tên biến môi trường thiếu...) chỉ vào log server.
+        logging.getLogger("agent.server").warning("Cấu hình LLM lỗi: %s", error)
+        result.update(status="degraded", configuration_error="Agent chưa cấu hình được LLM - xem log của agent server.")
     else:
         result.update(llm_ready=True, provider=config.name, model=config.model)
     return result
@@ -479,17 +534,13 @@ def _start_turn(session_id: str, entry: "_Entry", message: str, turn_id: str | N
         )
     if not entry.turn_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="Phiên này đang xử lý một tin nhắn khác.")
-    # Lượt đang XẾP HÀNG cũng là lượt đang chạy với trang vừa tải lại (hello báo turn_id).
+    # Lượt đang XẾP HÀNG cũng là lượt đang chạy với trang vừa tải lại (hello báo turn_id), và nhận nút Dừng.
     entry.session.current_turn_id = turn_id
-    # Tin đã nhận mà chưa vào lịch sử: nút Huỷ tự kích hoạt bấm trong lúc lượt xếp hàng thì tin này
-    # là cũ hơn lần huỷ (không được dùng làm lời đồng ý bật lại).
-    entry.session.incoming_user_message = True
+    entry.session.turn_pending = True
 
     def never_ran() -> None:
-        entry.session.current_turn_id = None
-        entry.session.incoming_user_message = False
         try:
-            entry.session.team.clamp_auto_marks()
+            entry.session.end_turn()
         finally:
             # Lỗi ở đâu cũng phải nhả khoá, không thì phiên kẹt 409 mãi.
             entry.turn_lock.release()
@@ -552,6 +603,9 @@ def _run_turn(session_id: str, entry: _Entry, message: str, turn_id: str | None 
         agents=agents,
         total_tokens=session.usage["total_tokens"],
         watching=session.watcher.active(),
+        # Chụp seq TRƯỚC danh sách: thẻ tạo giữa hai lần đọc có trong danh sách, hoặc mới hơn mốc.
+        pending_seq=session.events.last_seq,
+        pending_actions=session.team.actions.pending(),
     )
 
 
@@ -643,7 +697,7 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
 
     entry.touched = time.time()
-    entry.session.api.access_token = request.access_token
+    _adopt_token(entry.session.api, request.access_token)
     bus = entry.session.events
 
     async def stream():
@@ -660,6 +714,8 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
             "auto_activate_constraints": watcher.auto_activate_constraints_map(),
             # Lượt đang chạy: trang vừa tải lại không biết turn_id của nó - phải chờ kết quả.
             "turn_id": entry.session.current_turn_id,
+            # Thẻ đang chờ xác nhận: trang vừa tải lại dựng lại được nút Xác nhận / Từ chối.
+            "pending_actions": entry.session.team.actions.pending(),
         })
 
         while time.monotonic() < deadline:
@@ -680,11 +736,14 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         watching = entry.session.watcher.active()
         auto = entry.session.watcher.auto_activate_map()
         auto_constraints = entry.session.watcher.auto_activate_constraints_map()
+        pending_seq = bus.last_seq
+        pending_actions = entry.session.team.actions.pending()
         for event in bus.since(last):
             last = event["seq"]
             yield _sse(event["type"], event, event["seq"])
         yield _sse("reconnect", {
             "after": last, "watching": watching, "auto_activate": auto, "auto_activate_constraints": auto_constraints,
+            "pending_actions": pending_actions, "pending_seq": pending_seq,
         })
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
@@ -866,7 +925,7 @@ async def update_token(request: TokenRequest) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
-    entry.session.api.access_token = request.access_token
+    _adopt_token(entry.session.api, request.access_token)
     return {"ok": True}
 
 
@@ -882,7 +941,7 @@ async def auto_activate(request: AutoActivateRequest) -> dict:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
     # Token vừa được xác minh là mới nhất: watcher dùng nó khi kích hoạt (token cũ có thể đã hết hạn).
-    entry.session.api.access_token = request.access_token
+    _adopt_token(entry.session.api, request.access_token)
     # Cùng một đường (có khoá) với tool set_auto_activate; ghi mốc huỷ và báo Manager ở lượt sau.
     outcome = entry.session.team.change_auto_activate(request.job_id, request.enabled, by_button=True)
     if outcome == "in_progress":
@@ -892,6 +951,68 @@ async def auto_activate(request: AutoActivateRequest) -> dict:
     if outcome != "ok":
         raise HTTPException(status_code=404, detail="Job không còn được theo dõi trong phiên này.")
     return {"ok": True, "job_id": request.job_id, "auto_activate": request.enabled}
+
+
+@app.post("/agent/cancel")
+async def cancel_turn(request: CancelRequest) -> dict:
+    """
+    Nút Dừng (audit AG-03): lượt đang chạy (hoặc đang xếp hàng) của phiên dừng ở ranh giới bước kế tiếp - trước
+    lời gọi LLM tiếp theo của bất kỳ agent nào. Lời gọi LLM / tool ĐANG chạy không bị cắt ngang (tối đa
+    AGENT_LLM_TIMEOUT); lượt kết thúc bằng turn_done như thường, kèm câu "Đã dừng theo yêu cầu".
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    if not entry.session.request_cancel(request.turn_id):
+        return {"ok": False, "detail": "Không có lượt nào đang chạy."}
+    return {"ok": True}
+
+
+# Mã lỗi xác nhận -> HTTP: thẻ không có / sai mã là 404 / 403; đã xử lý / hết hạn là 409 (frontend cập nhật thẻ).
+_ACTION_ERROR_STATUS = {"not_found": 404, "bad_token": 403, "expired": 409, "resolved": 409, "bad_option": 400}
+
+
+@app.post("/agent/confirm")
+async def confirm_action(request: ConfirmRequest) -> dict:
+    """
+    Người dùng bấm Xác nhận / Từ chối trên thẻ hành động (audit AG-01) - đường DUY NHẤT để huấn luyện, bật / tắt
+    model, bật tự kích hoạt. Kiểm chủ phiên (token người dùng qua backend), mã một lần của thẻ, hạn và trạng thái;
+    team kiểm lại điều kiện của hành động rồi mới thực thi.
+
+    Xác nhận giữ turn_lock: hành động đọc / ghi dữ liệu chuyển giữa các agent (config, job) - không chen giữa một
+    lượt chat đang chạy. Từ chối thì không cần (không đổi gì ngoài thẻ).
+    """
+    owner = await _resolve_owner(request.access_token)
+    entry = _find_entry(request.session_id, owner)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
+    entry.touched = time.time()
+    _adopt_token(entry.session.api, request.access_token)
+    team = entry.session.team
+    # detail có `code` máy đọc được: frontend phân biệt "agent đang bận, bấm lại sau" (thẻ còn dùng được) với
+    # "thẻ đã xử lý / hết hạn" (thẻ hết hiệu lực) - cả hai đều là 409.
+    try:
+        if request.decision == "reject":
+            return team.reject_action(request.action_id, request.token)
+        if not entry.turn_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail={
+                "code": "busy", "message": "Agent đang trả lời - đợi xong rồi bấm xác nhận lại.",
+            })
+        # Nhả khoá khi việc thực thi THẬT SỰ xong (callback của future trong thread), không ở finally của request:
+        # client ngắt kết nối giữa chừng huỷ coroutine nhưng thread vẫn đang tạo job - lượt chat mới không được chen.
+        try:
+            work = _TURN_POOL.submit(team.confirm_action, request.action_id, request.token, request.auto_activate)
+        except BaseException:
+            entry.turn_lock.release()
+            raise
+        work.add_done_callback(lambda _future: entry.turn_lock.release())
+        return await asyncio.shield(asyncio.wrap_future(work))
+    except ActionError as error:
+        raise HTTPException(status_code=_ACTION_ERROR_STATUS.get(error.code, 409), detail={
+            "code": error.code, "status": error.status, "message": str(error),
+        }) from error
 
 
 @app.post("/agent/reset")

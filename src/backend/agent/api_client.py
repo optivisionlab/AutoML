@@ -301,11 +301,19 @@ class HAutoMLClient:
         """
         GET /inference/jobs - mọi job huấn luyện, mới nhất trước.
 
-        Backend không có endpoint xem MỘT job; bản ghi trong danh sách đã đủ
-        trạng thái, điểm và config. Tài khoản admin nhận job của mọi người -
-        tools.find_own_job tự lọc lại.
+        Bản ghi trong danh sách đủ trạng thái, điểm, config và chủ job. Tài khoản admin nhận job của mọi
+        người - tools.find_own_job tự lọc lại.
         """
         return self._paged("/inference/jobs")
+
+    def get_job_pipeline(self, job_id: str) -> dict:
+        """
+        GET /inference/jobs/{id} - pipeline JSON của MỘT job (trạng thái từng bước, trial từng model, nguồn
+        điểm `select_best.output.score_source`). KHÔNG phải bản ghi job (không có best_score, activate, chủ
+        job), và admin đọc được job của người khác - chỉ gọi sau khi find_own_job đã xác nhận job là của
+        người dùng.
+        """
+        return self._request("GET", f"/inference/jobs/{_segment(job_id)}")
 
     def activate_model(self, job_id: str, activate: bool) -> dict:
         """PUT /inference/models/{id}/activation - bật/tắt API dự đoán của model."""

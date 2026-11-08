@@ -2,11 +2,12 @@
 
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MarkdownImage } from "../lib/markdown";
 
 /**
  * Markdown của câu trả lời agent. react-markdown không render HTML thô (không
  * bật rehype-raw) và tự lọc URL nguy hiểm (javascript:), nên nội dung từ LLM
- * không chèn được script.
+ * không chèn được script. Ảnh không được tải (MarkdownImage, audit AG-07).
  */
 const components: Components = {
   p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
@@ -21,6 +22,8 @@ const components: Components = {
       {children}
     </a>
   ),
+  // Không tải ảnh từ host bất kỳ: kênh rò rỉ dữ liệu không cần click (audit AG-07).
+  img: ({ alt }) => <MarkdownImage alt={alt} />,
   hr: () => <hr className="my-3 border-automl-line" />,
   blockquote: ({ children }) => (
     <blockquote className="my-2 border-l-2 border-agent-primary/50 pl-3 text-automl-muted-strong">{children}</blockquote>

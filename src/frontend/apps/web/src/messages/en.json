@@ -1110,7 +1110,9 @@
       "removeFile": "Remove file",
       "dismiss": "Dismiss",
       "activeDataset": "Using dataset: {name}",
-      "clearDataset": "Clear dataset"
+      "clearDataset": "Clear dataset",
+      "stop": "Stop",
+      "stopping": "Stopping…"
     },
     "problemTypes": {
       "classification": "Classification",
@@ -1298,7 +1300,9 @@
       "watchPrompt": "Check job {id} and keep watching it until it finishes.",
       "trackingLost": "No longer tracked: the agent server lost the session that was watching this job. The job may still be running - press Refresh to get its real status.",
       "autoActivated": "The model was activated automatically after training, as you requested.",
-      "autoActivateFailed": "Could not activate the model automatically after training: {detail}"
+      "autoActivateFailed": "Could not activate the model automatically after training: {detail}",
+      "cvScore": "Based on a cross-validation score on the same data used to pick the model (small dataset, no separate test set) - may be optimistic.",
+      "unknownScore": "It is not known whether the score was measured on a separate test set - may be optimistic."
     },
     "predict": {
       "title": "Try a prediction",
@@ -1391,6 +1395,56 @@
       "jobDone": "Job {id} completed.",
       "jobFailed": "Job {id} did not succeed.",
       "jobTimeout": "Job {id} ran past the waiting time; the agent stopped watching it."
+    },
+    "action": {
+      "title": {
+        "train": "Confirm training",
+        "activate": "Confirm model activation",
+        "deactivate": "Confirm turning the model off",
+        "autoActivate": "Confirm auto-activation when the job finishes"
+      },
+      "dataset": "Dataset",
+      "target": "Target column",
+      "problemType": "Problem type",
+      "metric": "Metric",
+      "features": "Feature columns",
+      "maxTime": "Time limit",
+      "job": "Job",
+      "bestModel": "Best model",
+      "score": "Score",
+      "featureList": "Features: {list}{more, plural, =0 {} other { (+# more)}}",
+      "autoUnconditional": "When job {job} finishes, the model will be activated REGARDLESS of its score.",
+      "autoConditional": "When job {job} finishes, the model is activated only if it meets: {constraints}.",
+      "duplicate": "This configuration is identical to job {jobs}, which already ran - confirming runs it again.",
+      "cvScore": "This is a cross-validation score on the same data used to pick the model (small dataset, no separate test set), so it may be optimistic.",
+      "unknownScore": "It is not known whether this score was measured on a separate test set - it may be optimistic.",
+      "confirmTrain": "Train",
+      "confirmTrainAuto": "Train + auto-activate ({when})",
+      "always": "regardless of score",
+      "confirm": {
+        "train": "Train",
+        "activate": "Activate",
+        "deactivate": "Turn off",
+        "auto_activate": "Enable auto-activation"
+      },
+      "reject": "Decline",
+      "waitForReply": "Wait for the agent to finish replying.",
+      "status": {
+        "pending": "Waiting for you",
+        "submitting": "Working…",
+        "done": "Done",
+        "failed": "Could not be done",
+        "rejected": "Declined",
+        "expired": "No longer valid",
+        "superseded": "Replaced by a newer proposal"
+      },
+      "errors": {
+        "busy": "The agent is replying - wait, then click again.",
+        "auth": "Your session expired - sign in and click again.",
+        "gone": "This card is no longer valid (already handled, expired or the chat was reset). Ask the agent again if needed.",
+        "network": "Could not reach the agent - try again.",
+        "server": "The agent reported an error - try again later."
+      }
     }
   },
   "DatabaseConnections": {

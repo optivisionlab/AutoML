@@ -2,7 +2,7 @@
 
 import { KeyboardEvent, forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { useTranslations } from "next-intl";
-import { AlertCircle, ArrowUp, Database, FileSpreadsheet, Loader2, Paperclip, UploadCloud, X } from "lucide-react";
+import { AlertCircle, ArrowUp, Database, FileSpreadsheet, Loader2, Paperclip, Square, UploadCloud, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ACCEPT_ATTR, MAX_UPLOAD_MB, defaultDatasetName, formatSize, validateFile, type FileProblem } from "../lib/agentApi";
 import { input, pillButton } from "../lib/ui";
@@ -32,6 +32,9 @@ interface Props {
   pending: PendingUpload | null;
   onPendingChange: (pending: PendingUpload | null) => void;
   onSend: (text: string) => void;
+  /** Nút Dừng lượt đang chạy (POST /agent/cancel, audit AG-03) - chỉ hiện khi đang gửi. */
+  onStop?: () => void;
+  stopping?: boolean;
   /**
    * Nội dung đang gõ - giữ ở Workspace chứ không trong composer: màn chào (hero) và
    * khung chat (docked) là hai composer ở hai cây khác nhau, đổi màn là mất bản nháp.
@@ -57,6 +60,8 @@ const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptCo
     pending,
     onPendingChange,
     onSend,
+    onStop,
+    stopping = false,
     text,
     onTextChange: setText,
     onUpload,
@@ -296,6 +301,12 @@ const PromptComposer = forwardRef<PromptComposerHandle, Props>(function PromptCo
 
           <div className="ml-auto flex items-center gap-2">
             <span id={`agent-shortcut-${variant}`} className="hidden text-[11px] text-automl-muted md:inline">{t("shortcut")}</span>
+            {sending && onStop && (
+              <button type="button" onClick={onStop} disabled={stopping} className={pillButton}>
+                <Square className="h-3 w-3" aria-hidden />
+                {stopping ? t("stopping") : t("stop")}
+              </button>
+            )}
             <button
               type="button"
               onClick={submit}

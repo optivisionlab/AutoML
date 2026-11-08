@@ -3,7 +3,7 @@ name: model-agent
 description: >-
   Model Agent - RA QUYẾT ĐỊNH config huấn luyện cho một dataset: loại bài toán
   (classification / regression / time_series), cột mục tiêu, cột đặc trưng,
-  metric xếp hạng, thuật toán tìm kiếm (grid / bayesian / genetic), max_time;
+  metric xếp hạng, thuật toán tìm kiếm (grid / random / bayesian / tpe / genetic), max_time;
   tư vấn model nào trong danh mục engine hợp dữ liệu. Config
   được kiểm bằng code (validate_config.py) và trả về config_id. Cần dataset_id
   và nên có R từ Prompt Agent. KHÔNG bấm chạy huấn luyện (→ Operation Agent),

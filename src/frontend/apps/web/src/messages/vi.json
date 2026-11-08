@@ -1110,7 +1110,9 @@
       "removeFile": "Bỏ file",
       "dismiss": "Đóng thông báo",
       "activeDataset": "Dataset đang dùng: {name}",
-      "clearDataset": "Bỏ chọn dataset"
+      "clearDataset": "Bỏ chọn dataset",
+      "stop": "Dừng",
+      "stopping": "Đang dừng…"
     },
     "problemTypes": {
       "classification": "Phân loại",
@@ -1298,7 +1300,9 @@
       "watchPrompt": "Kiểm tra job {id} và theo dõi tiếp tới khi xong.",
       "trackingLost": "Không còn được theo dõi: agent server đã mất phiên theo dõi job này. Job có thể vẫn đang chạy - bấm Làm mới để xem trạng thái thật.",
       "autoActivated": "Model đã được tự động kích hoạt sau khi huấn luyện xong, theo yêu cầu của bạn.",
-      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}"
+      "autoActivateFailed": "Không tự kích hoạt được model sau khi huấn luyện: {detail}",
+      "cvScore": "Theo điểm cross-validation trên chính dữ liệu dùng để chọn model (dataset nhỏ, không có tập kiểm tra riêng) - có thể lạc quan hơn thực tế.",
+      "unknownScore": "Không rõ điểm có đo trên tập kiểm tra riêng không - có thể lạc quan hơn thực tế."
     },
     "predict": {
       "title": "Thử dự đoán",
@@ -1391,6 +1395,56 @@
       "jobDone": "Job {id} đã hoàn tất.",
       "jobFailed": "Job {id} không thành công.",
       "jobTimeout": "Job {id} chạy quá thời gian chờ, agent thôi theo dõi."
+    },
+    "action": {
+      "title": {
+        "train": "Xác nhận huấn luyện",
+        "activate": "Xác nhận kích hoạt model",
+        "deactivate": "Xác nhận tắt model",
+        "autoActivate": "Xác nhận tự kích hoạt khi job xong"
+      },
+      "dataset": "Dataset",
+      "target": "Cột mục tiêu",
+      "problemType": "Loại bài toán",
+      "metric": "Metric",
+      "features": "Số cột đặc trưng",
+      "maxTime": "Thời gian tối đa",
+      "job": "Job",
+      "bestModel": "Model tốt nhất",
+      "score": "Điểm",
+      "featureList": "Đặc trưng: {list}{more, plural, =0 {} other { (+# cột nữa)}}",
+      "autoUnconditional": "Khi job {job} xong, model sẽ được kích hoạt BẤT KỂ điểm.",
+      "autoConditional": "Khi job {job} xong, model chỉ được kích hoạt nếu đạt: {constraints}.",
+      "duplicate": "Cấu hình này giống hệt job {jobs} đã chạy - xác nhận nghĩa là chạy lại.",
+      "cvScore": "Điểm này là điểm cross-validation trên chính dữ liệu dùng để chọn model (dataset nhỏ, không có tập kiểm tra riêng) nên có thể lạc quan hơn thực tế.",
+      "unknownScore": "Không xác định được điểm này đo trên tập kiểm tra riêng hay không - có thể lạc quan hơn thực tế.",
+      "confirmTrain": "Huấn luyện",
+      "confirmTrainAuto": "Huấn luyện + tự kích hoạt ({when})",
+      "always": "bất kể điểm",
+      "confirm": {
+        "train": "Huấn luyện",
+        "activate": "Kích hoạt",
+        "deactivate": "Tắt model",
+        "auto_activate": "Bật tự kích hoạt"
+      },
+      "reject": "Từ chối",
+      "waitForReply": "Đợi agent trả lời xong rồi bấm.",
+      "status": {
+        "pending": "Chờ bạn xác nhận",
+        "submitting": "Đang thực hiện…",
+        "done": "Đã thực hiện",
+        "failed": "Không thực hiện được",
+        "rejected": "Đã từ chối",
+        "expired": "Hết hiệu lực",
+        "superseded": "Đã thay bằng đề nghị mới"
+      },
+      "errors": {
+        "busy": "Agent đang trả lời - đợi xong rồi bấm lại.",
+        "auth": "Phiên đăng nhập hết hạn - đăng nhập lại rồi bấm lại.",
+        "gone": "Thẻ này không còn hiệu lực (đã xử lý, hết hạn hoặc phiên đã làm mới). Nhờ agent đề nghị lại nếu cần.",
+        "network": "Không kết nối được agent - thử lại.",
+        "server": "Agent báo lỗi - thử lại sau."
+      }
     }
   },
   "DatabaseConnections": {

@@ -56,6 +56,10 @@ export interface ChatReply {
   agents: string[];
   total_tokens: number;
   watching: string[];
+  /** Thẻ đang chờ người dùng bấm xác nhận (kèm token) - xem lib/actions.ts. */
+  pending_actions?: unknown[];
+  /** seq của EventBus lúc chụp pending_actions. */
+  pending_seq?: number | null;
 }
 
 /** Response của /agent/upload. */

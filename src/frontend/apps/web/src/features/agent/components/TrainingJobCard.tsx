@@ -218,6 +218,10 @@ function Results({ job }: { job: JobView }) {
           <p className="font-semibold">
             {verification.passed === true ? t("passed") : verification.passed === false ? t("notPassed") : t("verificationIncomplete")}
           </p>
+          {/* Audit AG-02: "đạt" theo điểm cross-validation không phải cam kết hiệu năng thật. */}
+          {job.scoreSource !== undefined && job.scoreSource !== "holdout" && (
+            <p className="mt-0.5">{job.scoreSource === "cv" ? t("cvScore") : t("unknownScore")}</p>
+          )}
           <ul className="mt-0.5">
             {verification.checks.map((c, i) => (
               <li key={i}>
