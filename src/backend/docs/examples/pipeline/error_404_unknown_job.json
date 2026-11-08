@@ -1,0 +1,9 @@
+{
+  "http_status": 404,
+  "body": {
+    "success": false,
+    "error_code": "NOT_FOUND",
+    "detail": "Model training job '000000000000000000000000' not found.",
+    "extra": {}
+  }
+}

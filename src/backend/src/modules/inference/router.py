@@ -56,6 +56,27 @@ async def get_list_jobs(
     )
 
 
+@router.get("/jobs/{id}", response_model=responses.BaseResponse[dict])
+async def get_job_detail(
+    id: str = Path(..., description="Training Job ID"),
+    current_user: dict = Depends(dependencies.get_current_user),
+    service: InferenceService = Depends(get_inference_service),
+):
+    """
+    Retrieve the training pipeline JSON: node states and, per model, every evaluated parameter set (trials).
+    Available while the job is running, so it can be polled until `status` is terminal.
+    """
+    pipeline = await service.get_job_pipeline(
+        current_user=current_user,
+        job_id=id,
+    )
+
+    return responses.BaseResponse(
+        message="Training pipeline retrieved successfully",
+        data=pipeline,
+    )
+
+
 @router.post("/jobs/{id}/cancel", response_model=responses.BaseResponse[dict])
 async def cancel_job(
     id: str = Path(..., description="Training Job ID"),

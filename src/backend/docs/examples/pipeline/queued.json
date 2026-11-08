@@ -1,0 +1,121 @@
+{
+  "http_status": 200,
+  "body": {
+    "success": true,
+    "message": "Training pipeline retrieved successfully",
+    "data": {
+      "job_id": "6ae5b7e5b92061eaa3f0a4fd",
+      "version": "2.0.0",
+      "mode": "automl",
+      "source": "tracked",
+      "status": "queued",
+      "error": null,
+      "updated_at": "2026-10-31T09:41:57Z",
+      "read_dataset": {
+        "name": "Read dataset",
+        "kind": "data_loading",
+        "depends_on": [],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "id_data": "6ae5a5402ebdf7162486abf4",
+          "format": "parquet"
+        },
+        "output": {}
+      },
+      "split_holdout_data": {
+        "name": "Split holdout data",
+        "kind": "data_splitting",
+        "depends_on": [
+          "read_dataset"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "preprocessing": {
+        "name": "Preprocessing",
+        "kind": "preprocessing",
+        "depends_on": [
+          "split_holdout_data"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "target": "species",
+          "list_feature": []
+        },
+        "output": {}
+      },
+      "model_selection": {
+        "name": "Model selection",
+        "kind": "model_selection",
+        "depends_on": [
+          "preprocessing"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "problem_type": "classification",
+          "search_algorithm": "grid_search",
+          "metric_sort": "accuracy",
+          "timeout": 600
+        },
+        "output": {}
+      },
+      "train": {
+        "name": "Train models",
+        "kind": "model_training",
+        "depends_on": [
+          "model_selection"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {
+          "models": {}
+        }
+      },
+      "select_best": {
+        "name": "Select best model",
+        "kind": "model_selection",
+        "depends_on": [
+          "train"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "save_result": {
+        "name": "Save result",
+        "kind": "result_storage",
+        "depends_on": [
+          "select_best"
+        ],
+        "status": "queued",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "bucket_name": "models"
+        },
+        "output": {}
+      }
+    },
+    "meta": null
+  }
+}

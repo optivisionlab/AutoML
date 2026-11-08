@@ -1,0 +1,174 @@
+{
+  "http_status": 200,
+  "body": {
+    "success": true,
+    "message": "Training pipeline retrieved successfully",
+    "data": {
+      "job_id": "6ae5b3a2ea0bbfef998a52fe",
+      "version": "2.0.0",
+      "mode": "automl",
+      "source": "legacy",
+      "status": "succeeded",
+      "error": null,
+      "updated_at": "2026-10-31T09:40:56Z",
+      "read_dataset": {
+        "name": "Read dataset",
+        "kind": "data_loading",
+        "depends_on": [],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "id_data": "old-data",
+          "format": "parquet"
+        },
+        "output": {}
+      },
+      "split_holdout_data": {
+        "name": "Split holdout data",
+        "kind": "data_splitting",
+        "depends_on": [
+          "read_dataset"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {}
+      },
+      "preprocessing": {
+        "name": "Preprocessing",
+        "kind": "preprocessing",
+        "depends_on": [
+          "split_holdout_data"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "target": "species",
+          "list_feature": [
+            "a",
+            "b"
+          ]
+        },
+        "output": {}
+      },
+      "model_selection": {
+        "name": "Model selection",
+        "kind": "model_selection",
+        "depends_on": [
+          "preprocessing"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "problem_type": "classification",
+          "search_algorithm": null,
+          "metric_sort": "accuracy",
+          "timeout": null,
+          "model_names": [
+            "DecisionTreeClassifier",
+            "RandomForestClassifier"
+          ],
+          "metrics": {
+            "accuracy": "maximize",
+            "f1": "maximize"
+          }
+        },
+        "output": {}
+      },
+      "train": {
+        "name": "Train models",
+        "kind": "model_training",
+        "depends_on": [
+          "model_selection"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {
+          "models": {
+            "DecisionTreeClassifier": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 0,
+              "trials": [
+                {
+                  "params": {
+                    "max_depth": 3
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "accuracy": 0.9,
+                    "f1": 0.88
+                  }
+                }
+              ],
+              "holdout_scores": null
+            },
+            "RandomForestClassifier": {
+              "status": "succeeded",
+              "error": null,
+              "best_trial": 0,
+              "trials": [
+                {
+                  "params": {
+                    "max_depth": 5
+                  },
+                  "status": "succeeded",
+                  "scores": {
+                    "accuracy": 0.93,
+                    "f1": 0.92
+                  }
+                }
+              ],
+              "holdout_scores": null
+            }
+          }
+        }
+      },
+      "select_best": {
+        "name": "Select best model",
+        "kind": "model_selection",
+        "depends_on": [
+          "train"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {},
+        "output": {
+          "best_model": "RandomForestClassifier",
+          "score_source": null
+        }
+      },
+      "save_result": {
+        "name": "Save result",
+        "kind": "result_storage",
+        "depends_on": [
+          "select_best"
+        ],
+        "status": "succeeded",
+        "started_at": null,
+        "finished_at": null,
+        "error": null,
+        "params": {
+          "bucket_name": "models"
+        },
+        "output": {
+          "object_name": null
+        }
+      }
+    },
+    "meta": null
+  }
+}

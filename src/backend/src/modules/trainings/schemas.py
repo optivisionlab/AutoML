@@ -19,6 +19,8 @@ class ModelTaskResult(BaseModel):
     metric_sort: str
     model_bytes: bytes
     latency: float
+    trials: list[dict[str, Any]] = []
+    best_trial: int | None = None
 
     model_config = {
         "arbitrary_types_allowed": True
