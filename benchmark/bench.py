@@ -206,6 +206,20 @@ def cmd_engine_baseline(args) -> None:
     print(f"Kết quả: {root}")
 
 
+def cmd_setup_account(args) -> None:
+    import os
+    from benchmark import setup_account
+
+    cfg = _load_config()
+    pg, mysql = setup_account.connection_specs(cfg, args.pg_host, args.pg_port, args.mysql_host, args.mysql_port)
+    # Mật khẩu tài khoản CHỈ ĐỌC của server test (tests/sql_sources). Đổi bằng biến môi trường, không ghi vào file.
+    password = os.getenv("BENCH_DB_PASSWORD", "ro-test-password")
+    found = setup_account.run(cfg, pg, mysql, password, allow_existing=args.allow_existing,
+                              skip_connections=args.skip_connections)
+    print("Đã ghi vào bench_config.json:\n" + json.dumps(found, ensure_ascii=False, indent=1))
+    print("Tiếp theo: python benchmark/bench.py preflight --online")
+
+
 def main() -> None:
     from dotenv import load_dotenv
     load_dotenv(BACKEND / ".env")
@@ -254,11 +268,19 @@ def main() -> None:
     engine.add_argument("--repeats", type=int, default=5)
     engine.add_argument("--experiment")
 
+    setup = sub.add_parser("setup-account", help="Dựng tài khoản benchmark mới: upload 6 file train, job fixture, kết nối DB")
+    setup.add_argument("--pg-host", default="hautoml-test-postgres")
+    setup.add_argument("--pg-port", type=int, default=5432)
+    setup.add_argument("--mysql-host", default="hautoml-test-mysql")
+    setup.add_argument("--mysql-port", type=int, default=3306)
+    setup.add_argument("--allow-existing", action="store_true", help="Cho phép tài khoản đã có dữ liệu (không khuyến nghị)")
+    setup.add_argument("--skip-connections", action="store_true", help="Không tạo kết nối database (nhóm S sẽ thiếu)")
+
     args = parser.parse_args()
     try:
         {"init": cmd_init, "prepare": cmd_prepare, "prepare-ts": cmd_prepare_ts, "preflight": cmd_preflight, "lock": cmd_lock,
          "run": cmd_run, "score": cmd_score, "report": cmd_report, "baselines": cmd_baselines,
-         "engine-baseline": cmd_engine_baseline}[args.command](args)
+         "engine-baseline": cmd_engine_baseline, "setup-account": cmd_setup_account}[args.command](args)
     except (ValueError, RuntimeError, OSError) as exc:
         raise SystemExit(str(exc))
 

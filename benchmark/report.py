@@ -264,7 +264,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
         table = []
         for case_id in sorted({r["scenario_id"] for r in c_rows}):
             g = [r for r in c_rows if r["scenario_id"] == case_id and r["task_status"] != "INVALID_FIXTURE"]
-            metric = "f1_macro" if any(r["f1_macro"] is not None for r in g) else "mae"
+            metric = "f1_macro" if any(r.get("problem_type") == "classification" for r in g) else "mae"
             table.append([
                 case_id, titles.get(case_id, ""), _mean_std([r["sr"] for r in g]), _mean_std([r["nps"] for r in g]),
                 _mean_std([r["cs"] for r in g]), f"{metric}: {_mean_std([r[metric] for r in g])}",
@@ -314,7 +314,8 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
     # ---- 4. Số bước
     lines += ["## 4. Số vòng lặp / bước để hoàn thành", ""]
     table = []
-    agents = sorted({a for r in full for a in r["llm_calls_by_agent"]})
+    # Theo agent: mọi nhóm (kể cả S - SQL Agent chỉ xuất hiện ở đó), khác các bảng tổng A–F ở trên.
+    agents = sorted({a for r in all_full for a in r["llm_calls_by_agent"]})
     for group, title in GROUP_TITLES.items():
         g = [r for r in all_full if r["group"] == group]
         if g:
@@ -322,8 +323,8 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
                           _mean([r["tool_calls"] for r in g]), _mean([r["delegations"] for r in g]),
                           sum(r["step_limit_hits"] for r in g), sum(r["turn_budget_exceeded"] for r in g)])
     lines += _table(["Nhóm", "Lượt chat", "Gọi LLM", "Tool call", "Uỷ thác (ask_*)", "Chạm trần bước", "Vượt trần token"], table)
-    lines += _table(["Agent", "Gọi LLM trung bình / ca"], [
-        [a, _mean([r["llm_calls_by_agent"].get(a, 0) for r in full])] for a in agents
+    lines += _table(["Agent (mọi nhóm)", "Gọi LLM trung bình / ca"], [
+        [a, _mean([r["llm_calls_by_agent"].get(a, 0) for r in all_full])] for a in agents
     ])
 
     # ---- 5. Chi phí và độ trễ
@@ -339,9 +340,9 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
                           f"{_pct(tool, .5)} / {_pct(tool, .95)}", _mean([r["job_wait_seconds"] for r in g]),
                           _mean([r["e2e_wall_seconds"] for r in g])])
     lines += _table(["Nhóm", "Token / ca (lượt đủ usage)", "USD / ca", "Agent (s)", "LLM p50/p95 (s)", "Tool p50/p95 (s)", "Chờ job (s)", "End-to-end (s)"], table)
-    lines += _table(["Agent", "Thời gian trung bình / ca (s)"], [
-        [a, _mean([r["agent_seconds_by_agent"].get(a, 0) for r in full])]
-        for a in sorted({a for r in full for a in r["agent_seconds_by_agent"]})
+    lines += _table(["Agent (mọi nhóm)", "Thời gian trung bình / ca (s)"], [
+        [a, _mean([r["agent_seconds_by_agent"].get(a, 0) for r in all_full])]
+        for a in sorted({a for r in all_full for a in r["agent_seconds_by_agent"]})
     ])
     statuses = sorted({r["cost_status"] for r in full})
     lines += [f"Trạng thái chi phí: {', '.join(statuses)}. `incomplete` = có token suy luận tính riêng hoặc thiếu usage; `unavailable` = chưa có bảng giá. Chỉ là chi phí LLM, không gồm CPU/GPU huấn luyện.", ""]
@@ -469,7 +470,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
         "của từng ca (consent.py). Người dùng thật có thể bấm khác; lượt 'tiếp tục' sau khi bật model là một tin nhắn cố định.",
         "- Nhóm S dùng hai server test (PostgreSQL 16, MySQL 8.4) chứa phần train của các dataset benchmark; chưa đo MongoDB, "
         "SQLite/DuckDB qua kết nối đã lưu, hay database lớn/nhiều bảng.",
-        "- `single-agent` khác bản đầy đủ ở nhiều điểm cùng lúc (một vòng LLM, không có Prompt Agent nên không có R và kiểm định ngưỡng; trần bước 36 do benchmark chọn): đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent.",
+        "- `single-agent` khác bản đầy đủ ở nhiều điểm cùng lúc (một vòng LLM, không có Prompt Agent nên không có R và kiểm định ngưỡng; trần bước 44 = 12 + 4 × 8 do benchmark chọn): đây là so sánh hai cấu hình hệ thống, không chỉ riêng việc chia agent.",
         "- Tự phục hồi tự nhiên phụ thuộc lỗi phát sinh thật; số tập lỗi nhỏ thì tỷ lệ không ổn định - xem mẫu số.",
     ]
     if t_rows:

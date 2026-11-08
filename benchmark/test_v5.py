@@ -11,6 +11,7 @@ Kiểm tra phần thêm ở protocol v5 (không LLM thật, không backend thậ
 """
 
 import csv
+from types import SimpleNamespace
 import json
 import sys
 from pathlib import Path
@@ -668,3 +669,91 @@ def test_engine_time_series_baseline_is_not_reported_as_regression():
               "config": {"problem_type": "time_series"}, "metrics": {"rmse": 7.0, "mae": 5.0, "rmsle": 0.06, "nps": 0.94}}
     text = "\n".join(report_sections.section_baselines([], [engine]))
     assert "### electricity (time_series; chỉ số chính rmse ↓)" in text
+
+
+# ------------------------------------------------------------------- setup-account (server mới)
+
+class FakeSetupBackend(FakeDatabaseBackend):
+    """Tài khoản mới: dataset upload thật vào danh sách, kết nối tạo qua POST /database-connections."""
+
+    connections: list = []
+    uploads: list = []
+
+    def list_datasets(self):
+        return [{"_id": k, "dataName": v["name"]} for k, v in self.datasets.items()]
+
+    def list_database_connections(self):
+        return list(self.connections)
+
+    def upload_dataset_content(self, data_name, filename, content, **kwargs):
+        lines = content.decode().strip().splitlines()
+        dataset_id = f"cccccccccccccccccccccc{len(self.datasets) + 1:02d}"
+        self.datasets[dataset_id] = {"name": data_name, "rows": len(lines) - 1, "columns": lines[0].split(",")}
+        self.uploads.append(filename)
+        return {"_id": dataset_id}
+
+    def _request(self, method, path, **kwargs):
+        if method == "POST" and path == "/database-connections":
+            conn = {"id": f"conn-{len(self.connections) + 1}", "name": kwargs["json"]["name"], "db_type": kwargs["json"]["db_type"]}
+            self.connections.append(conn)
+            return conn
+        if method == "POST" and path.endswith("/test"):
+            return {"connected": True, "table_count": len(self.tables)}
+        return super()._request(method, path, **kwargs)
+
+
+@pytest.fixture
+def setup_env(tmp_path, monkeypatch):
+    from benchmark import setup_account
+    FakeBackend.jobs = {}
+    FakeSetupBackend.datasets, FakeSetupBackend.connections, FakeSetupBackend.uploads = {}, [], []
+    FakeSetupBackend.tables = {t: (1, ["x"]) for t in ("glass_train", "crab_train")}
+    files = {}
+    for key, (relative, _name) in setup_account.DATASET_FILES.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("a,b\n1,2\n3,4\n")
+        files[key] = (2, {"a", "b"})
+    monkeypatch.setattr(setup_account, "ARTIFACTS", tmp_path)
+    monkeypatch.setattr(setup_account, "STATE_PATH", tmp_path / "setup_state.json")
+    monkeypatch.setattr(setup_account, "CONFIG_PATH", tmp_path / "bench_config.json")
+    monkeypatch.setattr(setup_account, "expected_schemas", lambda: files)
+    monkeypatch.setattr(setup_account, "HAutoMLClient", FakeSetupBackend)
+
+    def start_training(api, dataset_id, **kwargs):
+        return api.start_training(dataset_id, kwargs) | {"ok": True}
+
+    monkeypatch.setattr(setup_account.tools, "start_training", start_training)
+    (tmp_path / "bench_config.json").write_text(json.dumps({"placeholders": {"GLASS_ID": "old"}}))
+    cfg = {"placeholders": {"GLASS_ID": "old"},
+           "connection_fixtures": {"PG_CONN_ID": {"tables": ["glass_train"]}, "MYSQL_CONN_ID": {"tables": ["crab_train"]}}}
+    pg, mysql = setup_account.connection_specs(cfg, "pg", 5432, "my", 3306)
+    return SimpleNamespace(module=setup_account, cfg=cfg, pg=pg, mysql=mysql, root=tmp_path)
+
+
+def test_setup_account_builds_fresh_account_once(setup_env):
+    m = setup_env.module
+    found = m.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
+    assert set(found) == set(m.DATASET_FILES) | {"GLASS_JOB", "INACTIVE_JOB", "MISSING_ID", "PG_CONN_ID", "MYSQL_CONN_ID"}
+    assert len(FakeSetupBackend.uploads) == 6 and not any(u.endswith("_test.csv") for u in FakeSetupBackend.uploads)
+    assert FakeBackend.jobs[found["GLASS_JOB"]]["activate"] == 1 and FakeBackend.jobs[found["INACTIVE_JOB"]]["activate"] == 0
+    assert found["MISSING_ID"] not in FakeSetupBackend.datasets
+    written = json.loads((setup_env.root / "bench_config.json").read_text())
+    assert written["placeholders"]["GLASS_ID"] == found["GLASS_ID"] != "old"
+    assert list(setup_env.root.glob("bench_config.before-setup-*.json"))
+    # Chạy lại (vd sau khi đứt giữa chừng): không upload / tạo trùng.
+    again = m.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
+    assert again == found and len(FakeSetupBackend.uploads) == 6 and len(FakeSetupBackend.connections) == 2
+
+
+def test_setup_account_refuses_non_empty_account(setup_env):
+    FakeSetupBackend.datasets["dddddddddddddddddddddd01"] = {"name": "glass_train", "rows": 1, "columns": ["a"]}
+    with pytest.raises(SystemExit, match="KHÔNG trống"):
+        setup_env.module.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
+    assert FakeSetupBackend.uploads == []
+
+
+def test_setup_account_rejects_upload_with_wrong_schema(setup_env, monkeypatch):
+    monkeypatch.setattr(setup_env.module, "expected_schemas", lambda: {k: (99, {"a", "b"}) for k in setup_env.module.DATASET_FILES})
+    with pytest.raises(RuntimeError, match="cần 99 dòng"):
+        setup_env.module.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
