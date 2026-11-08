@@ -88,8 +88,9 @@ huấn luyện nào**. Không bịa chỉ số.
 - `predict` trả `ok: false` → báo nguyên văn trường `error` cho Manager.
 - Job time_series (`config.problem_type = time_series`): mỗi mẫu là MỘT mốc thời
   gian tương lai - cột thời gian (sau mốc cuối của dữ liệu train, đúng bước thời
-  gian) cộng giá trị các cột khác trong `list_feature` nếu có. Tối đa 365 bước;
-  model tự giữ phần lịch sử để tính lag. Việc giao có mốc cuối và bước thời gian
+  gian) cộng giá trị các cột khác trong `list_feature` nếu có. Tối đa 50 bước mỗi
+  lần qua chat (giới hạn của `predict`); xa hơn thì báo Manager dùng trang dự đoán
+  trên web. Model tự giữ phần lịch sử để tính lag. Việc giao có mốc cuối và bước thời gian
   thì tự tính các mốc tiếp theo; không có thì báo Manager cần mốc cụ thể, đừng
   bịa ngày. Backend báo mốc không hợp lệ thì nêu nguyên văn lỗi đó.
 

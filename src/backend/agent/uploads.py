@@ -9,8 +9,10 @@ Hàm thuần: không mạng, không đọc đĩa. Test được mà không cần
 """
 
 # Standard libraries
+import io
 import math
 import os
+import zipfile
 from dataclasses import dataclass
 
 
@@ -69,6 +71,25 @@ def _looks_like_text(head: bytes) -> bool:
         return True
 
 
+# .xlsx là ZIP: kiểm kích thước GIẢI NÉN khai trong central directory (zipfile không giải quá con số này),
+# chặn zip bomb trước khi backend đọc bằng pandas. Cùng ngưỡng với backend (datasets/service.py).
+XLSX_MAX_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
+XLSX_MAX_ENTRIES = 10_000
+
+
+def _xlsx_archive_problem(content: bytes) -> str | None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+    except zipfile.BadZipFile:
+        return "file Excel hỏng (không phải ZIP hợp lệ)."
+    total = sum(entry.file_size for entry in entries)
+    if len(entries) > XLSX_MAX_ENTRIES or total > XLSX_MAX_UNCOMPRESSED_BYTES:
+        return (f"file Excel giải nén ra quá lớn ({total // (1024 * 1024)} MB) - tối đa "
+                f"{XLSX_MAX_UNCOMPRESSED_BYTES // (1024 * 1024)} MB. Lưu dạng CSV hoặc chia nhỏ.")
+    return None
+
+
 def check_dataset_file(filename: str, content: bytes) -> UploadCheck:
     """
     Kiểm tra một file dataset trước khi chuyển cho backend.
@@ -103,6 +124,10 @@ def check_dataset_file(filename: str, content: bytes) -> UploadCheck:
     head = content[:8]
     if extension == ".xlsx" and not head.startswith(_XLSX_MAGIC):
         return _fail(415, f"'{name}' có đuôi .xlsx nhưng nội dung không phải file Excel.")
+    if extension == ".xlsx":
+        problem = _xlsx_archive_problem(content)
+        if problem:
+            return _fail(413 if "quá lớn" in problem else 415, f"'{name}': {problem}")
     if extension == ".xls" and not head.startswith(_XLS_MAGIC):
         return _fail(415, f"'{name}' có đuôi .xls nhưng nội dung không phải file Excel cũ.")
     if extension == ".csv" and not _looks_like_text(content[:4096]):

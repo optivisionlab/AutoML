@@ -14,6 +14,8 @@ login được giữ trong instance và tự động gắn vào header của cá
 
 # Standard libraries
 import os
+import re
+from urllib.parse import quote
 
 # Third party libraries
 import httpx
@@ -54,6 +56,21 @@ class ApiError(Exception):
         super().__init__(f"HTTP {status_code}: {detail}")
 
 
+# ID trong đường dẫn (dataset / kết nối / job) do LLM truyền vào: chỉ nhận ký tự an toàn, rồi
+# escape. Không có bước này thì "../inference/jobs/<id>/cancel?" làm httpx rút gọn đường dẫn và gọi
+# một endpoint KHÁC của backend bằng token người dùng (vd huỷ job, đọc danh sách người dùng).
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _segment(value) -> str:
+    """Một đoạn đường dẫn an toàn từ ID. ID lạ -> ApiError 400 (tool trả lỗi cho agent, không gọi backend)."""
+    text = str(value if value is not None else "").strip()
+    if not _SAFE_ID.match(text):
+        shown = text if len(text) <= 40 else text[:40] + "…"
+        raise ApiError(400, f"ID không hợp lệ: {shown!r}. ID chỉ gồm chữ, số, '_' và '-'.")
+    return quote(text, safe="")
+
+
 def _extract_detail(response: httpx.Response) -> str:
     """
     Lấy thông báo lỗi dễ đọc. Lỗi validate (422) để danh sách trường sai trong
@@ -75,6 +92,12 @@ def _extract_detail(response: httpx.Response) -> str:
         fields = "; ".join(f"{e.get('field')}: {e.get('message')}" for e in errors if isinstance(e, dict))
         message = f"{message} ({fields})"[:500]
     return message
+
+
+class PagedList(list):
+    """Danh sách lật nhiều trang. truncated=True: dừng ở trần _MAX_PAGES, còn phần chưa tải."""
+
+    truncated = False
 
 
 class HAutoMLClient:
@@ -142,7 +165,9 @@ class HAutoMLClient:
 
     def _paged(self, path: str, params: dict | None = None) -> list:
         """Lật hết các trang của một endpoint danh sách."""
-        items: list = []
+        # Danh sách bị cắt ở _MAX_PAGES trang thì đánh dấu NGAY TRÊN danh sách trả về: job ngoài phần đã tải
+        # không được coi là "không thuộc về bạn" (watcher bỏ theo dõi).
+        items = PagedList()
         page = 1
         while page <= _MAX_PAGES:
             body = self._send(
@@ -155,6 +180,8 @@ class HAutoMLClient:
             total_pages = (meta or {}).get("total_pages") or 0
             if page >= total_pages or not data:
                 break
+            if page == _MAX_PAGES:
+                items.truncated = True
             page += 1
         return items
 
@@ -184,7 +211,7 @@ class HAutoMLClient:
 
     def get_dataset_info(self, dataset_id: str) -> dict:
         """GET /datasets/{id} - metadata một dataset (không có tên cột)."""
-        return self._request("GET", f"/datasets/{dataset_id}")
+        return self._request("GET", f"/datasets/{_segment(dataset_id)}")
 
     def upload_dataset_content(
         self,
@@ -221,11 +248,42 @@ class HAutoMLClient:
         biến mục tiêu với problem_type đã chọn. Backend loại sẵn cột dạng ID và
         cột hằng (gán False).
         """
-        return self._request("GET", f"/datasets/{dataset_id}/features", params={"problem_type": problem_type})
+        return self._request("GET", f"/datasets/{_segment(dataset_id)}/features", params={"problem_type": problem_type})
 
     def get_dataset_preview(self, dataset_id: str, num_rows: int = 50) -> dict:
         """GET /datasets/{id}/data - {"rows": tổng số dòng, "records": num_rows dòng đầu}."""
-        return self._request("GET", f"/datasets/{dataset_id}/data", params={"num_rows": num_rows})
+        return self._request("GET", f"/datasets/{_segment(dataset_id)}/data", params={"num_rows": num_rows})
+
+    # ------------------------------------------------- nguồn dữ liệu ngoài (kết nối đã lưu)
+    # Agent chỉ cầm connection_id / preview_id: host, tài khoản, mật khẩu nằm ở backend (mã hoá).
+
+    def list_database_connections(self) -> list:
+        """GET /database-connections - kết nối database người dùng đã lưu (không có bí mật)."""
+        return self._paged("/database-connections")
+
+    def list_database_tables(self, connection_id: str) -> dict:
+        """GET /database-connections/{id}/tables - {"tables": [{"name", "kind"}]}."""
+        return self._request("GET", f"/database-connections/{_segment(connection_id)}/tables")
+
+    def describe_database_table(self, connection_id: str, table: str, sample_rows: int = 5) -> dict:
+        """POST /database-connections/{id}/describe - cột (tên, kiểu) + vài dòng mẫu."""
+        return self._request("POST", f"/database-connections/{_segment(connection_id)}/describe",
+                             json={"table": table, "sample_rows": sample_rows})
+
+    def preview_database_query(self, connection_id: str, query: dict) -> dict:
+        """POST /database-connections/{id}/preview - chạy truy vấn đã kiểm (<= 100 dòng), trả preview_id."""
+        return self._request("POST", f"/database-connections/{_segment(connection_id)}/preview", json={"query": query})
+
+    def import_database_query(self, connection_id: str, preview_id: str, data_name: str,
+                              allow_truncated: bool = False, description: str | None = None) -> dict:
+        """
+        POST /database-connections/{id}/import - kết quả của preview_id thành dataset riêng tư.
+        Gửi lại cùng preview_id trả đúng dataset đã tạo (backend chống nhập trùng).
+        """
+        body = {"preview_id": preview_id, "data_name": data_name, "allow_truncated": allow_truncated}
+        if description:
+            body["description"] = description
+        return self._request("POST", f"/database-connections/{_segment(connection_id)}/import", json=body, timeout=180.0)
 
     def start_training(self, dataset_id: str, config: dict) -> dict:
         """
@@ -235,7 +293,7 @@ class HAutoMLClient:
         của backend: target, list_feature, metric_sort, problem_type,
         search_algorithm, timeout (giây).
         """
-        return self._request("POST", f"/datasets/{dataset_id}/training", json=config)
+        return self._request("POST", f"/datasets/{_segment(dataset_id)}/training", json=config)
 
     # ------------------------------------------------------- job và model
 
@@ -252,11 +310,11 @@ class HAutoMLClient:
     def activate_model(self, job_id: str, activate: bool) -> dict:
         """PUT /inference/models/{id}/activation - bật/tắt API dự đoán của model."""
         return self._request(
-            "PUT", f"/inference/models/{job_id}/activation", json={"activate": 1 if activate else 0},
+            "PUT", f"/inference/models/{_segment(job_id)}/activation", json={"activate": 1 if activate else 0},
         )
 
     def predict(self, job_id: str, rows: list[dict], timeout: float = 120.0) -> dict:
         """POST /inference/models/{id}/predict - dự đoán các bản ghi JSON."""
         return self._request(
-            "POST", f"/inference/models/{job_id}/predict", json={"data": rows}, timeout=timeout,
+            "POST", f"/inference/models/{_segment(job_id)}/predict", json={"data": rows}, timeout=timeout,
         )

@@ -116,6 +116,7 @@
   },
   "Sidebar": {
     "agent": "AI Agent",
+    "databaseConnections": "Database connections",
     "subtitle": "Open AutoML platform",
     "dashboard": "Dashboard",
     "publicDatasets": "Public datasets",
@@ -1390,6 +1391,131 @@
       "jobDone": "Job {id} completed.",
       "jobFailed": "Job {id} did not succeed.",
       "jobTimeout": "Job {id} ran past the waiting time; the agent stopped watching it."
+    }
+  },
+  "DatabaseConnections": {
+    "title": "Database connections",
+    "subtitle": "Save connections to your databases so the AI Agent can browse tables, run read-only queries and pull training data.",
+    "add": "Add connection",
+    "openAgent": "Open AI Agent",
+    "searchPlaceholder": "Search by name, type, database...",
+    "summary": "Showing {shown}/{total} connections",
+    "loadFailed": "Could not load your connections.",
+    "retry": "Retry",
+    "noMatch": "No connection matches your search.",
+    "empty": {
+      "title": "No connections yet",
+      "body": "Add a PostgreSQL, MySQL, SQLite, DuckDB or MongoDB connection, then ask the AI Agent, e.g. \"Load table concrete_train and train a model to predict strength\"."
+    },
+    "howItWorks": {
+      "title": "How does the Agent use a connection?",
+      "step1": "You save the connection here. The password is encrypted and never shown to the Agent.",
+      "step2": "The Agent browses tables, writes a safety-checked SELECT and shows you a preview.",
+      "step3": "When you agree, the result is imported as a dataset for training."
+    },
+    "table": {
+      "name": "Connection",
+      "type": "Type",
+      "database": "Database",
+      "status": "Status",
+      "updatedAt": "Updated"
+    },
+    "status": {
+      "unknown": "Not tested",
+      "testing": "Testing...",
+      "ok": "Connected · {count} tables",
+      "failed": "Connection error"
+    },
+    "actions": {
+      "open": "Open actions for {name}",
+      "test": "Test connection",
+      "browse": "Browse tables",
+      "askAgent": "Ask the Agent",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "toast": {
+      "created": "Connection \"{name}\" saved",
+      "createdTestOk": "Saved and connected: {count} tables found.",
+      "createdTestFailed": "Saved, but the connection does not work yet. Fix the details, then use \"Test connection\".",
+      "updated": "Connection \"{name}\" updated",
+      "deleted": "Connection deleted",
+      "deleteFailed": "Could not delete the connection",
+      "testOk": "\"{name}\" is reachable: {count} tables found",
+      "testFailed": "\"{name}\" is not reachable",
+      "unknownError": "Something went wrong, please try again."
+    },
+    "deleteDialog": {
+      "title": "Delete connection?",
+      "description": "Connection \"{name}\" will be deleted and the Agent can no longer use it. Datasets already imported from it are kept.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "form": {
+      "createTitle": "Add database connection",
+      "editTitle": "Edit connection",
+      "createDescription": "Credentials are only used on the server so the Agent can read data (read-only).",
+      "editDescription": "For safety, the saved host, user and password are never shown again. Leave a field empty to keep its current value.",
+      "type": "Database type",
+      "typeLocked": "The type cannot be changed after creation. Create a new connection instead.",
+      "name": "Connection name",
+      "namePlaceholder": "e.g. Bench Postgres",
+      "host": "Host",
+      "port": "Port",
+      "database": "Database name",
+      "databaseFile": "File name",
+      "username": "User",
+      "password": "Password",
+      "schema": "Schema (optional)",
+      "schemaPlaceholder": "public",
+      "description": "Description (optional)",
+      "descriptionPlaceholder": "What data, what for...",
+      "keepCurrent": "Empty = keep current value",
+      "currentDatabase": "Current: {label}",
+      "passwordKeep": "Empty = keep the current password",
+      "fileHint": "Name of a SQLite / DuckDB file in the server data-source folder (e.g. glass.sqlite), not a path on your computer.",
+      "dockerHint": "The HAutoML server runs in Docker: use the container name and internal port (e.g. hautoml-test-postgres, 5432), not localhost.",
+      "securityTitle": "Safety notes",
+      "security1": "Use a database account that only has SELECT permission.",
+      "security2": "The password is encrypted at rest and never shown again.",
+      "security3": "The host must be on the administrator allowlist.",
+      "saveFailed": "Could not save the connection",
+      "cancel": "Cancel",
+      "create": "Save connection",
+      "save": "Save changes",
+      "saving": "Saving..."
+    },
+    "errors": {
+      "nameRequired": "Enter a connection name.",
+      "databaseRequired": "Enter the database name.",
+      "hostRequired": "Enter the host.",
+      "hostInvalid": "Host must be a single host name or IP (no spaces, commas or slashes).",
+      "usernameRequired": "Enter the user.",
+      "portInvalid": "Port must be a number from 1 to 65535.",
+      "schemaInvalid": "Schema may only contain letters, digits, _ and $, and must not start with a digit.",
+      "tooLong": "Too long."
+    },
+    "explorer": {
+      "title": "Tables in \"{name}\"",
+      "description": "Read-only. The Agent sees exactly these tables.",
+      "loadFailed": "Could not load the tables.",
+      "noTables": "This account has not been granted read access to any table.",
+      "tableCount": "{count} tables",
+      "filter": "Filter tables...",
+      "pickTable": "Pick a table on the left to see its columns and a few sample rows.",
+      "columns": "Columns",
+      "columnName": "Column",
+      "columnType": "Type",
+      "sampleRows": "Sample rows",
+      "noRows": "The table is empty.",
+      "omitted": "{count} columns hidden.",
+      "describeFailed": "Could not read this table.",
+      "askAgent": "Ask the Agent about this table",
+      "close": "Close"
+    },
+    "agentPrompt": {
+      "tables": "Which tables are in the database connection \"{name}\"?",
+      "table": "In the database connection \"{name}\", what columns does table {table} have? Show me a few sample rows."
     }
   }
 }

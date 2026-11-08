@@ -24,6 +24,7 @@ Chạy:
 
 # Standard libraries
 import json
+from types import SimpleNamespace
 import logging
 import os
 import traceback
@@ -401,6 +402,84 @@ TOOL_SCHEMAS = [
     ),
 ]
 
+_CONNECTION_ID = {"type": "string", "description": "id kết nối, lấy từ list_database_connections."}
+
+TOOL_SCHEMAS += [
+    # --- Agent Manager: nguồn dữ liệu ngoài -----------------------------------
+    _tool(
+        "ask_sql_agent",
+        (
+            "Giao SQL Agent lấy dữ liệu từ DATABASE người dùng đã kết nối (SQLite / DuckDB / PostgreSQL / MySQL / MongoDB): "
+            "xem kết nối, bảng, cột; viết và chạy thử truy vấn chỉ-đọc; nhập kết quả thành dataset. "
+            "Kết quả có imported_datasets (dataset_id thật) để đi tiếp luồng huấn luyện."
+        ),
+        {"task": _TASK, "connection_id": {**_CONNECTION_ID, "description": "id kết nối nếu đã biết; bỏ trống nếu chưa."}},
+        ["task"],
+    ),
+    # --- SQL Agent -------------------------------------------------------------
+    _tool(
+        "list_database_connections",
+        "Liệt kê kết nối database người dùng đã lưu (id, tên, loại). Không có host hay mật khẩu.",
+        {"search": {"type": "string", "description": "Lọc theo một phần tên kết nối (không phân biệt hoa thường); bỏ trống = tất cả."}},
+    ),
+    _tool(
+        "list_database_tables",
+        "Liệt kê bảng (SQL) hoặc collection (MongoDB) của một kết nối.",
+        {"connection_id": _CONNECTION_ID,
+         "search": {"type": "string", "description": "Lọc theo một phần tên bảng; bỏ trống = tất cả."}},
+        ["connection_id"],
+    ),
+    _tool(
+        "describe_database_table",
+        "Cột (tên, kiểu) và vài dòng mẫu của một bảng / collection. Gọi TRƯỚC khi viết truy vấn.",
+        {
+            "connection_id": _CONNECTION_ID,
+            "table": {"type": "string", "description": "Tên bảng / collection, đúng như list_database_tables trả."},
+            "sample_rows": {"type": "integer", "description": "Số dòng mẫu, 1-10 (mặc định 5)."},
+        },
+        ["connection_id", "table"],
+    ),
+    _tool(
+        "preview_sql_query",
+        (
+            "Chạy thử MỘT câu SELECT chỉ-đọc trên kết nối SQL (SQLite / DuckDB / PostgreSQL / MySQL - viết đúng "
+            "dialect theo db_type của kết nối); trả vài dòng, truncated và "
+            "preview_id. Backend từ chối mọi câu ghi, nhiều câu, đọc file hay bảng không tồn tại."
+        ),
+        {
+            "connection_id": _CONNECTION_ID,
+            "sql": {"type": "string", "description": "Một câu SELECT (có thể WITH / JOIN / GROUP BY), chỉ dùng bảng và cột có thật."},
+            "params": {"type": "object", "description": "Tham số đặt tên (:ten) nếu câu SQL có; bỏ trống nếu không."},
+            "row_limit": {"type": "integer", "description": "Số dòng xem trước, 1-100 (mặc định 20)."},
+        },
+        ["connection_id", "sql"],
+    ),
+    _tool(
+        "preview_mongo_query",
+        (
+            "Chạy thử truy vấn MongoDB chỉ-đọc; trả vài dòng, truncated và preview_id. query: "
+            "{kind:'find', collection, filter?, projection?, sort?, row_limit?} hoặc "
+            "{kind:'aggregate', collection, pipeline, row_limit?} - stage chỉ $match/$project/$sort/$limit/"
+            "$skip/$group/$unwind/$count."
+        ),
+        {"connection_id": _CONNECTION_ID, "query": {"type": "object", "description": "Truy vấn MongoDB như mô tả."}},
+        ["connection_id", "query"],
+    ),
+    _tool(
+        "import_database_query",
+        (
+            "Lưu KẾT QUẢ của một preview thành dataset riêng của người dùng (trần 50.000 dòng). "
+            "Trả dataset_id để huấn luyện. Gửi lại cùng preview_id không tạo dataset thứ hai."
+        ),
+        {
+            "connection_id": _CONNECTION_ID,
+            "preview_id": {"type": "string", "description": "preview_id từ preview_sql_query / preview_mongo_query."},
+            "data_name": {"type": "string", "description": "Tên dataset mới, ngắn gọn, mô tả nội dung."},
+        },
+        ["connection_id", "preview_id", "data_name"],
+    ),
+]
+
 _SCHEMA_BY_NAME = {schema["function"]["name"]: schema for schema in TOOL_SCHEMAS}
 
 # Tool không cần trạng thái phiên: tên -> hàm trong tools.py, nhận client làm
@@ -417,6 +496,11 @@ _DISPATCH = {
     "activate_model": tools.activate_model,
     "predict": tools.predict,
     "read_reference": tools.read_reference,
+    "list_database_connections": tools.list_database_connections,
+    "list_database_tables": tools.list_database_tables,
+    "describe_database_table": tools.describe_database_table,
+    "preview_sql_query": tools.preview_sql_query,
+    "preview_mongo_query": tools.preview_mongo_query,
 }
 
 # Tool cần trạng thái của phiên (dữ liệu chuyển giữa các agent, job đang theo
@@ -430,6 +514,8 @@ SESSION_TOOLS = {
     "start_training",
     "watch_job",
     "set_auto_activate",
+    "ask_sql_agent",
+    "import_database_query",
 }
 
 
@@ -508,6 +594,22 @@ def _assistant_message(message) -> dict:
 
 def _new_usage() -> dict:
     return {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+def usage_or_estimate(response, messages: list):
+    """
+    response.usage, hoặc ƯỚC LƯỢNG (khoảng 3 ký tự / token) khi provider không trả usage. Không có bước này
+    thì trần token của lượt chat (check_budget) không bao giờ chạm với provider như vậy.
+    """
+    if response.usage is not None:
+        return response.usage
+    message = response.choices[0].message if response.choices else None
+    produced = (getattr(message, "content", None) or "") + "".join(
+        (call.function.arguments or "") for call in (getattr(message, "tool_calls", None) or [])
+    )
+    prompt = len(json.dumps(messages, ensure_ascii=False, default=str)) // 3
+    completion = len(produced) // 3 + 1
+    return SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion, total_tokens=prompt + completion)
 
 
 def _accumulate_usage(total: dict, usage) -> None:
@@ -589,15 +691,15 @@ def run_tool_loop(
             request.update(tools=tool_schemas, tool_choice="auto")
 
         response = create_completion(llm, **request)
-        _accumulate_usage(usage, response.usage)
-        if response.usage is not None:
-            emit(
-                "llm_call",
-                agent=agent,
-                prompt_tokens=response.usage.prompt_tokens or 0,
-                completion_tokens=response.usage.completion_tokens or 0,
-                total_tokens=response.usage.total_tokens or 0,
-            )
+        spent = usage_or_estimate(response, messages)
+        _accumulate_usage(usage, spent)
+        emit(
+            "llm_call",
+            agent=agent,
+            prompt_tokens=spent.prompt_tokens or 0,
+            completion_tokens=spent.completion_tokens or 0,
+            total_tokens=spent.total_tokens or 0,
+        )
 
         message = response.choices[0].message
         messages.append(_assistant_message(message))
@@ -606,7 +708,17 @@ def run_tool_loop(
         if not message.tool_calls:
             return message.content or ""
 
-        for call in message.tool_calls:
+        for index, call in enumerate(message.tool_calls):
+            if index >= MAX_TOOL_CALLS_PER_STEP:
+                # Vẫn phải trả lời MỌI tool_call (thiếu là lỗi 400 ở lượt sau) - nhưng không chạy.
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps({"ok": False, "error": (
+                        f"Quá {MAX_TOOL_CALLS_PER_STEP} tool trong một bước - tool này KHÔNG được chạy. "
+                        "Gọi ít tool hơn mỗi bước.")}, ensure_ascii=False),
+                })
+                continue
             # Gán trước: nếu json.loads ném lỗi thì nhánh báo sự kiện bên dưới
             # vẫn có biến để dùng, thay vì NameError hoặc lấy nhầm giá trị còn
             # sót của tool trước đó.
@@ -642,10 +754,39 @@ def run_tool_loop(
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.id,
-                "content": json.dumps(result, ensure_ascii=False, default=str),
+                "content": _bounded_tool_content(result),
             })
 
     return None
+
+
+# Trần chung cho MỘT kết quả tool đưa vào hội thoại (~10k token). Các tool đã tự rút gọn; đây là lưới an
+# toàn cho đường chưa rút gọn (dữ liệu người dùng dài bất thường): một kết quả khổng lồ làm lượt chat vượt
+# context / tốn tiền, và check_budget chỉ chặn được TRƯỚC lời gọi LLM kế tiếp.
+MAX_TOOL_RESULT_CHARS = 40_000
+# Một bước LLM xin chạy quá nhiều tool cùng lúc (vd 200 lời gọi) thì chỉ chạy bấy nhiêu cái đầu.
+MAX_TOOL_CALLS_PER_STEP = 8
+
+
+def _bounded_tool_content(result: dict) -> str:
+    content = json.dumps(result, ensure_ascii=False, default=str)
+    if len(content) <= MAX_TOOL_RESULT_CHARS:
+        return content
+    keep = {key: result[key] for key in ("ok", "status_code") if isinstance(result, dict) and key in result}
+    if isinstance(result, dict) and result.get("error") is not None:
+        error = str(result["error"])
+        keep["error"] = error if len(error) <= 2_000 else error[:1_999] + "…"
+    note = (
+        f"Kết quả tool dài {len(content)} ký tự, vượt trần {MAX_TOOL_RESULT_CHARS} nên chỉ giữ phần đầu. "
+        "Đừng gọi lại y hệt; thu hẹp yêu cầu (ít cột / ít dòng / lọc) nếu cần thêm."
+    )
+    size = MAX_TOOL_RESULT_CHARS - 4_000
+    while True:
+        bounded = json.dumps({**keep, "result_truncated": True, "note": note, "partial": content[:size]},
+                             ensure_ascii=False)
+        if len(bounded) <= MAX_TOOL_RESULT_CHARS or size <= 0:
+            return bounded
+        size = int(size * 0.7)  # escape JSON (dấu ", \) làm phần partial dài hơn số ký tự gốc
 
 
 def run_agent(

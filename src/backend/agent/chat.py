@@ -59,6 +59,18 @@ def _full_turns() -> int:
     return int(raw) if raw.isdigit() and int(raw) > 0 else 4
 
 
+# Lượt CŨ (đã gọn) giữ tối đa bấy nhiêu lượt, mỗi tin tối đa bấy nhiêu ký tự: phiên dài hàng trăm lượt
+# (TTL được gia hạn liên tục) hay một tin dán cả file CSV không làm mọi lượt sau gửi lại hàng trăm nghìn token.
+_MAX_OLD_TURNS = 30
+_EVENT_CHARS = 8_000
+_OLD_MESSAGE_CHARS = 2_000
+
+
+def _clip(text: str, limit: int = _OLD_MESSAGE_CHARS) -> str:
+    text = text or ""
+    return text if len(text) <= limit else text[:limit] + f"…(lược {len(text) - limit} ký tự)"
+
+
 def _strip_event_details(text: str) -> str:
     """Bỏ phần JSON chi tiết của dòng sự kiện job, giữ câu tóm tắt."""
     return "\n".join(line.split(_EVENT_DETAIL)[0] for line in (text or "").splitlines())
@@ -172,7 +184,8 @@ class ChatSession:
     def add_event(self, text: str) -> None:
         """Ghi một sự kiện để lượt chat sau Manager biết. KHÔNG gọi LLM, không tốn token."""
         with self._pending_lock:
-            self.pending_events.append(text)
+            # Lỗi job / tóm tắt có thể chứa giá trị ô dữ liệu dài: không để một sự kiện chiếm cả context.
+            self.pending_events.append(_clip(text, _EVENT_CHARS))
 
     @property
     def logged_in(self) -> bool:
@@ -199,10 +212,28 @@ class ChatSession:
         for message in self.messages[1:cut]:
             role = message.get("role")
             if role == "user":
-                compacted.append({"role": "user", "content": _strip_event_details(message.get("content"))})
+                compacted.append({"role": "user", "content": _clip(_strip_event_details(message.get("content")))})
             elif role == "assistant" and not message.get("tool_calls"):
-                compacted.append({"role": "assistant", "content": message.get("content") or "(không có nội dung)"})
-        self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
+                compacted.append({"role": "assistant", "content": _clip(message.get("content") or "(không có nội dung)")})
+        starts_old = [i for i, m in enumerate(compacted) if m["role"] == "user"]
+        shift = 0
+        if len(starts_old) > _MAX_OLD_TURNS:
+            dropped = len(starts_old) - _MAX_OLD_TURNS
+            compacted = [
+                {"role": "user", "content": f"(Hệ thống đã lược bớt {dropped} lượt cũ nhất của cuộc trò chuyện.)"},
+                {"role": "assistant", "content": "(Đã ghi nhận.)"},
+                *compacted[starts_old[-_MAX_OLD_TURNS]:],
+            ]
+            shift = dropped - 1  # bỏ `dropped` tin người dùng, thêm 1 tin ghi chú
+        team = getattr(self, "team", None)
+        lock = getattr(team, "_auto_lock", None)
+        # Đổi lịch sử và dời mốc huỷ tự kích hoạt (đếm theo số tin người dùng) trong CÙNG khoá với nút Huỷ.
+        if lock is not None:
+            with lock:
+                self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
+                team.rebase_auto_marks(shift)
+        else:
+            self.messages = [self.messages[0], *compacted, *self.messages[cut:]]
 
     def recent_user_messages(self, limit: int) -> list[str]:
         """

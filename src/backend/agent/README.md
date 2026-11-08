@@ -253,7 +253,7 @@ python -m agent.cli --provider google "..."
 
 | Agent | Tool | Endpoint / ghi chú |
 |---|---|---|
-| Manager | `ask_prompt_agent` `ask_data_agent` `ask_model_agent` `ask_operation_agent` | Uỷ thác, không gọi API trực tiếp |
+| Manager | `ask_prompt_agent` `ask_data_agent` `ask_model_agent` `ask_operation_agent` `ask_sql_agent` | Uỷ thác, không gọi API trực tiếp |
 | Prompt Agent | *(không tool)* | Một lượt LLM trả JSON R |
 | Data Agent | `list_my_datasets` | `GET /datasets` (lật hết các trang) |
 | | `get_dataset_info` | `GET /datasets/{id}` - metadata, **không có tên cột** |
@@ -268,6 +268,89 @@ python -m agent.cli --provider google "..."
 | | `activate_model` | `PUT /inference/models/{id}/activation`, chỉ job của mình và đã xong |
 | | `predict` | `POST /inference/models/{id}/predict`, tối đa 50 mẫu, soát đủ cột trước khi gửi |
 | Data + Model | `read_reference` | Đọc `skills/<tên>/references/*.md` |
+| SQL Agent | `list_database_connections` | `GET /database-connections` - chỉ id, tên, loại; không host / mật khẩu |
+| | `list_database_tables` `describe_database_table` | `/database-connections/{id}/tables`, `/describe` - metadata + vài dòng mẫu |
+| | `preview_sql_query` `preview_mongo_query` | `/database-connections/{id}/preview` - truy vấn chỉ-đọc đã kiểm, ≤ 100 dòng (LLM thấy 20), trả `preview_id` |
+| | `import_database_query` | `/database-connections/{id}/import` - kết quả thành dataset riêng (trần 50.000 dòng), ghi `Handoff.imported_datasets` |
+
+## Nguồn dữ liệu ngoài: SQL Agent và Database Adapter
+
+Ứng với khối "Database Adapter → SubAgent Generate SQL/NoSQL → Super Agent" của hướng nghiên
+cứu HAgent + AutoML. Hỗ trợ **SQLite, DuckDB, PostgreSQL, MySQL, MongoDB**; các engine SQL khác
+của `src/adapters/` vẫn dùng được cho tính năng nhập nguyên bảng cũ, chưa mở cho truy vấn tự do.
+
+```
+Người dùng tạo kết nối (giao diện / API, có mật khẩu)  ──▶  tbl_DatabaseConnection (mật khẩu mã hoá Fernet)
+Manager ──ask_sql_agent──▶ SQL Agent:
+   list_database_connections → list_database_tables → describe_database_table   (metadata)
+   → preview_sql_query / preview_mongo_query   (backend: query_policy kiểm + query_runner chạy chỉ-đọc)
+   → import_database_query                      (parquet → MinIO → tbl_Data, trả dataset_id thật)
+Manager nhận imported_datasets ──▶ Prompt → Data → Model → Operation Agent (luồng AutoML có sẵn)
+```
+
+An toàn, theo lớp (mỗi lớp tự đứng được nếu lớp khác sót):
+
+1. **Không lộ bí mật**: LLM chỉ cầm `connection_id` / `preview_id`. Mật khẩu mã hoá bằng
+   `DB_CONNECTION_ENCRYPTION_KEY` (thiếu khoá = tính năng tắt), không bao giờ trả qua API.
+   Kết nối của người khác trả 404.
+2. **Bộ kiểm truy vấn** (`src/adapters/query_policy.py`): phân tích cú pháp bằng sqlglot, đúng
+   một câu SELECT/UNION/CTE không đệ quy; chặn mọi lệnh ghi (kể cả trong CTE), `INTO`, `ATTACH`,
+   `PRAGMA`, `COPY`, hàm đọc file/extension (`read_csv`, `load_extension`...), hàm bảng, bảng
+   ngoài kết nối, schema khác. Câu được sqlglot sinh lại rồi bọc `SELECT * FROM (...) LIMIT n` -
+   chạy câu chuẩn hoá, không chạy chuỗi gốc. MongoDB: chỉ `find` và stage
+   `$match/$project/$sort/$limit/$skip/$group/$unwind/$count`; cấm `$where/$function/$out/$merge/$lookup`... ở mọi độ sâu.
+3. **Bộ chạy chỉ-đọc** (`src/adapters/query_runner.py`): mỗi truy vấn chạy trong TIẾN TRÌNH CON
+   có trần bộ nhớ (`DB_SOURCE_WORKER_MEMORY_MB`) và bị kill khi quá hạn - hàm như
+   `repeat('x', 2e9)` cấp phát GB trong một dòng, `memory_limit` của DuckDB không chặn được.
+   SQLite mở `mode=ro` + `query_only` + authorizer chặn ghi, catalog (`sqlite_master`...),
+   database khác `main` và hàm nguy hiểm (danh sách bảng được phép do bộ kiểm ở bước 2 bảo đảm);
+   DuckDB `read_only` + tắt truy cập file/mạng ngoài + khoá cấu hình. Kết quả vượt trần dung lượng
+   (preview 8 MiB, import 64 MiB) bị từ chối. File database chỉ trong `DB_SOURCE_FILES_DIR` (chặn
+   `..`, đường dẫn tuyệt đối, symlink). Endpoint cũ `/datasets/database/*` (giao diện còn dùng) với
+   SQLite/DuckDB cũng đi qua bộ chạy này - view `read_csv('/file-ngoài')` không đọc được.
+   MongoDB **mặc định tắt**: chỉ host trong `DB_SOURCE_MONGO_ALLOWED_HOSTS`, và database của chính
+   HAutoML (`MONGODB.NAME`) luôn bị chặn (nó chứa tài khoản của mọi người).
+   **PostgreSQL / MySQL** (`src/adapters/sql_server.py`, cũng trong tiến trình con) **mặc định tắt**:
+   chỉ `host` / `host:port` trong `DB_SOURCE_SQL_ALLOWED_HOSTS` (ghim cả port; chuỗi nhiều host
+   hay unix socket không lọt); database / schema hệ thống bị chặn. Ở server: transaction CHỈ ĐỌC,
+   `statement_timeout` / `max_execution_time` (server tự dừng truy vấn khi bị huỷ), ép chế độ chuỗi
+   khớp với sqlglot (Postgres `standard_conforming_strings=on`; MySQL bỏ `ANSI_QUOTES`,
+   `NO_BACKSLASH_ESCAPES`, `PIPES_AS_CONCAT`) rồi đọc lại để xác nhận; MySQL tắt `LOAD DATA LOCAL`
+   và nhiều câu một lần. Bộ kiểm thêm cho hai dialect này: cấm hint `/*+ */`, `@@biến` / `@biến`,
+   `$1`, tiền tố bảng mã, hàm đọc file / ngủ / khoá / thông tin server (`pg_read_file`, `pg_sleep`,
+   `dblink`, `query_to_xml`, `LOAD_FILE`, `SLEEP`, `BENCHMARK`, `version()`...) và `REPEAT`/`LPAD`
+   (DoS bộ nhớ server). Tham số `:ten` được gắn thành literal trong cây cú pháp; mọi bảng được viết
+   lại thành đúng tên trong metadata (Postgres kèm schema) để server không phân giải nhầm sang
+   `pg_catalog`. Lỗi đăng nhập không lộ host / tài khoản; IP trong thông báo lỗi bị che.
+4. **Giới hạn và toàn vẹn**: preview ≤ 100 dòng, import ≤ 50.000 dòng; vượt trần thì import trả 409
+   `RESULT_TRUNCATED`. Agent KHÔNG tự gửi `allow_truncated` (LLM không được tự cấp lời đồng ý): người
+   dùng muốn lấy phần đầu thì truy vấn được thêm `LIMIT 50000` (thấy rõ trong bản xem trước); API
+   cho người dùng (giao diện) vẫn có `allow_truncated`. Mỗi preview gắn sẵn một
+   `dataset_id`: gửi lại, hay tiến trình chết giữa chừng rồi thử lại, đều trả đúng dataset cũ;
+   khoá nhập có hạn (10 phút). Ghi metadata báo lỗi thì tra lại theo `_id` trước khi xoá file.
+   Kiểu dữ liệu giữ đúng: số nguyên có NULL dùng Int64, DECIMAL đổi sang số thực có ghi chú,
+   cột trộn kiểu / nhị phân / lồng bị báo rõ. Preview hết hạn sau 15 phút hoặc khi kết nối đổi.
+   Kết quả tối đa 200 cột, tên cột ≤ 128 ký tự (mô tả bảng thì bỏ cột vượt trần và báo
+   `omitted_columns`). Phần đưa vào context LLM còn bị rút gọn thêm: 20 dòng, ô ≤ 200 ký tự, lồng
+   ≤ 3 tầng / 10 phần tử, tổng dòng ≤ 12.000 ký tự, danh sách cột / bảng ≤ 6.000 ký tự; tên cột
+   không bao giờ bị cắt hay đổi - cột không vừa thì ẩn và đếm.
+
+Cấu hình backend (`src/backend/.env`): `DB_CONNECTION_ENCRYPTION_KEY`, `DB_SOURCE_FILES_DIR`,
+`DB_SOURCE_MONGO_ALLOWED_HOSTS` (trống = tắt MongoDB), `DB_SOURCE_SQL_ALLOWED_HOSTS` (trống = tắt
+PostgreSQL / MySQL; vd `pg.lab.local,mysql.lab.local:3307`), `DB_SOURCE_QUERY_TIMEOUT_SECONDS`,
+`DB_SOURCE_WORKER_MEMORY_MB`. Tài khoản database **phải chỉ có quyền SELECT** trên đúng các bảng
+muốn chia sẻ - bộ kiểm cú pháp không thay được quyền của database; view được cấp quyền chạy với
+quyền của chủ view, nên chỉ cấp view mà bạn muốn agent đọc.
+
+Test với PostgreSQL 16 / MySQL 8.4 thật (dữ liệu Glass thật, user chỉ-đọc, user có quyền ghi để
+kiểm transaction chỉ-đọc, bảng canary không cấp quyền, server cố ý để chế độ chuỗi bất lợi):
+
+```bash
+docker compose -f src/backend/tests/sql_sources/docker-compose.yml up -d --wait
+docker run --rm --network host -v $PWD:/repo -w /repo/src/backend/tests hautoml-backend-test:local \
+    python -m pytest integration/test_sql_server_sources.py   # HAUTOML_REQUIRE_SQL_SERVERS=1: bắt buộc có server
+docker compose -f src/backend/tests/sql_sources/docker-compose.yml down -v
+```
 
 ## HTTP API (`agent/server.py`, cổng 9500)
 
@@ -292,6 +375,32 @@ dài qua lúc token hết hạn sẽ nhận 401 giữa lượt.
 Mọi lượt chat chạy trong thread (`asyncio.to_thread`), không chạy thẳng trong
 event loop - một lượt gọi LLM hàng chục lần, chạy trong loop là mọi request
 khác (kể cả SSE) đứng chờ.
+
+### Hạn mức và chốt an toàn (review bảo mật 2026-11-08, Codex + Claude)
+
+| Chốt | Giá trị |
+|---|---|
+| Body JSON (mọi endpoint trừ upload), chặn TRƯỚC khi parse và kiểm token | 256 KB; `message` ≤ 20.000 ký tự |
+| Phiên / người dùng; lượt đang chạy hoặc chờ / người dùng | 8 phiên (vượt thì dọn phiên rảnh cũ nhất của CHÍNH người đó, không dọn được thì 429); 2 lượt (429) |
+| Toàn server | 200 phiên, lượt chờ ≤ 4 × số worker (503). Không bao giờ dọn phiên đang theo dõi job của người khác để nhường chỗ |
+| Upload | 8 upload xử lý cùng lúc (503), pool riêng 4 thread gọi backend; .xlsx giải nén ≤ 300 MB / 10.000 thành phần (chặn zip bomb, backend kiểm lại) |
+| ID do LLM truyền vào URL (dataset / kết nối / job) | chỉ `[A-Za-z0-9_-]{1,64}`, escape - không thoát sang endpoint khác bằng `../` |
+| Hành động thật cần người dùng nói ra | bật / tắt model (`activate_model`), tự kích hoạt, chạy lại đúng cấu hình đã chạy, cột mục tiêu khi có nhiều ứng viên. Dữ liệu (tên cột, ô, lỗi job) chỉ là dữ liệu - ngữ cảnh của sub-agent nằm ở tin user, không ở system prompt |
+| Context LLM | mỗi kết quả tool ≤ 40.000 ký tự; ô dữ liệu ≤ 200 ký tự; ≤ 8 tool / bước; lượt cũ ≤ 30, mỗi tin cũ ≤ 2.000 ký tự; sự kiện job ≤ 8.000 ký tự; provider không trả `usage` thì ước lượng token để trần lượt vẫn có hiệu lực |
+
+**Chốt ý định (train / bật / tắt model / chạy lại cấu hình trùng)** nhận ra yêu cầu của người dùng bằng
+từ khoá tiếng Việt / Anh trong 6 tin gần nhất (bỏ dòng `[Sự kiện]`), bắt thêm phủ định đứng sát ("đừng
+train", "không kích hoạt", "hủy kích hoạt"). Mục đích là chặn prompt injection - hành động chỉ do dữ liệu
+/ kết quả tool ra lệnh. Câu ghép nhiều mệnh đề và chọn job nào trong số job người dùng đã biết là việc của
+LLM. Cách nói lạ mà từ khoá không bắt được thì agent chỉ DỪNG và hỏi lại người dùng, không làm sai.
+Trả lời "Có" / "OK" một mình KHÔNG đủ: người dùng phải nói rõ hành động ("Kích hoạt model", "Train lại") -
+Manager được dặn gợi ý đúng câu xác nhận đó. Mỗi lời "chạy lại" chỉ cho MỘT lần chạy lại (phải mới hơn job
+trùng gần nhất; mốc này được dời theo khi lịch sử bị lược / lượt lỗi bị bỏ / reset).
+
+**Giới hạn đã biết:** phiên, job đang theo dõi và lời hứa "train xong tự kích hoạt"
+chỉ nằm trong RAM của agent server. Server khởi động lại thì mất - job vẫn chạy trên
+backend nhưng không ai tự kích hoạt; trang `/agent` báo "phiên mới" khi tải lại. Lưu
+bền các trạng thái này (vào MongoDB) là việc riêng chưa làm.
 
 ## Kiểm tra hồi quy
 

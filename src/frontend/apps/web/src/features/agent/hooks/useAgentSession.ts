@@ -452,6 +452,9 @@ export function useAgentSession(token: string, userKey: string) {
       if (cancelled) return;
       if (outcome === "gone") {
         writeStoredSession(userKey, null);
+        // Báo rõ thay vì im lặng: server khởi động lại / dọn phiên thì job đang theo dõi và lời hứa
+        // "train xong tự kích hoạt" cũng mất theo (chỉ nằm trong RAM của agent server).
+        markSessionLost();
         return;
       }
       // Kể cả khi chưa tới được server: dùng tiếp session_id đã lưu. Server thật sự mất
@@ -471,7 +474,7 @@ export function useAgentSession(token: string, userKey: string) {
       controller.abort();
       setRestoring(false);
     };
-  }, [adoptSession, adoptRunningTurn, ingest, push, userKey]);
+  }, [adoptSession, adoptRunningTurn, ingest, markSessionLost, push, userKey]);
 
   // Trạng thái agent server. Upload vẫn chạy được khi LLM chưa cấu hình.
   useEffect(() => {

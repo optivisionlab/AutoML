@@ -45,3 +45,4 @@ pyhive==0.7.0
 thrift==0.25.0
 thrift-sasl==0.4.3
 sqlalchemy-redshift==1.0.0
+sqlglot==30.30.0
