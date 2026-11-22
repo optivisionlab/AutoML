@@ -164,7 +164,7 @@ async def execute_demo_training(
     progress: gr.Progress = gr.Progress(),
 ):
     """
-    Execute distributed AutoML training pipeline using PyMapReduce via TrainingService.
+    Execute distributed AutoML training pipeline using Ray via TrainingService.
     """
     if df_full is None or df_full.empty:
         yield (
@@ -185,14 +185,14 @@ async def execute_demo_training(
             pd.DataFrame(),
             gr.update(visible=False),
             {"status": "IN_PROGRESS", "metric": metric_sort, "problem_type": prob_type_clean},
-            f"Training started... Preprocessing data and dispatching parallel PyMapReduce tasks for {metric_sort.upper()} optimization ({problem_type})."
+            f"Training started... Preprocessing data and dispatching parallel Ray tasks for {metric_sort.upper()} optimization ({problem_type})."
         )
 
         progress(0.15, desc="Preprocessing tabular features and encoding data...")
         start_time = time.time()
-        logger.info(f"Starting distributed AutoML pipeline on PyMapReduce for {problem_type}...")
+        logger.info(f"Starting distributed AutoML pipeline on Ray for {problem_type}...")
 
-        progress(0.40, desc="Training candidate models in parallel on PyMapReduce...")
+        progress(0.40, desc="Training candidate models in parallel on Ray...")
         target_col = str(df_full.columns[-1])
         pipeline_result = await TrainingService.train_automl_pipeline(
             df=df_full,
@@ -266,7 +266,7 @@ async def execute_demo_training(
             "all_metrics": {k: round(v, 4) for k, v in all_scores.items()},
             "best_hyperparameters": best_params,
             "cv_strategy": pipeline_result.cv_strategy.description,
-            "distributed_engine": "PyMapReduce (Task Parallelism - Multi-core Local Cluster)",
+            "distributed_engine": "Ray (Task Parallelism - Distributed Computing)",
             "total_latency_seconds": round(total_elapsed, 2)
         }
 
@@ -307,7 +307,7 @@ with gr.Blocks(title="HAutoML ToolKit") as demo:
                     <div class="brand-title">HAutoML ToolKit</div>
                     <div class="brand-subtitle">Distributed AutoML Pipeline for Tabular Data and Parallel Hyperparameter Tuning</div>
                     <div class="badge-row">
-                        <span class="tech-badge badge-purple">PyMapReduce Engine</span>
+                        <span class="tech-badge badge-purple">Ray Engine</span>
                         <span class="tech-badge badge-blue">Classification and Regression</span>
                         <span class="tech-badge badge-emerald">Continuous Stratified CV</span>
                     </div>
@@ -450,10 +450,14 @@ def cleanup_demo_session():
     Clean up temporary demo WAL session logs and free RAM upon launch and exit
     """
     import os
-    for p in ["/tmp/wal.log", "/tmp/pymapreduce/snapshot.bin", "/tmp/pymapreduce/snapshot.bin.tmp"]:
+    for p in ["/tmp/wal.log", "/tmp/ray"]:
         try:
             if os.path.exists(p):
-                os.remove(p)
+                import shutil
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    os.remove(p)
         except Exception:
             pass
     gc.collect()
@@ -464,7 +468,7 @@ if __name__ == "__main__":
     cleanup_demo_session()
     SERVER_NAME = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
     PORT = int(os.getenv("GRADIO_SERVER_PORT", 7860))
-    IN_BROWSER = os.getenv("GRADIO_IN_BROWSER", "false").lower() in ("true", "1", "yes")
+    IN_BROWSER = os.getenv("GRADIO_IN_BROWSER", "False").lower() in ("true", "1", "yes")
 
     logger.info(f"Starting HAutoML ToolKit Demo at http://{SERVER_NAME}:{PORT}...")
     try:

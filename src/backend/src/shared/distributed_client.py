@@ -8,14 +8,14 @@ from typing import Any, Coroutine
 from pathlib import Path
 
 # Third-party Libraries
+import ray
 import numpy as np
 import pandas as pd
-import pymapreduce
-from miniopy_async import Minio
 
 # Local Libraries
 from src.core import constants
 from src.config import settings
+from src.shared.storage_client import S3Storage
 
 
 # Logging
@@ -34,33 +34,7 @@ def _run_async(coro: Coroutine[Any, Any, Any]) -> Any:
     return asyncio.run(coro)
 
 
-async def _download_minio_object(
-    endpoint: str,
-    access_key: str,
-    secret_key: str,
-    bucket_name: str,
-    object_name: str,
-    secure: bool = False,
-) -> bytes:
-    client = Minio(
-        endpoint=endpoint,
-        access_key=access_key,
-        secret_key=secret_key,
-        secure=secure,
-    )
-    try:
-        res = await client.get_object(bucket_name, object_name)
-        try:
-            return await res.read()
-        finally:
-            res.close()
-            if hasattr(res, "release"):
-                res.release()
-    finally:
-        await client.close_session()
-
-
-@pymapreduce.remote(idle_timeout=settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT)
+@ray.remote(max_restarts=3)
 class ModelInferenceActor:
     def __init__(
         self,
@@ -75,18 +49,19 @@ class ModelInferenceActor:
         self.bucket_name = bucket_name
         self.object_name = object_name
 
-        raw_bytes = _run_async(
-            _download_minio_object(
-                endpoint=minio_endpoint,
-                access_key=access_key,
-                secret_key=secret_key,
-                bucket_name=bucket_name,
-                object_name=object_name,
-                secure=secure,
-            )
+        storage = S3Storage(
+            endpoint=minio_endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            is_secure=secure,
+            provider_name="MinIO"
         )
-        if isinstance(raw_bytes, io.BytesIO):
-            raw_bytes = raw_bytes.getvalue()
+        buffer: io.BytesIO = _run_async(
+            storage.get_object(bucket_name, object_name)
+        )
+        _run_async(storage.close())
+
+        raw_bytes = buffer.getvalue()
 
         artifact = pickle.loads(raw_bytes)
         if isinstance(artifact, dict) and "model" in artifact:
@@ -203,9 +178,7 @@ class ModelInferenceActor:
         return out_filename, media_type, output_buffer.getvalue()
 
 
-class MapReduceManager:
-    _driver: pymapreduce.Driver | None = None
-    _worker_handle: pymapreduce.WorkerHandle | None = None
+class RayManager:
     _is_initialized: bool = False
     _lock: asyncio.Lock | None = None
 
@@ -216,16 +189,17 @@ class MapReduceManager:
         return cls._lock
 
     @classmethod
-    async def get_driver(cls) -> pymapreduce.Driver:
-        if cls._driver and cls._is_initialized:
-            return cls._driver
+    async def get_driver(cls) -> None:
+        """Initialize or connect to Ray"""
+        if cls._is_initialized:
+            return
 
         async with cls._get_lock():
-            if cls._driver and cls._is_initialized:
-                return cls._driver
+            if cls._is_initialized:
+                return
 
-            mode = settings.PYMAPREDUCE.MODE
-            head_addr = settings.PYMAPREDUCE.HEAD_ADDRESS
+            mode = settings.RAY.MODE
+            head_addr = settings.RAY.HEAD_ADDRESS
 
             backend_dir = str(Path(__file__).resolve().parent.parent.parent)
             runtime_env = {
@@ -233,75 +207,57 @@ class MapReduceManager:
                 "excludes": ["deploy", "tests", "demo", "docs", "MapReduce", "dataset"],
             }
 
-            if mode == constants.MapReduceMode.LOCAL:
-                logger.info(f"Initializing PyMapReduce in LOCAL EMBEDDED mode at {head_addr}...")
+            if mode == constants.RayMode.LOCAL:
+                logger.info("Initializing Ray in LOCAL mode...")
                 last_err = None
                 for attempt in range(1, 4):
                     try:
-                        cls._driver = await pymapreduce.init(
-                            address=head_addr,
-                            runtime_env=runtime_env
+                        ray.init(
+                            runtime_env=runtime_env,
+                            ignore_reinit_error=True,
                         )
                         break
                     except Exception as err:
                         last_err = err
-                        logger.warning(f"PyMapReduce init attempt {attempt}/3 failed: {err}. Retrying in 0.5s...")
+                        logger.warning(f"Ray init attempt {attempt}/3 failed: {err}. Retrying in 0.5s...")
                         await asyncio.sleep(0.5)
 
-                if cls._driver is None:
-                    raise RuntimeError(f"Failed to initialize PyMapReduce HeadNode after 3 attempts: {last_err}")
+                if not ray.is_initialized():
+                    raise RuntimeError(f"Failed to initialize Ray after 3 attempts: {last_err}")
 
-                cls._worker_handle = await pymapreduce.connect_worker(
-                    head_addr,
-                    idle_timeout=settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT or 0
-                )
-
-                await asyncio.sleep(0.5)
-                logger.info("PyMapReduce Local Cluster successfully initialized and worker registered")
+                logger.info("Ray successfully initialized")
             else:
-                logger.info(f"Connecting to PyMapReduce Cluster at HeadNode '{head_addr}' with runtime_env working_dir={backend_dir}...")
+                ray_addr = head_addr if head_addr.startswith("ray://") else f"ray://{head_addr}"
+                logger.info(f"Connecting to Ray Cluster at '{ray_addr}' with runtime_env working_dir={backend_dir}...")
                 last_err = None
                 for attempt in range(1, 4):
                     try:
-                        cls._driver = await pymapreduce.connect(
-                            head_node=head_addr,
-                            runtime_env=runtime_env
+                        ray.init(
+                            address=ray_addr,
+                            runtime_env=runtime_env,
+                            ignore_reinit_error=True,
                         )
                         break
                     except Exception as err:
                         last_err = err
-                        logger.warning(f"PyMapReduce connect attempt {attempt}/3 failed: {err}. Retrying in 0.5s...")
+                        logger.warning(f"Ray connect attempt {attempt}/3 failed: {err}. Retrying in 0.5s...")
                         await asyncio.sleep(0.5)
 
-                if cls._driver is None:
-                    raise RuntimeError(f"Failed to connect to PyMapReduce Cluster after 3 attempts: {last_err}")
+                if not ray.is_initialized():
+                    raise RuntimeError(f"Failed to connect to Ray Cluster after 3 attempts: {last_err}")
 
-                logger.info("Successfully connected to PyMapReduce Cluster")
+                logger.info("Successfully connected to Ray Cluster")
 
             cls._is_initialized = True
-            return cls._driver
 
     @classmethod
     async def shutdown(cls) -> None:
         async with cls._get_lock():
-            if cls._worker_handle is not None:
+            if cls._is_initialized:
                 try:
-                    await cls._worker_handle.disconnect(graceful=True)
-                    logger.info("PyMapReduce Local Worker disconnected")
+                    ray.shutdown()
+                    logger.info("Ray shutdown completed")
                 except Exception as e:
-                    logger.warning(f"Error while disconnecting PyMapReduce Worker: {e}")
+                    logger.warning(f"Error while shutting down Ray: {e}")
                 finally:
-                    cls._worker_handle = None
-
-            if cls._driver and cls._is_initialized:
-                try:
-                    mode = settings.PYMAPREDUCE.MODE
-                    if mode == constants.MapReduceMode.LOCAL:
-                        await cls._driver.shutdown()
-                    logger.info("PyMapReduce Driver shutdown completed")
-                except Exception as e:
-                    logger.warning(f"Error while shutting down PyMapReduce Driver: {e}")
-                finally:
-                    cls._driver = None
                     cls._is_initialized = False
-

@@ -14,7 +14,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 # Local Libraries
 from src.core import exceptions, constants, utils
 from src.config import settings
-from src.shared import minio_service, MapReduceManager, kafka_service
+from src.shared import minio_service, kafka_service
 from src.modules.trainings import TrainingRepository
 from src.modules.trainings.pipeline import pipeline_from_job
 from src.modules.inference.schemas import (
@@ -40,13 +40,6 @@ class InferenceService:
     def __init__(self, db: AsyncDatabase):
         self.db = db
         self.repo = TrainingRepository(db)
-
-    @staticmethod
-    async def _resolve_actor_output(out: Any) -> Any:
-        if hasattr(out, "object_id"):
-            driver = await MapReduceManager.get_driver()
-            return await driver.get(out)
-        return out
 
     async def _get_validated_job(self, current_user: dict, job_id: str) -> dict[str, Any]:
         job_doc = await self.repo.get_job_by_id(job_id)
@@ -177,10 +170,9 @@ class InferenceService:
 
         try:
             start_time = time.perf_counter()
-            raw_preds = await InferenceActorRegistry.invoke_actor(
+            predictions = await InferenceActorRegistry.invoke_actor(
                 job_id, storage_info, "predict", request.data, expected_features
             )
-            predictions = await self._resolve_actor_output(raw_preds)
             latency_ms = (time.perf_counter() - start_time) * 1000.0
         except Exception as e:
             raise exceptions.CustomException(
@@ -256,7 +248,7 @@ class InferenceService:
         target_col = config.get("target", "target")
 
         try:
-            raw_out = await InferenceActorRegistry.invoke_actor(
+            out_filename, media_type, out_bytes = await InferenceActorRegistry.invoke_actor(
                 job_id,
                 storage_info,
                 "predict_file",
@@ -265,7 +257,6 @@ class InferenceService:
                 expected_features=expected_features,
                 target_col=target_col,
             )
-            out_filename, media_type, out_bytes = await self._resolve_actor_output(raw_out)
         except Exception as e:
             raise exceptions.CustomException(
                 status_code=status.HTTP_400_BAD_REQUEST,

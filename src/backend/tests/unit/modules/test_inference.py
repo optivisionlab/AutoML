@@ -21,8 +21,8 @@ class TestInferenceActorRegistry(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await InferenceActorRegistry.clear()
 
-    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
-    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote")
+    @patch("src.shared.RayManager.get_driver", new_callable=AsyncMock)
     async def test_get_or_create_actor_and_eviction(self, mock_get_driver, mock_actor_remote):
         mock_actor_handle = MagicMock()
         mock_actor_remote.return_value = mock_actor_handle
@@ -41,14 +41,14 @@ class TestInferenceActorRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(actor2, mock_actor_handle)
         mock_actor_remote.assert_not_called()
 
-        with patch("pymapreduce.kill", new_callable=AsyncMock) as mock_kill:
+        with patch("ray.kill") as mock_kill:
             evicted = await InferenceActorRegistry.evict_actor(job_id)
             self.assertTrue(evicted)
             mock_kill.assert_called_once_with(mock_actor_handle)
             self.assertNotIn(job_id, InferenceActorRegistry._actors)
 
-    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote", new_callable=AsyncMock)
-    @patch("src.shared.MapReduceManager.get_driver", new_callable=AsyncMock)
+    @patch("src.shared.mapreduce_client.ModelInferenceActor.remote")
+    @patch("src.shared.RayManager.get_driver", new_callable=AsyncMock)
     async def test_invoke_actor_with_retry(self, mock_get_driver, mock_actor_remote):
         first_handle = MagicMock()
         first_handle.predict.remote = AsyncMock(side_effect=RuntimeError("Actor Disconnected"))

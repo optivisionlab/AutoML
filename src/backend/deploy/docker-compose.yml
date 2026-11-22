@@ -14,6 +14,9 @@ services:
     environment:
       - GRADIO_SERVER_NAME=0.0.0.0
       - GRADIO_SERVER_PORT=7860
+      - GRADIO_IN_BROWSER=False
+      - RAY_MODE=local
+      - RAY_HEAD_ADDRESS=localhost:7777
     networks:
       - hautoml_net
 
@@ -32,16 +35,6 @@ services:
       - "${PORT_BACK_END:-9999}:9999"
     env_file:
       - ../.env
-    environment:
-      - MONGODB_CONNECT=mongodb://mongodb:27017
-      - MINIO_ENDPOINT=minio:9000
-      - KAFKA_SERVER=kafka:9092
-      - MQTT_HOSTNAME=mqtt_broker
-    depends_on:
-      - mongo
-      - minio
-      - kafka
-      - mqtt
     networks:
       - hautoml_net
 
@@ -58,15 +51,6 @@ services:
     command: ["python", "-m", "src.kafka_consumer"]
     env_file:
       - ../.env
-    environment:
-      - MONGODB_CONNECT=mongodb://mongodb:27017
-      - MINIO_ENDPOINT=minio:9000
-      - KAFKA_SERVER=kafka:9092
-      - MQTT_HOSTNAME=mqtt_broker
-    depends_on:
-      - kafka
-      - mongo
-      - minio
     networks:
       - hautoml_net
 
@@ -109,7 +93,7 @@ services:
       - "9001:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-password123456}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-password123}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -161,7 +145,8 @@ services:
 
 networks:
   hautoml_net:
-    driver: bridge
+    name: hautoml_net
+    external: true
 
 volumes:
   mqtt_data:

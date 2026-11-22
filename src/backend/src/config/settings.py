@@ -73,11 +73,10 @@ class KafkaSettings(CommonSettings):
     TOPIC: str = Field(default="train-job-topic", validation_alias="KAFKA_TOPIC")
 
 
-class MapReduceSettings(CommonSettings):
-    MODE: str = Field(default="local", validation_alias="MAPREDUCE_MODE")
-    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="MAPREDUCE_HEAD_ADDRESS")
-    WORKER_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_WORKER_IDLE_TIMEOUT")
-    ACTOR_IDLE_TIMEOUT: int = Field(default=0, validation_alias="MAPREDUCE_ACTOR_IDLE_TIMEOUT")
+class RaySettings(CommonSettings):
+    MODE: str = Field(default="local", validation_alias="RAY_MODE")
+    HEAD_ADDRESS: str = Field(default="localhost:7777", validation_alias="RAY_HEAD_ADDRESS")
+    ACTOR_IDLE_TIMEOUT: int = Field(default=0, validation_alias="RAY_ACTOR_IDLE_TIMEOUT")
 
 
 class BackendAddress(CommonSettings):
@@ -126,8 +125,8 @@ class Settings(CommonSettings):
     # Kafka Settings
     KAFKA: KafkaSettings = Field(default_factory=KafkaSettings)
 
-    # PyMapReduce Settings
-    PYMAPREDUCE: MapReduceSettings = Field(default_factory=MapReduceSettings)
+    # Ray Settings
+    RAY: RaySettings = Field(default_factory=RaySettings)
 
     # List of allowed API sources
     BACKEND_CORS_ORIGINS: list[str] = [
