@@ -6,7 +6,7 @@ from src.modules.inference.schemas import (
     PredictRequest,
     PredictResponse,
 )
-from src.modules.inference.registry import InferenceActorRegistry, InferenceModelRegistry
+from src.modules.inference.registry import InferenceActorRegistry
 from src.modules.inference.templates import (
     CodeSnippetGenerator,
     DockerPackageTemplate,
@@ -18,7 +18,6 @@ __all__ = [
     "inference",
     "InferenceService",
     "InferenceActorRegistry",
-    "InferenceModelRegistry",
     "CodeSnippetGenerator",
     "DockerPackageTemplate",
     "NotebookTemplate",

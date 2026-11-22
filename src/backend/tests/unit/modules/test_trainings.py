@@ -69,7 +69,7 @@ class TestTrainingRepository(unittest.IsolatedAsyncioTestCase):
 
 
 class TestTrainingService(unittest.IsolatedAsyncioTestCase):
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
     async def test_train_automl_pipeline_classification(self, mock_dispatch, mock_driver):
         mock_driver.return_value = AsyncMock()
@@ -116,7 +116,7 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(artifact["problem_type"], "classification")
         self.assertIsNotNone(artifact["preprocessor"])
 
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
     async def test_train_automl_pipeline_regression(self, mock_dispatch, mock_driver):
         mock_driver.return_value = AsyncMock()
@@ -163,7 +163,7 @@ class TestTrainingService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(artifact["problem_type"], "regression")
         self.assertIsNotNone(artifact["preprocessor"])
 
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
     async def test_train_automl_pipeline_time_series(self, mock_dispatch, mock_driver):
         mock_driver.return_value = AsyncMock()
@@ -486,7 +486,7 @@ class TestPipelineFromJob(unittest.TestCase):
 
 
 class TestTrainingPipelineTracking(unittest.IsolatedAsyncioTestCase):
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
     async def test_train_automl_pipeline_fills_tracker(self, mock_dispatch, mock_driver):
         from src.modules.models.service import ModelService
@@ -534,7 +534,7 @@ class TestTrainingPipelineTracking(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pipeline["select_best"]["output"], {"best_model": "LinearRegression", "score_source": "cv"})
         on_progress.assert_awaited()
 
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     @patch("src.modules.trainings.service.TrainingService._dispatch_and_collect_tasks")
     async def test_train_automl_pipeline_fills_tracker_for_classification_with_holdout(self, mock_dispatch, mock_driver):
         from src.modules.models.service import ModelService
@@ -579,7 +579,7 @@ class TestTrainingPipelineTracking(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model["holdout_scores"], {"accuracy": 0.9, "f1_macro": 0.88})
         self.assertEqual(pipeline["select_best"]["output"], {"best_model": "GaussianNB", "score_source": "holdout"})
 
-    @patch("src.modules.trainings.service.MapReduceManager.get_driver")
+    @patch("src.modules.trainings.service.RayManager.get_driver")
     async def test_preprocessing_failure_marks_only_preprocessing(self, mock_driver):
         mock_driver.return_value = AsyncMock()
         tracker = PipelineTracker("job", "data", "classification", "grid_search", "accuracy", "missing", None, None)

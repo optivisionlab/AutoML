@@ -15,7 +15,7 @@ EMPTY_RESULTS_HTML = """
 <div class="empty-state-card">
     <div class="empty-state-icon-tag">AWAITING TRAINING</div>
     <div class="empty-state-title">No Results Yet</div>
-    <div class="empty-state-desc">Choose your primary optimization metric and click <strong>Start Distributed Training</strong> to train multiple ML models in parallel on PyMapReduce.</div>
+    <div class="empty-state-desc">Choose your primary optimization metric and click <strong>Start Distributed Training</strong> to train multiple ML models in parallel on Ray.</div>
 </div>
 """
 
@@ -34,7 +34,7 @@ def render_training_in_progress_html(metric_sort: str = "accuracy", problem_type
         <div class="champion-header">
             <div class="champion-title-wrap">
                 <span class="champion-tag" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">TRAINING IN PROGRESS</span>
-                <div class="champion-name" style="font-size: 20px; color: #4338ca;">Distributed PyMapReduce Tasks Running...</div>
+                <div class="champion-name" style="font-size: 20px; color: #4338ca;">Distributed Ray Tasks Running...</div>
             </div>
             <div class="champion-score-wrap">
                 <div class="champion-score-label">Optimizing For</div>
@@ -165,7 +165,7 @@ def render_champion_card_html(
         </div>
 
         <div class="champion-footer">
-            <div class="footer-meta-item">Distributed Engine: <strong>PyMapReduce</strong></div>
+            <div class="footer-meta-item">Distributed Engine: <strong>Ray</strong></div>
             <div class="footer-meta-item">Evaluated: <strong>{n_models} Models</strong></div>
             <div class="footer-meta-item">CV Tier: <strong>{html.escape(cv_strategy_desc.split(':')[0])}</strong></div>
             <div class="footer-meta-item">Duration: <strong>{total_elapsed:.2f}s</strong></div>

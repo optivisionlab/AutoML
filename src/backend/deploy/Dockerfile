@@ -1,5 +1,5 @@
-# 1. Base Stage: System & Python Dependencies
-FROM python:3.10-slim AS base
+# 1. Base Stage: System Dependencies
+FROM python:3.10-slim AS base-system
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -14,14 +14,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python production and demo dependencies
+# ========================================================
+
+# 2. Base Worker Stage: ML & Core Dependencies
+FROM base-system AS base-worker
+
+COPY deploy/requirements.txt /app/deploy_requirements.txt
+RUN pip install --no-cache-dir -r /app/deploy_requirements.txt
+
+# ========================================================
+
+# 3. Base Backend Stage: Install remaining dependencies (Database Drivers & Connectors)
+FROM base-worker AS base-backend
+
+# Pip will scan requirements.txt, find all ML libs already satisfied in base-worker,
+# and only install the remaining packages (Database Drivers & Connectors).
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # ========================================================
 
-# 2. Test Stage: Run Unit Tests with pytest
-FROM base AS test-runner
+# 4. Test Stage: Run Unit Tests with pytest
+FROM base-backend AS test-runner
 
 # Install testing dependencies from tests/requirements.txt
 COPY tests/requirements.txt /app/tests_requirements.txt
@@ -37,8 +51,8 @@ RUN pytest tests/ -c tests/pytest.ini -v
 
 # ========================================================
 
-# 3. Production
-FROM base AS production
+# 5. Production: Backend API & Training Consumer
+FROM base-backend AS production
 
 # Copy application source code, assets
 COPY --from=test-runner /app/src/ /app/src/
@@ -46,10 +60,9 @@ COPY --from=test-runner /app/assets/ /app/assets/
 
 CMD ["python", "-m", "src.main"]
 
-
 # ========================================================
 
-# 4. Toolkit
+# 6. Toolkit: Standalone Demo UI
 FROM production AS toolkit
 
 # Copy demo ui
