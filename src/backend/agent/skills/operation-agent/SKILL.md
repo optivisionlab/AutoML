@@ -62,14 +62,15 @@ dataset và config - đó là job cũ hoặc của phiên khác.
 | `status` | Nghĩa |
 |---|---|
 | `0` | Đang chạy - chưa có kết quả |
-| `1` | Xong - có `best_model`, `best_score`, `best_params`, và `orther_model_scores` |
-| `-1` | Thất bại - đọc trường `infor` để biết lý do |
+| `1` | Xong - có `best_model`, `best_score`, `best_model_scores`, `leaderboard` |
+| `-1` | Thất bại - đọc trường `error` để biết lý do |
 | `-2` | Đã bị huỷ |
 
 `best_score` chỉ là điểm theo `metric_sort`. Điểm ĐẦY ĐỦ (accuracy, precision,
-recall, f1, r2, mse...) của từng model nằm trong `orther_model_scores[].scores`
-(tên trường backend viết sai chính tả, giữ nguyên) - người dùng hỏi precision /
-recall / F1 thì đọc ở đó, đừng nói hệ thống không có. Backend KHÔNG lưu ma trận
+recall, f1, r2, mse...) của model tốt nhất nằm trong `best_model_scores`; `leaderboard`
+xếp top 5 model theo `metric_sort`. Cần điểm và tham số của MỌI model thì gọi
+`get_job_info` với `include_all_models=true` (trường `all_models`) - người dùng hỏi
+precision / recall / F1 thì đọc ở đó, đừng nói hệ thống không có. Backend KHÔNG lưu ma trận
 nhầm lẫn hay đường ROC. `get_job_info` của job đã xong có `score_source`: `cv` = điểm
 cross-validation trên chính dữ liệu chọn model (có thể lạc quan), `holdout` = tập kiểm tra
 riêng, `null` = không rõ - báo kèm `score_note` khi nêu điểm.

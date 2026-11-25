@@ -24,12 +24,14 @@ Chạy:
 """
 
 # Standard libraries
+import copy
 import inspect
 import json
 from types import SimpleNamespace
 import logging
 import os
 import random
+import threading
 import time
 import traceback
 
@@ -116,7 +118,9 @@ def log_exception(logger: logging.Logger, message: str, *args) -> None:
 # nằm ở đây: SDK dùng CÙNG một timeout cho mọi lần thử và không có trần tổng thời gian, nên provider treo giữ lượt
 # chat tới (max_retries + 1) × timeout (~30 phút). Ở đây mỗi lần thử bị kẹp theo thời gian còn lại của lượt.
 DEFAULT_LLM_MAX_RETRIES = 5
-_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+# 520-524: lỗi cổng Cloudflare đứng trước nhiều provider (vd FPT AI Factory trả 524 khi origin quá ~100 s) - lỗi
+# tạm thời giống 502/504 (benchmark v5-01, ca B05_r05).
+_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 _TRANSIENT_ERRORS = ("APIConnectionError", "APITimeoutError")
 _BACKOFF_BASE = 0.5
 _BACKOFF_MAX = 8.0
@@ -157,7 +161,7 @@ def _retry_delay(error: Exception, attempt: int) -> float:
     return min(_BACKOFF_BASE * (2 ** attempt), _BACKOFF_MAX) * (1 - 0.25 * random.random())
 
 
-def create_completion(llm, time_left=None, **request):
+def create_completion(llm, time_left=None, cancel_event: threading.Event | None = None, **request):
     """
     Gọi LLM, tự thử lại lỗi tạm thời trong giới hạn thời gian của lượt chat.
 
@@ -168,6 +172,7 @@ def create_completion(llm, time_left=None, **request):
 
     time_left: hàm trả số giây còn lại của lượt (None = không giới hạn). Mỗi lần thử có timeout = min(AGENT_LLM_TIMEOUT,
     thời gian còn lại); hết giờ thì raise TurnDeadlineExceeded thay vì thử tiếp.
+    cancel_event: cờ nút Dừng của lượt; được bật trong lúc chờ thử lại thì raise TurnCancelled ngay.
     """
     temperature = llm_temperature()
     if temperature is not None and "temperature" not in request:
@@ -205,7 +210,11 @@ def create_completion(llm, time_left=None, **request):
                     f"lượt chat hết thời gian cho phép khi LLM còn lỗi tạm thời ({describe_error(error)})"
                 ) from error
             _log.warning("LLM lỗi tạm thời (%s), thử lại sau %.1fs", describe_error(error), delay)
-            time.sleep(delay)
+            if cancel_event is not None:
+                if cancel_event.wait(delay):
+                    raise TurnCancelled("người dùng đã bấm Dừng trong lúc chờ thử lại LLM") from error
+            else:
+                time.sleep(delay)
             attempt += 1
 
 
@@ -219,14 +228,20 @@ _SECRET_KEYS = {"password", "new_password", "confirm_password"}
 
 _DATASET_ID = {
     "type": "string",
-    "description": "ID dataset, lấy từ trường _id trong kết quả list_my_datasets.",
+    "description": "ID dataset, lấy từ trường dataset_id trong kết quả list_my_datasets.",
 }
 _PROBLEM_TYPE = {
     "type": "string",
     "enum": list(tools.PROBLEM_TYPES),
     "description": "Loại bài toán: time_series là dự báo giá trị số theo thời gian.",
 }
-_JOB_ID = {"type": "string", "description": "job_id, lấy từ list_my_jobs hoặc start_training."}
+_JOB_ID = {
+    "type": "string",
+    "description": (
+        "job_id thật, lấy từ list_my_jobs (mục 'Job do chính phiên chat này tạo') hoặc từ sự kiện xác nhận "
+        "huấn luyện. start_training KHÔNG trả job_id; đừng đoán."
+    ),
+}
 _TASK = {
     "type": "string",
     "description": (
@@ -310,7 +325,15 @@ TOOL_SCHEMAS = [
     # --- Data Agent ---------------------------------------------------------------
     _tool(
         "list_my_datasets",
-        "Liệt kê các dataset của tài khoản đang đăng nhập. Không cần truyền user_id, tool tự lấy.",
+        (
+            "Liệt kê dataset của tài khoản đang đăng nhập, mới nhất trước. Mỗi dataset: dataset_id, name, created, "
+            "description (cắt ngắn). Trả total (số khớp) và shown; còn nữa thì có hint. Không cần user_id."
+        ),
+        {
+            "search": {"type": "string", "description": "Lọc theo một phần tên dataset, không phân biệt hoa thường."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100,
+                      "description": "Số dataset tối đa, 1 đến 100. Mặc định 20."},
+        },
     ),
     _tool(
         "get_dataset_info",
@@ -326,7 +349,8 @@ TOOL_SCHEMAS = [
         (
             "Lấy danh sách thuộc tính (cột) của một dataset, kèm kiểu dữ liệu, số giá trị "
             "khác nhau, số giá trị thiếu, vài giá trị mẫu, và cột nào dùng được làm biến "
-            "mục tiêu."
+            "mục tiêu. Dataset rộng: thống kê cho 60 cột đầu (columns_truncated=true), đủ tên mọi cột "
+            "nằm trong all_column_names."
         ),
         {
             "dataset_id": _DATASET_ID,
@@ -462,8 +486,15 @@ TOOL_SCHEMAS = [
     ),
     _tool(
         "get_job_info",
-        "Xem chi tiết một job huấn luyện, gồm trạng thái và kết quả các model.",
-        {"job_id": _JOB_ID},
+        (
+            "Xem một job huấn luyện: status/status_label, config chính (target, metric_sort, feature_count), "
+            "best_model, best_score, leaderboard top 5 theo metric_sort, error (khi failed/cancelled), score_source "
+            "(khi xong). Cần điểm và tham số của MỌI model thì đặt include_all_models=true."
+        ),
+        {
+            "job_id": _JOB_ID,
+            "include_all_models": {"type": "boolean", "description": "Kèm all_models (mọi model, điểm, tham số). Mặc định false."},
+        },
         ["job_id"],
     ),
     _tool(
@@ -751,7 +782,39 @@ def _assistant_message(message) -> dict:
 
 
 def _new_usage() -> dict:
-    return {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    return {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
+
+
+def cached_prompt_tokens(usage) -> int:
+    """
+    Số token prompt provider lấy từ cache prefix (usage.prompt_tokens_details.cached_tokens - OpenAI, Azure, Gemini
+    kiểu OpenAI). Phần này rẻ hơn nhiều: đo được thì mới biết prefix (system prompt, schema tool) có thật sự ổn định.
+    """
+    details = getattr(usage, "prompt_tokens_details", None)
+    value = details.get("cached_tokens") if isinstance(details, dict) else getattr(details, "cached_tokens", None)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def estimate_tokens(messages: list) -> int:
+    """Ước lượng số token của danh sách tin nhắn (~3 ký tự / token), không cần tokenizer của provider."""
+    return len(json.dumps(messages, ensure_ascii=False, default=str)) // 3
+
+
+_CONTEXT_OVERFLOW_HINTS = (
+    "context_length_exceeded", "maximum context length", "context window", "prompt is too long", "too many tokens",
+)
+
+
+class ContextOverflow(RuntimeError):
+    """Lịch sử vẫn vượt context của model sau khi đã rút gọn mạnh: người dùng phải mở cuộc trò chuyện mới."""
+
+
+def is_context_overflow(error: Exception) -> bool:
+    """Lỗi provider báo yêu cầu vượt context window (mỗi provider diễn đạt một kiểu)."""
+    status = getattr(error, "status_code", None)
+    if status == 413:
+        return True
+    return status == 400 and any(hint in str(error).lower() for hint in _CONTEXT_OVERFLOW_HINTS)
 
 
 def usage_or_estimate(response, messages: list):
@@ -765,7 +828,7 @@ def usage_or_estimate(response, messages: list):
     produced = (getattr(message, "content", None) or "") + "".join(
         (call.function.arguments or "") for call in (getattr(message, "tool_calls", None) or [])
     )
-    prompt = len(json.dumps(messages, ensure_ascii=False, default=str)) // 3
+    prompt = estimate_tokens(messages)
     completion = len(produced) // 3 + 1
     return SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion, total_tokens=prompt + completion)
 
@@ -784,6 +847,7 @@ def _accumulate_usage(total: dict, usage) -> None:
     total["prompt_tokens"] += usage.prompt_tokens or 0
     total["completion_tokens"] += usage.completion_tokens or 0
     total["total_tokens"] += usage.total_tokens or 0
+    total["cached_tokens"] = total.get("cached_tokens", 0) + cached_prompt_tokens(usage)
 
 
 def _print_usage(total: dict) -> None:
@@ -797,7 +861,7 @@ def _print_usage(total: dict) -> None:
 
     line = (
         f"  [cost] {total['calls']} lượt gọi LLM | "
-        f"prompt {total['prompt_tokens']} + completion {total['completion_tokens']}"
+        f"prompt {total['prompt_tokens']} (cache {total.get('cached_tokens', 0)}) + completion {total['completion_tokens']}"
     )
     if hidden > 0:
         line += f" + thinking {hidden}"
@@ -821,6 +885,8 @@ def run_tool_loop(
     max_steps: int = MAX_STEPS,
     check_budget=None,
     time_left=None,
+    cancel_event: threading.Event | None = None,
+    before_tool=None,
 ) -> str | None:
     """
     Vòng tool-calling: gọi LLM, chạy tool nó yêu cầu, lặp tới khi có câu trả lời.
@@ -835,6 +901,10 @@ def run_tool_loop(
         check_budget: check_budget(agent) - gọi trước mỗi lời gọi LLM, raise
             TurnBudgetExceeded khi lượt chat đã tiêu quá trần token, quá hạn, hoặc bị huỷ.
         time_left: số giây còn lại của lượt (xem create_completion).
+        cancel_event: cờ nút Dừng. Bật giữa một bước thì các tool còn lại của bước KHÔNG chạy (vẫn có tool message
+            trả lời) và lượt dừng ở lần kiểm kế tiếp.
+        before_tool: before_tool(tên_tool) -> None (cho chạy) hoặc câu lỗi (không chạy, trả câu đó cho LLM) - trần
+            tổng số tool call của lượt chat.
 
     Returns:
         Câu trả lời cuối, hoặc None nếu chạy hết max_steps mà chưa xong.
@@ -854,7 +924,7 @@ def run_tool_loop(
         if tool_schemas:
             request.update(tools=tool_schemas, tool_choice="auto")
 
-        response = create_completion(llm, time_left=time_left, **request)
+        response = create_completion(llm, time_left=time_left, cancel_event=cancel_event, **request)
         spent = usage_or_estimate(response, messages)
         _accumulate_usage(usage, spent)
         emit(
@@ -863,6 +933,7 @@ def run_tool_loop(
             prompt_tokens=spent.prompt_tokens or 0,
             completion_tokens=spent.completion_tokens or 0,
             total_tokens=spent.total_tokens or 0,
+            cached_tokens=cached_prompt_tokens(spent),
             # Phiên bản model provider THẬT SỰ dùng (audit AG-19) - tên cấu hình có thể trỏ tới bản mới hơn.
             model=getattr(response, "model", None) if isinstance(getattr(response, "model", None), str) else None,
         )
@@ -874,7 +945,27 @@ def run_tool_loop(
         if not message.tool_calls:
             return message.content or ""
 
+        skipped_for_stop = False
         for index, call in enumerate(message.tool_calls):
+            if cancel_event is not None and cancel_event.is_set():
+                # Người dùng bấm Dừng giữa bước: không chạy tool còn lại (vd đề nghị huấn luyện tiếp), nhưng vẫn
+                # trả lời mọi tool_call để lịch sử hợp lệ.
+                skipped_for_stop = True
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps({"ok": False, "cancelled": True, "error": (
+                        "Người dùng đã bấm Dừng. Tool này KHÔNG được chạy.")}, ensure_ascii=False),
+                })
+                continue
+            refusal = before_tool(call.function.name) if before_tool is not None and index < MAX_TOOL_CALLS_PER_STEP else None
+            if refusal:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": json.dumps({"ok": False, "retryable": False, "error": refusal}, ensure_ascii=False),
+                })
+                continue
             if index >= MAX_TOOL_CALLS_PER_STEP:
                 # Vẫn phải trả lời MỌI tool_call (thiếu là lỗi 400 ở lượt sau) - nhưng không chạy.
                 messages.append({
@@ -925,6 +1016,9 @@ def run_tool_loop(
                 "content": _bounded_tool_content(result),
             })
 
+        if skipped_for_stop and check_budget is None:
+            raise TurnCancelled("người dùng đã bấm Dừng giữa một bước")
+
     return None
 
 
@@ -936,18 +1030,56 @@ MAX_TOOL_RESULT_CHARS = 40_000
 MAX_TOOL_CALLS_PER_STEP = 8
 
 
+def _longest_string(value, path=()):
+    """(độ dài, đường dẫn) của lá chuỗi dài nhất trong dict/list lồng nhau."""
+    best = (len(value), path) if isinstance(value, str) else (-1, path)
+    children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, child in children:
+        found = _longest_string(child, (*path, key))
+        if found[0] > best[0]:
+            best = found
+    return best
+
+
+def _shrink_strings(value: dict, limit: int) -> dict | None:
+    """
+    Bản sao của `value` vừa `limit` ký tự JSON, thu nhỏ bằng cách cắt dần chuỗi DÀI NHẤT (report, mô tả, ô dữ
+    liệu...) - các khoá có cấu trúc (config_id, awaiting_confirmation...) giữ nguyên. None khi cắt chuỗi không đủ
+    (vd hàng nghìn phần tử nhỏ).
+    """
+    shrunk = copy.deepcopy(value)
+    for _ in range(40):
+        if len(json.dumps(shrunk, ensure_ascii=False, default=str)) <= limit:
+            return shrunk
+        length, path = _longest_string(shrunk)
+        if length <= 200 or not path:
+            return None
+        parent = shrunk
+        for key in path[:-1]:
+            parent = parent[key]
+        text = parent[path[-1]]
+        keep = max(200, length // 2)
+        parent[path[-1]] = text[:keep] + f"…(lược {length - keep} ký tự)"
+    return None
+
+
 def _bounded_tool_content(result: dict) -> str:
     content = json.dumps(result, ensure_ascii=False, default=str)
     if len(content) <= MAX_TOOL_RESULT_CHARS:
         return content
-    keep = {key: result[key] for key in ("ok", "status_code") if isinstance(result, dict) and key in result}
-    if isinstance(result, dict) and result.get("error") is not None:
-        error = str(result["error"])
-        keep["error"] = error if len(error) <= 2_000 else error[:1_999] + "…"
     note = (
         f"Kết quả tool dài {len(content)} ký tự, vượt trần {MAX_TOOL_RESULT_CHARS} nên chỉ giữ phần đầu. "
         "Đừng gọi lại y hệt; thu hẹp yêu cầu (ít cột / ít dòng / lọc) nếu cần thêm."
     )
+    if isinstance(result, dict):
+        # Ưu tiên cắt chuỗi dài: các trường có cấu trúc (ID, thẻ chờ xác nhận) là thứ code chuyển giữa các agent.
+        shrunk = _shrink_strings(result, MAX_TOOL_RESULT_CHARS - 1_000)
+        if shrunk is not None:
+            return json.dumps({**shrunk, "result_truncated": True, "note": note}, ensure_ascii=False, default=str)
+    keep = {key: result[key] for key in ("ok", "status_code") if isinstance(result, dict) and key in result}
+    if isinstance(result, dict) and result.get("error") is not None:
+        error = str(result["error"])
+        keep["error"] = error if len(error) <= 2_000 else error[:1_999] + "…"
     size = MAX_TOOL_RESULT_CHARS - 4_000
     while True:
         bounded = json.dumps({**keep, "result_truncated": True, "note": note, "partial": content[:size]},

@@ -41,10 +41,25 @@ _MAX_WATCH_SECONDS = 26 * 60 * 60
 # huỷ job (POST /inference/jobs/{id}/cancel) chỉ đổi status trong bản ghi job, KHÔNG đổi pipeline.status - không có
 # lần kiểm này thì job bị huỷ trông như vẫn chạy tới hết hạn.
 FULL_CHECK_EVERY = 6
+# Job nằm "queued" quá lâu (worker / Kafka hỏng) thì thôi theo dõi, không gia hạn tới trần 26 giờ.
+MAX_QUEUED_SECONDS = 2 * 60 * 60
+# Token người dùng (15 phút) hết hạn khi họ rời trang: hỏi tiếp chỉ ra 401. Quá chừng này thì TẠM DỪNG (giữ lời
+# hứa tự kích hoạt) và theo dõi lại khi có token mới; trong lúc chờ thì giãn nhịp hỏi tới MAX_BACKOFF_SECONDS.
+AUTH_LOST_AFTER_SECONDS = 15 * 60
+MAX_BACKOFF_SECONDS = 300
+_TIMEOUT_ERRORS = {
+    "deadline": "Quá thời gian chờ mà job chưa kết thúc. Hỏi lại sau để xem trạng thái.",
+    "queued": (
+        "Job nằm trong hàng đợi quá 2 giờ mà chưa chạy (worker hoặc Kafka có thể đang hỏng). "
+        "Kiểm tra lại sau hoặc huỷ và tạo lại job."
+    ),
+    "auth_lost": (
+        "Mất phiên đăng nhập nên chưa theo dõi tiếp được. Job có thể đã xong; mở lại trang để cập nhật kết quả."
+    ),
+}
 
-# Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong
-# src/core/constants.py của backend.
-LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse"}
+# Metric "càng nhỏ càng tốt" (một nguồn duy nhất: tools).
+LOWER_IS_BETTER = tools.LOWER_IS_BETTER
 
 _OPS = {
     ">=": lambda score, value: score >= value,
@@ -218,6 +233,16 @@ class JobWatcher:
         # Trạng thái trước khi hết giờ theo dõi (off / cancelled): theo dõi lại thì khôi phục -
         # chỉ lời hứa đang chờ (pending) mới thật sự hết hiệu lực.
         self._before_expiry: dict[str, str] = {}
+        # Tham số của lần watch gần nhất (để theo dõi lại) và các job đang tạm dừng vì mất đăng nhập.
+        self._watch_args: dict[str, dict] = {}
+        self._paused: set[str] = set()
+        # Job được theo dõi LẠI (sau mất đăng nhập / restart): nếu lần hỏi đầu thấy job đã xong thì nó xong lúc
+        # không ai theo dõi - lời hứa tự kích hoạt thành thẻ xác nhận, không tự kích hoạt muộn.
+        self._resumed: set[str] = set()
+        # Lưu trạng thái theo dõi qua restart (watch_store.WatchStore); None = chỉ trong RAM.
+        self._store = None
+        self._owner: str | None = None
+        self._session_id: str | None = None
         self._lock = threading.Lock()
         self._stopped = threading.Event()
 
@@ -249,6 +274,11 @@ class JobWatcher:
             if requirements is None:
                 requirements = self._promise_requirements.get(job_id)
 
+            self._watch_args[job_id] = {
+                "max_time": max_time, "requirements": requirements, "dataset_id": dataset_id,
+                "problem_type": problem_type,
+            }
+            self._paused.discard(job_id)
             budget = (max_time or _BACKEND_DEFAULT_MAX_TIME) + _GRACE_SECONDS
             deadline = time.time() + budget
             thread = threading.Thread(
@@ -268,6 +298,7 @@ class JobWatcher:
                 # Lời hứa đang chờ đã hết hiệu lực khi hết giờ: theo dõi lại KHÔNG tự sống lại ("off"),
                 # nhưng người dùng yêu cầu lại thì bật được (team.watch_job đặt mốc cho lời mới).
                 self._auto[job_id] = "off"
+            self._persist_locked(job_id)
             # Phát job_watch TRƯỚC khi thread chạy: thread có thể phát ngay job_watch_warning /
             # job_status, và frontend phải thấy "bắt đầu theo dõi" trước mọi sự kiện của job.
             self._emit(
@@ -336,6 +367,7 @@ class JobWatcher:
             self._auto[job_id] = "pending" if enabled else "cancelled"
             if enabled and constraints:
                 self._added_constraints[job_id] = _merge_constraints(self._added_constraints.get(job_id) or [], constraints)
+            self._persist_locked(job_id)
             # Phát trong khoá: thứ tự sự kiện khớp thứ tự đổi trạng thái.
             self._emit(
                 "auto_activate_changed", agent="operation-agent", job_id=job_id, enabled=bool(enabled),
@@ -343,7 +375,9 @@ class JobWatcher:
             )
         return "ok"
 
-    def activate_promised(self, job_id: str, summary: dict, job: dict | None = None) -> dict | None:
+    def activate_promised(
+        self, job_id: str, summary: dict, job: dict | None = None, finished_unwatched: bool = False,
+    ) -> dict | None:
         """
         Thực hiện lời hứa tự kích hoạt của job (đúng MỘT lần): None nếu không có lời hứa nào
         đang chờ (không yêu cầu, đã huỷ, đã làm, hết hiệu lực). Nhận việc trong khoá
@@ -360,6 +394,19 @@ class JobWatcher:
                 if state in ("cancelled", "off", None):
                     self._auto[job_id] = "done"
                 return None
+            if finished_unwatched:
+                # Job xong trong lúc không ai theo dõi (có thể đã lâu, người dùng có thể đã kích hoạt model khác):
+                # không thay model đang phục vụ mà người dùng không thấy - để họ xác nhận.
+                self._auto[job_id] = "done"
+                return {
+                    "ok": False,
+                    "skipped": True,
+                    "needs_confirmation": True,
+                    "error": (
+                        "Không tự kích hoạt: job đã xong trong lúc agent không theo dõi (mất đăng nhập hoặc server "
+                        "khởi động lại). Cần người dùng xác nhận trước khi kích hoạt."
+                    ),
+                }
             self._auto[job_id] = "activating"
             requirements = self._with_added(job_id, self._promise_requirements.get(job_id))
         if job is not None and "summary_error" not in summary:
@@ -427,6 +474,79 @@ class JobWatcher:
     def stop(self) -> None:
         self._stopped.set()
 
+    def attach_store(self, store, owner: str, session_id: str) -> None:
+        """Lưu trạng thái theo dõi của phiên `session_id` (chủ `owner`) vào `store` để sống qua restart."""
+        with self._lock:
+            self._store, self._owner, self._session_id = store, owner, session_id
+
+    def _persist_locked(self, job_id: str) -> None:
+        """Ghi bản ghi theo dõi của job (gọi khi ĐANG giữ self._lock). Lỗi ghi chỉ log, không làm hỏng việc theo dõi."""
+        if self._store is None:
+            return
+        record = {
+            **(self._watch_args.get(job_id) or {}),
+            "auto_state": self._auto.get(job_id),
+            "added_constraints": self._added_constraints.get(job_id) or [],
+            "paused": job_id in self._paused,
+        }
+        try:
+            self._store.save(self._owner, job_id, self._session_id, record)
+        except Exception:  # noqa: BLE001
+            log_exception(_log, "lưu trạng thái theo dõi job %s lỗi", job_id)
+
+    def _forget(self, job_id: str) -> None:
+        """Job đã có kết quả cuối (hoặc hết hạn theo dõi): xoá bản ghi; job tạm dừng vì mất đăng nhập thì giữ."""
+        with self._lock:
+            if self._store is None or job_id in self._paused:
+                return
+            try:
+                self._store.remove(self._owner, job_id)
+            except Exception:  # noqa: BLE001
+                log_exception(_log, "xoá trạng thái theo dõi job %s lỗi", job_id)
+
+    def resume(self, records: list[dict]) -> list[str]:
+        """
+        Theo dõi lại các job từ bản ghi đã lưu (phiên trước của cùng chủ đã chết, hoặc server vừa restart): khôi
+        phục trạng thái tự kích hoạt và điều kiện thêm, rồi watch. Job đang được theo dõi thì bỏ qua.
+        """
+        started = []
+        for record in records:
+            job_id = record.get("job_id")
+            if not job_id:
+                continue
+            with self._lock:
+                thread = self._threads.get(job_id)
+                if thread is not None and thread.is_alive():
+                    continue
+                if record.get("auto_state"):
+                    self._auto[job_id] = record["auto_state"]
+                    self._promise_requirements[job_id] = record.get("requirements")
+                if record.get("added_constraints"):
+                    self._added_constraints[job_id] = record["added_constraints"]
+                self._resumed.add(job_id)
+            if self.watch(
+                job_id, max_time=record.get("max_time"), requirements=record.get("requirements"),
+                dataset_id=record.get("dataset_id"), problem_type=record.get("problem_type"),
+            ):
+                started.append(job_id)
+        return started
+
+    def resume_paused(self) -> list[str]:
+        """
+        Theo dõi lại các job đã tạm dừng vì mất đăng nhập (gọi khi phiên nhận token mới). Trạng thái tự kích hoạt
+        giữ nguyên ("pending" vẫn là pending). Trả các job_id đã theo dõi lại.
+        """
+        with self._lock:
+            paused, self._paused = sorted(self._paused), set()
+            args = {job_id: dict(self._watch_args.get(job_id) or {}) for job_id in paused}
+            self._resumed.update(paused)
+        return [job_id for job_id in paused if self.watch(job_id, **args[job_id])]
+
+    @staticmethod
+    def _backoff(wait: float | None, poll: float) -> float:
+        """Nhịp hỏi kế tiếp khi lỗi đăng nhập kéo dài: gấp đôi, tối đa MAX_BACKOFF_SECONDS."""
+        return min(MAX_BACKOFF_SECONDS, (wait or poll) * 2)
+
     def _run(
         self, job_id: str, deadline: float, requirements: dict | None, trace_context: dict | None = None,
         budget: float | None = None,
@@ -457,16 +577,19 @@ class JobWatcher:
             # job biến khỏi active() và người dùng không bao giờ được báo.
             try:
                 if self._poll_once(job_id, requirements, emit, state):
+                    self._forget(job_id)
                     return
             except Exception:  # noqa: BLE001
                 log_exception(_log, "theo dõi job %s lỗi", job_id)
                 self._warn(emit, state, job_id, "error", "Lỗi tạm thời khi theo dõi job, sẽ thử lại.")
 
             if time.time() >= min(state["deadline"], state["hard_deadline"]):
+                reason = state.get("timeout_reason", "deadline")
                 summary = {
                     "job_id": job_id,
                     "status": state["last_status"],
-                    "error": "Quá thời gian chờ mà job chưa kết thúc. Hỏi lại sau để xem trạng thái.",
+                    "reason": reason,
+                    "error": _TIMEOUT_ERRORS[reason],
                 }
                 if self.drop_promise(job_id, "expired"):
                     # Đã hứa tự kích hoạt mà thôi theo dõi: lời hứa hết hiệu lực - nói rõ là CHƯA
@@ -474,9 +597,10 @@ class JobWatcher:
                     summary["auto_activate_skipped"] = True
                 emit("job_watch_timeout", level="WARNING", **summary)
                 self._finish(summary)
+                self._forget(job_id)
                 return
 
-            self._stopped.wait(self._poll)
+            self._stopped.wait(state.get("wait") or self._poll)
 
     @staticmethod
     def _warn(emit, state: dict, job_id: str, kind: str, error: str) -> None:
@@ -505,6 +629,7 @@ class JobWatcher:
             phase = tools.job_pipeline_phase(self._api, job_id)
             if phase in ("queued", "running"):
                 self._note_phase(state, phase)
+                state["auth_failing_since"] = state["wait"] = None
                 if state["warned"]:
                     emit("job_watch_resumed", job_id=job_id)
                     state["warned"] = None
@@ -514,8 +639,13 @@ class JobWatcher:
                     state["last_status"] = tools.JOB_RUNNING
                 return False
         job, problem = tools.find_own_job(self._api, job_id)
+        with self._lock:
+            resumed_first_poll = job_id in self._resumed and problem is None
+            if problem is None:
+                self._resumed.discard(job_id)
 
         if problem is None:
+            state["auth_failing_since"] = state["wait"] = None
             if state["warned"]:
                 emit("job_watch_resumed", job_id=job_id)
                 state["warned"] = None
@@ -547,7 +677,7 @@ class JobWatcher:
                         "summary_error": "Không đọc được kết quả chi tiết của job (bản ghi dị dạng).",
                     }
                 if status == tools.JOB_SUCCESS:
-                    activation = self.activate_promised(job_id, summary, job)
+                    activation = self.activate_promised(job_id, summary, job, finished_unwatched=resumed_first_poll)
                     if activation is not None:
                         summary["activation"] = activation
                 self.drop_promise(job_id)
@@ -569,14 +699,39 @@ class JobWatcher:
 
         if problem.get("status_code") in (401, 403):
             self._warn(emit, state, job_id, "auth", "Phiên đăng nhập hết hạn, sẽ thử lại khi có token mới.")
+            now = time.time()
+            since = state.get("auth_failing_since") or now
+            state["auth_failing_since"] = since
+            state["wait"] = self._backoff(state.get("wait"), self._poll)
+            if now - since >= AUTH_LOST_AFTER_SECONDS:
+                # TẠM DỪNG, không phải hết hạn: lời hứa tự kích hoạt giữ nguyên, theo dõi lại khi có token mới.
+                with self._lock:
+                    self._paused.add(job_id)
+                    self._persist_locked(job_id)
+                summary = {"job_id": job_id, "status": state["last_status"], "reason": "auth_lost",
+                           "error": _TIMEOUT_ERRORS["auth_lost"]}
+                emit("job_watch_timeout", level="WARNING", **summary)
+                self._finish(summary)
+                return True
         # Lỗi khác (mất mạng, backend khởi động lại) coi là tạm thời: hỏi lại sau.
         return False
 
     @staticmethod
     def _note_phase(state: dict, phase: str) -> None:
         """Pipeline còn xếp hàng (hoặc vừa bắt đầu chạy): hạn theo dõi tính lại từ lúc này, trong trần tuyệt đối."""
+        now = time.time()
+        if phase == "queued":
+            state["queued_since"] = state.get("queued_since") or now
+            if now - state["queued_since"] >= MAX_QUEUED_SECONDS:
+                # Kẹt hàng đợi: thôi gia hạn, hết hạn ngay với lý do riêng.
+                state["deadline"] = now
+                state["timeout_reason"] = "queued"
+                state["phase"] = phase
+                return
+        else:
+            state["queued_since"] = None
         if state.get("budget") and (phase == "queued" or state["phase"] != "running"):
-            state["deadline"] = min(state["hard_deadline"], max(state["deadline"], time.time() + state["budget"]))
+            state["deadline"] = min(state["hard_deadline"], max(state["deadline"], now + state["budget"]))
         state["phase"] = phase
 
     def activate_if_allowed(self, job_id: str, summary: dict, requirements: dict | None) -> dict:

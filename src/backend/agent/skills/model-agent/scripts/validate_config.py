@@ -9,6 +9,8 @@ Hàm ở đây là thuần tuý: không mạng, không LLM, không đọc file. 
 được bằng pytest hoặc chạy tay, không tốn quota.
 """
 
+import difflib
+
 # Tên thuật toán tìm kiếm mà backend chấp nhận.
 # Nguồn: src/core/constants.py (SearchAlgorithm) của backend v1
 SEARCH_ALGORITHMS = ("grid_search", "random_search", "bayesian_search", "tpe_search", "genetic_algorithm")
@@ -28,6 +30,35 @@ def looks_like_id(column: str) -> bool:
     """Đoán cột có phải khoá định danh không, để cảnh báo khi dùng làm đặc trưng."""
     lowered = column.strip().lower()
     return lowered in _ID_HINTS or lowered.endswith("_id") or lowered.startswith("id_")
+
+
+_MAX_UNKNOWN_LISTED = 10
+# Ký tự hay gõ nhầm cho nhau (O/0, l/I/1): so khớp trên dạng chuẩn hoá để "col_1O" gợi ý được "col_10".
+_LOOKALIKES = str.maketrans("oil", "011")
+
+
+def _match_key(name) -> str:
+    return str(name).lower().translate(_LOOKALIKES)
+
+
+def _unknown_columns_message(kind: str, unknown: list[str], columns) -> str:
+    """
+    Lỗi cột không tồn tại: chỉ nêu tên sai (tối đa 10) kèm tên gần đúng, KHÔNG liệt kê mọi cột - dataset vài
+    trăm cột làm lỗi dài hơn trần kết quả tool và bị cắt mất đúng phần cần sửa.
+    """
+    by_key = {}
+    for name in columns:
+        by_key.setdefault(_match_key(name), str(name))
+    parts = []
+    for name in unknown[:_MAX_UNKNOWN_LISTED]:
+        close = difflib.get_close_matches(_match_key(name), list(by_key), n=3, cutoff=0.6)
+        hint = f" (có phải: {', '.join(by_key[c] for c in close)}?)" if close else ""
+        parts.append(f"'{name}'{hint}")
+    more = f" và {len(unknown) - _MAX_UNKNOWN_LISTED} cột khác" if len(unknown) > _MAX_UNKNOWN_LISTED else ""
+    return (
+        f"Cột {kind} không có trong dataset: {'; '.join(parts)}{more}. "
+        "Xem all_column_names (hoặc columns) trong kết quả get_dataset_schema để có danh sách đầy đủ."
+    )
 
 
 def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dict:
@@ -63,10 +94,7 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
     if not target:
         errors.append("Thiếu 'target'.")
     elif target not in columns:
-        errors.append(
-            f"Cột mục tiêu '{target}' không có trong dataset. "
-            f"Các cột có thật: {', '.join(sorted(columns))}"
-        )
+        errors.append(_unknown_columns_message("mục tiêu", [target], columns))
     elif not targets_allowed:
         errors.append(
             f"Dataset không có cột nào dùng làm biến mục tiêu được với "
@@ -89,10 +117,7 @@ def validate_config(config: dict, schema: dict, valid_metrics: list[str]) -> dic
 
     unknown = [f for f in features if f not in columns]
     if unknown:
-        errors.append(
-            f"Các cột đặc trưng không có trong dataset: {', '.join(unknown)}. "
-            f"Các cột có thật: {', '.join(sorted(columns))}"
-        )
+        errors.append(_unknown_columns_message("đặc trưng", unknown, columns))
 
     if target and target in features:
         errors.append(

@@ -43,6 +43,7 @@ from agent.agent_openai import (
     log_exception,
     _DISPATCH,
     _accumulate_usage,
+    cached_prompt_tokens,
     usage_or_estimate,
     run_tool_loop,
     schemas_for,
@@ -121,7 +122,18 @@ def normalize_metric(name, problem_type: str | None) -> str | None:
     return metric if metric in allowed else None
 
 # Dataset rộng hàng trăm cột thì hồ sơ đầy đủ quá dài cho prompt Model Agent.
-_MAX_PROFILE_COLUMNS = 60
+# Báo cáo văn bản tự do của sub-agent (không đặt max_tokens) có trần: report dài đẩy kết quả ask_* quá
+# MAX_TOOL_RESULT_CHARS, và phần cắt đi không được là các trường có cấu trúc đi kèm.
+REPORT_MAX_CHARS = 8_000
+# Trần uỷ thác của Manager trong MỘT lượt: các trần bước nhân với nhau (12 bước x 8 lời gọi x 8 bước sub-agent),
+# và việc uỷ thác lại y hệt khi sub-agent hỏng là vòng lặp tốn kém nhất.
+MAX_DELEGATIONS_PER_TURN = 6
+MAX_SAME_DELEGATION = 2
+_PARTIAL_REPORT_PROMPT = (
+    "Bạn đã dùng hết số bước. KHÔNG gọi tool nữa. Viết báo cáo dở dang: đã làm được gì, các ID đã có "
+    "(dataset_id, config_id, job_id, preview_id), còn thiếu gì."
+)
+_MAX_PROFILE_COLUMNS = tools.MAX_COLUMNS_FOR_LLM
 _SAMPLES_PER_COLUMN = 3
 # Prompt Agent không thấy lịch sử, chỉ thấy vài câu gần nhất của người dùng -
 # đủ để không mất chi tiết như "target là cột Type" nói ở lượt trước.
@@ -183,6 +195,103 @@ def _mentions_any(text: str, labels: list[str]) -> bool:
         re.search(rf"(?<!\w){re.escape(label)}(?!\w)", text, 0 if len(label.strip()) <= 2 else re.IGNORECASE)
         for label in labels if label.strip()
     )
+
+
+_SQL_TABLE = re.compile(
+    r"\b(?:from|join)\s+(?:[`\"\[]?[\w$]+[`\"\]]?\s*\.\s*)*[`\"\[]?([\w$]+)[`\"\]]?", re.IGNORECASE,
+)
+
+
+def _sql_source_tables(sql: str) -> list[str]:
+    """Tên bảng sau FROM / JOIN (bỏ schema, bỏ dấu trích dẫn): SELECT * FROM "public"."crab_train" -> crab_train."""
+    return list(dict.fromkeys(match.group(1) for match in _SQL_TABLE.finditer(sql or "")))
+
+
+# ---- Giá trị người dùng đã viết rõ trong tin nhắn (benchmark v5-01: B06 tự nâng max_time 5 -> 60 giây; ablation
+# B04 bỏ cột target khỏi danh sách feature người dùng liệt kê, B05 đổi metric accuracy -> r2). Chỉ nhận những gì
+# đọc chắc chắn; câu mơ hồ thì không khoá gì - khoá sai còn tệ hơn không khoá.
+_TIME_UNIT_SECONDS = {
+    "giây": 1, "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+    "phút": 60, "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60,
+    "giờ": 3600, "h": 3600, "hour": 3600, "hours": 3600,
+}
+_MAX_TIME_SAID = re.compile(
+    r"max_time\s*[:=]?\s*(\d+)\s*(" + "|".join(sorted(_TIME_UNIT_SECONDS, key=len, reverse=True)) + r")?(?!\w)",
+    re.IGNORECASE,
+)
+_PROBLEM_TYPE_WORDS = {
+    "classification": "classification", "phân loại": "classification",
+    "regression": "regression", "hồi quy": "regression",
+    "time_series": "time_series", "time series": "time_series", "chuỗi thời gian": "time_series",
+}
+# Metric ngay trước một phép so sánh là RÀNG BUỘC ("f1_macro >= 0.5"), không phải metric chọn model.
+_CONSTRAINT_FOLLOWS = re.compile(
+    r"\s*(?:>=|<=|>|<|≥|≤|=|trên|dưới|ít nhất|tối thiểu|tối đa|không quá|at least|at most|above|below)",
+    re.IGNORECASE,
+)
+_LIST_COMMA = re.compile(r"\s*,\s*")
+_LIST_LAST = re.compile(r"\s*,?\s*(?:và|and)\s+", re.IGNORECASE)
+
+
+def _word_hits(text: str, words) -> list[tuple[int, int, str]]:
+    """(đầu, cuối, từ) của các từ trong `words` xuất hiện đúng từ, không phân biệt hoa thường; từ dài được ưu tiên."""
+    hits, taken = [], []
+    for word in sorted({str(w) for w in words if str(w).strip()}, key=len, reverse=True):
+        for match in re.finditer(rf"(?<!\w){re.escape(word)}(?!\w)", text, re.IGNORECASE):
+            if not any(match.start() < end and start < match.end() for start, end in taken):
+                taken.append((match.start(), match.end()))
+                hits.append((match.start(), match.end(), word))
+    return sorted(hits)
+
+
+def _listed_features(text: str, columns: list[str]) -> list[str] | None:
+    """
+    Danh sách feature người dùng liệt kê: từ hai tên cột trở lên đứng liền nhau, ngăn bằng dấu phẩy (mục cuối có
+    thể nối bằng "và" / "and"). "bỏ Ba và Fe" không có dấu phẩy nên không phải danh sách. Có hơn một danh sách
+    như vậy trong câu thì mơ hồ: None.
+    """
+    canonical = {str(c).lower(): str(c) for c in columns}
+    runs, run, has_comma, previous_end = [], [], False, None
+    for start, end, word in _word_hits(text, columns):
+        gap = text[previous_end:start] if previous_end is not None else None
+        if run and gap is not None and _LIST_COMMA.fullmatch(gap):
+            run.append(canonical[word.lower()])
+            has_comma = True
+        elif run and gap is not None and has_comma and _LIST_LAST.fullmatch(gap):
+            run.append(canonical[word.lower()])
+        else:
+            if len(run) >= 2 and has_comma:
+                runs.append(run)
+            run, has_comma = [canonical[word.lower()]], False
+        previous_end = end
+    if len(run) >= 2 and has_comma:
+        runs.append(run)
+    return runs[0] if len(runs) == 1 else None
+
+
+def _user_fixed_values(text: str, columns: list[str], metrics: set[str]) -> dict:
+    """Giá trị người dùng viết rõ trong MỘT tin nhắn: list_feature, metric_sort, problem_type, max_time, search."""
+    fixed = {}
+    features = _listed_features(text, columns)
+    if features:
+        fixed["list_feature"] = features
+    named_metrics = {word.lower() for _, end, word in _word_hits(text, metrics) if not _CONSTRAINT_FOLLOWS.match(text[end:])}
+    if len(named_metrics) == 1:
+        fixed["metric_sort"] = named_metrics.pop()
+    kinds = {_PROBLEM_TYPE_WORDS[word.lower()] for _, _, word in _word_hits(text, _PROBLEM_TYPE_WORDS)}
+    if len(kinds) == 1:
+        fixed["problem_type"] = kinds.pop()
+    seconds = {
+        int(number) * _TIME_UNIT_SECONDS.get((unit or "giây").lower(), 1)
+        for number, unit in _MAX_TIME_SAID.findall(text)
+    }
+    if len(seconds) == 1:
+        fixed["max_time"] = seconds.pop()
+    searches = {word.lower() for _, _, word in _word_hits(
+        text, tools._load_skill_script("model-agent", "validate_config").SEARCH_ALGORITHMS)}
+    if len(searches) == 1:
+        fixed["search_algorithm"] = searches.pop()
+    return fixed
 
 
 def _mentions_column(messages: list[str], column: str) -> bool:
@@ -343,27 +452,19 @@ def parse_json(text: str) -> dict:
     return value
 
 
-def _bounded_candidates(candidates, by_type: dict) -> dict:
-    """target_candidates / theo loại bài toán: tên cột, cùng trần với all_column_names (dataset rất rộng)."""
-    shown, hidden = tools._fit_names([str(c) for c in candidates or []], budget=8_000)
-    by_type_shown, by_type_hidden = {}, 0
-    for kind, names in (by_type or {}).items():
-        kept, extra = tools._fit_names([str(c) for c in names or []], budget=4_000)
-        by_type_shown[kind] = kept
-        by_type_hidden += extra
-    out = {"target_candidates": shown, "target_candidates_by_type": by_type_shown}
-    if hidden or by_type_hidden:
-        out["target_candidates_hidden"] = hidden + by_type_hidden
-    return out
+def _context_json(value) -> str:
+    """JSON gọn (không thụt dòng, không khoảng trắng thừa) cho ngữ cảnh gửi LLM: hồ sơ dữ liệu 120 cột nhẹ hơn ~25%."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def _all_column_names(columns: list) -> dict:
-    """
-    Đủ tên cột của dataset rộng - có TRẦN: file upload không giới hạn số cột / độ dài tên, một header 1 MB thành
-    ~300k token trong MỘT lời gọi (check_budget chỉ chặn trước lời gọi kế tiếp). Tên dài > 128 ký tự bị ẩn.
-    """
-    names, hidden = tools._fit_names([str(c.get("name")) for c in columns], budget=12_000)
-    return {"all_column_names": names, **({"column_names_hidden": hidden} if hidden else {})}
+def _clip_report(report: str) -> str:
+    if len(report) <= REPORT_MAX_CHARS:
+        return report
+    return report[:REPORT_MAX_CHARS] + f"…(lược {len(report) - REPORT_MAX_CHARS} ký tự)"
+
+
+_bounded_candidates = tools.bounded_candidates
+_all_column_names = tools.all_column_names
 
 
 def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
@@ -380,15 +481,9 @@ def profile_brief(schema: dict, problem_type: str | None = None) -> dict:
     extra = {key: schema[key] for key in ("time_columns", "time_series_note") if schema.get(key)}
     if extra.get("time_columns"):
         # Cột ngày giờ cũng có trần: file có hàng nghìn cột ngày giờ tên dài thành ~250k token một lần gọi.
-        kept, used = [], 0
-        for item in extra["time_columns"]:
-            size = len(json.dumps(item, ensure_ascii=False, default=str))
-            if used + size > 4_000:
-                continue  # chỉ ẩn đúng cột không vừa (vd tên quá dài), không ẩn cả các cột sau
-            kept.append(item)
-            used += size
-        if len(kept) < len(extra["time_columns"]):
-            extra["time_columns_hidden"] = len(extra["time_columns"]) - len(kept)
+        kept, hidden = tools._cap_items(extra["time_columns"], 4_000)
+        if hidden:
+            extra["time_columns_hidden"] = hidden
         extra["time_columns"] = kept
     return {
         "dataset_id": schema.get("dataset_id"),
@@ -625,10 +720,13 @@ class AgentTeam:
         self._turn_unknown_creates: list[str] = []
         # Dataset SQL Agent nhập trong lượt đang chạy - lượt lỗi thì phải báo lại (audit AG-17).
         self._turn_imports: list[str] = []
+        # preview_id -> bảng / collection nguồn của lần chạy thử đó (để biết dataset nhập về đến từ bảng nào).
+        self._preview_sources: dict[str, list[str]] = {}
         # Một lần xác nhận chạy tại một thời điểm (hai request xác nhận song song không chen nhau).
         self._confirm_lock = threading.Lock()
 
     def begin_turn(self) -> None:
+        self._turn_delegations: list[tuple[str, str]] = []
         self._turn_auto_changes = []
         self._turn_unknown_creates = []
         self._turn_imports = []
@@ -685,6 +783,8 @@ class AgentTeam:
             "set_auto_activate": self.set_auto_activate,
             "activate_model": self.activate_model,
             "ask_sql_agent": self.ask_sql_agent,
+            "preview_sql_query": self.preview_sql_query,
+            "preview_mongo_query": self.preview_mongo_query,
             "import_database_query": self.import_database_query,
         }
         dispatch = {
@@ -699,8 +799,34 @@ class AgentTeam:
 
     # ------------------------------------------------------------ chạy sub-agent
 
+    def _delegation_refusal(self, agent: str, task: str) -> dict | None:
+        """
+        Lỗi (dict) khi lượt này đã uỷ thác đủ MAX_DELEGATIONS_PER_TURN lần, hoặc đúng việc này cho đúng agent này
+        đã giao MAX_SAME_DELEGATION lần liên tiếp. Không thì ghi nhận lần uỷ thác và trả None.
+        """
+        done = self.__dict__.setdefault("_turn_delegations", [])
+        key = (agent, " ".join(str(task or "").split()).lower())
+        if len(done) >= MAX_DELEGATIONS_PER_TURN:
+            error = (
+                f"Đã uỷ thác {len(done)} lần trong lượt này. Tổng hợp kết quả đã có và trả lời người dùng; "
+                "đừng uỷ thác thêm."
+            )
+        elif len(done) >= MAX_SAME_DELEGATION and all(item == key for item in done[-MAX_SAME_DELEGATION:]):
+            error = (
+                f"Đã giao đúng việc này cho {prompts.title(agent)} {MAX_SAME_DELEGATION} lần liên tiếp. Đổi cách "
+                "làm hoặc trả lời người dùng với thông tin đang có."
+            )
+        else:
+            done.append(key)
+            return None
+        self._emit("agent_done", agent=agent, ok=False, error=error)
+        return {"ok": False, "agent": agent, "error": error, "retryable": False}
+
     def _run_subagent(self, agent: str, task: str, context: str = "") -> dict:
         """Chạy một sub-agent tới khi nó báo cáo xong. Không raise."""
+        refusal = self._delegation_refusal(agent, task)
+        if refusal is not None:
+            return refusal
         schemas, dispatch = self.tools_for(agent)
         messages = [
             {"role": "system", "content": prompts.agent_prompt(agent)},
@@ -728,6 +854,8 @@ class AgentTeam:
                 max_steps=SUBAGENT_MAX_STEPS,
                 check_budget=self.session.check_budget,
                 time_left=getattr(self.session, "time_left", None),
+                cancel_event=getattr(self.session, "cancel_requested", None),
+                before_tool=getattr(self.session, "count_tool_call", None),
             )
         except Exception as error:  # noqa: BLE001 - sub-agent hỏng không được làm chết Manager
             # Vượt trần token cũng về đây (không raise tiếp: Manager đang giữ một
@@ -746,7 +874,12 @@ class AgentTeam:
         if report is None:
             message = f"{prompts.title(agent)} chạy quá {SUBAGENT_MAX_STEPS} bước mà chưa xong."
             self._emit("agent_done", agent=agent, ok=False, error=message)
-            return {"ok": False, "agent": agent, "error": message}
+            # Giữ lại phần việc đã làm: không có nó Manager uỷ thác lại từ đầu (thêm ~8 lời gọi LLM).
+            partial = self._partial_report(agent, messages, schemas)
+            result = {"ok": False, "agent": agent, "error": message, "partial": bool(partial)}
+            if partial:
+                result["report"] = _clip_report(partial)
+            return result
 
         self._emit("agent_done", agent=agent, ok=True)
         if not report.strip():
@@ -759,7 +892,28 @@ class AgentTeam:
                     "đừng suy diễn thêm, cần thì giao lại việc kèm yêu cầu báo cáo.)"
                 ),
             }
-        return {"ok": True, "agent": agent, "report": report}
+        return {"ok": True, "agent": agent, "report": _clip_report(report)}
+
+    def _partial_report(self, agent: str, messages: list, schemas: list) -> str | None:
+        """Một lời gọi LLM cuối, không cho gọi tool, xin báo cáo dở dang. Lỗi bất kỳ (kể cả hết ngân sách): None."""
+        try:
+            self.session.check_budget(agent)
+            request = {
+                "model": self.session.config.model,
+                "messages": [*messages, {"role": "user", "content": _PARTIAL_REPORT_PROMPT}],
+            }
+            if schemas:
+                request.update(tools=schemas, tool_choice="none")
+            response = create_completion(
+                self.session.llm, time_left=getattr(self.session, "time_left", None),
+                cancel_event=getattr(self.session, "cancel_requested", None), **request,
+            )
+            _accumulate_usage(self.session.usage, usage_or_estimate(response, request["messages"]))
+            text = (first_message(response).content or "").strip()
+            return text or None
+        except Exception:  # noqa: BLE001 - chỉ là phần thêm; lỗi thì trả về như cũ
+            log_exception(_log, "%s: không lấy được báo cáo dở dang", agent)
+            return None
 
     def _ask_json(self, agent: str, system: str, user: str) -> dict:
         """Một lượt LLM không tool, bắt buộc trả JSON. Hỏng thì nhắc sửa đúng một lần."""
@@ -772,6 +926,7 @@ class AgentTeam:
             self.session.check_budget(agent)
             response = create_completion(
                 self.session.llm, time_left=getattr(self.session, "time_left", None),
+                cancel_event=getattr(self.session, "cancel_requested", None),
                 model=self.session.config.model, messages=messages,
             )
             spent = usage_or_estimate(response, messages)
@@ -782,6 +937,7 @@ class AgentTeam:
                 prompt_tokens=spent.prompt_tokens or 0,
                 completion_tokens=spent.completion_tokens or 0,
                 total_tokens=spent.total_tokens or 0,
+                cached_tokens=cached_prompt_tokens(spent),
             )
 
             text = first_message(response).content or ""
@@ -803,7 +959,7 @@ class AgentTeam:
 
     def ask_prompt_agent(self, api, request: str) -> dict:
         """① Prompt Agent: chuẩn hoá yêu cầu thành R. Không tool, một lượt JSON."""
-        listing = tools.list_my_datasets(api)
+        listing = tools.all_my_datasets(api)
         # Không đọc được danh sách: None (KHÁC "chưa có dataset nào" - nói vậy là người dùng tải lại
         # và ra dataset trùng).
         datasets = [
@@ -811,15 +967,14 @@ class AgentTeam:
             for d in (listing.get("datasets") or [])
         ] if listing.get("ok") else None
 
-        context = json.dumps(
-            {
-                "datasets_of_user": datasets if datasets is not None else "KHÔNG đọc được danh sách dataset lúc này",
-                "recent_user_messages": self.session.recent_user_messages(_RECENT_USER_MESSAGES),
-            },
-            ensure_ascii=False,
-            indent=1,
-        )
+        context = _context_json({
+            "datasets_of_user": datasets if datasets is not None else "KHÔNG đọc được danh sách dataset lúc này",
+            "recent_user_messages": self.session.recent_user_messages(_RECENT_USER_MESSAGES),
+        })
 
+        refusal = self._delegation_refusal(PROMPT_AGENT, request)
+        if refusal is not None:
+            return refusal
         self._emit("agent_start", agent=PROMPT_AGENT, task=request[:300])
         with tracing.observe(PROMPT_AGENT, as_type="agent", input={"request": request, "context": context}) as observation:
             try:
@@ -891,6 +1046,22 @@ class AgentTeam:
             )
         return result
 
+    def preview_sql_query(self, api, connection_id: str, sql: str, params: dict | None = None,
+                          row_limit: int = 20) -> dict:
+        """preview_sql_query của SQL Agent, nhớ bảng nguồn của preview_id (xem _source_tables)."""
+        result = tools.preview_sql_query(api, connection_id, sql, params, row_limit)
+        if result.get("ok") and result.get("preview_id"):
+            self._preview_sources[result["preview_id"]] = _sql_source_tables(sql)
+        return result
+
+    def preview_mongo_query(self, api, connection_id: str, query: dict) -> dict:
+        """preview_mongo_query của SQL Agent, nhớ collection nguồn của preview_id."""
+        result = tools.preview_mongo_query(api, connection_id, query)
+        if result.get("ok") and result.get("preview_id") and isinstance(query, dict):
+            collection = query.get("collection")
+            self._preview_sources[result["preview_id"]] = [str(collection)] if collection else []
+        return result
+
     def import_database_query(self, api, connection_id: str, preview_id: str, data_name: str,
                               allow_truncated: bool = False) -> dict:
         """
@@ -911,6 +1082,8 @@ class AgentTeam:
                 "row_count": result.get("row_count"),
                 "columns": result.get("columns"),
                 "truncated": bool(result.get("truncated")),
+                # Bảng nguồn: người dùng gọi dataset vừa nhập bằng tên bảng ("lấy bảng crab_train rồi train...").
+                "source_tables": list(self._preview_sources.get(preview_id) or []),
             }
             self._emit(
                 "dataset_imported", agent=SQL_AGENT, dataset_id=result["dataset_id"],
@@ -927,7 +1100,7 @@ class AgentTeam:
         Backend chỉ báo "not a valid ObjectId" - không giúp LLM sửa được; trả kèm
         danh sách ID thật thì lần gọi sau nó chép lại đúng.
         """
-        listing = tools.list_my_datasets(api)
+        listing = tools.all_my_datasets(api)
         if not listing.get("ok"):
             return None  # không kiểm được thì để bước sau tự báo lỗi
         datasets = [
@@ -969,7 +1142,7 @@ class AgentTeam:
                 profile = self.get_dataset_schema(api, dataset_id=dataset_id, problem_type=wanted_type)
                 if not profile.get("ok"):
                     return {"ok": False, "agent": MODEL_AGENT, "error": profile.get("error")}
-            data_section = json.dumps(profile_brief(profile, wanted_type), ensure_ascii=False, indent=1)
+            data_section = _context_json(profile_brief(profile, wanted_type))
             task = f"{task}\n\ndataset_id: {dataset_id}"
         else:
             data_section = (
@@ -979,7 +1152,7 @@ class AgentTeam:
 
         context = "\n\n".join([
             "## Yêu cầu đã chuẩn hoá (R, từ Prompt Agent)",
-            json.dumps(requirements or "Chưa có - Manager chưa gọi Prompt Agent.", ensure_ascii=False, indent=1),
+            _context_json(requirements or "Chưa có - Manager chưa gọi Prompt Agent."),
             "## Hồ sơ dữ liệu (từ Data Agent)",
             data_section,
         ])
@@ -1033,14 +1206,14 @@ class AgentTeam:
         pending_before = self.actions.pending_public()
         context = "\n\n".join([
             "## Config đã qua validate_config (chỉ chạy được các config_id này)",
-            json.dumps(ready, ensure_ascii=False, indent=1) if ready else "Chưa có config nào.",
+            _context_json(ready) if ready else "Chưa có config nào.",
             '## Job do chính phiên chat này tạo ("job vừa tạo" chỉ là các job này)',
-            json.dumps(own_jobs, ensure_ascii=False, indent=1) if own_jobs
+            _context_json(own_jobs) if own_jobs
             else "Chưa có - phiên chat này chưa tạo job nào.",
             "## Job đang được theo dõi nền",
             ", ".join(self.session.watcher.active()) or "Không có.",
             "## Thẻ đang chờ người dùng bấm xác nhận (đừng đề nghị lại việc đã có thẻ)",
-            json.dumps(pending_before, ensure_ascii=False, indent=1) if pending_before else "Không có.",
+            _context_json(pending_before) if pending_before else "Không có.",
         ])
 
         before = set(self.handoff.jobs)
@@ -1083,7 +1256,9 @@ class AgentTeam:
         """get_dataset_schema của Data Agent, giữ kết quả lại làm hồ sơ cho Model Agent."""
         result = tools.get_dataset_schema(api, dataset_id=dataset_id, problem_type=problem_type, sample_rows=sample_rows)
         if result.get("ok"):
+            # Hồ sơ ĐẦY ĐỦ cho code (validate_config, Model Agent); LLM của Data Agent nhận bản có trần.
             self.handoff.profiles[dataset_id] = result
+            return tools.schema_for_llm(result)
         return result
 
     def submit_config(
@@ -1113,7 +1288,13 @@ class AgentTeam:
             input={"dataset_id": dataset_id, "target": target, "list_feature": list_feature,
                    "metric_sort": metric_sort, "search_algorithm": search_algorithm, "max_time": max_time},
         ) as observation:
-            prepared = self._unconfirmed_target(api, dataset_id, target) or tools.prepare_training_config(
+            submitted = {"list_feature": list_feature, "metric_sort": metric_sort, "problem_type": problem_type,
+                         "max_time": max_time, "search_algorithm": search_algorithm}
+            # Chốt target trước: chưa chọn cột mục tiêu là lỗi người dùng cần nghe đầu tiên.
+            prepared = (
+                self._unconfirmed_target(api, dataset_id, target)
+                or self._user_fixed_refusal(api, dataset_id, submitted)
+            ) or tools.prepare_training_config(
                 api,
                 dataset_id=dataset_id,
                 target=target,
@@ -1211,6 +1392,57 @@ class AgentTeam:
             return requirements
         return _without_deploy(requirements)
 
+    def _user_fixed_refusal(self, api, dataset_id: str, submitted: dict) -> dict | None:
+        """
+        Chặn config lệch giá trị người dùng đã viết rõ trong tin GẦN NHẤT về dataset này (list_feature liệt kê,
+        metric, loại bài toán, max_time, thuật toán tìm kiếm). Prompt dặn "sai thì sửa theo errors rồi gửi lại",
+        nên khi chính giá trị người dùng đưa bị validate_config từ chối, LLM tự sửa nó (max_time 5 -> 60, bỏ cột
+        target khỏi danh sách feature, accuracy -> r2) dù người dùng dặn không đổi. Giá trị sai phải được báo lại
+        cho người dùng, không được âm thầm thay.
+
+        Chỉ tin gần nhất: lượt sau người dùng đổi ý ("bỏ feature w, tối ưu accuracy") thì giá trị cũ hết hiệu lực.
+        Returns:
+            None nếu config khớp (hoặc không đọc được gì chắc chắn), ngược lại là lỗi trả cho Model Agent.
+        """
+        recent = self.session.recent_user_messages(_RECENT_USER_MESSAGES)
+        if not recent:
+            return None
+        schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
+        columns = [c["name"] for c in schema.get("columns") or []] if schema.get("ok") else []
+        about = self._messages_about_dataset(api, dataset_id, columns)
+        if not about or about[-1] != recent[-1]:
+            return None
+        metrics = {m for kind in tools.PROBLEM_TYPES for m in tools.list_metrics(api, kind).get("metrics") or []}
+        fixed = _user_fixed_values(_user_text(recent[-1]), columns, metrics)
+
+        def differs(field: str, said) -> bool:
+            value = submitted.get(field)
+            if field == "problem_type" and not value:
+                return False  # chưa nêu loại bài toán: prepare_training_config tự suy, không phải đổi ý người dùng
+            if field == "list_feature":
+                return {str(f) for f in value or []} != set(said)
+            if field == "max_time":
+                try:
+                    return int(value) != said
+                except (TypeError, ValueError):
+                    return True
+            return str(value or "").strip().lower() != said
+
+        conflicts = {field: said for field, said in fixed.items() if differs(field, said)}
+        if not conflicts:
+            return None
+        details = "; ".join(f"{field}: người dùng nói {said}, config gửi {submitted.get(field)}"
+                            for field, said in conflicts.items())
+        return {
+            "ok": False,
+            "error": (
+                f"Config khác giá trị người dùng đã chỉ định rõ ({details}). KHÔNG tự đổi giá trị người dùng đã "
+                "chốt. Nếu chính giá trị đó không hợp lệ (validate_config đã báo lỗi), dừng lại và báo Manager lỗi "
+                "cụ thể để hỏi người dùng có muốn đổi không."
+            ),
+            "user_fixed": conflicts,
+        }
+
     def _unconfirmed_target(self, api, dataset_id: str, target: str) -> dict | None:
         """
         Chặn tự chọn cột mục tiêu: người dùng phải nói ra, hoặc dataset chỉ có một ứng viên.
@@ -1275,7 +1507,7 @@ class AgentTeam:
         Agent gán nhầm target đó vào R của demo.
         """
         recent = self.session.recent_user_messages(_RECENT_USER_MESSAGES)
-        listing = tools.list_my_datasets(api)
+        listing = tools.all_my_datasets(api)
         if not listing.get("ok"):
             return recent
         datasets = listing.get("datasets") or []
@@ -1288,6 +1520,9 @@ class AgentTeam:
             if label and label.lower() not in column_names
         ]
         own = [dataset_id] + [str(d.get("dataName") or "") for d in datasets if str(d.get("_id")) == dataset_id]
+        # Dataset nhập từ database: người dùng gọi nó bằng tên bảng nguồn, có khi trùng tên một dataset khác đã
+        # upload (benchmark v5 pilot, ca S06: bảng crab_train và dataset crab_train) - tin đó vẫn nói về dataset này.
+        own += (self.handoff.imported_datasets.get(dataset_id) or {}).get("source_tables") or []
         return [
             message for message in recent
             if not (_mentions_any(_user_text(message), others) and not _mentions_any(_user_text(message), own))

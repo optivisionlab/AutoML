@@ -55,14 +55,19 @@ export function defaultDatasetName(filename: string): string {
 /**
  * Tải lên bằng XHR thay vì fetch: fetch không báo được tiến độ upload, mà file
  * 20 MB có thể mất vài giây - người dùng cần thấy thanh tiến độ chạy.
+ *
+ * Token đi trong header Authorization (không nằm trong form): server xác thực
+ * TRƯỚC khi đọc body, người chưa đăng nhập không giữ được slot upload.
  */
 export function uploadWithProgress(
   form: FormData,
+  accessToken: string,
   onProgress: (percent: number) => void,
 ): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${AGENT_API}/agent/upload`);
+    xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
     };

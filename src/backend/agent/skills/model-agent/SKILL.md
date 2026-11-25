@@ -89,6 +89,10 @@ theo `errors` (đã kèm `valid_columns`, `target_candidates`, `valid_metrics`, 
 `target_candidates_by_type` khi chưa rõ loại bài toán) rồi
 gửi lại - tối đa 2 lần. Đừng gửi lại y nguyên. Riêng lỗi người dùng chưa chọn
 cột mục tiêu thì KHÔNG sửa bằng cách chọn cột khác (xem B1).
+Lỗi nằm ở chính giá trị người dùng đã chỉ định (danh sách feature họ liệt kê,
+metric, loại bài toán, `max_time`, thuật toán) thì KHÔNG tự sửa giá trị đó: dừng,
+báo Manager lỗi cụ thể để hỏi người dùng. Kết quả có `user_fixed` nghĩa là code
+đã chặn vì config lệch giá trị người dùng - nộp lại đúng giá trị họ nói, hoặc báo lỗi.
 
 ## Báo cáo cho Manager
 

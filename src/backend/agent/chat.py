@@ -33,10 +33,13 @@ import uuid
 from agent import providers, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     MAX_STEPS,
+    ContextOverflow,
     TurnBudgetExceeded,
     TurnCancelled,
     TurnDeadlineExceeded,
     describe_error,
+    estimate_tokens,
+    is_context_overflow,
     _new_usage,
     _print_usage,
     run_tool_loop,
@@ -84,6 +87,76 @@ def _full_turns() -> int:
 _MAX_OLD_TURNS = 30
 _EVENT_CHARS = 8_000
 _OLD_MESSAGE_CHARS = 2_000
+
+
+DEFAULT_MAX_TOOL_CALLS_PER_TURN = 40
+
+
+def _max_tool_calls_per_turn() -> int:
+    """
+    AGENT_MAX_TOOL_CALLS_PER_TURN (mặc định 40): tổng số lần gọi tool của MỘT lượt, cả Manager lẫn sub-agent. Lượt
+    huấn luyện đầy đủ dùng khoảng 10-15; trần chặn trường hợp vòng lặp tool tốn tiền mà trần bước không bắt được.
+    """
+    raw = os.getenv("AGENT_MAX_TOOL_CALLS_PER_TURN", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_MAX_TOOL_CALLS_PER_TURN
+
+
+DEFAULT_HISTORY_TOKEN_BUDGET = 60_000
+
+
+def _history_token_budget() -> int:
+    """
+    AGENT_HISTORY_TOKEN_BUDGET (mặc định 60 000, ước lượng ~3 ký tự/token): lịch sử Manager vượt mức này thì kết
+    quả tool cũ bị thay bằng bản tóm gọn. Đếm theo lượt thôi không đủ: 4 lượt mỗi lượt vài kết quả tool 40k ký tự
+    đã đủ làm mỗi bước của Manager gửi lại hàng chục nghìn token.
+    """
+    raw = os.getenv("AGENT_HISTORY_TOKEN_BUDGET", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_HISTORY_TOKEN_BUDGET
+
+
+_DIGEST_NOTE = "Kết quả đầy đủ đã lược khỏi lịch sử; gọi lại tool nếu cần."
+_DIGEST_KEYS = ("ok", "status_code", "result_truncated")
+
+
+def _tool_digest(content: str) -> str:
+    """
+    Bản tóm gọn của một kết quả tool cũ: ok / lỗi / mọi ID (dataset_id, config_id, job_id...). Thứ Manager cần
+    nhớ qua các lượt là ID và kết quả đúng sai, không phải bảng schema hay báo cáo dài.
+    """
+    try:
+        data = json.loads(content)
+    except (TypeError, ValueError):
+        data = None
+    if not isinstance(data, dict):
+        return json.dumps({"masked": True, "note": _DIGEST_NOTE, "preview": _clip(str(content), 200)}, ensure_ascii=False)
+    digest = {key: data[key] for key in _DIGEST_KEYS if key in data}
+    if data.get("error") is not None:
+        digest["error"] = _clip(str(data["error"]), 300)
+    for key, value in data.items():
+        if key.endswith(("_id", "_ids")) and isinstance(value, (str, int, list)):
+            digest[key] = value
+    configs = [c.get("config_id") for c in data.get("configs") or [] if isinstance(c, dict) and c.get("config_id")]
+    if configs:
+        digest["config_ids"] = configs
+    pending = [a.get("action_id") for a in data.get("awaiting_confirmation") or [] if isinstance(a, dict)]
+    if pending:
+        digest["awaiting_confirmation_action_ids"] = pending
+    digest.update(masked=True, note=_DIGEST_NOTE)
+    return json.dumps(digest, ensure_ascii=False, default=str)
+
+
+def _is_digest(content) -> bool:
+    return isinstance(content, str) and '"masked": true' in content and _DIGEST_NOTE in content
+
+
+_CONTEXT_OVERFLOW_AFTER_TOOLS_MESSAGE = (
+    "Yêu cầu này vượt giới hạn ngữ cảnh của mô hình sau khi đã chạy một số bước (các việc đã làm vẫn giữ nguyên). "
+    "Lịch sử sẽ được rút gọn - bạn gửi lại yêu cầu, hoặc chia nhỏ hơn."
+)
+_CONTEXT_OVERFLOW_MESSAGE = (
+    "Cuộc trò chuyện đã quá dài so với giới hạn của mô hình, kể cả sau khi rút gọn. "
+    "Bấm 'Cuộc trò chuyện mới' để tiếp tục."
+)
 
 
 def _clip(text: str, limit: int = _OLD_MESSAGE_CHARS) -> str:
@@ -215,7 +288,7 @@ class ChatSession:
     def logged_in(self) -> bool:
         return bool(self.api.access_token)
 
-    def compact_history(self, full_turns: int | None = None) -> None:
+    def compact_history(self, full_turns: int | None = None, force_mask: bool = False) -> None:
         """
         Gọn lịch sử: lượt cũ chỉ còn câu người dùng + câu trả lời cuối của Manager.
 
@@ -226,8 +299,27 @@ class ChatSession:
 
         Bỏ assistant tool_calls cùng các tool message của nó nên chuỗi tin vẫn hợp
         lệ. ID job/config đã nằm trong câu trả lời cuối và trong team.handoff.
+
+        Ngoài số lượt, lịch sử còn có trần TOKEN (AGENT_HISTORY_TOKEN_BUDGET): vượt trần (hoặc force_mask) thì
+        mọi kết quả tool cũ được thay bằng bản tóm gọn giữ ID, rồi giảm dần số lượt giữ đầy đủ.
         """
         keep = full_turns or _full_turns()
+        self._compact_turns(keep)
+        budget = _history_token_budget()
+        if force_mask or estimate_tokens(self.messages) > budget:
+            self._mask_tool_results()
+        while estimate_tokens(self.messages) > budget and keep > 1:
+            keep -= 1
+            self._compact_turns(keep)
+
+    def _mask_tool_results(self) -> None:
+        """Thay nội dung mọi tool message trong lịch sử bằng bản tóm gọn (cấu trúc tool_calls giữ nguyên)."""
+        for message in self.messages:
+            if message.get("role") == "tool" and not _is_digest(message.get("content")):
+                message["content"] = _tool_digest(message.get("content") or "")
+
+    def _compact_turns(self, keep: int) -> None:
+        """Giữ đủ các bước tool của `keep` lượt gần nhất; lượt cũ hơn chỉ còn câu hỏi và câu trả lời."""
         starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
         if len(starts) <= keep:
             return
@@ -304,6 +396,8 @@ class ChatSession:
                     )
                 if unchecked:
                     judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
+            if verification and summary.get("problem_type") == "time_series":
+                judged += f". {tools.FORECAST_SCORE_NOTE.rstrip('.')}"
             # Chỉ có khi người dùng dặn "train xong kích hoạt luôn" (watcher tự kích hoạt).
             activation = summary.get("activation")
             if activation is None:
@@ -320,6 +414,11 @@ class ChatSession:
                 f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated}{source} "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
                 f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
+            )
+        elif summary.get("reason") == "auth_lost":
+            text = (
+                f"Job {job_id}: chưa biết kết quả vì mất phiên đăng nhập. Agent sẽ theo dõi tiếp khi người dùng "
+                "đăng nhập lại (lời hứa tự kích hoạt, nếu có, vẫn giữ). KHÔNG tạo lại job."
             )
         else:
             text = f"Job {job_id} không hoàn tất: {summary.get('error') or 'không rõ lý do'}."
@@ -353,6 +452,18 @@ class ChatSession:
         self._turn_deadline = None
         self.cancel_requested.clear()
 
+    def count_tool_call(self, name: str) -> str | None:
+        """Đếm một lần gọi tool của lượt; quá trần thì trả câu lỗi (tool không chạy), không thì None."""
+        limit = _max_tool_calls_per_turn()
+        used = getattr(self, "_turn_tool_calls", 0)
+        if used >= limit:
+            return (
+                f"Lượt này đã gọi {used} tool, chạm trần {limit}. KHÔNG gọi thêm tool; tổng hợp kết quả đã có "
+                "và trả lời ngay."
+            )
+        self._turn_tool_calls = used + 1
+        return None
+
     def check_budget(self, agent: str) -> None:
         """Gọi trước MỖI lời gọi LLM trong lượt, của mọi agent: trần token, hạn lượt, và nút Dừng."""
         if self.cancel_requested.is_set():
@@ -379,6 +490,36 @@ class ChatSession:
         finally:
             self.end_turn()
 
+    def _run_manager(self, tool_schemas: list, dispatch: dict, user_message: str) -> str:
+        """Một lần chạy vòng tool-calling của Manager trên self.messages (tin user đã nằm cuối lịch sử)."""
+        with tracing.turn(
+            MANAGER, input=user_message, session_id=self.trace_session_id, user_id=self.api.user_id,
+        ) as observation:
+            answer = run_tool_loop(
+                self.llm,
+                self.config.model,
+                self.messages,
+                tool_schemas,
+                dispatch,
+                self.api,
+                self.usage,
+                agent=MANAGER,
+                emit=self.events.emit,
+                max_steps=MAX_STEPS,
+                check_budget=self.check_budget,
+                time_left=self.time_left,
+                cancel_event=self.cancel_requested,
+                before_tool=self.count_tool_call,
+            )
+            if answer is None:
+                answer = (
+                    f"(Tôi đã chạy quá {MAX_STEPS} bước mà chưa xong. "
+                    "Thử hỏi lại theo cách cụ thể hơn.)"
+                )
+                self.messages.append({"role": "assistant", "content": answer})
+            tracing.end(observation, output=answer)
+        return answer
+
     def _send(self, user_message: str, turn_id: str | None = None) -> str:
         """
         Gửi một câu, Manager chạy (và uỷ thác) cho tới khi trả lời xong.
@@ -391,7 +532,9 @@ class ChatSession:
         # ngay ở bước chuẩn bị - không thì frontend mất luồng sẽ chờ mãi.
         try:
             tool_schemas, dispatch = self.team.tools_for(MANAGER)
-            self.compact_history()
+            # Lượt trước vượt context giữa chừng: rút gọn mạnh ngay, không chờ vượt trần token mặc định.
+            force_mask, self._force_mask_next = getattr(self, "_force_mask_next", False), False
+            self.compact_history(full_turns=1 if force_mask else None, force_mask=force_mask)
         except Exception as error:
             self.events.emit("turn_failed", agent=MANAGER, error=describe_error(error), turn_id=turn_id)
             raise
@@ -408,36 +551,35 @@ class ChatSession:
         jobs_before = set(self.team.handoff.jobs)
         self.team.begin_turn()
         self._turn_start = self.usage["total_tokens"]
+        self._turn_tool_calls = 0
         self.messages.append({"role": "user", "content": user_message})
         self.events.emit("turn_start", agent=MANAGER, turn_id=turn_id)
 
         # Gộp mọi bước của lượt này - kể cả của sub-agent - vào một trace, để
         # Langfuse cộng được tổng chi phí và thấy được ai làm gì (xem tracing.py).
         try:
-            with tracing.turn(
-                MANAGER, input=user_message, session_id=self.trace_session_id, user_id=self.api.user_id,
-            ) as observation:
-                answer = run_tool_loop(
-                    self.llm,
-                    self.config.model,
-                    self.messages,
-                    tool_schemas,
-                    dispatch,
-                    self.api,
-                    self.usage,
-                    agent=MANAGER,
-                    emit=self.events.emit,
-                    max_steps=MAX_STEPS,
-                    check_budget=self.check_budget,
-                    time_left=self.time_left,
-                )
-                if answer is None:
-                    answer = (
-                        f"(Tôi đã chạy quá {MAX_STEPS} bước mà chưa xong. "
-                        "Thử hỏi lại theo cách cụ thể hơn.)"
-                    )
-                    self.messages.append({"role": "assistant", "content": answer})
-                tracing.end(observation, output=answer)
+            try:
+                answer = self._run_manager(tool_schemas, dispatch, user_message)
+            except Exception as first:  # noqa: BLE001 - chỉ xử lý riêng lỗi vượt context, còn lại raise như cũ
+                if not is_context_overflow(first):
+                    raise
+                if any(m.get("role") == "tool" for m in self.messages[before:]):
+                    # Lượt đã chạy tool (có thể đã nhập dataset, tạo thẻ xác nhận): chạy lại là làm trùng việc.
+                    # Đi theo đường lỗi thường (báo lại việc đã làm qua after_failed_turn); lượt sau tự rút gọn.
+                    self._force_mask_next = True
+                    raise ContextOverflow(_CONTEXT_OVERFLOW_AFTER_TOOLS_MESSAGE) from first
+                # Provider từ chối vì lịch sử quá dài: bỏ dở lượt này, rút gọn mạnh rồi chạy lại ĐÚNG một lần.
+                # Không làm vậy thì mọi lượt sau lỗi y hệt cho tới khi người dùng reset.
+                del self.messages[before:]
+                self.compact_history(full_turns=1, force_mask=True)
+                before = len(self.messages)
+                self.messages.append({"role": "user", "content": user_message})
+                try:
+                    answer = self._run_manager(tool_schemas, dispatch, user_message)
+                except Exception as second:  # noqa: BLE001
+                    if is_context_overflow(second):
+                        raise ContextOverflow(_CONTEXT_OVERFLOW_MESSAGE) from second
+                    raise
         except TurnBudgetExceeded as error:
             # Lịch sử vẫn hợp lệ (dừng ở đầu vòng lặp / trước lời gọi LLM), chỉ cần thêm câu trả lời.
             # Việc sub-agent đã làm xong (vd thẻ xác nhận đã tạo) vẫn giữ nguyên.

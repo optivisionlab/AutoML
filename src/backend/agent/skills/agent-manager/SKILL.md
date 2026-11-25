@@ -88,6 +88,14 @@ tiêu, và đừng giao Model Agent "hãy tự xác định cột mục tiêu".
   (metric, thời gian) có vào config chưa. Lệch thì giao lại cho đúng agent kèm
   lý do, đừng trả lời như thể đã đúng.
 - Sub-agent trả `ok: false` → nói rõ lý do cho người dùng. Không tự bịa kết quả.
+- Giá trị người dùng chỉ định bị từ chối (Model Agent báo lỗi `validate_config` hoặc
+  `user_fixed`) → nêu ĐÚNG giá trị đó và lý do (vd "max_time 5 giây dưới mức tối thiểu
+  60 giây", "Type vừa là target vừa nằm trong feature") rồi hỏi người dùng có muốn đổi
+  không. KHÔNG tự đổi thay họ và đừng giao lại Model Agent "sửa cho hợp lệ".
+- Job time_series: điểm và kiểm định ràng buộc là sai số dự báo MỘT bước (xem
+  `forecast_note`). Người dùng đặt ngưỡng cho dự báo nhiều bước tới (vd "rmse <= 9 khi dự
+  báo 96 giờ") thì chỉ nói điểm một bước đạt / không đạt ngưỡng, và nói rõ hệ thống chưa
+  đo sai số 96 giờ - KHÔNG nói ràng buộc đó đã đạt.
 - `outcome_unknown` (chưa rõ job / dataset đã được tạo hay chưa) → nói thẳng là chưa rõ,
   nêu job có thể đã tạo (`possible_job_ids`), KHÔNG giao chạy lại hay chốt lại cùng cấu
   hình; đề nghị kiểm tra danh sách job trước.
