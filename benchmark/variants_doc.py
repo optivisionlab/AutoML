@@ -1,7 +1,11 @@
 """Mô tả các biến thể ablation. Tách khỏi variants.py để report không phải import agent."""
 
 VARIANT_DOCS = {
-    "full": "Hệ thống đầy đủ: Manager + 5 sub-agent (Prompt, Data, Model, Operation, SQL) + validate_config + kiểm định của watcher.",
+    "full": (
+        "Hệ thống đầy đủ: Manager + 5 sub-agent (Prompt, Data, Model, Operation, SQL) + validate_config + kiểm định "
+        "của watcher. Từ v5-02 thêm chốt giá trị người dùng viết rõ (không cho agent tự đổi feature / metric / "
+        "max_time... người dùng đã chốt)."
+    ),
     "single-agent": (
         "Một LLM duy nhất cầm toàn bộ tool nghiệp vụ của Data/Model/Operation/SQL Agent, "
         "không có Prompt Agent nên không có R và kiểm định ngưỡng. Các chốt code "
@@ -11,7 +15,8 @@ VARIANT_DOCS = {
     "no-data-agent": "Gỡ Data Agent: Model Agent tự đọc schema qua đường dự phòng của Handoff.",
     "no-validate": (
         "Tắt validate_config.py (chốt config bằng code). Kiểm tra loại bài toán trong "
-        "prepare_training_config và kiểm tra của backend vẫn còn."
+        "prepare_training_config và kiểm tra của backend vẫn còn. Từ v5-02, chốt giá trị người dùng viết rõ "
+        "(team._user_fixed_refusal, có ở mọi biến thể) cũng vẫn còn."
     ),
     "no-verify": (
         "Watcher nhận R đã bỏ ràng buộc: không kiểm định kết quả job theo ràng buộc của người dùng (v5: vẫn giữ "

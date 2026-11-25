@@ -21,7 +21,7 @@ from pathlib import Path
 from agent import tools
 from agent.api_client import HAutoMLClient
 
-from benchmark import metrics as metrics_module
+from benchmark import jobinfo, metrics as metrics_module
 from benchmark.common import REPO, load_json
 from benchmark.auth import install_reauthentication
 from benchmark.protocol import file_hash
@@ -115,20 +115,20 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
         return "job không thành công"
     if _job_matches_task(snapshot, task_config(case, run.get("placeholders") or {})):
         return "job sai yêu cầu; bộ chấm ghi FAIL, không chọn lại model"
-    current = tools.get_job_info(api, job_id)
-    if not current.get("ok"):
-        raise RuntimeError(f"{folder.name}: không đọc được job {job_id}: {current.get('error')}")
+    current, problem = jobinfo.own_job(api, job_id)
+    if current is None:
+        raise RuntimeError(f"{folder.name}: không đọc được job {job_id}: {(problem or {}).get('error')}")
     out.mkdir(exist_ok=True)
     # Dấu "bộ chấm đã bật tạm" ghi TRƯỚC khi bật: lần chấm trước bật mà chưa tắt lại được thì lần này biết đó
     # không phải trạng thái agent để lại, và phải tắt.
     marker_path = out / "scorer_activation.json"
     marker = load_json(marker_path) or {}
     left_on_by_scorer = marker.get("job_id") == job_id and marker.get("activated") and not marker.get("restored")
-    agent_active = (current.get("job") or {}).get("activate") == 1 and not left_on_by_scorer
+    agent_active = current.get("activate") == 1 and not left_on_by_scorer
     activated_by_scorer = not agent_active
     if activated_by_scorer:
         marker_path.write_text(json.dumps({"job_id": job_id, "activated": True, "restored": False}), encoding="utf-8")
-        if (current.get("job") or {}).get("activate") != 1:
+        if current.get("activate") != 1:
             result = tools.activate_model(api, job_id, True)
             if not result.get("ok"):
                 raise RuntimeError(f"{folder.name}: không bật tạm được model để chấm: {result.get('error')}")

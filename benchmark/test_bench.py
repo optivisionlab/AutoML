@@ -275,6 +275,17 @@ def test_injected_fault_is_recovered(bench, monkeypatch):
     assert row["error_episodes"] == 1 and row["error_recovered"] == 1
 
 
+def test_scorer_leaves_a_model_the_agent_activated_untouched(bench):
+    # Bộ chấm đọc trạng thái kích hoạt từ bản ghi job gốc. Đọc nhầm bản gọn cho LLM (dạng đổi từ commit acaad17) thì
+    # nó tưởng agent chưa bật, tự bật rồi TẮT model agent đã bật đúng: SR sai và tài khoản bị đổi trạng thái.
+    folder = bench.run("full", "C01")
+    job_id = load_json(folder / "run.json")["new_jobs"][0]
+    assert FakeBackend.jobs[job_id]["activate"] == 1
+    scoring.score_all(bench.root, bench.cases_doc, bench.cfg, include_pilot=False)
+    assert load_json(folder / "test" / "test_metrics.json")["activated_by_scorer"] is False
+    assert FakeBackend.jobs[job_id]["activate"] == 1
+
+
 def test_train_case_scores_sr_nps_cs_and_report(bench):
     folder = bench.run("full", "C01")
     row = analyze_run(folder, bench.by_id["C01"])
@@ -622,7 +633,19 @@ def test_fixture_jobs_are_reset_before_each_case(bench, monkeypatch):
     assert d01["activate_before"] == 1
 
 
+def without_user_value_lock(monkeypatch):
+    """
+    Từ 2026-11-25 agent tự chặn config lệch giá trị người dùng viết rõ (team._user_fixed_refusal), nên agent thật
+    không còn nộp được config sai metric như kịch bản dưới. Test này kiểm BỘ CHẤM bắt được config sai, nên tắt chốt
+    đó để giả lập một agent không có nó.
+    """
+    from agent.team import AgentTeam
+
+    monkeypatch.setattr(AgentTeam, "_user_fixed_refusal", lambda *args, **kwargs: None)
+
+
 def test_superseded_config_does_not_count(bench, monkeypatch):
+    without_user_value_lock(monkeypatch)
     monkeypatch.setitem(SCRIPTS, ("full", "B01"), [
         reply(tool="ask_model_agent", task="Tạo config", dataset_id=GLASS),
         reply(tool="submit_config", **GOOD_CONFIG),

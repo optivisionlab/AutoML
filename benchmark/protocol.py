@@ -319,18 +319,20 @@ def check_online(cfg):
                 errors.append(f"{name}: ID không đọc được hoặc số dòng/schema không khớp file *_train.csv của nhóm T.")
         errors += check_connections(api, cfg, manifest)
         missing = cfg["placeholders"].get("MISSING_ID")
-        listing = tools.list_my_datasets(api)
+        listing = tools.all_my_datasets(api)   # bản ghi gốc, đủ mọi dataset (không phải bản gọn cho LLM)
         if missing and (not listing.get("ok") or any(d.get("_id") == missing for d in listing.get("datasets", []))):
             errors.append("MISSING_ID chưa được xác nhận không tồn tại trong tài khoản.")
         for key, activated in (("GLASS_JOB", 1), ("INACTIVE_JOB", 0)):
             if not cfg["placeholders"].get(key):
                 continue
-            result = tools.get_job_info(api, cfg["placeholders"][key])
-            job = result.get("job") or {}
+            from benchmark import jobinfo
+
+            found, _ = jobinfo.own_job(api, cfg["placeholders"][key])
+            job = found or {}
             expected = manifest["glass"]
             config = job.get("config") or {}
             dataset = (job.get("data") or {}).get("id") or (job.get("data") or {}).get("_id")
-            if not result.get("ok") or job.get("status") != 1 or job.get("activate") != activated or \
+            if found is None or job.get("status") != 1 or job.get("activate") != activated or \
                     dataset != cfg["placeholders"]["GLASS_ID"] or \
                     config.get("target") != expected["target"] or set(config.get("list_feature", [])) != set(expected["features"]):
                 errors.append(f"{key}: fixture phải là Glass train thành công, activate={activated}, đủ feature.")

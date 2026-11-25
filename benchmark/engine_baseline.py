@@ -50,12 +50,11 @@ def oracle_tasks(cases_doc: dict) -> dict[str, dict]:
 def _wait(api, job_id: str, limit: float, poll: float = 5.0) -> dict:
     deadline = time.monotonic() + limit
     while True:
-        info = tools.get_job_info(api, job_id)
-        job = info.get("job") if info.get("ok") else None
+        job, problem = jobinfo.own_job(api, job_id)
         if job and job.get("status") in tools.JOB_FINISHED:
             return job
         if time.monotonic() >= deadline:
-            return job or {"status": None, "error": info.get("error")}
+            return job or {"status": None, "error": (problem or {}).get("error")}
         time.sleep(poll)
 
 

@@ -25,7 +25,7 @@ from agent.api_client import ApiError  # noqa: E402
 from benchmark import consent, jobinfo, metrics as M, report, scoring, stats as S  # noqa: E402
 from benchmark.analyze import analyze_run, integers_in, is_write_sql  # noqa: E402
 from benchmark.common import BENCH_DIR, CASES_PATH, load_json  # noqa: E402
-from benchmark.test_bench import FEATURES, GLASS, GOOD_CONFIG, SCRIPTS, FakeBackend, found, reply  # noqa: E402
+from benchmark.test_bench import FEATURES, GLASS, GOOD_CONFIG, SCRIPTS, FakeBackend, found, reply, without_user_value_lock  # noqa: E402
 from benchmark.test_bench import bench  # noqa: E402,F401 - fixture dùng chung
 
 PG, MYSQL = "conn-pg", "conn-mysql"
@@ -444,6 +444,7 @@ def _c01_turn1(config):
 
 
 def test_training_card_with_wrong_config_is_rejected(bench, monkeypatch):
+    without_user_value_lock(monkeypatch)   # kiểm chính sách xác nhận của bộ chạy, không kiểm chốt của agent
     monkeypatch.setitem(SCRIPTS, ("full", "C01"), _c01_turn1({**GOOD_CONFIG, "metric_sort": "accuracy"}) + [
         reply("Chưa có job nào chạy."),
     ])

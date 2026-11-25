@@ -72,8 +72,9 @@ def _own_job_ids(api) -> set[str] | None:
 
 
 def _job(api, job_id: str) -> dict:
-    info = tools.get_job_info(api, job_id)
-    return info.get("job") if info.get("ok") and isinstance(info.get("job"), dict) else info
+    """Bản ghi job gốc (xem jobinfo.own_job); không đọc được thì trả lỗi {ok: false, ...}."""
+    job, problem = jobinfo.own_job(api, job_id)
+    return job if job is not None else problem
 
 
 def _wait_watchers(session, limit: float) -> dict:
@@ -140,7 +141,9 @@ def _set_activation(api, job_id: str, wanted: int) -> dict:
 
 def _datasets(api) -> dict | None:
     """{dataset_id: tên} của tài khoản benchmark; None khi không đọc được."""
-    listing = tools.list_my_datasets(api)
+    # Bản ghi gốc (_id, dataName) và ĐỦ mọi dataset: list_my_datasets là bản cho LLM, có giới hạn số lượng và tên
+    # trường khác (dataset_id, name).
+    listing = tools.all_my_datasets(api)
     if not listing.get("ok"):
         return None
     return {d.get("_id"): d.get("dataName") for d in listing.get("datasets") or []}
@@ -425,7 +428,8 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
                 data = entry["data"]
                 result = data.get("result") or {}
                 if data["name"] in ("get_job_info", "watch_job") and data["arguments"].get("job_id") == fixture_job:
-                    # get_job_info trả status trong "job"; watch_job trả status ở cấp ngoài.
+                    # get_job_info trả status trong "job" (agent v5-01) hoặc ở cấp ngoài (từ acaad17); watch_job ở
+                    # cấp ngoài.
                     observed.append((result.get("job") or result).get("status"))
                 if data["name"] == "list_my_jobs":
                     observed.extend(j.get("status") for j in result.get("jobs", []) if j.get("job_id") == fixture_job)

@@ -28,6 +28,20 @@ def _seconds(start, end) -> float | None:
     return (b - a).total_seconds() if a and b else None
 
 
+def own_job(api, job_id: str) -> tuple[dict | None, dict | None]:
+    """
+    Bản ghi job GỐC của backend (status, activate, config, data, orther_model_scores...) của tài khoản benchmark:
+    (job, None), hoặc (None, lỗi) khi không đọc được / không phải job của tài khoản.
+
+    Bộ chạy KHÔNG đọc job qua tools.get_job_info: đó là bản gọn cho LLM và đổi dạng theo agent (từ commit acaad17
+    không còn bọc trong "job", không còn trường activate thô) - đọc nó thì SR ra 0 và bộ chấm tắt nhầm model agent
+    đã bật. find_own_job là đường chỉ code dùng, trả nguyên bản ghi của backend.
+    """
+    from agent import tools
+
+    return tools.find_own_job(api, job_id)
+
+
 def pipeline_summary(pipeline: dict | None) -> dict | None:
     """Tóm tắt gọn (không chép toàn bộ trial) để lưu vào run.json."""
     if not isinstance(pipeline, dict):

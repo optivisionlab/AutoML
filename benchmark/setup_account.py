@@ -33,6 +33,7 @@ from pathlib import Path
 from agent import tools
 from agent.api_client import HAutoMLClient
 
+from benchmark import jobinfo
 from benchmark.common import ARTIFACTS, CASES_PATH, CONFIG_PATH, load_json, substitute
 
 STATE_PATH = ARTIFACTS / "setup_state.json"
@@ -75,8 +76,7 @@ def _save(state: dict) -> None:
 def _wait_job(api, job_id: str, limit: float, poll: float = 5.0) -> dict:
     deadline = time.monotonic() + limit
     while True:
-        info = tools.get_job_info(api, job_id)
-        job = info.get("job") if info.get("ok") else None
+        job, _ = jobinfo.own_job(api, job_id)
         if job and job.get("status") in tools.JOB_FINISHED:
             return job
         if time.monotonic() >= deadline:
