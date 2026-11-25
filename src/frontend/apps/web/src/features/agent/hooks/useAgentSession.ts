@@ -780,12 +780,11 @@ export function useAgentSession(token: string, userKey: string) {
       form.append("file", pending.file);
       form.append("data_name", pending.name.trim() || defaultDatasetName(pending.file.name));
       form.append("data_type", pending.dataType);
-      form.append("access_token", token);
       if (sessionId) form.append("session_id", sessionId);
 
       setUploadProgress(0);
       try {
-        const { status, body } = await uploadWithProgress(form, (percent) => {
+        const { status, body } = await uploadWithProgress(form, token, (percent) => {
           if (!unmounted.current) setUploadProgress(percent);
         });
         // Rời trang khi đang tải lên: dataset vẫn vào kho, chỉ không cập nhật giao diện nữa.

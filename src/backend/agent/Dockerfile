@@ -16,9 +16,10 @@ ENV PYTHONUNBUFFERED=1 \
     AGENT_HOST=0.0.0.0 \
     AGENT_PORT=9500
 
-# Không chạy bằng root (audit AG-06): agent không ghi file nào ngoài /tmp (file tạm của form upload), nên một
+# Không chạy bằng root (audit AG-06): agent chỉ ghi /tmp (file tạm upload) và /app/state (trạng thái theo dõi job), nên một
 # user thường là đủ - lỗi RCE trong agent hay dependency không còn quyền root trong container.
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin agent
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin agent \
+    && mkdir -p /app/state && chown agent /app/state
 USER agent
 
 EXPOSE 9500

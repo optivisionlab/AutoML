@@ -27,14 +27,16 @@ URL - URL hay bị ghi vào log.
 # Standard libraries
 import asyncio
 import base64
+import contextlib
 import functools
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
-from collections import deque
+from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
 
 # Third party libraries
@@ -49,7 +51,7 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 # Local modules
-from agent import providers, tools, uploads
+from agent import providers, tools, uploads, watch_store
 from agent.actions import ActionError
 from agent.agent_openai import describe_error, log_exception
 from agent.api_client import ApiError, HAutoMLClient
@@ -217,6 +219,27 @@ class _Entry:
 
 _sessions: dict[str, _Entry] = {}
 
+# Trạng thái theo dõi job lưu qua restart (AGENT_STATE_DIR); None = chỉ trong RAM.
+_WATCH_STORE = watch_store.default_store()
+
+
+def _resume_orphaned_watches(session_id: str, session: ChatSession, owner: str) -> list[str]:
+    """
+    Theo dõi lại (trong phiên này) các job của `owner` đã lưu mà phiên theo dõi cũ không còn sống - server vừa
+    restart, hoặc phiên cũ đã bị dọn. Job do một phiên khác CÒN sống theo dõi thì để nguyên phiên đó.
+    """
+    if _WATCH_STORE is None:
+        return []
+    try:
+        records = [
+            record for record in _WATCH_STORE.for_owner(owner)
+            if record.get("session_id") == session_id or record.get("session_id") not in _sessions
+        ]
+        return session.watcher.resume(records) if records else []
+    except Exception:  # noqa: BLE001 - khôi phục hỏng không được chặn người dùng chat
+        log_exception(logging.getLogger("agent.server"), "khôi phục theo dõi job cho %s lỗi", owner)
+        return []
+
 
 def _sweep() -> None:
     """Dọn phiên hết hạn. Gọi trước mỗi request, đủ cho quy mô hiện tại."""
@@ -275,10 +298,57 @@ def _adopt_token(api, access_token: str | None) -> None:
 
 # token -> (user_id, hết hạn cache). Xác minh qua backend tốn một request, nên
 # nhớ ngắn hạn: frontend gửi cùng token ở mọi lượt chat / kết nối SSE.
+def _refresh_token(session: ChatSession, access_token: str | None) -> None:
+    """Nhận token mới cho phiên, rồi theo dõi lại các job đã tạm dừng vì mất đăng nhập."""
+    _adopt_token(session.api, access_token)
+    if session.api.access_token:
+        try:
+            session.watcher.resume_paused()
+        except Exception:  # noqa: BLE001 - theo dõi lại hỏng không được làm hỏng request
+            log_exception(logging.getLogger("agent.server"), "theo dõi lại job sau khi nhận token mới lỗi")
+
+
 _OWNER_CACHE_SECONDS = 60
 _BAD_TOKEN_CACHE_SECONDS = 5
-_owner_cache: dict[str, tuple[str, float]] = {}
-_owner_lock = threading.Lock()
+class _OwnerCache:
+    """
+    Cache token -> user_id có hạn dùng, bỏ mục ÍT DÙNG NHẤT khi đầy. Trước đây đầy là xoá sạch: tràn token rác là
+    xoá luôn phiên hợp lệ, mọi request thật lại phải hỏi /me.
+    """
+
+    def __init__(self, maxsize: int = 1000) -> None:
+        self._maxsize = maxsize
+        self._items: OrderedDict[str, tuple[str, float]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, token: str, now: float) -> str | None:
+        """user_id, "" (token đã bị backend từ chối gần đây), hoặc None (chưa có / đã hết hạn)."""
+        with self._lock:
+            item = self._items.get(token)
+            if item is None:
+                return None
+            if item[1] <= now:
+                del self._items[token]
+                return None
+            self._items.move_to_end(token)
+            return item[0]
+
+    def put(self, token: str, owner: str, expires: float) -> None:
+        with self._lock:
+            self._items[token] = (owner, expires)
+            self._items.move_to_end(token)
+            while len(self._items) > self._maxsize:
+                self._items.popitem(last=False)
+
+
+_owner_cache = _OwnerCache()
+_JWT_SHAPE = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$")
+# Hỏi /me trên pool riêng: tràn token rác không chiếm hết executor mặc định của event loop.
+_AUTH_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent-auth")
+
+
+def _looks_like_jwt(token: str) -> bool:
+    return bool(_JWT_SHAPE.match(token or ""))
 
 
 def _owner_of(access_token: str) -> str | None:
@@ -286,14 +356,15 @@ def _owner_of(access_token: str) -> str | None:
     user_id của token, do BACKEND xác nhận qua /me. Token sai/hết hạn -> None.
 
     Không tự đọc trường `sub` trong JWT: không kiểm chữ ký thì ai cũng tự viết
-    được một token mang `sub` của người khác.
+    được một token mang `sub` của người khác. Chuỗi không có dạng JWT thì từ chối luôn, không hỏi backend.
     """
+    if not _looks_like_jwt(access_token):
+        return None
     now = time.time()
-    with _owner_lock:
-        cached = _owner_cache.get(access_token)
-        if cached and cached[1] > now:
-            # "" = token sai vừa bị backend từ chối: không gọi lại /me liên tục cho cùng token rác.
-            return cached[0] or None
+    cached = _owner_cache.get(access_token, now)
+    if cached is not None:
+        # "" = token sai vừa bị backend từ chối: không gọi lại /me liên tục cho cùng token rác.
+        return cached or None
 
     client = HAutoMLClient()
     client.access_token = access_token
@@ -303,10 +374,7 @@ def _owner_of(access_token: str) -> str | None:
         # Chỉ 401/403 mới là token sai/hết hạn. Backend không tới được hoặc lỗi 5xx
         # mà trả 401 thì frontend bảo người dùng đăng nhập lại - sai, và mất tin nhắn.
         if error.status_code in (401, 403):
-            with _owner_lock:
-                if len(_owner_cache) > 1000:
-                    _owner_cache.clear()
-                _owner_cache[access_token] = ("", now + _BAD_TOKEN_CACHE_SECONDS)
+            _owner_cache.put(access_token, "", now + _BAD_TOKEN_CACHE_SECONDS)
             return None
         raise BackendUnavailable(error.detail) from error
     finally:
@@ -315,11 +383,7 @@ def _owner_of(access_token: str) -> str | None:
     owner = str(user.get("_id") or user.get("id") or "")
     if not owner:
         return None
-    with _owner_lock:
-        # Dọn bớt khi cache phình (token đổi mỗi 15 phút).
-        if len(_owner_cache) > 1000:
-            _owner_cache.clear()
-        _owner_cache[access_token] = (owner, now + _OWNER_CACHE_SECONDS)
+    _owner_cache.put(access_token, owner, now + _OWNER_CACHE_SECONDS)
     return owner
 
 
@@ -335,7 +399,7 @@ async def _resolve_owner(access_token: str | None) -> str:
             detail="Chưa đăng nhập. Frontend phải gửi access_token của phiên người dùng.",
         )
     try:
-        owner = await asyncio.to_thread(_owner_of, access_token)
+        owner = await asyncio.get_running_loop().run_in_executor(_AUTH_POOL, _owner_of, access_token)
     except BackendUnavailable as error:
         raise HTTPException(
             status_code=503, detail="Backend HAutoML tạm thời không phản hồi, thử lại sau.",
@@ -389,7 +453,8 @@ def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple
     if entry is not None:
         entry.touched = time.time()
         # Token được làm mới phía frontend sau mỗi 15 phút.
-        _adopt_token(entry.session.api, access_token)
+        _refresh_token(entry.session, access_token)
+        _resume_orphaned_watches(session_id, entry.session, owner)
         return session_id, entry.session
 
     _make_room_for(owner)
@@ -401,11 +466,29 @@ def _get_session(session_id: str | None, access_token: str, owner: str) -> tuple
 
     new_id = uuid.uuid4().hex
     session.trace_session_id = new_id
+    if _WATCH_STORE is not None:
+        session.watcher.attach_store(_WATCH_STORE, owner, new_id)
     _sessions[new_id] = _Entry(session, owner)
+    _resume_orphaned_watches(new_id, session, owner)
     return new_id, session
 
 
-app = FastAPI(title="HAutoML Agent API")
+@contextlib.asynccontextmanager
+async def _lifespan(_app):
+    yield
+    # Tắt server: dừng mọi lượt và watcher có trật tự. Bản ghi theo dõi đã lưu (nếu bật AGENT_STATE_DIR) được giữ
+    # để lần khởi động sau theo dõi lại khi chủ phiên quay lại.
+    for entry in list(_sessions.values()):
+        try:
+            entry.session.request_cancel()
+            entry.session.watcher.stop()
+        except Exception:  # noqa: BLE001
+            log_exception(logging.getLogger("agent.server"), "dừng phiên khi tắt server lỗi")
+    _TURN_POOL.shutdown(wait=False, cancel_futures=True)
+    _UPLOAD_POOL.shutdown(wait=False, cancel_futures=True)
+
+
+app = FastAPI(title="HAutoML Agent API", lifespan=_lifespan)
 
 
 class _JsonBodyLimit:
@@ -470,7 +553,7 @@ app.add_middleware(
     allow_origins=_CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -697,7 +780,7 @@ async def background_events(request: EventsRequest, http: Request) -> StreamingR
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
 
     entry.touched = time.time()
-    _adopt_token(entry.session.api, request.access_token)
+    _refresh_token(entry.session, request.access_token)
     bus = entry.session.events
 
     async def stream():
@@ -787,7 +870,8 @@ async def upload(request: Request) -> dict:
     """
     Nhận file dataset từ khung chat và đưa vào kho dataset của người dùng.
 
-    Form (multipart): file, access_token, session_id (tuỳ chọn),
+    Header: Authorization: Bearer <access_token> (kiểm TRƯỚC khi đọc body).
+    Form (multipart): file, session_id (tuỳ chọn),
                       data_name (tuỳ chọn), data_type = classification | regression | time_series
 
     Giới hạn 20 MB được chặn HAI lớp, vì Starlette KHÔNG giới hạn dung lượng
@@ -803,45 +887,55 @@ async def upload(request: Request) -> dict:
             detail=f"File vượt giới hạn {uploads.MAX_UPLOAD_MB} MB.",
         )
 
+    # Xác thực TRƯỚC khi nhận slot và đọc body (token ở header): người chưa đăng nhập không giữ được slot upload
+    # bằng các kết nối gửi body thật chậm.
+    access_token = _bearer_token(request)
+    owner = await _resolve_owner(access_token)
+
     if _UPLOADS_IN_FLIGHT.locked():
         raise HTTPException(status_code=503, detail="Đang có quá nhiều tệp được tải lên, thử lại sau ít phút.")
     async with _UPLOADS_IN_FLIGHT:
-        return await _read_and_store_upload(request)
+        return await _read_and_store_upload(request, owner, access_token)
 
 
 def _release_upload(entry: "_Entry") -> None:
     entry.uploads = max(0, entry.uploads - 1)
 
 
-# Token nằm TRONG form nên form (tới 20 MB, ghi tạm xuống đĩa) được đọc trước khi kiểm token: giới hạn số
-# upload đang xử lý cùng lúc để người chưa đăng nhập không mở hàng trăm kết nối 20 MB.
+# Giới hạn số upload đang xử lý cùng lúc (form tới 20 MB, ghi tạm xuống đĩa); chỉ người đã xác thực mới chiếm slot.
 _UPLOADS_IN_FLIGHT = asyncio.Semaphore(8)
+# Hạn đọc xong body upload (tối đa 20 MB): kết nối gửi nhỏ giọt không giữ slot mãi.
+UPLOAD_READ_SECONDS = 120
 
 
-async def _read_and_store_upload(request: Request) -> dict:
+def _bearer_token(request: Request) -> str | None:
+    """Token trong header `Authorization: Bearer <token>`, hoặc None."""
+    scheme, _, token = (request.headers.get("authorization") or "").strip().partition(" ")
+    token = token.strip()
+    return token if scheme.lower() == "bearer" and token else None
+
+
+async def _read_and_store_upload(request: Request, owner: str, access_token: str) -> dict:
     request = Request(request.scope, _limit_body(request.receive, _MAX_UPLOAD_BODY))
     try:
-        form = await request.form(max_files=1, max_fields=10)
+        form = await asyncio.wait_for(request.form(max_files=1, max_fields=10), UPLOAD_READ_SECONDS)
+    except asyncio.TimeoutError as error:
+        raise HTTPException(status_code=408, detail="Tải tệp quá chậm, thử lại.") from error
     except HTTPException:
         raise
     except Exception as error:  # noqa: BLE001 - form hỏng thì báo 400, đừng để 500
         raise HTTPException(status_code=400, detail=f"Không đọc được form tải lên: {error}")
 
     try:
-        return await _store_upload(form)
+        return await _store_upload(form, owner, access_token)
     finally:
         # Starlette không tự đóng form của Request dựng lại ở trên: đóng để xoá
         # file tạm ngay, kể cả khi trả lỗi giữa chừng.
         await form.close()
 
 
-async def _store_upload(form) -> dict:
-    """Phần sau khi đã đọc form: xác thực, kiểm tra file, đưa vào kho dataset."""
-    # Xác thực TRƯỚC khi đọc và kiểm tra file: người chưa đăng nhập không được
-    # bắt server xử lý gì thêm. Token nằm trong form nên không kiểm sớm hơn được.
-    access_token = str(form.get("access_token") or "") or None
-    owner = await _resolve_owner(access_token)
-
+async def _store_upload(form, owner: str, access_token: str) -> dict:
+    """Phần sau khi đã đọc form (người gửi đã được xác thực bằng header): kiểm tra file, đưa vào kho dataset."""
     file = form.get("file")
     if not isinstance(file, UploadFile):
         raise HTTPException(status_code=400, detail="Thiếu trường 'file'.")
@@ -925,7 +1019,7 @@ async def update_token(request: TokenRequest) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
-    _adopt_token(entry.session.api, request.access_token)
+    _refresh_token(entry.session, request.access_token)
     return {"ok": True}
 
 
@@ -941,7 +1035,7 @@ async def auto_activate(request: AutoActivateRequest) -> dict:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
     # Token vừa được xác minh là mới nhất: watcher dùng nó khi kích hoạt (token cũ có thể đã hết hạn).
-    _adopt_token(entry.session.api, request.access_token)
+    _refresh_token(entry.session, request.access_token)
     # Cùng một đường (có khoá) với tool set_auto_activate; ghi mốc huỷ và báo Manager ở lượt sau.
     outcome = entry.session.team.change_auto_activate(request.job_id, request.enabled, by_button=True)
     if outcome == "in_progress":
@@ -989,7 +1083,7 @@ async def confirm_action(request: ConfirmRequest) -> dict:
     if entry is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên.")
     entry.touched = time.time()
-    _adopt_token(entry.session.api, request.access_token)
+    _refresh_token(entry.session, request.access_token)
     team = entry.session.team
     # detail có `code` máy đọc được: frontend phân biệt "agent đang bận, bấm lại sau" (thẻ còn dùng được) với
     # "thẻ đã xử lý / hết hạn" (thẻ hết hiệu lực) - cả hai đều là 409.

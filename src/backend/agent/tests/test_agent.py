@@ -1,6 +1,7 @@
 """Agent regression tests; no backend, LLM credentials or training jobs required."""
 import asyncio
 import json
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -8,7 +9,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from agent import agent_openai, providers, server, skills, tools
+from agent import agent_openai, providers, server, skills, team, tools
 from agent.api_client import ApiError, HAutoMLClient
 from agent.chat import ChatSession
 from agent.team import normalize_requirements
@@ -489,7 +490,7 @@ def test_operation_agent_knows_which_jobs_this_session_created(session, monkeypa
     train(session, session.api, config_id)
     session.team.ask_operation_agent(session.api, "Kiểm tra job vừa tạo")
     context = create.call_args.kwargs["messages"][1]["content"]
-    assert '"job_id": "job-1"' in context and none_yet not in context
+    assert '"job_id":"job-1"' in context and none_yet not in context
 
 
 def test_step_limit_reply_is_retained_for_next_turn(session, monkeypatch):
@@ -990,13 +991,13 @@ def test_turn_done_carries_the_reply(session):
 
 @pytest.mark.parametrize("status,expected", [(401, 401), (0, 503), (502, 503)])
 def test_backend_outage_is_not_reported_as_expired_login(monkeypatch, status, expected):
-    monkeypatch.setattr(server, "_owner_cache", {})
+    monkeypatch.setattr(server, "_owner_cache", server._OwnerCache())
 
     def get_me(self):
         raise ApiError(status, "backend lỗi")
 
     monkeypatch.setattr(HAutoMLClient, "get_me", get_me)
-    result = request("POST", "/agent/chat", json={"message": "Chào", "access_token": "token"})
+    result = request("POST", "/agent/chat", json={"message": "Chào", "access_token": "a.b.c"})
     assert result.status_code == expected
 
 
@@ -2618,7 +2619,7 @@ def test_auto_activate_button_refreshes_the_session_token(session, monkeypatch):
 
 
 def test_rejected_tokens_are_cached_briefly(monkeypatch):
-    monkeypatch.setattr(server, "_owner_cache", {})
+    monkeypatch.setattr(server, "_owner_cache", server._OwnerCache())
     calls = []
 
     def get_me(self):
@@ -2626,8 +2627,8 @@ def test_rejected_tokens_are_cached_briefly(monkeypatch):
         raise ApiError(401, "token sai")
 
     monkeypatch.setattr(HAutoMLClient, "get_me", get_me)
-    assert server._owner_of("junk") is None
-    assert server._owner_of("junk") is None
+    assert server._owner_of("junk.junk.junk") is None
+    assert server._owner_of("junk.junk.junk") is None
     assert len(calls) == 1
 
 
@@ -2794,7 +2795,9 @@ def test_too_many_concurrent_uploads_are_refused(monkeypatch):
     import asyncio as _asyncio
 
     monkeypatch.setattr(server, "_UPLOADS_IN_FLIGHT", _asyncio.Semaphore(0))
-    result = request("POST", "/agent/upload", files={"file": ("a.csv", b"x,y\n1,2\n")})
+    monkeypatch.setattr(server, "_owner_of", {"a.b.c": "user-1"}.get)
+    result = request("POST", "/agent/upload", headers={"Authorization": "Bearer a.b.c"},
+                     files={"file": ("a.csv", b"x,y\n1,2\n")})
     assert result.status_code == 503
 
 
@@ -3736,3 +3739,716 @@ def test_chat_reply_carries_the_seq_of_its_pending_snapshot(monkeypatch, session
         return_value=response("Xong")))))
     body = request("POST", "/agent/chat", json={"message": "Chào", "session_id": "s1", "access_token": "token"}).json()
     assert body["pending_actions"] == [] and isinstance(body["pending_seq"], int)
+
+
+# ---------------------------------------------------------------- review I-06: cắt kết quả tool giữ trường có cấu trúc
+
+
+def test_oversized_tool_result_keeps_structured_fields():
+    result = {"ok": True, "report": "x" * 100_000,
+              "configs": [{"config_id": "cfg-1"}], "awaiting_confirmation": [{"action_id": "a1"}]}
+    content = agent_openai._bounded_tool_content(result)
+    parsed = json.loads(content)
+    assert len(content) <= agent_openai.MAX_TOOL_RESULT_CHARS
+    assert parsed["configs"][0]["config_id"] == "cfg-1" and parsed["awaiting_confirmation"][0]["action_id"] == "a1"
+    assert parsed["result_truncated"] is True and "partial" not in parsed
+
+
+def test_many_small_items_fall_back_to_partial():
+    content = agent_openai._bounded_tool_content({"ok": True, "rows": [{"a": i} for i in range(20_000)]})
+    assert len(content) <= agent_openai.MAX_TOOL_RESULT_CHARS and "partial" in json.loads(content)
+
+
+def test_subagent_report_is_clipped(session):
+    create = Mock(side_effect=[
+        response(tool="ask_data_agent", arguments={"task": "Mô tả dataset"}),
+        response("y" * 20_000), response("Xong"),
+    ])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    session.send("Mô tả dataset")
+    tool_msg = next(m for m in session.messages if m["role"] == "tool")
+    assert len(json.loads(tool_msg["content"])["report"]) <= team.REPORT_MAX_CHARS + 50
+
+
+# ---------------------------------------------------------------- review I-11 / I-12 / I-14: kết quả gọn
+
+
+class OneJobBackend(Backend):
+    """list_jobs luôn trả đúng một job (dùng chung cho các test job và watcher)."""
+
+    def __init__(self, job):
+        super().__init__()
+        self.job = job
+
+    def list_jobs(self):
+        return [self.job]
+
+    def activate_model(self, job_id, activate):
+        return {}
+
+
+def _scored_job(**over):
+    base = {
+        "_id": "job-1", "user": {"id": "user-1"}, "status": -1, "infor": "E" * 5000,
+        "data": {"id": "dataset-1", "name": "demo"},
+        "config": {"target": "y", "problem_type": "regression", "metric_sort": "mse",
+                   "list_feature": [f"f{i}" for i in range(500)]},
+        "orther_model_scores": [
+            {"model_name": f"M{i}", "scores": {"mse": float(i)}, "best_params": {"a": i}} for i in range(12, 0, -1)
+        ],
+    }
+    return {**base, **over}
+
+
+def test_get_job_info_is_compact_by_default():
+    info = tools.get_job_info(OneJobBackend(_scored_job()), "job-1")
+    text = json.dumps(info)
+    assert info["config"]["feature_count"] == 500 and len(text) < 12_000
+    # Tên đặc trưng vẫn có (predict cần), nhưng có trần ký tự
+    assert info["config"]["list_feature"][:2] == ["f0", "f1"]
+    assert len(info["leaderboard"]) == 5 and info["models_total"] == 12
+    assert info["leaderboard"][0]["model"] == "M1"
+    assert info["status_label"] == "failed" and len(info["error"]) <= 1020
+    assert info["dataset_id"] == "dataset-1"
+
+
+def test_get_job_info_include_all_models_returns_full_scores():
+    info = tools.get_job_info(OneJobBackend(_scored_job()), "job-1", include_all_models=True)
+    assert len(info["all_models"]) == 12 and "best_params" in info["all_models"][0]
+
+
+class ManyDatasetsBackend(Backend):
+    def list_datasets(self):
+        return [
+            {"_id": f"id-{i}", "dataName": f"ds{i}", "description": "d" * 5000, "createDate": 1_700_000_000.0 + i,
+             "thumbnail": "x" * 1000}
+            for i in range(100)
+        ]
+
+
+def test_list_my_datasets_is_brief_limited_and_searchable():
+    api = ManyDatasetsBackend()
+    out = tools.list_my_datasets(api)
+    assert out["total"] == 100 and out["shown"] == 20 and out["datasets"][0]["name"] == "ds99"
+    assert set(out["datasets"][0]) == {"dataset_id", "name", "created", "description"}
+    assert out["datasets"][0]["dataset_id"] == "id-99"
+    assert len(out["datasets"][0]["description"]) <= 220
+    assert [d["name"] for d in tools.list_my_datasets(api, search="DS5")["datasets"]][:2] == ["ds59", "ds58"]
+
+
+def test_internal_dataset_listing_keeps_raw_records():
+    listing = tools.all_my_datasets(ManyDatasetsBackend())
+    assert listing["ok"] and len(listing["datasets"]) == 100 and listing["datasets"][0]["_id"] == "id-0"
+
+
+def test_job_id_description_does_not_point_to_start_training():
+    assert "start_training KHÔNG trả job_id" in agent_openai._JOB_ID["description"]
+
+
+# ---------------------------------------------------------------- review I-10: get_dataset_schema có trần
+
+
+class WideBackend(Backend):
+    NAMES = [f"col_{i}" for i in range(300)] + ["x" * 1000, "y"]
+
+    def get_dataset_preview(self, dataset_id):
+        return {"rows": 10, "records": [{n: i for n in self.NAMES} for i in range(10)]}
+
+    def get_dataset_features(self, dataset_id, problem_type):
+        return {n: n == "y" for n in self.NAMES}
+
+
+def test_wide_schema_result_for_llm_is_bounded(session):
+    session.api = WideBackend()
+    result = session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+    text = json.dumps(result, ensure_ascii=False)
+    assert len(text) < 30_000 and "x" * 1000 not in text
+    assert result["columns_truncated"] is True and len(result["columns"]) == tools.MAX_COLUMNS_FOR_LLM
+    assert "col_299" in result["all_column_names"]
+    assert session.team.handoff.profiles["dataset-1"]["column_count"] == 302
+
+
+def test_narrow_schema_result_is_unchanged_for_llm(session):
+    result = session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+    assert result["columns_truncated"] is False and "all_column_names" not in result
+    assert [c["name"] for c in result["columns"]] == ["x", "y"]
+
+
+# ---------------------------------------------------------------- review I-13: lỗi validate_config gọn
+
+
+def _validate_module():
+    return tools._load_skill_script("model-agent", "validate_config")
+
+
+def test_unknown_feature_error_suggests_close_names_without_listing_all():
+    cols = [f"col_{i}" for i in range(300)]
+    msg = _validate_module()._unknown_columns_message("đặc trưng", ["col_1O"], cols)
+    assert "col_10" in msg and "col_299" not in msg and len(msg) < 600
+
+
+def test_unknown_column_suggestion_handles_case_and_unicode():
+    msg = _validate_module()._unknown_columns_message("mục tiêu", ["doanh_thu"], ["Doanh_Thu", "Chi_phí"])
+    assert "Doanh_Thu" in msg
+
+
+def test_invalid_config_result_is_bounded_for_wide_dataset(session):
+    session.api = WideBackend()
+    session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+    result = session.team.submit_config(session.api, dataset_id="dataset-1", target="y",
+                                        list_feature=["col_1O"], metric_sort="accuracy",
+                                        problem_type="classification")
+    assert result["ok"] is False and len(json.dumps(result, ensure_ascii=False)) < 20_000
+    assert any("col_10" in error for error in result["errors"])
+    assert not any("col_299" in error for error in result["errors"])  # không liệt kê toàn bộ cột trong lỗi
+
+
+# ---------------------------------------------------------------- review I-05: compaction theo token, vượt context
+
+
+def _turn_with_big_tool(i):
+    return [
+        {"role": "user", "content": f"Câu {i}"},
+        {"role": "assistant", "content": None, "tool_calls": [{"id": f"c{i}", "type": "function",
+                                                               "function": {"name": "ask_model_agent", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": f"c{i}", "content": json.dumps(
+            {"ok": True, "config_id": f"cfg-{i}", "report": "x" * 20_000})},
+        {"role": "assistant", "content": f"Trả lời {i}"},
+    ]
+
+
+def _overflow_error(text="This model's maximum context length is 128000 tokens", status=400):
+    error = type("BadRequestError", (Exception,), {})(text)
+    error.status_code = status
+    return error
+
+
+def test_history_over_token_budget_masks_old_tool_results(session, monkeypatch):
+    monkeypatch.setenv("AGENT_HISTORY_TOKEN_BUDGET", "3000")
+    session.messages = session.messages[:1] + sum((_turn_with_big_tool(i) for i in range(3)), [])
+    session.compact_history()
+    tool_messages = [m for m in session.messages if m["role"] == "tool"]
+    assert tool_messages and all(len(m["content"]) < 1000 for m in tool_messages)
+    assert json.loads(tool_messages[-1]["content"])["config_id"] == "cfg-2"
+    assert json.loads(tool_messages[-1]["content"])["masked"] is True
+    for i, message in enumerate(session.messages):
+        if message["role"] == "tool":
+            assert session.messages[i - 1].get("tool_calls")
+
+
+def test_history_under_token_budget_keeps_recent_tool_results(session):
+    session.messages = session.messages[:1] + _turn_with_big_tool(0)
+    session.compact_history()
+    tool_message = next(m for m in session.messages if m["role"] == "tool")
+    assert "masked" not in json.loads(tool_message["content"])
+
+
+@pytest.mark.parametrize("status,text,expected", [
+    (400, "This model's maximum context length is 128000 tokens", True),
+    (400, "Error code: context_length_exceeded", True),
+    (400, "prompt is too long: 210000 tokens > 200000 maximum", True),
+    (413, "Request Entity Too Large", True),
+    (400, "Invalid tool schema", False),
+    (500, "maximum context length", False),
+])
+def test_is_context_overflow_variants(status, text, expected):
+    assert agent_openai.is_context_overflow(_overflow_error(text, status)) is expected
+
+
+def test_context_overflow_is_retried_after_aggressive_compaction(session):
+    session.messages += sum((_turn_with_big_tool(i) for i in range(2)), [])
+    create = Mock(side_effect=[_overflow_error(), response("ok")])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert session.send("Tiếp") == "ok"
+    assert all(len(m["content"]) < 1000 for m in session.messages if m["role"] == "tool")
+    assert session.messages[-2] == {"role": "user", "content": "Tiếp"}
+
+
+def test_context_overflow_twice_raises_friendly_error(session):
+    before = list(session.messages)
+    create = Mock(side_effect=[_overflow_error(), _overflow_error()])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with pytest.raises(agent_openai.ContextOverflow, match="Cuộc trò chuyện mới"):
+        session.send("Tiếp")
+    assert all(m.get("content") != "Tiếp" for m in session.messages)
+    assert len(session.messages) <= len(before)
+
+
+# ---------------------------------------------------------------- review I-08: nút Dừng giữa bước và lúc chờ thử lại
+
+
+def response_calls(calls):
+    """Một bước LLM gọi nhiều tool: calls = [(name, args), ...]."""
+    tool_calls = [
+        SimpleNamespace(id=f"call-{i}", function=SimpleNamespace(name=n, arguments=json.dumps(a)), model_extra={})
+        for i, (n, a) in enumerate(calls)
+    ]
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="", tool_calls=tool_calls, model_extra={}))],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+    )
+
+
+def test_stop_during_step_skips_remaining_tools():
+    stop = threading.Event()
+    ran = []
+
+    def first(api):
+        ran.append("t1")
+        stop.set()
+        return {"ok": True}
+
+    def other(api):
+        ran.append("other")
+        return {"ok": True}
+
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=Mock(side_effect=[response_calls([("t1", {}), ("t2", {}), ("t3", {})])]))))
+    schemas = [agent_openai._tool(n, "d") for n in ("t1", "t2", "t3")]
+    messages = [{"role": "user", "content": "x"}]
+    with pytest.raises(agent_openai.TurnCancelled):
+        agent_openai.run_tool_loop(llm, "m", messages, schemas, {"t1": first, "t2": other, "t3": other},
+                                   None, agent_openai._new_usage(), cancel_event=stop)
+    assert ran == ["t1"]
+    assert {m["tool_call_id"] for m in messages if m["role"] == "tool"} == {"call-0", "call-1", "call-2"}
+
+
+def test_stop_during_manager_step_ends_turn_politely(session):
+    calls = response_calls([("list_my_datasets", {}), ("list_my_datasets", {})])
+    create = Mock(side_effect=[calls, response("không được gọi")])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    listing = Mock(side_effect=lambda *a, **k: session.cancel_requested.set() or [])
+    session.api.list_datasets = listing
+    session.team.tools_for = lambda agent: (
+        [agent_openai._tool("list_my_datasets", "d")], {"list_my_datasets": tools.list_my_datasets})
+    answer = session.send("Liệt kê")
+    assert "Đã dừng" in answer and listing.call_count == 1 and create.call_count == 1
+
+
+def test_stop_interrupts_llm_retry_wait(monkeypatch):
+    monkeypatch.setattr(agent_openai, "_retry_delay", lambda error, attempt: 30.0)
+    busy = type("APIStatusError", (Exception,), {})("busy")
+    busy.status_code = 503
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=busy))))
+    stop = threading.Event()
+    threading.Timer(0.1, stop.set).start()
+    started = time.time()
+    with pytest.raises(agent_openai.TurnCancelled):
+        agent_openai.create_completion(llm, cancel_event=stop, model="m", messages=[])
+    assert time.time() - started < 2
+
+
+# ---------------------------------------------------------------- review I-09 / I-07: ngân sách uỷ thác, báo cáo dở dang
+
+
+def _stub_subagent(session, monkeypatch):
+    monkeypatch.setattr(session.team, "_run_loop",
+                        lambda *a, **k: {"ok": True, "agent": "data-agent", "report": "ok"})
+
+
+def test_seventh_delegation_in_a_turn_is_refused(session, monkeypatch):
+    _stub_subagent(session, monkeypatch)
+    session.team.begin_turn()
+    results = [session.team.ask_data_agent(session.api, f"việc {i}") for i in range(7)]
+    assert all(r["ok"] for r in results[:6])
+    assert results[6]["ok"] is False and "6 lần" in results[6]["error"] and results[6]["retryable"] is False
+
+
+def test_same_task_three_times_in_a_row_is_refused(session, monkeypatch):
+    _stub_subagent(session, monkeypatch)
+    session.team.begin_turn()
+    results = [session.team.ask_data_agent(session.api, "Liệt kê   dataset") for _ in range(3)]
+    assert results[0]["ok"] and results[1]["ok"]
+    assert results[2]["ok"] is False and "liên tiếp" in results[2]["error"]
+
+
+def test_delegation_budget_resets_each_turn(session, monkeypatch):
+    _stub_subagent(session, monkeypatch)
+    session.team.begin_turn()
+    for i in range(6):
+        session.team.ask_data_agent(session.api, f"việc {i}")
+    session.team.begin_turn()
+    assert session.team.ask_data_agent(session.api, "việc mới")["ok"]
+
+
+def test_subagent_step_cap_returns_partial_report(session):
+    calls = [response(tool="list_my_datasets") for _ in range(team.SUBAGENT_MAX_STEPS)]
+    create = Mock(side_effect=calls + [response("Báo cáo dở: đã đọc dataset-1, chưa chọn target")])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    session.team.begin_turn()
+    result = session.team.ask_data_agent(session.api, "Phân tích dataset-1")
+    assert result["ok"] is False and result["partial"] is True and "dataset-1" in result["report"]
+    assert create.call_args.kwargs["tool_choice"] == "none"
+
+
+# ---------------------------------------------------------------- review I-17 / I-15: kẹt hàng đợi, mất đăng nhập
+
+
+def test_job_stuck_in_queue_times_out_with_queued_reason(monkeypatch):
+    from agent import watcher as watcher_module
+    monkeypatch.setattr(watcher_module, "MAX_QUEUED_SECONDS", 0.05)
+    monkeypatch.setattr(tools, "job_pipeline_phase", lambda api, job_id: "queued")
+    events, finished = _watch_until_done(OneJobBackend({**SUCCESS_JOB, "status": 0}))
+    assert events[-1]["type"] == "job_watch_timeout" and events[-1]["reason"] == "queued"
+    assert "hàng đợi" in finished[0]["error"]
+
+
+class LoggedOutBackend(OneJobBackend):
+    def __init__(self):
+        super().__init__({**SUCCESS_JOB, "activate": 0})
+        self.logged_in = False
+        self.activated = []
+
+    def list_jobs(self):
+        if not self.logged_in:
+            raise ApiError(401, "token expired")
+        return [self.job]
+
+    def activate_model(self, job_id, activate):
+        self.activated.append(job_id)
+        return {}
+
+
+def test_lost_login_pauses_watch_and_keeps_promise(monkeypatch):
+    from agent import watcher as watcher_module
+    from agent.watcher import JobWatcher
+    monkeypatch.setattr(watcher_module, "AUTH_LOST_AFTER_SECONDS", 0.05)
+    monkeypatch.setattr(watcher_module, "MAX_BACKOFF_SECONDS", 0.02)
+    api = LoggedOutBackend()
+    events = []
+    watcher = JobWatcher(api, lambda type, **d: events.append({"type": type, **d}), lambda s: None, poll=0.01)
+    watcher.watch("job-1", max_time=60, auto_activate=True)
+    watcher._threads["job-1"].join(timeout=5)
+    assert events[-1]["type"] == "job_watch_timeout" and events[-1]["reason"] == "auth_lost"
+    assert watcher.auto_state("job-1") == "pending"
+    api.logged_in = True
+    assert watcher.resume_paused() == ["job-1"]
+    watcher._threads["job-1"].join(timeout=5)
+    # Job đã xong trong lúc không ai theo dõi: KHÔNG tự kích hoạt - người dùng xác nhận qua thẻ.
+    assert events[-1]["type"] == "job_done" and api.activated == []
+    assert events[-1]["activation"]["needs_confirmation"] is True
+    assert watcher.resume_paused() == []
+
+
+def test_auth_backoff_doubles_and_caps():
+    from agent.watcher import MAX_BACKOFF_SECONDS, JobWatcher
+    assert JobWatcher._backoff(None, 20) == 40 and JobWatcher._backoff(40, 20) == 80
+    assert JobWatcher._backoff(10_000, 20) == MAX_BACKOFF_SECONDS
+
+
+def test_auth_lost_event_tells_manager_watch_will_resume(session):
+    session._on_job_finished({"job_id": "job-1", "status": 0, "reason": "auth_lost", "error": "Mất phiên đăng nhập"})
+    assert "theo dõi tiếp" in session.pending_events[-1]
+
+
+def test_new_token_resumes_watches_paused_for_lost_login(session, monkeypatch):
+    monkeypatch.setattr(server, "_owner_of", {"new": "user-1"}.get)
+    monkeypatch.setitem(server._sessions, "s1", server._Entry(session, "user-1"))
+    resumed = Mock(return_value=["job-1"])
+    monkeypatch.setattr(session.watcher, "resume_paused", resumed)
+    assert request("POST", "/agent/token", json={"session_id": "s1", "access_token": "new"}).status_code == 200
+    assert resumed.called
+
+
+# ---------------------------------------------------------------- review I-16: lưu trạng thái watch
+
+
+def test_watch_store_roundtrip_and_owner_isolation(tmp_path):
+    from agent.watch_store import WatchStore
+    store = WatchStore(tmp_path / "w.sqlite3")
+    store.save("u1", "job-1", "s1", {"auto_state": "pending"})
+    store.save("u2", "job-2", "s2", {"auto_state": "off"})
+    assert [(r["job_id"], r["session_id"], r["auto_state"]) for r in store.for_owner("u1")] == [("job-1", "s1", "pending")]
+    store.remove("u1", "job-1")
+    assert store.for_owner("u1") == [] and len(store.for_owner("u2")) == 1
+
+
+def test_store_purges_records_older_than_ttl(tmp_path, monkeypatch):
+    from agent import watch_store
+    store = watch_store.WatchStore(tmp_path / "w.sqlite3")
+    store.save("u1", "job-1", "s1", {})
+    real_time = time.time
+    monkeypatch.setattr(watch_store.time, "time", lambda: real_time() + 8 * 24 * 3600)
+    assert store.purge() == 1 and store.for_owner("u1") == []
+
+
+def test_default_store_is_disabled_without_state_dir(monkeypatch):
+    from agent import watch_store
+    monkeypatch.delenv("AGENT_STATE_DIR", raising=False)
+    assert watch_store.default_store() is None
+
+
+class RunningJobBackend(OneJobBackend):
+    def __init__(self):
+        super().__init__({**SUCCESS_JOB, "status": 0, "activate": 0})
+
+
+def test_finished_watch_is_forgotten(tmp_path):
+    from agent.watch_store import WatchStore
+    from agent.watcher import JobWatcher
+    store = WatchStore(tmp_path / "w.sqlite3")
+    watcher = JobWatcher(OneJobBackend(SUCCESS_JOB), lambda type, **d: None, lambda s: None, poll=0.01)
+    watcher.attach_store(store, "user-1", "s1")
+    watcher.watch("job-1", max_time=60)
+    watcher._threads["job-1"].join(timeout=5)
+    assert store.for_owner("user-1") == []
+
+
+def test_stopped_watch_is_kept_and_resumed_by_a_new_watcher(tmp_path):
+    from agent.watch_store import WatchStore
+    from agent.watcher import JobWatcher
+    store = WatchStore(tmp_path / "w.sqlite3")
+    first = JobWatcher(RunningJobBackend(), lambda type, **d: None, lambda s: None, poll=0.01)
+    first.attach_store(store, "user-1", "s1")
+    first.watch("job-1", max_time=60, auto_activate=True)
+    first.stop()
+    first._threads["job-1"].join(timeout=5)
+    records = store.for_owner("user-1")
+    assert [(r["job_id"], r["auto_state"]) for r in records] == [("job-1", "pending")]
+
+    api = OneJobBackend({**SUCCESS_JOB, "activate": 0})
+    api.activate_model = Mock(return_value={})
+    events = []
+    second = JobWatcher(api, lambda type, **d: events.append({"type": type, **d}), lambda s: None, poll=0.01)
+    second.attach_store(store, "user-1", "s2")
+    assert second.resume(records) == ["job-1"]
+    second._threads["job-1"].join(timeout=5)
+    assert events[-1]["type"] == "job_done" and not api.activate_model.called
+    assert events[-1]["activation"]["needs_confirmation"] is True
+    assert store.for_owner("user-1") == []
+
+
+def test_new_session_resumes_orphaned_watches_only(tmp_path, monkeypatch):
+    from agent.watch_store import WatchStore
+    store = WatchStore(tmp_path / "w.sqlite3")
+    monkeypatch.setattr(server, "_WATCH_STORE", store)
+    store.save("user-1", "job-a", "dead-session", {"auto_state": "off"})
+    store.save("user-1", "job-b", "live", {"auto_state": "off"})
+    monkeypatch.setitem(server._sessions, "live", Mock(owner="user-1"))
+    watched = []
+    monkeypatch.setattr("agent.watcher.JobWatcher.watch", lambda self, job_id, **kw: watched.append(job_id) or True)
+    new_id, session = server._get_session(None, "tok", "user-1")
+    try:
+        assert watched == ["job-a"]
+    finally:
+        server._sessions.pop(new_id, None)
+        session.close()
+
+
+# ---------------------------------------------------------------- review I-19: cache xác thực, token rác
+
+
+def test_non_jwt_token_is_rejected_without_backend_call(monkeypatch):
+    get_me = Mock()
+    monkeypatch.setattr(HAutoMLClient, "get_me", get_me)
+    assert server._owner_of("garbage-token") is None and not get_me.called
+
+
+def test_owner_cache_evicts_least_recently_used_not_everything():
+    cache = server._OwnerCache(maxsize=3)
+    for key in "abc":
+        cache.put(key, key.upper(), expires=10**10)
+    cache.get("a", now=0)
+    cache.put("d", "D", expires=10**10)
+    assert cache.get("a", now=0) == "A" and cache.get("b", now=0) is None and cache.get("d", now=0) == "D"
+
+
+def test_owner_cache_entries_expire():
+    cache = server._OwnerCache()
+    cache.put("t", "U", expires=5)
+    assert cache.get("t", now=4) == "U" and cache.get("t", now=6) is None
+
+
+# ---------------------------------------------------------------- review I-18: upload xác thực trước khi đọc body
+
+
+def test_upload_without_bearer_is_rejected_before_body_is_read(monkeypatch):
+    read = Mock()
+    monkeypatch.setattr(server, "_read_and_store_upload", read)
+    result = request("POST", "/agent/upload", files={"file": ("a.csv", b"x,y\n1,2\n"), "access_token": (None, "a.b.c")})
+    assert result.status_code == 401 and not read.called
+
+
+def test_upload_body_read_has_deadline(monkeypatch):
+    monkeypatch.setattr(server, "UPLOAD_READ_SECONDS", 0.05)
+    monkeypatch.setattr(server, "_owner_of", {"a.b.c": "user-1"}.get)
+
+    async def slow_form(self, **kw):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr("starlette.requests.Request.form", slow_form)
+    result = request("POST", "/agent/upload", headers={"Authorization": "Bearer a.b.c"},
+                     files={"file": ("a.csv", b"x,y\n1,2\n")})
+    assert result.status_code == 408
+
+
+def test_bearer_token_parsing():
+    scope = {"type": "http", "headers": [(b"authorization", b"Bearer  a.b.c ")]}
+    from starlette.requests import Request
+    assert server._bearer_token(Request(scope)) == "a.b.c"
+    assert server._bearer_token(Request({"type": "http", "headers": []})) is None
+
+
+# ---------------------------------------------------------------- final review: overflow sau tool có tác dụng phụ
+
+
+def test_context_overflow_after_a_tool_ran_is_not_retried(session):
+    # Bước 1 chạy tool (có thể đã nhập dataset / tạo thẻ); bước 2 vượt context -> KHÔNG chạy lại cả lượt.
+    create = Mock(side_effect=[response(tool="list_my_datasets"), _overflow_error(), response("không được gọi")])
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    session.messages += _turn_with_big_tool(0)
+    with pytest.raises(agent_openai.ContextOverflow, match="gửi lại"):
+        session.send("Liệt kê")
+    assert create.call_count == 2
+    # Lượt kế tiếp rút gọn mạnh (che kết quả tool cũ) trước khi gọi LLM, dù chưa vượt trần token mặc định.
+    create.side_effect = [response("ok")]
+    assert session.send("Thử lại") == "ok"
+    assert all(len(m["content"]) < 1000 for m in session.messages if m["role"] == "tool")
+
+
+def test_get_job_info_carries_every_metric_of_the_best_model():
+    job = _scored_job(status=1, best_model="M1", orther_model_scores=[
+        {"model_name": "M1", "scores": {"mse": 1.0, "r2": 0.9, "mae": 0.5}},
+        {"model_name": "M2", "scores": {"mse": 2.0, "r2": 0.8, "mae": 0.7}},
+    ])
+    api = OneJobBackend(job)
+    api.get_job_pipeline = lambda job_id: {}
+    info = tools.get_job_info(api, "job-1")
+    assert info["best_model_scores"] == {"mse": 1.0, "r2": 0.9, "mae": 0.5}
+
+
+def test_operation_skill_describes_current_get_job_info_fields():
+    text = (skills.SKILLS_DIR / "operation-agent" / "SKILL.md").read_text(encoding="utf-8")
+    assert "orther_model_scores" not in text and "best_model_scores" in text and "include_all_models" in text
+
+
+def test_get_job_info_caps_a_huge_feature_list():
+    job = _scored_job(config={"target": "y", "metric_sort": "mse", "list_feature": [f"feature_{i:05d}" for i in range(5000)]})
+    info = tools.get_job_info(OneJobBackend(job), "job-1")
+    assert len(json.dumps(info)) < 12_000 and info["config"]["list_feature_hidden"] > 0
+
+
+class FinishesLaterBackend(OneJobBackend):
+    """Job còn chạy ở lần hỏi đầu, xong ở lần sau."""
+
+    def __init__(self):
+        super().__init__({**SUCCESS_JOB, "activate": 0})
+        self.polls = 0
+        self.activated = []
+
+    def list_jobs(self):
+        self.polls += 1
+        return [{**self.job, "status": 0 if self.polls == 1 else 1}]
+
+    def activate_model(self, job_id, activate):
+        self.activated.append(job_id)
+        return {}
+
+
+def test_resumed_promise_still_activates_a_job_that_finishes_while_watched(monkeypatch):
+    from agent.watcher import JobWatcher
+    monkeypatch.setattr(tools, "job_pipeline_phase", lambda api, job_id: None)
+    api = FinishesLaterBackend()
+    events = []
+    watcher = JobWatcher(api, lambda type, **d: events.append({"type": type, **d}), lambda s: None, poll=0.01)
+    assert watcher.resume([{"job_id": "job-1", "auto_state": "pending", "max_time": 60}]) == ["job-1"]
+    watcher._threads["job-1"].join(timeout=5)
+    assert events[-1]["type"] == "job_done" and api.activated == ["job-1"]
+
+
+# ---------------------------------------------------------------- tối ưu chi phí: đo token đã cache
+
+
+def _usage(cached):
+    return SimpleNamespace(prompt_tokens=100, completion_tokens=10, total_tokens=110, prompt_tokens_details=cached)
+
+
+@pytest.mark.parametrize("details,expected", [
+    (SimpleNamespace(cached_tokens=80), 80),
+    ({"cached_tokens": 5}, 5),
+    (None, 0),
+    (SimpleNamespace(cached_tokens=None), 0),
+])
+def test_cached_prompt_tokens_are_accounted(details, expected):
+    total = agent_openai._new_usage()
+    agent_openai._accumulate_usage(total, _usage(details))
+    assert total["cached_tokens"] == expected and total["prompt_tokens"] == 100
+
+
+def test_llm_call_event_carries_cached_tokens():
+    events = []
+    reply = response("xong")
+    reply.usage = _usage(SimpleNamespace(cached_tokens=64))
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(return_value=reply))))
+    agent_openai.run_tool_loop(llm, "m", [{"role": "user", "content": "x"}], [], {}, None, agent_openai._new_usage(),
+                               emit=lambda type, **d: events.append({"type": type, **d}))
+    assert [e["cached_tokens"] for e in events if e["type"] == "llm_call"] == [64]
+
+
+# ---------------------------------------------------------------- tối ưu chi phí: ngữ cảnh JSON gọn
+
+
+def test_context_json_is_compact():
+    assert team._context_json({"a": [1, 2], "b": "Tuổi"}) == '{"a":[1,2],"b":"Tuổi"}'
+
+
+def test_model_agent_context_has_no_indentation(session):
+    seen = []
+
+    def create(**request):
+        seen.append(request["messages"])
+        return response("Báo cáo")
+
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+    session.team.begin_turn()
+    session.team.ask_model_agent(session.api, "Đề xuất config", dataset_id="dataset-1")
+    context = seen[0][1]["content"]
+    assert '"dataset_id":"dataset-1"' in context and '\n "' not in context
+
+
+# ---------------------------------------------------------------- tối ưu chi phí: dataset rộng không kèm sample_rows
+
+
+def test_wide_schema_for_llm_drops_sample_rows(session):
+    session.api = WideBackend()
+    result = session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+    assert "sample_rows" not in result and result["columns"][0]["sample_values"]
+    assert "sample_rows" in session.team.handoff.profiles["dataset-1"]  # hồ sơ đầy đủ cho code vẫn giữ
+
+
+def test_narrow_schema_for_llm_keeps_sample_rows(session):
+    assert "sample_rows" in session.team.get_dataset_schema(session.api, dataset_id="dataset-1")
+
+
+# ---------------------------------------------------------------- tối ưu chi phí: trần tổng tool call mỗi lượt
+
+
+def test_tool_budget_refusal_skips_the_tool_but_answers_it():
+    ran = []
+    budget = iter([None, "hết lượt gọi tool"])
+    llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=[
+        response_calls([("t1", {}), ("t2", {})]), response("xong")]))))
+    messages = [{"role": "user", "content": "x"}]
+    answer = agent_openai.run_tool_loop(
+        llm, "m", messages, [agent_openai._tool("t1", "d"), agent_openai._tool("t2", "d")],
+        {"t1": lambda api: ran.append("t1") or {"ok": True}, "t2": lambda api: ran.append("t2") or {"ok": True}},
+        None, agent_openai._new_usage(), before_tool=lambda name: next(budget))
+    assert answer == "xong" and ran == ["t1"]
+    refused = json.loads([m for m in messages if m["role"] == "tool"][1]["content"])
+    assert refused["ok"] is False and refused["error"] == "hết lượt gọi tool"
+
+
+def test_session_caps_tool_calls_per_turn(session, monkeypatch):
+    monkeypatch.setenv("AGENT_MAX_TOOL_CALLS_PER_TURN", "2")
+    listing = Mock(return_value=[])
+    session.api.list_datasets = listing
+    session.team.tools_for = lambda agent: (
+        [agent_openai._tool("list_my_datasets", "d")], {"list_my_datasets": tools.list_my_datasets})
+    steps = [response(tool="list_my_datasets") for _ in range(3)] + [response("xong")]
+    session.llm = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(side_effect=steps))))
+    assert session.send("Liệt kê") == "xong"
+    assert listing.call_count == 2
+    session.llm.chat.completions.create = Mock(side_effect=[response(tool="list_my_datasets"), response("ok")])
+    session.send("Lại")
+    assert listing.call_count == 3  # lượt mới: đếm lại từ đầu

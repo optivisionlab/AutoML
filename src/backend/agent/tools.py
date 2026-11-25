@@ -136,14 +136,65 @@ PROBLEM_TYPES = ("classification", "regression", "time_series")
 INFERABLE_TYPES = ("classification", "regression")
 
 
-def list_my_datasets(client: HAutoMLClient) -> dict:
-    """Liệt kê các dataset của tài khoản đang đăng nhập (backend tự lọc theo token)."""
+def all_my_datasets(client: HAutoMLClient) -> dict:
+    """
+    MỌI dataset của tài khoản, bản ghi thô của backend (_id, dataName, ...). Chỉ dùng trong code (đối chiếu
+    dataset_id, tên dataset) - LLM dùng list_my_datasets (bản gọn, có giới hạn).
+    """
     try:
         datasets = _call(client.list_datasets)
     except ApiError as error:
         return _failure(error)
 
     return {"ok": True, "count": len(datasets), "datasets": datasets}
+
+
+DEFAULT_DATASET_LIMIT = 20
+MAX_DATASET_LIMIT = 100
+_DESCRIPTION_CHARS_FOR_LLM = 200
+
+
+def list_my_datasets(client: HAutoMLClient, search: str = "", limit: int = DEFAULT_DATASET_LIMIT) -> dict:
+    """
+    Dataset của tài khoản cho LLM: mới nhất trước, tối đa `limit`, mỗi dataset chỉ {dataset_id, name, created,
+    description (cắt ngắn)}. Bản ghi thô (thumbnail, mô tả dài...) với hàng trăm dataset làm phình context.
+    """
+    listing = all_my_datasets(client)
+    if not listing.get("ok"):
+        return listing
+    try:
+        limit = max(1, min(int(limit or DEFAULT_DATASET_LIMIT), MAX_DATASET_LIMIT))
+    except (TypeError, ValueError):
+        limit = DEFAULT_DATASET_LIMIT
+    needle = (search or "").strip().lower()
+    matched = [
+        d for d in listing["datasets"] or []
+        if not needle or needle in str(d.get("dataName") or "").lower()
+    ]
+    matched.sort(key=lambda d: _created_at(d.get("createDate")), reverse=True)
+    shown = [
+        {
+            "dataset_id": str(d.get("_id") or d.get("id") or ""),
+            "name": d.get("dataName"),
+            "created": d.get("createDate"),
+            "description": _clip_text(d.get("description"), _DESCRIPTION_CHARS_FOR_LLM),
+        }
+        for d in matched[:limit]
+    ]
+    result = {"ok": True, "total": len(matched), "shown": len(shown), "datasets": shown}
+    if len(matched) > len(shown):
+        result["hint"] = (
+            f"Còn {len(matched) - len(shown)} dataset khác. Thu hẹp bằng search (một phần tên dataset) "
+            f"hoặc tăng limit (tối đa {MAX_DATASET_LIMIT})."
+        )
+    return result
+
+
+def _clip_text(value, limit: int) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + "…"
 
 
 def get_dataset_info(client: HAutoMLClient, dataset_id: str) -> dict:
@@ -539,16 +590,77 @@ SCORE_SOURCE_NOTES = {
 }
 
 
-def get_job_info(client: HAutoMLClient, job_id: str) -> dict:
-    """Xem chi tiết một job huấn luyện theo job_id (kèm nguồn điểm khi job đã xong)."""
+# Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong src/core/constants.py của backend.
+LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse"}
+JOB_STATUS_LABELS = {JOB_RUNNING: "running", JOB_SUCCESS: "succeeded", JOB_FAILED: "failed", JOB_CANCELLED: "cancelled"}
+LEADERBOARD_SIZE = 5
+_JOB_ERROR_CHARS = 1000
+
+
+def _leaderboard(models: list, metric: str | None) -> list[dict]:
+    """Model xếp theo metric_sort của job (đúng chiều: mse nhỏ là tốt), model thiếu điểm xếp cuối."""
+    scored = []
+    for item in models or []:
+        score = (item.get("scores") or {}).get(metric) if metric else None
+        scored.append({"model": item.get("model_name"), "score": score})
+    lower_is_better = metric in LOWER_IS_BETTER
+    with_score = [m for m in scored if isinstance(m["score"], (int, float))]
+    without = [m for m in scored if not isinstance(m["score"], (int, float))]
+    with_score.sort(key=lambda m: m["score"], reverse=not lower_is_better)
+    return with_score + without
+
+
+def get_job_info(client: HAutoMLClient, job_id: str, include_all_models: bool = False) -> dict:
+    """
+    Một job huấn luyện, bản gọn: trạng thái, config chính, model tốt nhất, top model theo metric, lỗi (nếu
+    hỏng) và nguồn điểm khi đã xong. include_all_models=True thì kèm điểm và tham số của mọi model.
+    """
     job, problem = find_own_job(client, job_id)
     if problem:
         return problem
 
-    # Vị trí file model trên MinIO không giúp gì cho LLM.
-    job.pop("model", None)
-    result = {"ok": True, "job": job}
-    if job.get("status") == JOB_SUCCESS:
+    config = job.get("config") or {}
+    models = job.get("orther_model_scores") or []
+    status = job.get("status")
+    metric = config.get("metric_sort")
+    # Tên đặc trưng: predict cần đủ các cột này; có trần cho job vài nghìn cột.
+    features, features_hidden = _fit_names([str(f) for f in config.get("list_feature") or []])
+    best_scores = next(
+        (m.get("scores") for m in models if job.get("best_model") and m.get("model_name") == job.get("best_model")),
+        None,
+    )
+    result = {
+        "ok": True,
+        "job_id": job.get("job_id"),
+        "status": status,
+        "status_label": JOB_STATUS_LABELS.get(status, "unknown"),
+        "dataset_id": (job.get("data") or {}).get("id"),
+        "dataset_name": (job.get("data") or {}).get("name"),
+        "config": {
+            "target": config.get("target"),
+            "problem_type": config.get("problem_type"),
+            "metric_sort": metric,
+            "search_algorithm": config.get("search_algorithm"),
+            "max_time": config.get("timeout"),
+            "feature_count": len(config.get("list_feature") or []),
+            "list_feature": features,
+            **({"list_feature_hidden": features_hidden} if features_hidden else {}),
+        },
+        "best_model": job.get("best_model"),
+        "best_score": job.get("best_score"),
+        "best_model_scores": best_scores,
+        "activate": job.get("activate"),
+        "create_at": job.get("create_at"),
+        "leaderboard": _leaderboard(models, metric)[:LEADERBOARD_SIZE],
+        "models_total": len(models),
+    }
+    if status in (JOB_FAILED, JOB_CANCELLED) and job.get("infor"):
+        result["error"] = _clip_text(job.get("infor"), _JOB_ERROR_CHARS)
+    if include_all_models:
+        result["all_models"] = models
+    elif len(models) > LEADERBOARD_SIZE:
+        result["hint"] = "Chỉ hiện top model theo metric_sort; include_all_models=true để xem điểm và tham số mọi model."
+    if status == JOB_SUCCESS:
         source = job_score_source(client, job_id)
         result["score_source"] = source
         result["score_note"] = SCORE_SOURCE_NOTES[source]
@@ -804,7 +916,7 @@ def prepare_training_config(
                 if both else
                 f"Cột '{target}' không làm biến mục tiêu được cho loại bài toán nào."
             ],
-            "valid_columns": [c["name"] for c in schema["columns"]],
+            **_valid_columns(schema["columns"]),
             "target_candidates_by_type": by_type,
         }
 
@@ -844,12 +956,18 @@ def prepare_training_config(
             "error": "Config huấn luyện không hợp lệ.",
             "errors": check["errors"],
             "warnings": check["warnings"],
-            "valid_columns": [c["name"] for c in schema["columns"]],
+            **_valid_columns(schema["columns"]),
             "target_candidates": schema["target_candidates"],
             "valid_metrics": metrics["metrics"],
         }
 
     return {"ok": True, "config": config, "warnings": check["warnings"]}
+
+
+def _valid_columns(columns: list) -> dict:
+    """Tên cột cho lỗi config, có trần (dataset rất rộng); số tên bị ẩn kèm theo."""
+    names, hidden = _fit_names([c["name"] for c in columns])
+    return {"valid_columns": names, "valid_columns_hidden": hidden}
 
 
 def _backend_training_config(config: dict) -> dict:
@@ -1236,6 +1354,81 @@ def _fit_names(items: list, budget: int = _NAMES_CHARS_FOR_LLM,
         kept.append(item)
         used += cost
     return kept, len(items or []) - len(kept)
+
+
+def _cap_items(items: list, budget: int) -> tuple[list, int]:
+    """
+    Các mục (dict) vừa `budget` ký tự JSON: mục nào không vừa (vd tên cột quá dài) thì bỏ RIÊNG mục đó, không
+    bỏ cả các mục sau. Trả (danh sách giữ lại, số mục bị ẩn).
+    """
+    kept, used = [], 0
+    for item in items or []:
+        size = len(json.dumps(item, ensure_ascii=False, default=str))
+        if used + size > budget:
+            continue
+        kept.append(item)
+        used += size
+    return kept, len(items or []) - len(kept)
+
+
+def bounded_candidates(candidates, by_type: dict) -> dict:
+    """target_candidates / theo loại bài toán: tên cột, cùng trần với all_column_names (dataset rất rộng)."""
+    shown, hidden = _fit_names([str(c) for c in candidates or []], budget=8_000)
+    by_type_shown, by_type_hidden = {}, 0
+    for kind, names in (by_type or {}).items():
+        kept, extra = _fit_names([str(c) for c in names or []], budget=4_000)
+        by_type_shown[kind] = kept
+        by_type_hidden += extra
+    out = {"target_candidates": shown, "target_candidates_by_type": by_type_shown}
+    if hidden or by_type_hidden:
+        out["target_candidates_hidden"] = hidden + by_type_hidden
+    return out
+
+
+def all_column_names(columns: list) -> dict:
+    """
+    Đủ tên cột của dataset rộng - có TRẦN: file upload không giới hạn số cột / độ dài tên, một header 1 MB thành
+    ~300k token trong MỘT lời gọi (check_budget chỉ chặn trước lời gọi kế tiếp). Tên dài > 128 ký tự bị ẩn.
+    """
+    names, hidden = _fit_names([str(c.get("name")) for c in columns], budget=12_000)
+    return {"all_column_names": names, **({"column_names_hidden": hidden} if hidden else {})}
+
+
+# Số cột có thống kê trong kết quả schema đưa cho LLM (Data Agent và hồ sơ của Model Agent).
+MAX_COLUMNS_FOR_LLM = 60
+
+
+def schema_for_llm(schema: dict) -> dict:
+    """
+    Kết quả get_dataset_schema cho LLM, có trần: thống kê cho MAX_COLUMNS_FOR_LLM cột đầu (tên cột dài bất
+    thường bị ẩn), đủ tên cột qua all_column_names (có trần ký tự), ứng viên target và cột ngày giờ có trần.
+    Dataset vài trăm cột / header 1 MB không còn vượt trần kết quả tool rồi bị cắt thành JSON dở dang.
+    """
+    columns = schema.get("columns") or []
+    shown = [c for c in columns[:MAX_COLUMNS_FOR_LLM] if len(str(c.get("name"))) <= _NAME_CHARS_FOR_LLM]
+    truncated = len(columns) > MAX_COLUMNS_FOR_LLM
+    view = {
+        **schema,
+        **bounded_candidates(schema.get("target_candidates"), schema.get("target_candidates_by_type")),
+        "columns": shown,
+        "columns_truncated": truncated,
+    }
+    if len(shown) < len(columns):
+        view["columns_hidden"] = len(columns) - len(shown)
+    if truncated:
+        view.update(all_column_names(columns))
+        # Dòng mẫu của dataset rộng (vài dòng x hàng trăm cột) trùng sample_values từng cột mà chiếm ~1/3 kết quả.
+        view.pop("sample_rows", None)
+        view["note"] = (
+            f"{schema.get('note', '')} Dataset rộng: chỉ {MAX_COLUMNS_FOR_LLM} cột đầu có thống kê; "
+            "all_column_names là đủ tên mọi cột; giá trị mẫu xem sample_values của từng cột (không kèm sample_rows)."
+        ).strip()
+    if schema.get("time_columns"):
+        kept, hidden = _cap_items(schema["time_columns"], 4_000)
+        view["time_columns"] = kept
+        if hidden:
+            view["time_columns_hidden"] = hidden
+    return view
 
 
 def _fit_query(query):

@@ -18,7 +18,7 @@ Tài liệu này không nằm trong system prompt. Chỉ đọc khi cần chọn
 | `columns[].distinct_in_preview` | Số giá trị khác nhau, **tính trên 50 dòng đầu** |
 | `columns[].missing_in_preview` | Số giá trị thiếu, **tính trên 50 dòng đầu** |
 | `columns[].sample_values` | Tối đa 5 giá trị mẫu |
-| `sample_rows` | 3 dòng dữ liệu đầu |
+| `sample_rows` | 3 dòng dữ liệu đầu (dataset rộng hơn 60 cột thì không có - xem `sample_values` từng cột) |
 
 ## Hiểu đúng `target_for` / `can_be_target`
 

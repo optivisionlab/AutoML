@@ -66,5 +66,5 @@ Các model được train **song song** trên các worker; hết giờ thì mode
 xong bị huỷ và không có trong kết quả. Không model nào xong kịp thì job thất bại.
 
 Hệ quả: `max_time` quá nhỏ thì bảng xếp hạng thiếu model (so số model trong
-`orther_model_scores` với `list_models`), hoặc job thất bại hẳn. Khi thấy vậy,
+`models_total` của `get_job_info` với `list_models`), hoặc job thất bại hẳn. Khi thấy vậy,
 nêu cho người dùng biết và đề nghị tăng `max_time` hoặc đổi sang `tpe_search`.
