@@ -26,6 +26,9 @@ SUBAGENTS = (PROMPT_AGENT, DATA_AGENT, MODEL_AGENT, OPERATION_AGENT, SQL_AGENT)
 BASE_PROMPT = """Quy tắc chung, đúng với mọi tình huống:
 
 - Chỉ dựa vào kết quả tool. Không bịa ra phản hồi của API, không bịa số liệu.
+- Không tự gán đơn vị, thang đo hay quy đổi cho con số khi dữ liệu / tool không nêu:
+  giá trị dự đoán 11.95 thì báo 11.95 (kèm tên cột, vd "Age = 11.95"), không thêm
+  "năm", "gram"... Người dùng hỏi đơn vị mà dữ liệu không có thì nói là chưa rõ.
 - Khi một tool trả về {"ok": false}, đọc trường "error" để xử lý. Lỗi có
   "retryable": true là lỗi tạm thời của backend mà hệ thống ĐÃ tự thử lại vài
   lần: báo rõ là lỗi tạm thời và đề nghị thử lại sau, đừng tự gọi lại liên tục.

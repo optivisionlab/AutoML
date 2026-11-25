@@ -118,7 +118,9 @@ def log_exception(logger: logging.Logger, message: str, *args) -> None:
 # nằm ở đây: SDK dùng CÙNG một timeout cho mọi lần thử và không có trần tổng thời gian, nên provider treo giữ lượt
 # chat tới (max_retries + 1) × timeout (~30 phút). Ở đây mỗi lần thử bị kẹp theo thời gian còn lại của lượt.
 DEFAULT_LLM_MAX_RETRIES = 5
-_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+# 520-524: lỗi cổng Cloudflare đứng trước nhiều provider (vd FPT AI Factory trả 524 khi origin quá ~100 s) - lỗi
+# tạm thời giống 502/504 (benchmark v5-01, ca B05_r05).
+_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 _TRANSIENT_ERRORS = ("APIConnectionError", "APITimeoutError")
 _BACKOFF_BASE = 0.5
 _BACKOFF_MAX = 8.0

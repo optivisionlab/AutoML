@@ -588,6 +588,15 @@ SCORE_SOURCE_NOTES = {
     ),
     None: "Không rõ điểm đo trên tập kiểm tra riêng hay cross-validation - có thể lạc quan hơn hiệu năng thật.",
 }
+# Engine chấm chuỗi thời gian bằng TimeSeriesSplit trên đặc trưng trễ lấy từ giá trị THẬT (y.shift): điểm là sai số
+# dự báo MỘT bước. Dự báo nhiều bước tới chạy đệ quy trên chính dự báo của model, sai số thường lớn hơn và engine
+# không đo (benchmark v5-01, ca T04: agent khẳng định ràng buộc RMSE cho 96 giờ tới đã đạt từ điểm CV này).
+FORECAST_SCORE_NOTE = (
+    "Điểm của job chuỗi thời gian là sai số dự báo MỘT bước (cross-validation TimeSeriesSplit, giá trị trễ là giá "
+    "trị thật). Dự báo nhiều bước tới (vd 96 giờ) đệ quy trên chính dự báo nên sai số thường LỚN hơn, và hệ thống "
+    "không đo sai số đó. Chỉ nói điểm một bước đạt / không đạt ngưỡng; KHÔNG khẳng định ràng buộc về sai số dự báo "
+    "N bước tới đã đạt."
+)
 
 
 # Metric "càng nhỏ càng tốt". Nguồn: LOWER_IS_BETTER_METRICS trong src/core/constants.py của backend.
@@ -664,6 +673,8 @@ def get_job_info(client: HAutoMLClient, job_id: str, include_all_models: bool = 
         source = job_score_source(client, job_id)
         result["score_source"] = source
         result["score_note"] = SCORE_SOURCE_NOTES[source]
+    if config.get("problem_type") == "time_series":
+        result["forecast_note"] = FORECAST_SCORE_NOTE
     return result
 
 

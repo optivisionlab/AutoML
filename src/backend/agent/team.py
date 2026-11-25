@@ -197,6 +197,103 @@ def _mentions_any(text: str, labels: list[str]) -> bool:
     )
 
 
+_SQL_TABLE = re.compile(
+    r"\b(?:from|join)\s+(?:[`\"\[]?[\w$]+[`\"\]]?\s*\.\s*)*[`\"\[]?([\w$]+)[`\"\]]?", re.IGNORECASE,
+)
+
+
+def _sql_source_tables(sql: str) -> list[str]:
+    """Tên bảng sau FROM / JOIN (bỏ schema, bỏ dấu trích dẫn): SELECT * FROM "public"."crab_train" -> crab_train."""
+    return list(dict.fromkeys(match.group(1) for match in _SQL_TABLE.finditer(sql or "")))
+
+
+# ---- Giá trị người dùng đã viết rõ trong tin nhắn (benchmark v5-01: B06 tự nâng max_time 5 -> 60 giây; ablation
+# B04 bỏ cột target khỏi danh sách feature người dùng liệt kê, B05 đổi metric accuracy -> r2). Chỉ nhận những gì
+# đọc chắc chắn; câu mơ hồ thì không khoá gì - khoá sai còn tệ hơn không khoá.
+_TIME_UNIT_SECONDS = {
+    "giây": 1, "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+    "phút": 60, "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60,
+    "giờ": 3600, "h": 3600, "hour": 3600, "hours": 3600,
+}
+_MAX_TIME_SAID = re.compile(
+    r"max_time\s*[:=]?\s*(\d+)\s*(" + "|".join(sorted(_TIME_UNIT_SECONDS, key=len, reverse=True)) + r")?(?!\w)",
+    re.IGNORECASE,
+)
+_PROBLEM_TYPE_WORDS = {
+    "classification": "classification", "phân loại": "classification",
+    "regression": "regression", "hồi quy": "regression",
+    "time_series": "time_series", "time series": "time_series", "chuỗi thời gian": "time_series",
+}
+# Metric ngay trước một phép so sánh là RÀNG BUỘC ("f1_macro >= 0.5"), không phải metric chọn model.
+_CONSTRAINT_FOLLOWS = re.compile(
+    r"\s*(?:>=|<=|>|<|≥|≤|=|trên|dưới|ít nhất|tối thiểu|tối đa|không quá|at least|at most|above|below)",
+    re.IGNORECASE,
+)
+_LIST_COMMA = re.compile(r"\s*,\s*")
+_LIST_LAST = re.compile(r"\s*,?\s*(?:và|and)\s+", re.IGNORECASE)
+
+
+def _word_hits(text: str, words) -> list[tuple[int, int, str]]:
+    """(đầu, cuối, từ) của các từ trong `words` xuất hiện đúng từ, không phân biệt hoa thường; từ dài được ưu tiên."""
+    hits, taken = [], []
+    for word in sorted({str(w) for w in words if str(w).strip()}, key=len, reverse=True):
+        for match in re.finditer(rf"(?<!\w){re.escape(word)}(?!\w)", text, re.IGNORECASE):
+            if not any(match.start() < end and start < match.end() for start, end in taken):
+                taken.append((match.start(), match.end()))
+                hits.append((match.start(), match.end(), word))
+    return sorted(hits)
+
+
+def _listed_features(text: str, columns: list[str]) -> list[str] | None:
+    """
+    Danh sách feature người dùng liệt kê: từ hai tên cột trở lên đứng liền nhau, ngăn bằng dấu phẩy (mục cuối có
+    thể nối bằng "và" / "and"). "bỏ Ba và Fe" không có dấu phẩy nên không phải danh sách. Có hơn một danh sách
+    như vậy trong câu thì mơ hồ: None.
+    """
+    canonical = {str(c).lower(): str(c) for c in columns}
+    runs, run, has_comma, previous_end = [], [], False, None
+    for start, end, word in _word_hits(text, columns):
+        gap = text[previous_end:start] if previous_end is not None else None
+        if run and gap is not None and _LIST_COMMA.fullmatch(gap):
+            run.append(canonical[word.lower()])
+            has_comma = True
+        elif run and gap is not None and has_comma and _LIST_LAST.fullmatch(gap):
+            run.append(canonical[word.lower()])
+        else:
+            if len(run) >= 2 and has_comma:
+                runs.append(run)
+            run, has_comma = [canonical[word.lower()]], False
+        previous_end = end
+    if len(run) >= 2 and has_comma:
+        runs.append(run)
+    return runs[0] if len(runs) == 1 else None
+
+
+def _user_fixed_values(text: str, columns: list[str], metrics: set[str]) -> dict:
+    """Giá trị người dùng viết rõ trong MỘT tin nhắn: list_feature, metric_sort, problem_type, max_time, search."""
+    fixed = {}
+    features = _listed_features(text, columns)
+    if features:
+        fixed["list_feature"] = features
+    named_metrics = {word.lower() for _, end, word in _word_hits(text, metrics) if not _CONSTRAINT_FOLLOWS.match(text[end:])}
+    if len(named_metrics) == 1:
+        fixed["metric_sort"] = named_metrics.pop()
+    kinds = {_PROBLEM_TYPE_WORDS[word.lower()] for _, _, word in _word_hits(text, _PROBLEM_TYPE_WORDS)}
+    if len(kinds) == 1:
+        fixed["problem_type"] = kinds.pop()
+    seconds = {
+        int(number) * _TIME_UNIT_SECONDS.get((unit or "giây").lower(), 1)
+        for number, unit in _MAX_TIME_SAID.findall(text)
+    }
+    if len(seconds) == 1:
+        fixed["max_time"] = seconds.pop()
+    searches = {word.lower() for _, _, word in _word_hits(
+        text, tools._load_skill_script("model-agent", "validate_config").SEARCH_ALGORITHMS)}
+    if len(searches) == 1:
+        fixed["search_algorithm"] = searches.pop()
+    return fixed
+
+
 def _mentions_column(messages: list[str], column: str) -> bool:
     """Người dùng có gõ tên cột này (đúng từ, không phân biệt hoa thường; '_' coi như dấu cách)."""
     names = {column, column.replace("_", " ")}
@@ -623,6 +720,8 @@ class AgentTeam:
         self._turn_unknown_creates: list[str] = []
         # Dataset SQL Agent nhập trong lượt đang chạy - lượt lỗi thì phải báo lại (audit AG-17).
         self._turn_imports: list[str] = []
+        # preview_id -> bảng / collection nguồn của lần chạy thử đó (để biết dataset nhập về đến từ bảng nào).
+        self._preview_sources: dict[str, list[str]] = {}
         # Một lần xác nhận chạy tại một thời điểm (hai request xác nhận song song không chen nhau).
         self._confirm_lock = threading.Lock()
 
@@ -684,6 +783,8 @@ class AgentTeam:
             "set_auto_activate": self.set_auto_activate,
             "activate_model": self.activate_model,
             "ask_sql_agent": self.ask_sql_agent,
+            "preview_sql_query": self.preview_sql_query,
+            "preview_mongo_query": self.preview_mongo_query,
             "import_database_query": self.import_database_query,
         }
         dispatch = {
@@ -945,6 +1046,22 @@ class AgentTeam:
             )
         return result
 
+    def preview_sql_query(self, api, connection_id: str, sql: str, params: dict | None = None,
+                          row_limit: int = 20) -> dict:
+        """preview_sql_query của SQL Agent, nhớ bảng nguồn của preview_id (xem _source_tables)."""
+        result = tools.preview_sql_query(api, connection_id, sql, params, row_limit)
+        if result.get("ok") and result.get("preview_id"):
+            self._preview_sources[result["preview_id"]] = _sql_source_tables(sql)
+        return result
+
+    def preview_mongo_query(self, api, connection_id: str, query: dict) -> dict:
+        """preview_mongo_query của SQL Agent, nhớ collection nguồn của preview_id."""
+        result = tools.preview_mongo_query(api, connection_id, query)
+        if result.get("ok") and result.get("preview_id") and isinstance(query, dict):
+            collection = query.get("collection")
+            self._preview_sources[result["preview_id"]] = [str(collection)] if collection else []
+        return result
+
     def import_database_query(self, api, connection_id: str, preview_id: str, data_name: str,
                               allow_truncated: bool = False) -> dict:
         """
@@ -965,6 +1082,8 @@ class AgentTeam:
                 "row_count": result.get("row_count"),
                 "columns": result.get("columns"),
                 "truncated": bool(result.get("truncated")),
+                # Bảng nguồn: người dùng gọi dataset vừa nhập bằng tên bảng ("lấy bảng crab_train rồi train...").
+                "source_tables": list(self._preview_sources.get(preview_id) or []),
             }
             self._emit(
                 "dataset_imported", agent=SQL_AGENT, dataset_id=result["dataset_id"],
@@ -1169,7 +1288,13 @@ class AgentTeam:
             input={"dataset_id": dataset_id, "target": target, "list_feature": list_feature,
                    "metric_sort": metric_sort, "search_algorithm": search_algorithm, "max_time": max_time},
         ) as observation:
-            prepared = self._unconfirmed_target(api, dataset_id, target) or tools.prepare_training_config(
+            submitted = {"list_feature": list_feature, "metric_sort": metric_sort, "problem_type": problem_type,
+                         "max_time": max_time, "search_algorithm": search_algorithm}
+            # Chốt target trước: chưa chọn cột mục tiêu là lỗi người dùng cần nghe đầu tiên.
+            prepared = (
+                self._unconfirmed_target(api, dataset_id, target)
+                or self._user_fixed_refusal(api, dataset_id, submitted)
+            ) or tools.prepare_training_config(
                 api,
                 dataset_id=dataset_id,
                 target=target,
@@ -1267,6 +1392,57 @@ class AgentTeam:
             return requirements
         return _without_deploy(requirements)
 
+    def _user_fixed_refusal(self, api, dataset_id: str, submitted: dict) -> dict | None:
+        """
+        Chặn config lệch giá trị người dùng đã viết rõ trong tin GẦN NHẤT về dataset này (list_feature liệt kê,
+        metric, loại bài toán, max_time, thuật toán tìm kiếm). Prompt dặn "sai thì sửa theo errors rồi gửi lại",
+        nên khi chính giá trị người dùng đưa bị validate_config từ chối, LLM tự sửa nó (max_time 5 -> 60, bỏ cột
+        target khỏi danh sách feature, accuracy -> r2) dù người dùng dặn không đổi. Giá trị sai phải được báo lại
+        cho người dùng, không được âm thầm thay.
+
+        Chỉ tin gần nhất: lượt sau người dùng đổi ý ("bỏ feature w, tối ưu accuracy") thì giá trị cũ hết hiệu lực.
+        Returns:
+            None nếu config khớp (hoặc không đọc được gì chắc chắn), ngược lại là lỗi trả cho Model Agent.
+        """
+        recent = self.session.recent_user_messages(_RECENT_USER_MESSAGES)
+        if not recent:
+            return None
+        schema = self.handoff.profiles.get(dataset_id) or tools.get_dataset_schema(api, dataset_id=dataset_id)
+        columns = [c["name"] for c in schema.get("columns") or []] if schema.get("ok") else []
+        about = self._messages_about_dataset(api, dataset_id, columns)
+        if not about or about[-1] != recent[-1]:
+            return None
+        metrics = {m for kind in tools.PROBLEM_TYPES for m in tools.list_metrics(api, kind).get("metrics") or []}
+        fixed = _user_fixed_values(_user_text(recent[-1]), columns, metrics)
+
+        def differs(field: str, said) -> bool:
+            value = submitted.get(field)
+            if field == "problem_type" and not value:
+                return False  # chưa nêu loại bài toán: prepare_training_config tự suy, không phải đổi ý người dùng
+            if field == "list_feature":
+                return {str(f) for f in value or []} != set(said)
+            if field == "max_time":
+                try:
+                    return int(value) != said
+                except (TypeError, ValueError):
+                    return True
+            return str(value or "").strip().lower() != said
+
+        conflicts = {field: said for field, said in fixed.items() if differs(field, said)}
+        if not conflicts:
+            return None
+        details = "; ".join(f"{field}: người dùng nói {said}, config gửi {submitted.get(field)}"
+                            for field, said in conflicts.items())
+        return {
+            "ok": False,
+            "error": (
+                f"Config khác giá trị người dùng đã chỉ định rõ ({details}). KHÔNG tự đổi giá trị người dùng đã "
+                "chốt. Nếu chính giá trị đó không hợp lệ (validate_config đã báo lỗi), dừng lại và báo Manager lỗi "
+                "cụ thể để hỏi người dùng có muốn đổi không."
+            ),
+            "user_fixed": conflicts,
+        }
+
     def _unconfirmed_target(self, api, dataset_id: str, target: str) -> dict | None:
         """
         Chặn tự chọn cột mục tiêu: người dùng phải nói ra, hoặc dataset chỉ có một ứng viên.
@@ -1344,6 +1520,9 @@ class AgentTeam:
             if label and label.lower() not in column_names
         ]
         own = [dataset_id] + [str(d.get("dataName") or "") for d in datasets if str(d.get("_id")) == dataset_id]
+        # Dataset nhập từ database: người dùng gọi nó bằng tên bảng nguồn, có khi trùng tên một dataset khác đã
+        # upload (benchmark v5 pilot, ca S06: bảng crab_train và dataset crab_train) - tin đó vẫn nói về dataset này.
+        own += (self.handoff.imported_datasets.get(dataset_id) or {}).get("source_tables") or []
         return [
             message for message in recent
             if not (_mentions_any(_user_text(message), others) and not _mentions_any(_user_text(message), own))

@@ -396,6 +396,8 @@ class ChatSession:
                     )
                 if unchecked:
                     judged += f" (riêng {', '.join(unchecked)} không kiểm được vì job không có điểm)"
+            if verification and summary.get("problem_type") == "time_series":
+                judged += f". {tools.FORECAST_SCORE_NOTE.rstrip('.')}"
             # Chỉ có khi người dùng dặn "train xong kích hoạt luôn" (watcher tự kích hoạt).
             activation = summary.get("activation")
             if activation is None:
