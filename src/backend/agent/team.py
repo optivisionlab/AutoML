@@ -20,6 +20,7 @@ chạy được config đã qua validate_config (nó chỉ cầm config_id, khô
 """
 
 # Standard libraries
+import functools
 import json
 import logging
 import math
@@ -31,7 +32,7 @@ import uuid
 from dataclasses import dataclass, field
 
 # Local modules
-from agent import prompts, skills as skills_module, tools, tracing
+from agent import ids, prompts, skills as skills_module, tools, tracing
 from agent.agent_openai import (
     SUBAGENT_MAX_STEPS,
     TurnBudgetExceeded,
@@ -792,7 +793,75 @@ class AgentTeam:
             for name in names
             if name in bound or name in _DISPATCH
         }
+        # Lời giao việc do Manager tự viết: ID bị chép sai thì sub-agent gọi tool với ID không tồn tại.
+        for name in dispatch:
+            if name.startswith("ask_"):
+                dispatch[name] = self._with_canonical_ids(dispatch[name])
         return schemas_for(names), dispatch
+
+    # ------------------------------------------------------------ chuẩn hoá ID LLM chép lại
+
+    def _with_canonical_ids(self, handler):
+        """Bọc tool giao việc: mọi đối số chuỗi đi qua canonical_ids trước khi tới sub-agent."""
+
+        @functools.wraps(handler)  # giữ chữ ký gốc: runtime dùng inspect.signature để kiểm đối số
+        def wrapped(api, *args, **kwargs):
+            kwargs = {k: self.canonical_ids(api, v) if isinstance(v, str) else v for k, v in kwargs.items()}
+            return handler(api, *args, **kwargs)
+
+        return wrapped
+
+    def _session_ids(self) -> set[str]:
+        """ID có sẵn trong phiên mà không cần gọi API: người dùng / sự kiện của code đã nêu, và Handoff."""
+        known = set()
+        for message in self.session.messages:
+            if message.get("role") == "user":
+                # Mọi chuỗi giống ID người dùng gõ - kể cả gõ sai - là "đã biết": không âm thầm sửa lời người dùng.
+                known |= set(ids.id_like_tokens(str(message.get("content") or "")))
+        known |= set(self.handoff.profiles) | set(self.handoff.jobs) | set(self.handoff.imported_datasets)
+        for config in self.handoff.configs.values():
+            if isinstance(config, dict) and config.get("dataset_id"):
+                known.add(str(config["dataset_id"]))
+        return known
+
+    def _account_ids(self, api) -> set[str]:
+        """ID thật của tài khoản: dataset, job, kết nối database. Lỗi API thì bỏ qua nguồn đó."""
+        known = set()
+        try:
+            listing = tools.all_my_datasets(api)
+            known |= {str(d.get("_id")) for d in listing.get("datasets") or [] if d.get("_id")}
+        except Exception:  # noqa: BLE001 - chuẩn hoá ID là phụ, không được làm hỏng lượt chat
+            _log.debug("Không đọc được dataset để chuẩn hoá ID", exc_info=True)
+        try:
+            jobs, _ = tools._own_jobs(api)
+            known |= {str(j.get("_id")) for j in jobs or [] if j.get("_id")}
+        except Exception:  # noqa: BLE001
+            _log.debug("Không đọc được job để chuẩn hoá ID", exc_info=True)
+        if hasattr(api, "list_database_connections"):
+            try:
+                known |= {str(c.get("id")) for c in api.list_database_connections() or [] if c.get("id")}
+            except Exception:  # noqa: BLE001
+                _log.debug("Không đọc được kết nối để chuẩn hoá ID", exc_info=True)
+        return known
+
+    def canonical_ids(self, api, text: str) -> str:
+        """
+        Thay ID mà LLM chép sai trong `text` bằng ID thật gần nhất (duy nhất) của người dùng.
+
+        ID người dùng tự gõ luôn được giữ nguyên (kể cả sai): chúng nằm trong tập ID đã biết. Chỉ gọi API
+        liệt kê tài khoản khi văn bản có chuỗi giống ID chưa biết - lượt bình thường không tốn thêm gì.
+        """
+        tokens = ids.id_like_tokens(text)
+        if not tokens:
+            return text
+        known = self._session_ids()
+        if all(token in known for token in tokens):
+            return text
+        known |= self._account_ids(api)
+        fixed, fixes = ids.canonicalize_ids(text, known)
+        for wrong, real in fixes:
+            self._emit("id_corrected", agent=MANAGER, wrong=wrong, id=real)
+        return fixed
 
     def _emit(self, type: str, **data) -> None:
         self.session.events.emit(type, **data)
