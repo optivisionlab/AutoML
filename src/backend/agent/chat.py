@@ -517,6 +517,13 @@ class ChatSession:
                     "Thử hỏi lại theo cách cụ thể hơn.)"
                 )
                 self.messages.append({"role": "assistant", "content": answer})
+            # Manager chép lại ID vào câu trả lời có thể sai một ký tự: người dùng phải thấy đúng ID thật.
+            fixed = self.team.canonical_ids(self.api, answer)
+            if fixed != answer:
+                if self.messages and self.messages[-1].get("role") == "assistant" \
+                        and self.messages[-1].get("content") == answer:
+                    self.messages[-1]["content"] = fixed
+                answer = fixed
             tracing.end(observation, output=answer)
         return answer
 
