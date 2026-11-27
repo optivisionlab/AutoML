@@ -16,6 +16,8 @@ DATASETS = ("glass", "shopping", "concrete", "crab")
 # Nhóm T (time series): tách theo thời gian, manifest riêng (benchmark/prepare_ts.py).
 TS_DATASETS = ("electricity", "weather")
 TS_PLACEHOLDERS = {"electricity": "ELEC_ID", "weather": "WEATHER_ID"}
+# Dataset mới (prepare_extra): manifest riêng, giá trị giữ nguyên dạng chuỗi.
+EXTRA_DATASETS = ("adult", "madelon", "student", "digits", "gaming", "wilt")
 
 
 def digest(value):
@@ -103,6 +105,56 @@ def check_ts_data(cfg=None):
     return manifest
 
 
+def check_extra_data(cfg=None):
+    """
+    Dữ liệu 6 dataset mới: file gốc và file train/test khớp hash manifest_extra.json, đúng header
+    (`columns` của manifest: thứ tự cột gốc, wilt có target ở cột đầu), đủ số dòng. Không ép kiểu số: cột chữ và nhãn chữ được giữ nguyên.
+    """
+    from benchmark import prepare_extra as pe
+
+    manifest = load_json(pe.MANIFEST)
+    if not manifest or manifest.get("split_version") != pe.SPLIT_VERSION:
+        raise ValueError(
+            "Thiếu dữ liệu 6 dataset mới (benchmark_artifacts/datasets/extra/manifest_extra.json, split feature-group-v1). "
+            "Máy có file gốc: `bench.py prepare-extra`; máy khác: chép (rsync) từ máy đã dựng cả thư mục "
+            "benchmark_artifacts/datasets/extra/ LẪN 6 file gốc trong benchmark_artifacts/raw/ (adult.csv, Madelon.csv, "
+            "Student_performance_data _.csv, digits.csv, online_gaming_behavior_dataset.csv, wilt.csv) - "
+            "check_extra_data băm cả file gốc."
+        )
+    for key in EXTRA_DATASETS:
+        meta = manifest["datasets"].get(key)
+        if meta is None:
+            raise ValueError(f"manifest_extra thiếu dataset {key}.")
+        if file_hash(pe.RAW_DIR / meta["raw_file"]) != meta["raw_sha256"]:
+            raise ValueError(f"File gốc thay đổi: {meta['raw_file']}")
+    # Manifest phải khoá đủ 12 file chia (6 dataset x train/test), không chỉ những file nó tình cờ liệt kê.
+    missing = [f"{key}_{split}.csv" for key in EXTRA_DATASETS for split in ("train", "test")
+               if f"{key}_{split}.csv" not in (manifest.get("sha256") or {})]
+    if missing:
+        raise ValueError(f"manifest_extra thiếu sha256 của: {', '.join(missing)}")
+    for name, expected in manifest["sha256"].items():
+        if file_hash(pe.EXTRA_DIR / name) != expected:
+            raise ValueError(f"Hash không khớp manifest_extra: {name}")
+    for key in EXTRA_DATASETS:
+        meta = manifest["datasets"][key]
+        for split in ("train", "test"):
+            path = pe.EXTRA_DIR / f"{key}_{split}.csv"
+            if cfg and split == "test" and key in (cfg.get("test_sets") or {}):
+                if (REPO / cfg["test_sets"][key]).resolve() != path.resolve():
+                    raise ValueError(f"test_sets.{key} không trỏ vào file đã khóa trong manifest_extra.")
+            with path.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                # Header = `columns` của manifest (thứ tự cột gốc; wilt có target ở cột đầu).
+                columns = meta.get("columns")
+                if (not columns or reader.fieldnames != columns
+                        or [c for c in columns if c != meta["target"]] != meta["features"]):
+                    raise ValueError(f"Schema không khớp: {path.name}")
+                count = sum(1 for _ in reader)
+            if count != meta[f"n_{split}"] or not count:
+                raise ValueError(f"Số mẫu không khớp: {path.name}")
+    return manifest
+
+
 def source_hashes():
     paths = list(BENCH_DIR.glob("*.py"))
     for directory in (BACKEND / "agent", BACKEND / "src", BACKEND / "assets"):
@@ -168,7 +220,7 @@ def plan(cfg, cases):
 
 def preflight(cfg, cases, case_ids=None):
     errors, warnings = [], []
-    for check in (check_data, check_ts_data):
+    for check in (check_data, check_ts_data, check_extra_data):
         try:
             check(cfg)
         except (ValueError, OSError, KeyError) as exc:
@@ -234,7 +286,8 @@ def experiment_root(cfg, phase):
 def snapshot(cfg, cases, pricing, phase):
     planned_cfg = cfg if phase == "official" else {**cfg, "repeats": 1, "ablation": {"enabled": False}}
     return {"config": cfg, "cases": cases, "pricing": pricing, "phase": phase,
-            "manifest": check_data(cfg), "manifest_ts": check_ts_data(cfg), "source_hashes": source_hashes(),
+            "manifest": check_data(cfg), "manifest_ts": check_ts_data(cfg), "manifest_extra": check_extra_data(cfg),
+            "source_hashes": source_hashes(),
             "runtime": runtime_settings(), "provider": provider_settings(cfg), "plan": plan(planned_cfg, cases)}
 
 
@@ -260,10 +313,24 @@ def read_lock(root):
     return locked
 
 
-def verify_current(root, cfg, cases, pricing, phase):
+def changes_since_lock(locked, current):
+    """Những gì khác giữa payload đã khoá và hiện tại: tên mục, riêng code thì liệt kê từng file."""
+    old = locked["payload"]
+    changes = [key for key in sorted(set(old) | set(current)) if key != "source_hashes" and old.get(key) != current.get(key)]
+    before, after = old.get("source_hashes") or {}, current.get("source_hashes") or {}
+    changes += [f"file:{name}" for name in sorted(set(before) | set(after)) if before.get(name) != after.get(name)]
+    return changes
+
+
+def verify_current(root, cfg, cases, pricing, phase, allow_changes=False):
+    """allow_changes: người chạy chủ động cho chạy/chấm tiếp dù đã sửa sau khi khoá; trả kèm `changes` để ghi lại."""
     locked = read_lock(root)
-    if digest(snapshot(cfg, cases, pricing, phase)) != locked["protocol_id"]:
-        raise ValueError("Protocol/code/dữ liệu đã thay đổi; từ chối tiếp tục hoặc chấm bằng cấu hình mới.")
+    current = snapshot(cfg, cases, pricing, phase)
+    if digest(current) != locked["protocol_id"]:
+        if not allow_changes:
+            raise ValueError("Protocol/code/dữ liệu đã thay đổi; từ chối tiếp tục hoặc chấm bằng cấu hình mới. "
+                             "Muốn chạy lại ca lẻ sau khi sửa: run --rerun --allow-changes.")
+        return {**locked, "changes": changes_since_lock(locked, current)}
     return locked
 
 

@@ -28,9 +28,10 @@ GROUP_TITLES = {
     "F": "Hiểu yêu cầu qua hội thoại",
     "T": "Dự báo chuỗi thời gian (time series)",
     "S": "Database ngoài qua SQL Agent (adapter)",
+    "G": "Dataset mở rộng",
 }
 # Nhóm thêm sau v4: tóm tắt và các chỉ số tổng tính trên A–F để so được với các đợt trước.
-_ADDED_GROUPS = {"T", "S"}
+_ADDED_GROUPS = {"T", "S", "G"}
 _LIST_FIELDS = ("checks", "llm_latencies", "tool_latencies")
 _CSV_SKIP = _LIST_FIELDS
 
@@ -121,11 +122,32 @@ def _tokens(rows):
     return [r["total_tokens"] for r in rows if r["token_status"] == "complete"]
 
 
+def _constraint_buckets(rows):
+    """
+    Chia lượt theo thang SR: "có ràng buộc" theo `has_constraints` của dòng đã phân tích, không theo
+    `constraints` trong cases.json - ca giữ model tắt (G03, expect.endpoint "inactive") có ngưỡng chỉ để dựng
+    tình huống và được chấm theo thang không ràng buộc.
+    """
+    free = [r for r in rows if not r.get("has_constraints")]
+    bound = [r for r in rows if r.get("has_constraints")]
+    return free, bound
+
+
 def constraint_rate(rows):
     eligible = [r for r in rows if r.get("has_constraints") and r["task_status"] != "INVALID_FIXTURE"]
     passed = sum(r["all_constraints_pass"] is True and r["workflow_pass"] is True for r in eligible)
     missing = sum(r["all_constraints_pass"] is None for r in eligible)
     return (f"{_rate(passed, len(eligible))}; chưa đo: {missing}" if eligible else "không có ngưỡng")
+
+
+def rerun_summary(runs_root: Path) -> dict[str, int]:
+    """Số lần thử cũ đã lưu trữ do `run --rerun`, theo `biến thể/ca_rNN`."""
+    counts: dict[str, int] = {}
+    for path in runs_root.glob("*/*.rerun-*"):
+        if path.is_dir():
+            key = f"{path.parent.name}/{path.name.split('.rerun-')[0]}"
+            counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def build_rows(runs_root: Path, cases_doc: dict, pricing: dict | None) -> list[dict]:
@@ -135,7 +157,7 @@ def build_rows(runs_root: Path, cases_doc: dict, pricing: dict | None) -> list[d
     by_id = {c["id"]: c for c in cases_doc["cases"]}
     rows = []
     for run_file in sorted(runs_root.glob("*/*/run.json")):
-        if ".aborted-" in run_file.parent.name or ".invalid-" in run_file.parent.name:
+        if any(tag in run_file.parent.name for tag in (".aborted-", ".invalid-", ".rerun-")):
             continue
         run = load_json(run_file)
         if (run_file.parent.name != f"{run['case_id']}_r{int(run['repeat']):02d}"
@@ -196,7 +218,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
         return "\n".join(lines)
 
     # ---- 1. Tóm tắt
-    # Tóm tắt và mục 6–7 tính trên các nhóm A–F (33 ca của v4) để so được với đợt trước; nhóm T báo riêng.
+    # Tóm tắt và mục 6–7 tính trên các nhóm A–F (33 ca của v4) để so được với đợt trước; nhóm T, S, G báo riêng.
     all_full = full
     t_rows = _t_rows(all_full)
     full = _core_rows(all_full)
@@ -206,7 +228,8 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
     episodes = sum(r["error_episodes"] for r in full)
     e_rows = [r for r in full if r["group"] == "E"]
     e_counts = _status_counts(e_rows)
-    lines += ["## 1. Tóm tắt (bản đầy đủ" + (", nhóm A–F; nhóm T, S ở cuối bảng và mục 3b, 3c)" if t_rows else ")"), ""]
+    lines += ["## 1. Tóm tắt (bản đầy đủ" + (", nhóm A–F; nhóm T, S, G báo riêng: task success ở cuối bảng này và mục 2, "
+                                           "SR/NPS/CS nhóm T ở mục 3b, nhóm S ở mục 3c)" if t_rows else ")"), ""]
     summary = [
         ["Task success rate", _success_rate(full), "PASS / (PASS + FAIL), nhóm A–F" if t_rows else "PASS / (PASS + FAIL), mọi nhóm"],
         ["SR nhóm C", _mean_std([r["sr"] for r in c_rows]), "Thang điều chỉnh từ AutoML-Agent cho HAutoML"],
@@ -239,6 +262,9 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
     s_rows = [r for r in all_full if r["group"] == "S"]
     if s_rows:
         summary += [["Task success nhóm S", _success_rate(s_rows), "SQL Agent + adapter database (v5), báo riêng"]]
+    g_rows = [r for r in all_full if r["group"] == "G"]
+    if g_rows:
+        summary += [["Task success nhóm G", _success_rate(g_rows), "6 dataset mở rộng (v6), báo riêng"]]
     summary += sections.summary_ci_rows(c_rows, full)
     lines += _table(["Chỉ số", "Kết quả", "Ghi chú"], summary)
 
@@ -272,9 +298,7 @@ def render(rows: list[dict], cases_doc: dict, pricing: dict | None, baselines: l
                 _rate(sum(1 for r in g if r["workflow_pass"]), len(g)),
             ])
         lines += _table(["Ca", "Nội dung", "SR", "NPS", "CS", "Metric test", "Đạt ràng buộc", "Workflow hoàn tất"], table)
-        bounded_ids = {c["id"] for c in cases_doc["cases"] if c.get("constraints")}
-        free = [r for r in c_rows if r["scenario_id"] not in bounded_ids]
-        bound = [r for r in c_rows if r["scenario_id"] in bounded_ids]
+        free, bound = _constraint_buckets(c_rows)
         lines += _table(["Nhóm ca", "SR", "CS"], [
             ["Không ràng buộc", _mean_std([r["sr"] for r in free]), _mean_std([r["cs"] for r in free])],
             ["Có ràng buộc", _mean_std([r["sr"] for r in bound]), _mean_std([r["cs"] for r in bound])],
@@ -503,6 +527,17 @@ def write_report(runs_root: Path, out: Path, cases_doc: dict, pricing: dict | No
         retried = sum(".invalid-" in name for name in archived)
         aborted = sum(".aborted-" in name for name in archived)
         note += f"Lượt lưu trữ (không tính vào kết quả): {retried} `.invalid-*` đã chạy lại vì fixture lỗi, {aborted} `.aborted-*` bị ngắt giữa chừng.\n"
+        changed_runs = sorted(f"{f.parent.parent.name}/{f.parent.name}" for f in runs_root.glob("*/*/run.json")
+                              if not any(t in f.parent.name for t in (".aborted-", ".invalid-", ".rerun-"))
+                              and (load_json(f) or {}).get("changes_since_lock"))
+        if changed_runs:
+            note += (f"**{len(changed_runs)} lượt chạy bằng code/ca/dữ liệu đã sửa sau khi khoá "
+                     f"(`changes_since_lock` trong run.json):** {', '.join(changed_runs)}\n")
+        reruns = rerun_summary(runs_root)
+        if reruns:
+            listed = ", ".join(f"{name} ({count} lần)" for name, count in sorted(reruns.items()))
+            note += (f"**Chạy lại theo yêu cầu người chạy: {len(reruns)} lượt, {sum(reruns.values())} lần thử cũ lưu ở `.rerun-*`; "
+                     f"kết quả tính theo lần thử cuối.** {listed}\n")
         locked_hashes, current = locked["payload"]["source_hashes"], source_hashes()
         changed = sorted(k for k in set(locked_hashes) | set(current) if locked_hashes.get(k) != current.get(k))
         if changed:

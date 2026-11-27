@@ -229,6 +229,9 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
             raise RuntimeError("Lượt đã lưu thuộc protocol khác.")
         if analyze_run(folder, case)["task_status"] == "INVALID_FIXTURE":
             folder.rename(folder.with_name(f"{folder.name}.invalid-{time.time_ns()}"))
+    if (folder / "run.json").exists() and cfg.get("_rerun"):
+        # Người chạy chủ động chạy lại ca lẻ: giữ lượt cũ làm bằng chứng, lần thử mới được tính.
+        folder.rename(folder.with_name(f"{folder.name}.rerun-{time.time_ns()}"))
     if (folder / "run.json").exists():
         existing = json.loads((folder / "run.json").read_text())
         if existing.get("protocol_id") != cfg.get("_protocol_id"):
@@ -258,6 +261,7 @@ def run_case(case: dict, cases_doc: dict, cfg: dict, variant: str, repeat: int, 
     run = {
         "case_id": case["id"], "group": case["group"], "variant": variant, "repeat": repeat,
         "phase": phase, "bench_version": cases_doc["version"], "commit": git_commit(),
+        "changes_since_lock": list(cfg.get("_changes_since_lock") or []),
         "protocol_id": cfg.get("_protocol_id"),
         "started_at": datetime.now(timezone.utc).isoformat(), "faults": case.get("faults", []),
         "turns": [], "fixtures": {}, "errors": [],

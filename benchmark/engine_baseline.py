@@ -36,14 +36,31 @@ from benchmark.runner import assert_idle
 METHOD = "hautoml_engine"
 
 
+# 6 dataset mới: ca đáp án cố định theo spec (G07/G09 có ràng buộc nên quy tắc "không ràng buộc" bỏ sót; ràng buộc chỉ
+# ảnh hưởng chấm điểm, không ảnh hưởng config gửi engine). student không có ca G nào đúng config -> dựng riêng.
+EXTRA_ORACLE_CASES = {"adult": "G01", "madelon": "G04", "digits": "G07", "gaming": "G08", "wilt": "G09"}
+STUDENT_EXCLUDED_FEATURES = ("StudentID", "GPA")   # định danh + GPA (GradeClass suy trực tiếp từ GPA)
+
+
 def oracle_tasks(cases_doc: dict) -> dict[str, dict]:
-    """dataset -> task của ca train KHÔNG ràng buộc đầu tiên dùng dataset đã upload (không phải dataset nhập từ SQL)."""
+    """dataset -> task của ca train KHÔNG ràng buộc đầu tiên dùng dataset đã upload (không phải dataset nhập từ SQL);
+    6 dataset mới dùng ca cố định của EXTRA_ORACLE_CASES, student dùng G12 bỏ feature StudentID và GPA."""
     tasks: dict[str, dict] = {}
+    by_id = {case["id"]: case for case in cases_doc["cases"]}
     for case in cases_doc["cases"]:
         task = case.get("task") or {}
         if case.get("flow") != "train" or case.get("constraints") or "IMPORTED_ID" in task.get("dataset_id", ""):
             continue
+        if task["dataset"] in EXTRA_ORACLE_CASES or task["dataset"] == "student":
+            continue
         tasks.setdefault(task["dataset"], {**task, "case_id": case["id"]})
+    for dataset, case_id in EXTRA_ORACLE_CASES.items():
+        if case_id in by_id:
+            tasks[dataset] = {**by_id[case_id]["task"], "case_id": case_id}
+    if "G12" in by_id:
+        task = by_id["G12"]["task"]
+        tasks["student"] = {**task, "case_id": "G12-no-leak",
+                            "features": [f for f in task["features"] if f not in STUDENT_EXCLUDED_FEATURES]}
     return tasks
 
 
@@ -62,7 +79,9 @@ def _predict_test(api, job_id: str, task: dict, test_path: Path) -> tuple[list, 
     from benchmark.scoring import _read_test
 
     time_column = task.get("time_column") if task["problem_type"] == "time_series" else None
-    x, y_true = _read_test(test_path, task["target"], time_column, task.get("column_case"))
+    classify = task["problem_type"] == "classification"
+    x, y_true = _read_test(test_path, task["target"], time_column, task.get("column_case"),
+                           problem_type=task["problem_type"])
     y_pred, started = [], time.monotonic()
     for start in range(0, len(x), tools.MAX_PREDICT_ROWS):
         batch = x[start:start + tools.MAX_PREDICT_ROWS]
@@ -72,7 +91,9 @@ def _predict_test(api, job_id: str, task: dict, test_path: Path) -> tuple[list, 
         predictions = result.get("predictions") or []
         if len(predictions) != len(batch):
             raise RuntimeError("số dự đoán không khớp số mẫu")
-        y_pred.extend(float(item["predict"]) for item in predictions)
+        # Phân loại giữ nhãn (nhãn chữ như "<=50K" không ép float được); hồi quy / time series vẫn là số.
+        y_pred.extend(M.normalize_label(item["predict"]) if classify else float(item["predict"])
+                      for item in predictions)
     return y_true, y_pred, time.monotonic() - started
 
 

@@ -736,7 +736,7 @@ def test_setup_account_builds_fresh_account_once(setup_env):
     m = setup_env.module
     found = m.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
     assert set(found) == set(m.DATASET_FILES) | {"GLASS_JOB", "INACTIVE_JOB", "MISSING_ID", "PG_CONN_ID", "MYSQL_CONN_ID"}
-    assert len(FakeSetupBackend.uploads) == 6 and not any(u.endswith("_test.csv") for u in FakeSetupBackend.uploads)
+    assert len(FakeSetupBackend.uploads) == len(m.DATASET_FILES) and not any(u.endswith("_test.csv") for u in FakeSetupBackend.uploads)
     assert FakeBackend.jobs[found["GLASS_JOB"]]["activate"] == 1 and FakeBackend.jobs[found["INACTIVE_JOB"]]["activate"] == 0
     assert found["MISSING_ID"] not in FakeSetupBackend.datasets
     written = json.loads((setup_env.root / "bench_config.json").read_text())
@@ -744,7 +744,7 @@ def test_setup_account_builds_fresh_account_once(setup_env):
     assert list(setup_env.root.glob("bench_config.before-setup-*.json"))
     # Chạy lại (vd sau khi đứt giữa chừng): không upload / tạo trùng.
     again = m.run(setup_env.cfg, setup_env.pg, setup_env.mysql, "pw", max_wait=5)
-    assert again == found and len(FakeSetupBackend.uploads) == 6 and len(FakeSetupBackend.connections) == 2
+    assert again == found and len(FakeSetupBackend.uploads) == len(m.DATASET_FILES) and len(FakeSetupBackend.connections) == 2
 
 
 def test_setup_account_refuses_non_empty_account(setup_env):

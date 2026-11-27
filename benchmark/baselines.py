@@ -50,6 +50,7 @@ from benchmark import metrics as M  # noqa: E402
 from benchmark.common import ARTIFACTS, load_json  # noqa: E402
 
 TABULAR = ("glass", "shopping", "concrete", "crab")
+EXTRA = ("adult", "madelon", "student", "digits", "gaming", "wilt")   # 6 dataset mới (datasets/extra)
 TIME_SERIES = ("electricity", "weather")
 TABULAR_METHODS = ("dummy", "linear", "random_forest", "xgboost", "optuna_tpe", "flaml", "autogluon")
 TS_METHODS = ("naive_last_day", "naive_last_week", "lag_ridge", "lag_gbr")
@@ -75,6 +76,13 @@ def dataset_spec(name: str) -> dict:
         directory = ARTIFACTS / "datasets"
         return {"name": name, "problem_type": "classification" if name in ("glass", "shopping") else "regression",
                 "train": directory / f"{name}_train.csv", "test": directory / f"{name}_test.csv",
+                "target": meta["target"], "features": meta["features"]}
+    if name in EXTRA:
+        from benchmark import prepare_extra
+        meta = protocol.check_extra_data()["datasets"][name]
+        return {"name": name, "problem_type": meta["problem_type"],
+                "train": prepare_extra.EXTRA_DIR / f"{name}_train.csv",
+                "test": prepare_extra.EXTRA_DIR / f"{name}_test.csv",
                 "target": meta["target"], "features": meta["features"]}
     if name in TIME_SERIES:
         from benchmark.prepare_ts import MANIFEST, TS_DIR
@@ -136,8 +144,27 @@ class _Encoded:
         return self.model.predict_proba(x)
 
 
-def _build(method: str, problem_type: str, seed: int, params: dict | None = None):
+def _with_text_encoding(model, x):
+    """Cột chữ (adult, gaming, ...) được one-hot TRONG pipeline (fit trên train, giá trị lạ ở test bị bỏ qua).
+    Dữ liệu chỉ có cột số (4 dataset cũ) thì trả nguyên mô hình: kết quả cũ không đổi."""
+    from pandas.api.types import is_numeric_dtype
+
+    text_columns = [c for c in x.columns if not is_numeric_dtype(x[c])]
+    if not text_columns:
+        return model
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder
+
+    prep = ColumnTransformer([("text", OneHotEncoder(handle_unknown="ignore", sparse_output=False), text_columns)],
+                             remainder="passthrough")
+    return Pipeline([("prep", prep), ("model", model)])
+
+
+def _build(method: str, problem_type: str, seed: int, params: dict | None = None, x=None):
     model = _estimator(method, problem_type, seed, params)
+    if x is not None and method != "dummy":
+        model = _with_text_encoding(model, x)
     return _Encoded(model) if method == "xgboost" and problem_type == "classification" else model
 
 
@@ -156,8 +183,9 @@ def _cv_score(model_factory, x, y, problem_type: str, seed: int) -> float:
         model = model_factory()
         model.fit(x.iloc[train_idx], y.iloc[train_idx])
         pred = model.predict(x.iloc[valid_idx])
-        truth = [float(v) for v in y.iloc[valid_idx]]
-        pred = [float(v) for v in pred]
+        cast = M.normalize_label if problem_type == "classification" else float
+        truth = [cast(v) for v in y.iloc[valid_idx]]
+        pred = [cast(v) for v in pred]
         if problem_type == "classification":
             scores.append(M.f1_macro(truth, pred))
         else:
@@ -191,14 +219,14 @@ def _optuna_search(x, y, problem_type: str, seed: int, budget: float) -> tuple[o
 
     def objective(trial) -> float:
         family, params = suggest(trial)
-        return _cv_score(lambda: _build(family, problem_type, seed, params), x, y, problem_type, seed)
+        return _cv_score(lambda: _build(family, problem_type, seed, params, x), x, y, problem_type, seed)
 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=seed))
     started = time.monotonic()
     study.optimize(objective, timeout=budget, n_trials=10_000, catch=(ValueError,))
     trial = study.best_trial
     family, params = suggest(optuna.trial.FixedTrial(trial.params))
-    model = _build(family, problem_type, seed, params).fit(x, y)
+    model = _build(family, problem_type, seed, params, x).fit(x, y)
     return model, {"family": family, "params": params, "cv_score": trial.value, "n_trials": len(study.trials),
                    "search_seconds": time.monotonic() - started}
 
@@ -224,22 +252,23 @@ def _run_tabular(method: str, spec: dict, seed: int, budget: float) -> dict:
         model.fit(train, time_limit=budget, presets="medium_quality")
         info = {"note": "AutoGluon không nhận seed toàn cục; lặp lại chỉ đo biến thiên tự nhiên."}
     else:
-        model = _build(method, problem_type, seed).fit(x, y)
+        model = _build(method, problem_type, seed, x=x).fit(x, y)
     fit_seconds = time.monotonic() - started
 
     # Chỉ từ đây mới đọc test - để chấm.
     test = _read(spec["test"])
     started = time.monotonic()
     x_test = test[spec["features"]]
-    y_pred = [float(v) for v in model.predict(x_test)]
+    cast = M.normalize_label if problem_type == "classification" else float   # nhãn chữ giữ chuỗi
+    y_pred = [cast(v) for v in model.predict(x_test)]
     predict_seconds = time.monotonic() - started
-    y_true = [float(v) for v in test[spec["target"]]]
+    y_true = [cast(v) for v in test[spec["target"]]]
     proba = classes = None
     if problem_type == "classification" and hasattr(model, "predict_proba"):
         try:
             raw = model.predict_proba(x_test)
             proba = [[float(p) for p in row] for row in (raw.values if hasattr(raw, "values") else raw)]
-            classes = [float(c) for c in (getattr(model, "classes_", None) if getattr(model, "classes_", None) is not None
+            classes = [M.normalize_label(c) for c in (getattr(model, "classes_", None) if getattr(model, "classes_", None) is not None
                                           else raw.columns)]
         except Exception:  # noqa: BLE001 - thiếu xác suất thì AUC để None, không đoán
             proba = classes = None
@@ -365,10 +394,12 @@ def build_manifest(baseline_id: str, mode: str, methods: list[str], datasets: li
     from benchmark import protocol
     data = protocol.check_data()
     ts = protocol.check_ts_data()
+    # Hash dữ liệu mới chỉ vào manifest của đợt có dataset mới: manifest các đợt cũ không đổi.
+    extra = protocol.check_extra_data()["sha256"] if set(datasets) & set(EXTRA) else {}
     return {
         "baseline_id": baseline_id, "mode": mode, "methods": methods, "datasets": datasets, "seeds": seeds,
         "time_budget_seconds": budget, "selection_metric": SELECTION_METRIC,
-        "data_sha256": {**data["sha256"], **ts["sha256"]},
+        "data_sha256": {**data["sha256"], **ts["sha256"], **extra},
         "code_sha256": {name: _file_hash(Path(__file__).with_name(name)) for name in ("baselines.py", "metrics.py")},
         "protocol": ("Split cố định của manifest (feature-group-v1 / time-holdout-v1); chọn mô hình chỉ bằng CV trên "
                      "train; test chỉ đọc sau khi fit để chấm. n_jobs=1 cho mọi mô hình."),
@@ -380,18 +411,20 @@ def main(argv=None) -> None:
     parser.add_argument("--mode", choices=sorted(MODES), default="smoke")
     parser.add_argument("--id", help="Mã đợt baseline (thư mục kết quả); mặc định baselines-<mode>")
     parser.add_argument("--methods", help="Danh sách method, vd dummy,linear,optuna_tpe")
-    parser.add_argument("--datasets", help="Danh sách dataset, vd glass,crab,electricity")
+    parser.add_argument("--datasets", help="Danh sách dataset, vd glass,crab,electricity; mặc định mọi dataset "
+                                           "(4 bảng cũ + 6 dataset mới + 2 time series)")
     parser.add_argument("--seeds", help="Danh sách seed, vd 0,1,2")
     parser.add_argument("--budget", type=float, help="Ngân sách thời gian (giây) cho method tối ưu tự động")
     args = parser.parse_args(argv)
 
     preset = MODES[args.mode]
     baseline_id = args.id or f"baselines-{args.mode}"
-    datasets = args.datasets.split(",") if args.datasets else list(TABULAR + TIME_SERIES)
+    # Mặc định gồm cả 6 dataset mới (v6). Đợt baseline cũ không chạy tiếp được sau khi code đổi (code_sha256): dùng --id mới.
+    datasets = args.datasets.split(",") if args.datasets else list(TABULAR + EXTRA + TIME_SERIES)
     methods = args.methods.split(",") if args.methods else list(TABULAR_METHODS + TS_METHODS)
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else preset["seeds"]
     budget = args.budget if args.budget is not None else preset["budget"]
-    unknown = sorted(set(datasets) - set(TABULAR + TIME_SERIES)) + sorted(set(methods) - set(TABULAR_METHODS + TS_METHODS))
+    unknown = sorted(set(datasets) - set(TABULAR + EXTRA + TIME_SERIES)) + sorted(set(methods) - set(TABULAR_METHODS + TS_METHODS))
     if unknown:
         raise SystemExit(f"Không có: {unknown}")
 

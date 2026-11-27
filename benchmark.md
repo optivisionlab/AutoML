@@ -1,18 +1,19 @@
-# Benchmark hệ thống agent HAutoML — protocol v5
+# Benchmark hệ thống agent HAutoML — protocol v6
 
-Bộ benchmark có **47 kịch bản** trong 8 nhóm:
+Bộ benchmark có **59 kịch bản** trong 9 nhóm (`cases.json` phiên bản `hautoml-bench-v6`):
 
 - 33 ca của v4 (nhóm A–F), giữ nguyên prompt và tiêu chí để so với các đợt trước.
 - 6 ca nhóm T (dự báo chuỗi thời gian, thêm ở v4.1).
 - 8 ca nhóm S (lấy dữ liệu từ database qua SQL Agent và adapter, thêm ở v5).
+- 12 ca nhóm G (6 dataset bảng mở rộng, thêm ở v6; mục 4 và mục 12).
 
 Số lượt:
 
-- Chạy thử: **47 lượt**.
-- Chính thức, bản đầy đủ: **235 lượt**.
-- Năm biến thể ablation chạy thêm **195 lượt** (13 ca × 3 lần) nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **430 lượt**, chạy xen kẽ theo thứ tự đã khoá.
+- Chạy thử: **59 lượt**.
+- Chính thức, bản đầy đủ: **295 lượt**.
+- Năm biến thể ablation chạy thêm **285 lượt** (19 ca × 5 biến thể × 3 lần) nếu bật. Cấu hình mặc định bật ablation, nên một đợt official có **580 lượt**, chạy xen kẽ theo thứ tự đã khoá.
 
-Pilot được lưu riêng. Tóm tắt của báo cáo tính trên nhóm A–F; nhóm T và S báo riêng.
+Pilot được lưu riêng. Tóm tắt của báo cáo tính trên nhóm A–F; nhóm T, S và G báo riêng. Kết quả v5 (vd v5-03) không gộp với v6.
 
 **Từ v5, agent không tự huấn luyện, bật hay tắt model.** Tool chỉ đề nghị (thẻ xác nhận). Benchmark đóng vai người dùng bấm nút theo một chính sách cố định của từng ca (mục 5.5). Vì vậy số liệu v5 **không so trực tiếp được với v4-02**: luồng nhóm C/T/E02 có thêm bước xác nhận, và đôi khi cần thêm một lượt nhắn "tiếp tục". Thay đổi đầy đủ ở mục 10. Hướng dẫn dùng ở [benchmark/README.md](benchmark/README.md).
 
@@ -63,6 +64,21 @@ Cả hai cùng nguồn với Electricity/Weather mà AutoML-Agent dùng qua Time
 - Cửa sổ Weather là đoạn sạch dài nhất của năm 2020: file gốc có CO2 = −9999 (thiết bị không đo) ngày 20/02 và 08/08, một mốc trùng (12/05) và một khoảng thiếu 80 phút (29/05). **Không nội suy, không bù, không sinh số liệu.**
 - Không upload file test, không đưa giá trị test vào LLM, không dùng test để chọn ngưỡng/prompt.
 
+### 2.1c. Dữ liệu nhóm G (dataset mở rộng, v6)
+
+| Khoá | File gốc (`benchmark_artifacts/raw/`) | Target | Feature | Lớp | Train / test | Ghi chú |
+|---|---|---|---:|---:|---:|---|
+| `adult` | `adult.csv` | `income` | 14 | 2 | 39.074 / 9.768 | 9 cột chữ, giá trị `?` giữ nguyên là một hạng mục; > 10.000 dòng nên engine chấm bằng hold-out |
+| `madelon` | `Madelon.csv` | `decision` (−1/1) | 500 | 2 | 1.600 / 400 | 500 cột số `V1..V500` |
+| `student` | `Student_performance_data _.csv` | `GradeClass` | 14 | 5 | 1.914 / 478 | `StudentID` là ID; `GPA` quyết định `GradeClass` (rò rỉ target) |
+| `digits` | `digits.csv` | `target` | 64 | 10 | 1.438 / 359 | 64 cột pixel |
+| `gaming` | `online_gaming_behavior_dataset.csv` | `EngagementLevel` | 12 | 3 | 32.027 / 8.007 | `PlayerID` là ID; 4 cột chữ; hold-out |
+| `wilt` | `wilt.csv` | `class` (cột đầu, `n`/`w`) | 5 | 2 | 3.471 / 868 | Lệch lớp mạnh; 14 dòng trùng giữ nguyên; file chia và file upload giữ `class` ở **cột đầu** như file gốc |
+
+Dựng bằng `bench.py prepare-extra` (`benchmark/prepare_extra.py`) vào `benchmark_artifacts/datasets/extra/` (`<khoá>_train.csv`, `<khoá>_test.csv`). Giữ nguyên giá trị, tên cột và **thứ tự cột** của file gốc (target ở đâu giữ đó: cuối ở năm dataset, đầu ở wilt), không bỏ dòng. Manifest đã có thì lệnh giữ nguyên; `prepare-extra --rebuild` ghi lại split từ cùng file gốc (hash file gốc phải khớp, bị chặn khi đã khoá protocol v6). Split `feature-group-v1`, seed 42 như bốn dataset bảng cũ; 0 nhóm feature giao nhau, đủ mọi lớp ở hai phần. [manifest_extra.json](benchmark_artifacts/datasets/extra/manifest_extra.json) lưu hash file gốc và file chia, số dòng, header đầy đủ theo thứ tự gốc (`columns`), feature (`features`, mọi cột trừ target), target, lớp, số nhóm trùng/mâu thuẫn và ngưỡng ràng buộc; `check_extra_data` kiểm trong preflight (header của file chia phải đúng `columns`; sha256 phải có đủ 12 file chia) và được khoá cùng protocol (`manifest_extra` trong `lock`): đổi split hay ngưỡng sau khi khoá thì `run`/`score` từ chối. Máy khác cần chép cả `datasets/extra/` lẫn 6 file gốc trong `benchmark_artifacts/raw/` (`check_extra_data` băm cả file gốc). Manifest cũ và split cũ không đổi.
+
+Ngưỡng G02/G09 tính **chỉ từ phần train** khi chạy prepare, trước mọi lượt agent: điểm f1_macro CV 5-fold của `RandomForestClassifier(random_state=42)` mặc định trừ 0,05 rồi làm tròn xuống bội 0,05. Kết quả: adult **0.70**, wilt **0.75**. G03 dùng 0.99 cố định (không đạt được với dữ liệu này, chỉ để dựng tình huống); G07 dùng 90% (accuracy ≥ 0.90) theo câu lệnh.
+
 ### 2.2. Môi trường
 
 - Chạy API, training consumer, database và storage theo [README](README.md). CLI benchmark không cần frontend/agent HTTP server.
@@ -84,6 +100,7 @@ Chạy `init` tạo [bench_config.json](benchmark_artifacts/bench_config.json) v
 | `GLASS_JOB` | Job train trên `GLASS_ID` mới, đủ 9 feature, target `Type`, thành công và đã activate |
 | `INACTIVE_JOB` | Một job Glass riêng cùng yêu cầu, thành công nhưng chưa activate |
 | `ELEC_ID`, `WEATHER_ID` | ID upload đúng hai file `*_train.csv` của nhóm T (`electricity_MT_301_2013_hourly_train.csv`, `weather_jena_co2_hourly_train.csv`) |
+| `ADULT_ID`, `MADELON_ID`, `STUDENT_ID`, `DIGITS_ID`, `GAMING_ID`, `WILT_ID` | ID upload đúng sáu file `datasets/extra/<khoá>_train.csv` của nhóm G (`setup-account` upload và kiểm số dòng/cột với manifest_extra) |
 
 | `PG_CONN_ID`, `MYSQL_CONN_ID` | ID hai kết nối database đã lưu (giao diện **Kết nối database**) tới database `datasets` của server test PostgreSQL / MySQL (`src/backend/tests/sql_sources`), user `hautoml_ro`. `preflight --online` kiểm loại database, đủ 6 bảng, và mỗi bảng có đúng số dòng phần train |
 
@@ -98,7 +115,7 @@ Trường mới ở v5:
 
 Trước mỗi ca dùng `GLASS_JOB` (D01–D03, D05, E03) runner bật lại job nếu đang tắt; trước D04 runner tắt `INACTIVE_JOB` nếu một lượt trước đã bật nó. Trạng thái trước ca được ghi vào `run.json`; không đưa được về đúng trạng thái thì lượt là `INVALID_FIXTURE`. `predict_rows`, feature và đường dẫn test đã có trong config mẫu.
 
-`experiment_id` mặc định `hautoml-v5-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 235 lượt (không ablation), đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
+`experiment_id` mặc định `hautoml-v6-01`. Đổi ID cho một đợt độc lập. `repeats=5`; `ablation.repeats=3`. Nếu chỉ cần 295 lượt (không ablation), đặt `ablation.enabled=false` **trước khi lock official**. Không thay số lần lặp dựa vào kết quả tốt/xấu.
 
 Chi phí tiền là tùy chọn: điền provider/model khớp config, giá USD/triệu token input/output, ngày giá, nguồn và ghi chú. Chỉ đặt `billing_mode="uniform_input_output"` khi bảng giá này mô tả đủ cách tính token của provider; nếu còn cache/reasoning/tier riêng chưa xử lý thì để trống. Thiếu bảng giá vẫn đo token, nhưng chi phí USD để `null`; không giả định bằng 0.
 
@@ -113,7 +130,9 @@ $PY benchmark/bench.py init
 # $PY benchmark/bench.py prepare
 # Dữ liệu nhóm T đã dựng sẵn; chỉ chạy khi chưa có manifest_ts.json:
 # $PY benchmark/bench.py prepare-ts
-# Upload bốn file train mới + hai file *_train.csv nhóm T, tạo hai job fixture và điền cấu hình mục 2.3.
+# Dữ liệu nhóm G đã dựng sẵn; chỉ chạy khi chưa có manifest_extra.json:
+# $PY benchmark/bench.py prepare-extra
+# Upload bốn file train mới + hai file *_train.csv nhóm T + sáu file train nhóm G, tạo hai job fixture và điền cấu hình mục 2.3.
 $PY benchmark/bench.py preflight
 $PY benchmark/bench.py preflight --online
 $PY -m pytest benchmark/test_bench.py -q -p no:cacheprovider
@@ -133,7 +152,7 @@ $PY benchmark/bench.py preflight --online
 $PY benchmark/bench.py lock --phase official
 ```
 
-Pilot gồm 47 lượt full (33 ca v4 + 6 ca T + 8 ca S), không có ablation; có thể chạy riêng một phần bằng `--cases`. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
+Pilot gồm 59 lượt full (33 ca v4 + 6 ca T + 8 ca S + 12 ca G), không có ablation; có thể chạy riêng một phần bằng `--cases`. `score --phase pilot` bị chặn. Nếu sửa code/config sau pilot, báo cáo pilot vẫn đọc snapshot đã khóa; muốn chạy lại pilot thì dùng `experiment_id` mới. Không sửa dữ liệu đã khóa: `prepare` sẽ từ chối khi có protocol trong workspace.
 
 `protocol.json` khóa cases/prompt/ngưỡng, cấu hình, bảng giá, manifest, hash code benchmark/agent/backend (bỏ thư mục cache như `__pycache__`, `.pytest_cache`), phiên bản Python, một số biến runtime và danh sách từng lượt `(variant, case, repeat)`. Nó không tự đóng băng container hay máy backend từ xa; ghi và giữ môi trường như mục 2.2. `run`/`score` kiểm tra lại snapshot và từ chối nếu thay đổi. Khóa bằng hash giúp phát hiện thay đổi, không phải chữ ký chống sửa có chủ ý.
 
@@ -172,6 +191,27 @@ $PY benchmark/bench.py run --retry-invalid
 
 Lệnh này chỉ thay lượt có trạng thái `INVALID_FIXTURE`, lưu lượt cũ sang `.invalid-*`; không chạy lại PASS/FAIL để chọn kết quả tốt. Kiểm tra/tổng hợp số lượt fixture lỗi và lý do từ các thư mục lưu trữ khi báo cáo. Nếu tiếp tục lỗi fixture, ghi chưa hoàn tất điều kiện benchmark thay vì loại im lặng. Không dùng `--retry-invalid` sau khi đã xem test để chọn lượt tốt hơn.
 
+Chạy lại ca lẻ (mọi trạng thái, cả official, cả sau khi đã chấm test) bằng `--rerun`, bắt buộc kèm `--cases`:
+
+```bash
+$PY benchmark/bench.py run --rerun --cases B03 --variants full --repeat 3    # chỉ chạy lại full/B03_r03
+$PY benchmark/bench.py score && $PY benchmark/bench.py report
+```
+
+Đã sửa code agent/backend/benchmark, `cases.json` hoặc dữ liệu sau khi khoá thì thêm `--allow-changes` (cả cho `score`,
+`report` để chấm mọi lượt bằng `cases.json` hiện tại):
+
+```bash
+$PY benchmark/bench.py run --rerun --allow-changes --cases B03 --variants full --repeat 3
+$PY benchmark/bench.py score --allow-changes && $PY benchmark/bench.py report --allow-changes
+```
+
+Lượt chạy kiểu này ghi `changes_since_lock` (danh sách mục/file đã đổi) trong `run.json`, và đầu `report.md` liệt kê chúng.
+
+Lượt cũ được giữ ở `<ca>_rNN.rerun-*` và không tính vào kết quả; lần thử cuối được tính. Đầu `report.md` tự ghi số
+lượt đã chạy lại và danh sách `biến thể/ca_rNN (số lần)`. Khi đưa số liệu vào bài báo, ghi kèm số lượt đã chạy lại; nếu so
+sánh full với ablation, các biến thể nên được chạy lại theo cùng quy tắc.
+
 Nếu phép chấm test bị lỗi, xem `test/error.json`, xử lý nguyên nhân hạ tầng và chạy lại `score`; kết quả đo thành công đã có được giữ và kiểm hash. Không đổi code/protocol trong cùng đợt để sửa kết quả. Lỗi phép đo không được thay thành NPS=0.
 
 ### 3.5. Đầu ra
@@ -199,7 +239,7 @@ benchmark_artifacts/
 
 `report` không gọi backend/LLM; dùng cases và bảng giá trong snapshot. `--experiment <id>` cho phép đọc báo cáo đợt cũ. Báo cáo ghi protocol ID, số lượt đã có/tổng plan, số lượt lưu trữ `.invalid-*`/`.aborted-*`, phần chưa review/chưa đo và các mẫu số; cảnh báo nếu code đã đổi sau khi khóa và từ chối thư mục lượt chạy sai tên (vd bản sao `A01_r01.bak`). Không gộp pilot, biến thể hoặc experiment khác vào kết quả full official.
 
-## 4. Danh sách 47 kịch bản
+## 4. Danh sách 59 kịch bản
 
 ### Nhóm A — Tra cứu và hiểu dữ liệu: 4 ca
 
@@ -349,6 +389,27 @@ Cách chạy riêng của nhóm S:
 - Lỗi tool mà ca cố ý gây ra (S07 câu ghi bị chặn, S08 bảng không có) không tính vào tỷ lệ tool thực thi lỗi.
 - Bộ chạy không đọc được bảng nguồn, danh sách dataset, hoặc schema/nội dung dataset vừa nhập: tiêu chí liên quan để trống (thiếu phép đo). Lượt là INVALID_FIXTURE, trừ khi agent đã trượt một tiêu chí khác được chứng minh độc lập; khi đó lượt vẫn là FAIL.
 
+### Nhóm G — Dataset mở rộng: 12 ca (v6)
+
+Sáu dataset của mục 2.1c, mỗi ca nhắm một đặc điểm dữ liệu hoặc một thành phần của hệ thống. Ca train (G01–G04, G07–G09, G12) chạy đúng hai lượt như nhóm C: cùng hậu tố lượt 1 (`random_search`, 300 giây, train rồi kích hoạt và dự đoán), cùng câu lượt 2 với `<ROWS>` là 1 dòng đầu phần **test** (bỏ cột target, `predict_rows.<khoá>`; 1 dòng như ca bảng cũ). SR/NPS/CS tính như nhóm C trên `<khoá>_test.csv`. Ca chat (G05, G06, G10, G11) không được tạo job. Ca được viết và khoá trước khi chạy; không chọn, sửa hay bỏ ca theo việc bản full thắng hay thua.
+
+| ID | Prompt (rút gọn) | Kiểm tự động | Tiêu chí chấm tay | Nhắm tới |
+|---|---|---|---|---|
+| G01 | adult: phân loại `income` từ tất cả các cột còn lại, `f1_macro` | Như nhóm C: config đúng 14 feature, 1 job thành công, kích hoạt, predict 1 dòng | Số liệu khớp tool/snapshot | End-to-end, dữ liệu lớn có cột chữ |
+| G02 | Như G01 + `f1_macro >= 0.70` (ngưỡng từ manifest) | Như G01; `auto_activated`: model tự kích hoạt khi xong, nguồn điểm của job là `holdout`, không có thẻ kích hoạt cho job | Báo đúng ngưỡng đạt theo điểm hold-out | Verify, nhánh hold-out |
+| G03 | Như G01 + `f1_macro >= 0.99`; model không đạt thì không kích hoạt | `endpoint: inactive`: job thành công, `activate = 0`, không predict thành công trên job nào (`predict_ok: false`) | Báo rõ ràng buộc không đạt; không nói đã kích hoạt | Verify (`no-verify` phải trượt) |
+| G04 | madelon: phân loại `decision` từ **toàn bộ 500 cột còn lại** (không liệt kê), `accuracy` | Config đủ 500 feature; job, kích hoạt, predict | Số liệu khớp | Danh sách cột rất dài |
+| G05 | student: dự đoán `GradeClass`, `f1_macro`, tự chọn cột, tạo cấu hình, chưa train | 0 job; nếu có config/job thì `StudentID` không nằm trong feature (`features_exclude`) | PASS nếu loại `GPA` **hoặc** cảnh báo rõ `GPA` rò rỉ target; `StudentID` phải bị loại | Data Agent |
+| G06 | student: "Dự đoán kết quả học tập của học sinh trong dataset này giúp tôi" | 0 job, không có config | Hỏi lại target (`GPA` hồi quy hay `GradeClass` phân loại); không tự chọn | Prompt Agent, chặn target |
+| G07 | digits: phân loại `target` từ 64 cột pixel, `accuracy`, "accuracy tối thiểu 90%" | Như nhóm C (CV nên kích hoạt qua thẻ); `requirement_constraints`: R có đúng `accuracy >= 0.9` (thiếu R là trượt; bỏ tiêu chí ở `single-agent`/`no-prompt-agent`); ngưỡng kiểm trên test | Báo đúng % / tỉ lệ | Prompt Agent (chuẩn hoá % → tỉ lệ) |
+| G08 | gaming: dự đoán `EngagementLevel`, tự chọn cột phù hợp, `f1_macro` | Agent tự chọn cột (`features_free`: không so danh sách feature); `PlayerID` không nằm trong feature; job (hold-out), kích hoạt, predict | Giải thích việc loại cột ID; số liệu khớp | Data Agent (cột ID) |
+| G09 | wilt: phân loại `class` từ tất cả các cột còn lại, `f1_macro >= 0.75`; trong file upload `class` là cột **đầu tiên** | Như nhóm C: config đúng 5 feature (không lấy nhầm cột cuối `SD_pan` làm target hay bỏ sót nó); ngưỡng kiểm trên test | Số liệu khớp | Target ở cột đầu, lệch lớp |
+| G10 | wilt: cấu hình **regression** cho `class`, metric `mae`; không đổi gì, chưa train | 0 job, không có config | Nêu đúng lỗi (`class` là nhãn chữ, không hồi quy được); không tự đổi | Validate |
+| G11 | adult: cấu hình classification cho `income` với metric `mae`; không đổi metric, chưa train | 0 job, không có config | Nêu đúng lỗi (`mae` không dùng cho phân loại); không tự đổi | Validate |
+| G12 | student: phân loại `GradeClass` dùng **mọi cột kể cả `GPA` và `StudentID`**, `f1_macro` | Config đúng như người dùng chốt (14 feature, gồm `GPA`, `StudentID`); job, kích hoạt, predict | Phải cảnh báo `GPA` rò rỉ và `StudentID` là ID, nên điểm cao không thật | Tính trung thực của Manager |
+
+Người dùng mô phỏng: ca train dùng chính sách của nhóm C (Xác nhận + tự kích hoạt; xác nhận thẻ kích hoạt), trừ G02 và G03 từ chối thẻ kích hoạt. G02 phải tự kích hoạt theo điểm hold-out, thẻ kích hoạt là thừa. G03 dặn rõ không kích hoạt model không đạt yêu cầu, nên mọi đề nghị kích hoạt là trái ý người dùng. Ngưỡng 0.99 của G03 chỉ dựng tình huống: không tính vào "Đạt mọi ràng buộc" (`has_constraints` = false) và SR theo thang không ràng buộc, trong đó đích đúng là giữ model tắt.
+
 ## 5. Quy tắc chấm điểm
 
 ### 5.1. Trạng thái và mẫu số
@@ -370,7 +431,7 @@ Quy tắc chấm tự động về nội dung:
 - D06: chỉ lần agent đọc trạng thái **đầu tiên** quyết định điều kiện ca. Lần đầu đã thấy job đang chạy thì ca hợp lệ, kể cả khi job xong trước lần đọc sau.
 - Config đã bị một config mới hơn của cùng dataset thay thế thì không chạy được nữa, nên không tính là config hợp lệ cuối cùng.
 
-Task success tạm thời = `PASS/(PASS+FAIL)`, luôn kèm số pending/invalid và số lượt theo plan. Chỉ kết luận tỷ lệ cuối khi đã giải quyết các ca chưa chấm. SR/NPS/CS tính cho nhóm C và các ca train T01–T05; các nhóm khác (và T06) để `null`.
+Task success tạm thời = `PASS/(PASS+FAIL)`, luôn kèm số pending/invalid và số lượt theo plan. Chỉ kết luận tỷ lệ cuối khi đã giải quyết các ca chưa chấm. SR/NPS/CS được tính cho từng lượt (`results.csv`/`results.jsonl`) ở nhóm C, các ca train T01–T05, S05/S06 và các ca train nhóm G; các ca còn lại (và T06) để `null`. `report.md` tổng hợp SR/NPS/CS và tỷ lệ đạt ràng buộc cho nhóm C (mục 3), nhóm T (mục 3b) và nhóm S (mục 3c); nhóm G trong `report.md` chỉ có task success (dòng "Task success nhóm G" ở tóm tắt và bảng theo nhóm/theo ca ở mục 2), còn SR/NPS/CS và ràng buộc của từng lượt G đọc ở `results.csv`/`results.jsonl`.
 
 Tỷ lệ đạt mọi ràng buộc = số ca có ngưỡng với workflow đạt và mọi ngưỡng test đạt / **tất cả ca có ngưỡng hợp lệ**, gồm train thất bại và chưa đo; báo riêng số chưa đo. Không loại job fail khỏi mẫu số. Job success có mẫu số riêng là số lượt thực sự tạo job; phải đọc cùng Task success để thấy cả lỗi không tạo được job.
 
@@ -380,7 +441,7 @@ Tỷ lệ đạt mọi ràng buộc = số ca có ngưỡng với workflow đạ
 |---|---:|---:|
 | Không có job thành công hoặc job sai cấu hình nhiệm vụ | 0 | 0 |
 | Backend báo train thành công, chưa chứng minh endpoint hoạt động | 0.50 | 0.25 |
-| Đã activate và predict đúng job, đủ đầu ra hữu hạn | 1.00 | 0.50 |
+| Đã activate và predict đúng job, đủ đầu ra hợp lệ (phân loại: nhãn không rỗng, kể cả nhãn chữ; hồi quy/time series: số hữu hạn) | 1.00 | 0.50 |
 | Endpoint hoạt động, có nhiều ngưỡng và chỉ một phần đạt | — | 0.75 |
 | Endpoint hoạt động, mọi ngưỡng test đạt | — | 1.00 |
 
@@ -462,7 +523,7 @@ Watcher tạo thẻ bật model khi job xong ngay trong thread theo dõi, trư�
 | `no-validate` | Tắt validate_config; kiểm tra trong prepare_training_config/backend vẫn còn |
 | `no-verify` | Watcher nhận R đã bỏ ràng buộc, nên không đối chiếu ngưỡng. Sự kiện job báo Manager rằng kiểm định bị tắt (không nói sai là người dùng không đặt ràng buộc). Review và bộ chấm ngoài vẫn giữ. Từ v5, R vẫn giữ yêu cầu tự kích hoạt người dùng chọn trên thẻ; bỏ cả R thì biến thể phải thêm một lượt "tiếp tục" mà `full` không cần. |
 
-Ablation dùng 13 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03 và S05 (thêm ở v5: pipeline đầy đủ từ database); mỗi biến thể 3 lần. Không gỡ SQL Agent: nhóm S không làm được nếu thiếu nó, đây là thành phần bắt buộc chứ không phải tuỳ chọn. Báo cáo thêm kiểm định cặp: McNemar chính xác cho PASS/FAIL, Wilcoxon + CI bootstrap cho CS và token. F01, F03 đo phần hiểu yêu cầu mà Prompt Agent đảm nhận. Lượt full và ablation chạy xen kẽ theo thứ tự đã khóa (mục 3.4). Mỗi biến thể được so với `full` trên giao của `(case_id, repeat)`, tức full lần 1–3 tương ứng; không lấy full 5 lần so với biến thể 3 lần. Loại cặp có fixture không hợp lệ và công khai số cặp còn lại. Lặp cùng chỉ số không bảo đảm cùng seed LLM/HPO. Bảng ablation báo task success và SR trên mọi cặp hợp lệ làm kết quả chính; CS chỉ so trên các cặp cả hai bên cùng đo được, kèm số cặp, để một lượt thiếu phép đo không làm bên kia trông tốt hơn. Ở `single-agent` và `no-prompt-agent` không có R, nên với C05/C07/C08 sự kiện job xong vẫn báo Manager "người dùng không đặt ràng buộc nào": đó là hành vi thật của hệ thống khi bỏ Prompt Agent, được giữ nguyên để đo; chỉ `no-verify` được sửa câu này vì ở đó R vẫn có, chỉ kiểm định bị tắt. Không có Prompt Agent thì không có R, nên cũng không có lời hứa tự kích hoạt: ở `single-agent` và `no-prompt-agent`, thẻ train không có lựa chọn này. Hai biến thể đó thường cần thêm một lượt "tiếp tục" để bật model rồi predict. Đó là hành vi thật của cấu hình, được đếm ở cột lượt chat và token.
+Ablation dùng 19 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03, S05 (thêm ở v5: pipeline đầy đủ từ database) và 6 ca nhóm G có chủ đích (v6): G03 (Verify), G05 và G08 (Data Agent), G06 (Prompt Agent), G07 (chuẩn hoá ràng buộc của Prompt Agent; ở `single-agent` và `no-prompt-agent` không có R nên bỏ hẳn tiêu chí `requirement_constraints` - không tính vào checks, không thành PENDING hay FAIL; G07 ở hai biến thể đó chỉ chấm các tiêu chí còn lại), G10 (Validate); mỗi biến thể 3 lần. Không gỡ SQL Agent: nhóm S không làm được nếu thiếu nó, đây là thành phần bắt buộc chứ không phải tuỳ chọn. Báo cáo thêm kiểm định cặp: McNemar chính xác cho PASS/FAIL, Wilcoxon + CI bootstrap cho CS và token. F01, F03 đo phần hiểu yêu cầu mà Prompt Agent đảm nhận. Lượt full và ablation chạy xen kẽ theo thứ tự đã khóa (mục 3.4). Mỗi biến thể được so với `full` trên giao của `(case_id, repeat)`, tức full lần 1–3 tương ứng; không lấy full 5 lần so với biến thể 3 lần. Loại cặp có fixture không hợp lệ và công khai số cặp còn lại. Lặp cùng chỉ số không bảo đảm cùng seed LLM/HPO. Bảng ablation báo task success và SR trên mọi cặp hợp lệ làm kết quả chính; CS chỉ so trên các cặp cả hai bên cùng đo được, kèm số cặp, để một lượt thiếu phép đo không làm bên kia trông tốt hơn. Ở `single-agent` và `no-prompt-agent` không có R, nên với C05/C07/C08 sự kiện job xong vẫn báo Manager "người dùng không đặt ràng buộc nào": đó là hành vi thật của hệ thống khi bỏ Prompt Agent, được giữ nguyên để đo; chỉ `no-verify` được sửa câu này vì ở đó R vẫn có, chỉ kiểm định bị tắt. Không có Prompt Agent thì không có R, nên cũng không có lời hứa tự kích hoạt: ở `single-agent` và `no-prompt-agent`, thẻ train không có lựa chọn này. Hai biến thể đó thường cần thêm một lượt "tiếp tục" để bật model rồi predict. Đó là hành vi thật của cấu hình, được đếm ở cột lượt chat và token.
 
 | Phần | Kịch bản | Lặp | Biến thể | Lượt |
 |---|---:|---:|---:|---:|
@@ -474,12 +535,13 @@ Ablation dùng 13 ca: A02, B01, B03, B04, B05, C01, C03, C05, C07, C08, F01, F03
 | F — Hiểu yêu cầu qua hội thoại | 3 | 5 | full | 15 |
 | T — Dự báo chuỗi thời gian (v4.1) | 6 | 5 | full | 30 |
 | S — Database ngoài qua SQL Agent (v5) | 8 | 5 | full | 40 |
-| **Official full** | **47** | **5** | **1** | **235** |
-| Ablation thêm | 13 ca (12 ca v4 + S05) | 3 | 5 | 195 |
-| **Official khi bật ablation** | | | | **430** |
-| Pilot, lưu riêng | 47 | 1 | full | 47 |
+| G — Dataset mở rộng (v6) | 12 | 5 | full | 60 |
+| **Official full** | **59** | **5** | **1** | **295** |
+| Ablation thêm | 19 ca (12 ca v4 + S05 + 6 ca G) | 3 | 5 | 285 |
+| **Official khi bật ablation** | | | | **580** |
+| Pilot, lưu riêng | 59 | 1 | full | 59 |
 
-Nếu chạy cả pilot và ablation: **477 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C, 25 ca T, 10 ca S (S05, S06) và 5 ca E02 yêu cầu train; ablation thêm 75 ca C và 15 ca S05 yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
+Nếu chạy cả pilot và ablation: **639 lượt đo dự kiến**, chưa tính retry fixture, job fixture hay các thử nghiệm CV hiệu chỉnh. Official full có 50 ca C, 25 ca T, 10 ca S (S05, S06), 40 ca G (8 ca train) và 5 ca E02 yêu cầu train; ablation thêm 75 ca C, 15 ca S05 và 45 ca G (G03, G07, G08) yêu cầu train. Đây là số yêu cầu, không đảm bảo đúng số job thực tế nếu agent không tạo hoặc tạo thừa; các sai lệch đều phải ghi nhận.
 
 ## 7. Điều kiện trước khi công bố kết quả
 
@@ -487,12 +549,12 @@ Nếu chạy cả pilot và ablation: **477 lượt đo dự kiến**, chưa tí
 - Mỗi ca C đo được phải có metric/prediction đúng job; lỗi chức năng được giữ; báo số NPS/CS đo được trên tổng số ca.
 - Review có giải thích bằng chứng; nếu có nhiều người đánh giá, cố định cùng rubric và lưu bất đồng.
 - Có protocol ID, manifest, môi trường thực thi, provider/model, cấu hình worker và nguồn bảng giá nếu báo tiền.
-- Nêu phạm vi: bốn dataset bảng, hai chuỗi thời gian, hai database. Nêu test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khoá seed (estimator của engine không có `random_state`), và người dùng mô phỏng theo chính sách cố định.
+- Nêu phạm vi: mười dataset bảng (bốn dataset cũ và sáu dataset nhóm G), hai chuỗi thời gian, hai database. Nêu test cố định, lịch sử tiếp cận test Concrete, biến thiên LLM/HPO chưa khoá seed (estimator của engine không có `random_state`), và người dùng mô phỏng theo chính sách cố định.
 - D06 bị loại (INVALID_FIXTURE) khi job fixture xong trước lần agent đọc đầu tiên. Agent chậm dễ bị loại hơn, nên phải báo số lượt D06 bị loại và chạy lại bằng `--retry-invalid`. Không dùng D06 để so tốc độ giữa các biến thể.
 - Baseline (mục 11) phải chạy trên cùng manifest. Ghi rõ FLAML/AutoGluon có hay `unavailable`. Không trình bày kết quả agent và baseline như cùng chức năng.
 - Nhóm T: HAutoML dự báo một chuỗi bằng mô hình bảng với đặc trưng trễ, dự báo đệ quy; AutoML-Agent dự báo đa biến bằng mô hình sâu. Cùng nguồn dữ liệu và cùng 96 bước; nhưng Weather của bài lấy mẫu 10 phút (96 bước = 16 giờ), ở đây gộp theo giờ (96 bước = 96 giờ). Không phải tái lập bảng kết quả của bài.
 
-Trạng thái chuẩn bị: dữ liệu mới và file cấu hình mẫu đã có; bộ chạy/chấm/báo cáo có 62 kiểm thử offline; kết quả xác nhận của Codex ở mục 8. Cần điền tài khoản, ID upload/job fixture và xác nhận dịch vụ thật bằng `preflight --online` trước khi chạy pilot. Chưa có số liệu để kết luận chất lượng agent.
+Trạng thái chuẩn bị: dữ liệu mới và file cấu hình mẫu đã có; bộ chạy/chấm/báo cáo có 142 kiểm thử offline (`test_bench.py` 64, `test_v5.py` 33, `test_extra.py` 45; chưa tính 14 test đối chiếu `test_reference_impl.py` chạy trong image backend); kết quả xác nhận của Codex ở mục 8. Cần điền tài khoản, ID upload/job fixture và xác nhận dịch vụ thật bằng `preflight --online` trước khi chạy pilot. Chưa có số liệu để kết luận chất lượng agent.
 
 ## 8. Thay đổi trong protocol v4 (Claude xây, Codex xác nhận)
 
@@ -574,9 +636,23 @@ Lý do: agent đã đổi sau đợt v4.1. Agent có thêm SQL Agent (sub-agent 
 | AutoML ngoài (tuỳ chọn) | `flaml`, `autogluon` | Chỉ chạy khi đã cài; không có thì `unavailable` |
 | Engine HAutoML, config đúng | `hautoml_engine`: gửi đúng config đáp án của C01/C02/C03/C09/T01/T03 qua API, không LLM | Tách chất lượng của engine với quyết định của agent; đo chi phí điều phối |
 
-Baseline offline chạy trong image backend (cùng thư viện với engine) với `--network none`. Mỗi lượt chạy trong một tiến trình con riêng, có timeout, đo CPU và RAM đỉnh. Test chỉ được đọc sau khi fit. Chế độ `full` dùng 5 seed (0–4).
+Baseline offline chạy trong image backend (cùng thư viện với engine) với `--network none`. Mỗi lượt chạy trong một tiến trình con riêng, có timeout, đo CPU và RAM đỉnh. Test chỉ được đọc sau khi fit. Chế độ `full` dùng 5 seed (0–4). Không truyền `--datasets` thì chạy mọi dataset: 4 bảng cũ, 6 dataset mới của nhóm G (từ v6) và 2 time series. Mã đợt (`--id`) khoá hash code `baselines.py`/`metrics.py`, nên đợt baseline đã có từ trước v6 (vd `v5-01`) không chạy tiếp hay bổ sung được sau khi code đổi: dùng `--id` mới.
 
 `engine-baseline` dùng backend thật, không dùng LLM. Hãy chạy nó sau official (job của nó làm danh sách job của tài khoản dài thêm). Nó tắt model sau khi chấm.
 
 Báo cáo đặt agent cạnh baseline bằng trung bình kèm CI. Không có kiểm định giữa hai bên, vì lần lặp của agent và seed của baseline không ghép cặp được.
 
+## 12. Thay đổi trong protocol v6: nhóm G
+
+- **Dữ liệu**: 6 dataset bảng mới (mục 2.1c) với manifest riêng `manifest_extra.json` (giữ thứ tự cột gốc, ghi `columns`; `prepare-extra --rebuild` để ghi lại split từ cùng file gốc); `check_extra_data` chạy trong preflight và kết quả được khoá cùng protocol (`manifest_extra` trong snapshot của `lock`, như `manifest`/`manifest_ts`). Không đổi `manifest.json`, `datasets/timeseries/` hay split cũ.
+- **Ca**: 12 ca G01–G12 (mục 4); `cases.json` đổi phiên bản thành `hautoml-bench-v6`. Prompt và tiêu chí của 47 ca cũ giữ nguyên.
+- **Kiểm tự động mới** (`analyze.py`), chỉ có ở ca G nên ca cũ chấm y như trước:
+  - `features_free` (G05, G08): không so danh sách feature ở config, job và thẻ train; mẫu predict chỉ so trên các cột model của job dùng (agent bỏ `PlayerID` khỏi mẫu trước khi predict vẫn đúng).
+  - `features_exclude`: cột cấm không nằm trong config chạy được hay job đã train.
+  - `endpoint: inactive` (G03): job thành công, model vẫn tắt, không predict.
+  - `auto_activated` (G02): tự kích hoạt bằng điểm hold-out, không có thẻ kích hoạt.
+  - `requirement_constraints` (G07): ràng buộc đã chuẩn hoá trong R. Ở `single-agent` và `no-prompt-agent` (không có Prompt Agent) tiêu chí này bị bỏ hẳn; ở mọi biến thể khác (kể cả `full`) thiếu R là trượt.
+- **Bộ chấm**: đọc cột chữ và nhãn chữ (so nhãn theo chuỗi đã `strip()`), để chấm adult, gaming, wilt.
+- **Đầu ra predict hợp lệ** (`analyze.py`, `prediction_output` / `activated_and_predicted`): ở ca phân loại, backend trả nhãn gốc (`"<=50K"`, `"n"`, `"High"`), nên mọi nhãn vô hướng không rỗng là hợp lệ (chuỗi khác rỗng, hoặc số hữu hạn không phải bool; chuỗi `nan`/`inf` vẫn không hợp lệ). Hồi quy, time series và ca không khai báo task vẫn đòi số hữu hạn. Nhãn số của dataset cũ chấm y như trước.
+- **Ablation**: thêm G03, G05, G06, G07, G08, G10 (mục 6).
+- **Báo cáo**: nhóm "G - Dataset mở rộng" trong bảng theo nhóm và dòng "Task success nhóm G" ở tóm tắt; tóm tắt chính vẫn tính trên A–F. Không có mục tổng hợp SR/NPS/CS hay tỷ lệ đạt ràng buộc riêng cho nhóm G: các số đó của từng lượt nằm trong `results.csv`/`results.jsonl`. Bảng SR "Có ràng buộc / Không ràng buộc" chia theo `has_constraints` của từng lượt.

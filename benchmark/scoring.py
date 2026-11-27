@@ -32,19 +32,33 @@ _BATCH = tools.MAX_PREDICT_ROWS
 
 
 def _read_test(path: Path, target: str, time_column: str | None = None,
-               column_case: str | None = None) -> tuple[list[dict], list[float]]:
+               column_case: str | None = None, problem_type: str = "regression") -> tuple[list[dict], list]:
     """
     time_column: cột ngày giờ của time series - giữ nguyên chuỗi (backend dự báo theo mốc thời gian).
     column_case="lower": dataset nhập từ PostgreSQL có tên cột chữ thường (S06) - đổi tên cột của test cho
     khớp, không đổi giá trị.
+    Feature giữ chuỗi nếu không ép được float hữu hạn. Nhãn phân loại qua metrics.normalize_label (số -> float,
+    chữ -> chuỗi đã strip); các loại bài toán khác ép float như cũ.
     """
     with path.open(newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     if column_case == "lower":
         rows = [{k.lower(): v for k, v in row.items()} for row in rows]
-    y_true = [float(row[target]) for row in rows]
-    x = [{k: (v if k == time_column else float(v)) for k, v in row.items() if k != target} for row in rows]
+    if problem_type == "classification":
+        y_true = [metrics_module.normalize_label(row[target]) for row in rows]
+    else:
+        y_true = [float(row[target]) for row in rows]
+    x = [{k: (v if k == time_column else _feature_value(v)) for k, v in row.items() if k != target} for row in rows]
     return x, y_true
+
+
+def _feature_value(text: str):
+    """Số hữu hạn -> float; còn lại (chữ, "?", rỗng) giữ nguyên chuỗi."""
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return text
+    return number if math.isfinite(number) else text
 
 
 def _rmse(y_true: list[float], y_pred: list[float]) -> float:
@@ -160,7 +174,9 @@ def score_run(api, folder: Path, case: dict, cfg: dict) -> str:
 
 def _predict_and_measure(api, folder: Path, job_id: str, task: dict, test_path: Path) -> dict:
     time_column = task.get("time_column") if task["problem_type"] == "time_series" else None
-    x, y_true = _read_test(test_path, task["target"], time_column, task.get("column_case"))
+    x, y_true = _read_test(test_path, task["target"], time_column, task.get("column_case"),
+                          problem_type=task["problem_type"])
+    classification = task["problem_type"] == "classification"
     y_pred = []
     for start in range(0, len(x), _BATCH):
         batch = x[start:start + _BATCH]
@@ -170,7 +186,8 @@ def _predict_and_measure(api, folder: Path, job_id: str, task: dict, test_path: 
         predictions = result.get("predictions") or []
         if len(predictions) != len(batch):
             raise RuntimeError(f"{folder.name}: số dự đoán không khớp số mẫu")
-        y_pred.extend(float(item["predict"]) for item in predictions)
+        y_pred.extend(metrics_module.normalize_label(item["predict"]) if classification else float(item["predict"])
+                      for item in predictions)
 
     metrics = compute_metrics(task["problem_type"], y_true, y_pred)
     if task["problem_type"] == "time_series":
@@ -187,7 +204,7 @@ def score_all(runs_root: Path, cases_doc: dict, cfg: dict, include_pilot: bool) 
             raise SystemExit(f"Không đăng nhập được: {login.get('error')}")
         install_reauthentication(api)
         for run_file in sorted(runs_root.glob("*/*/run.json")):
-            if ".aborted-" in run_file.parent.name or ".invalid-" in run_file.parent.name:
+            if any(tag in run_file.parent.name for tag in (".aborted-", ".invalid-", ".rerun-")):
                 continue
             run = load_json(run_file)
             case = by_id.get(run["case_id"])

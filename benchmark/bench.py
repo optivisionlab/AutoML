@@ -5,6 +5,7 @@ Chạy từ thư mục gốc repository:
 
     python benchmark/bench.py init                     # tạo bench_config.json + pricing.json mẫu
     python benchmark/bench.py prepare                  # chia 4 dataset thật thành train/test
+    python benchmark/bench.py prepare-extra            # 6 dataset mới (adult, madelon, student, digits, gaming, wilt)
     python benchmark/bench.py prepare-ts               # dữ liệu nhóm T: 2 chuỗi thời gian thật, 96 bước test
     python benchmark/bench.py preflight --online       # kiểm dữ liệu/cấu hình/backend
     python benchmark/bench.py lock --phase pilot       # khóa trước khi chạy thử
@@ -84,6 +85,12 @@ def cmd_prepare_ts(_args) -> None:
     main()
 
 
+def cmd_prepare_extra(args) -> None:
+    from benchmark.prepare_extra import main
+
+    main(rebuild=args.rebuild)
+
+
 def selected_config(args):
     cfg = _load_config()
     if getattr(args, "experiment", None):
@@ -130,25 +137,34 @@ def cmd_run(args) -> None:
     if unknown:
         raise SystemExit(f"Biến thể/ca không có: {unknown}")
 
-    if args.phase == "official" and (variants or case_ids or args.ablation or args.repeats is not None):
+    if args.allow_changes and not args.rerun:
+        raise SystemExit("--allow-changes chỉ dùng cùng --rerun (chạy lại ca lẻ sau khi sửa).")
+    if args.rerun and not (variants or case_ids):
+        raise SystemExit("--rerun cần --cases (và/hoặc --variants) để chỉ chạy lại đúng ca lẻ đó.")
+    if args.phase == "official" and not args.rerun and (variants or case_ids or args.ablation or args.repeats is not None
+                                                      or args.repeat is not None):
         # Lọc rồi chạy từng phần (vd full trước, ablation sau) phá lịch xen kẽ đã khoá.
         raise ValueError("Official chạy đúng lịch đã khóa, không lọc. Dừng bằng file STOP, chạy lại `run` để tiếp tục.")
     root = _runs_root(args.phase, cfg)
-    locked = protocol.verify_current(root, cfg, cases_doc, load_json(PRICING_PATH), args.phase)
+    locked = protocol.verify_current(root, cfg, cases_doc, load_json(PRICING_PATH), args.phase, args.allow_changes)
+    if locked.get("changes"):
+        print(f"CHÚ Ý: chạy với thay đổi sau khi khoá ({len(locked['changes'])}): {', '.join(locked['changes'][:8])}")
     # Chạy đúng thứ tự đã khoá (full và ablation xen kẽ); tuỳ chọn chỉ lọc, không thêm lượt.
     entries = [tuple(x) for x in locked["payload"]["plan"]
                if (variants is None or x[0] in variants) and (case_ids is None or x[1] in case_ids)
-               and (not args.ablation or x[0] != "full") and (args.repeats is None or x[2] <= args.repeats)]
+               and (not args.ablation or x[0] != "full") and (args.repeats is None or x[2] <= args.repeats)
+               and (args.repeat is None or x[2] == args.repeat)]
     if not entries:
         raise ValueError("Không có lượt nào trong plan đã khóa khớp bộ lọc.")
     errors, _ = protocol.preflight(cfg, cases_doc, sorted({e[1] for e in entries}))
     if errors:
         raise ValueError("\n".join(errors))
-    if args.retry_invalid and list(root.glob("*/*/test/test_metrics.json")):
+    if args.retry_invalid and not args.rerun and list(root.glob("*/*/test/test_metrics.json")):
         raise ValueError("Đã chấm test; không được chạy lại fixture để chọn kết quả sau khi xem test.")
 
     print(f"Chạy {len(entries)} lượt theo thứ tự đã khóa ({args.phase})")
-    runner.run_all(cases_doc, {**cfg, "_protocol_id": locked["protocol_id"], "_retry_invalid": args.retry_invalid}, entries, root, args.phase)
+    runner.run_all(cases_doc, {**cfg, "_protocol_id": locked["protocol_id"], "_retry_invalid": args.retry_invalid, "_rerun": args.rerun,
+                                "_changes_since_lock": locked.get("changes") or []}, entries, root, args.phase)
 
 
 def cmd_score(args) -> None:
@@ -159,7 +175,11 @@ def cmd_score(args) -> None:
         raise SystemExit("Không chấm test cho lượt chạy thử. Hiệu chỉnh ngưỡng bằng CV trên phần train.")
     cfg = selected_config(args)
     root = _runs_root(args.phase, cfg)
-    locked = protocol.verify_current(root, cfg, load_json(CASES_PATH), load_json(PRICING_PATH), args.phase)
+    cases_doc = load_json(CASES_PATH)
+    locked = protocol.verify_current(root, cfg, cases_doc, load_json(PRICING_PATH), args.phase, args.allow_changes)
+    if locked.get("changes"):
+        # Đã sửa ca/cấu hình sau khi khoá: chấm mọi lượt bằng bản hiện tại để cùng một chuẩn.
+        locked = {**locked, "payload": {**locked["payload"], "cases": cases_doc, "config": cfg}}
     protocol.require_complete(root, locked)
     score_all(root, locked["payload"]["cases"], locked["payload"]["config"], include_pilot=False)
 
@@ -172,7 +192,8 @@ def cmd_report(args) -> None:
     locked = protocol.read_lock(root)
     out = ARTIFACTS / "report" / cfg["experiment_id"] / args.phase
     baseline_ids = args.baselines.split(",") if args.baselines else list(cfg.get("baseline_ids") or [])
-    path = write_report(root, out, locked["payload"]["cases"], locked["payload"]["pricing"], baseline_ids=baseline_ids)
+    cases_doc = load_json(CASES_PATH) if args.allow_changes else locked["payload"]["cases"]
+    path = write_report(root, out, cases_doc, locked["payload"]["pricing"], baseline_ids=baseline_ids)
     print(f"Đã ghi {path}\n       {out / 'results.csv'}\n       {out / 'results.jsonl'}")
 
 
@@ -227,6 +248,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Tạo file cấu hình mẫu")
     sub.add_parser("prepare", help="Chia dataset thành train/test cố định")
+    extra = sub.add_parser("prepare-extra", help="Dựng 6 dataset mới (adult, madelon, student, digits, gaming, wilt): train/test + ngưỡng")
+    extra.add_argument("--rebuild", action="store_true",
+                       help="Ghi lại split/manifest dù manifest đã có (file gốc phải cùng hash; bị chặn khi đã khoá protocol v6)")
     sub.add_parser("prepare-ts", help="Dựng dữ liệu nhóm T (time series): train / 96 bước test")
     pre = sub.add_parser("preflight", help="Kiểm tra dữ liệu/cấu hình; không gọi LLM/train")
     pre.add_argument("--cases")
@@ -241,14 +265,21 @@ def main() -> None:
     run.add_argument("--cases", help="Chỉ chạy các ca này trong plan, vd A01,C01")
     run.add_argument("--variants", help="Chỉ chạy các biến thể này trong plan, vd full")
     run.add_argument("--repeats", type=int, help="Chỉ chạy các lần lặp từ 1 tới số này")
+    run.add_argument("--repeat", type=int, help="Chỉ chạy đúng lần lặp này (dùng với --rerun), vd 3")
     run.add_argument("--ablation", action="store_true", help="Chỉ chạy các lượt ablation trong plan")
     run.add_argument("--experiment")
     run.add_argument("--retry-invalid", action="store_true", help="Lưu trữ và chạy lại riêng lượt INVALID_FIXTURE; giữ nguyên FAIL")
+    run.add_argument("--allow-changes", action="store_true",
+                     help="Cùng --rerun: cho chạy dù code/ca/dữ liệu đã sửa sau khi khoá; lượt được đánh dấu changes_since_lock")
+    run.add_argument("--rerun", action="store_true",
+                     help="Chạy lại các lượt khớp --cases/--variants/--repeats kể cả đã PASS/FAIL (cả official); lượt cũ lưu sang .rerun-*, báo cáo ghi rõ số lượt chạy lại")
 
     for name, help_text in (("score", "Chấm nhóm C, T, S trên tập test"), ("report", "Xuất báo cáo")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--phase", choices=("pilot", "official"), default="official")
         p.add_argument("--experiment")
+        p.add_argument("--allow-changes", action="store_true",
+                       help="Dùng cases.json/cấu hình hiện tại dù đã sửa sau khi khoá (chấm mọi lượt cùng một chuẩn)")
         if name == "report":
             p.add_argument("--baselines", help="Mã đợt baseline để so sánh, cách nhau dấu phẩy (thư mục benchmark_artifacts/baselines/)")
 
@@ -268,7 +299,7 @@ def main() -> None:
     engine.add_argument("--repeats", type=int, default=5)
     engine.add_argument("--experiment")
 
-    setup = sub.add_parser("setup-account", help="Dựng tài khoản benchmark mới: upload 6 file train, job fixture, kết nối DB")
+    setup = sub.add_parser("setup-account", help="Dựng tài khoản benchmark mới: upload 12 file train (không upload test), job fixture, kết nối DB")
     setup.add_argument("--pg-host", default="hautoml-test-postgres")
     setup.add_argument("--pg-port", type=int, default=5432)
     setup.add_argument("--mysql-host", default="hautoml-test-mysql")
@@ -278,7 +309,7 @@ def main() -> None:
 
     args = parser.parse_args()
     try:
-        {"init": cmd_init, "prepare": cmd_prepare, "prepare-ts": cmd_prepare_ts, "preflight": cmd_preflight, "lock": cmd_lock,
+        {"init": cmd_init, "prepare": cmd_prepare, "prepare-ts": cmd_prepare_ts, "prepare-extra": cmd_prepare_extra, "preflight": cmd_preflight, "lock": cmd_lock,
          "run": cmd_run, "score": cmd_score, "report": cmd_report, "baselines": cmd_baselines,
          "engine-baseline": cmd_engine_baseline, "setup-account": cmd_setup_account}[args.command](args)
     except (ValueError, RuntimeError, OSError) as exc:

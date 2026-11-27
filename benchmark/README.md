@@ -106,15 +106,15 @@ cp benchmark/config.smoke.json benchmark_artifacts/bench_config.json   # rồi �
 $PY benchmark/bench.py preflight --online
 $PY benchmark/bench.py lock --phase pilot
 $PY benchmark/bench.py run --phase pilot
-$PY benchmark/bench.py baselines --mode smoke --id v5-smoke
-$PY benchmark/bench.py report --phase pilot --baselines v5-smoke
+$PY benchmark/bench.py baselines --mode smoke --id v6-smoke
+$PY benchmark/bench.py report --phase pilot --baselines v6-smoke
 ```
 
 Pilot không chấm test, theo đúng quy tắc khoá ngưỡng. Muốn có đủ số trên test cho smoke thì khoá `--phase official` với config smoke, dùng một `experiment_id` riêng.
 
 ### Đầy đủ
 
-Có 47 ca × 5 lần = 235 lượt, cộng 13 ca × 5 biến thể × 3 lần = 195 lượt ablation, tổng 430 lượt.
+Có 59 ca × 5 lần = 295 lượt, cộng 19 ca × 5 biến thể × 3 lần = 285 lượt ablation, tổng 580 lượt.
 
 ```bash
 $PY benchmark/bench.py init                    # bench_config.json từ config.example.json
@@ -123,9 +123,9 @@ $PY benchmark/bench.py lock --phase pilot && $PY benchmark/bench.py run --phase 
 $PY benchmark/bench.py lock                    # khoá official (cases, config, hash code, dữ liệu, plan)
 $PY benchmark/bench.py run                     # dừng an toàn: tạo file runs/<id>/official/STOP
 $PY benchmark/bench.py score
-$PY benchmark/bench.py baselines --mode full --id v5-01
-$PY benchmark/bench.py engine-baseline --id v5-01 --repeats 5   # sau official: job thêm vào tài khoản
-$PY benchmark/bench.py report --baselines v5-01
+$PY benchmark/bench.py baselines --mode full --id v6-01
+$PY benchmark/bench.py engine-baseline --id v6-01 --repeats 5   # sau official: job thêm vào tài khoản
+$PY benchmark/bench.py report --baselines v6-01
 ```
 
 Ước lượng tải: lượt train tốn khoảng 5 phút mỗi lượt, gồm 90 lượt full và 75 lượt ablation. Chi phí LLM phụ thuộc provider; đợt v4-02 tốn khoảng 52k–62k token mỗi ca.
@@ -137,6 +137,8 @@ $PY benchmark/bench.py report --baselines v5-01
 - `benchmark_artifacts/baselines/<id>/<method>/<dataset>_sNN/`: `metrics.json`, `predictions.csv`. Ở `<id>/` có `baselines_manifest.json` ghi môi trường, hash dữ liệu/code và ngân sách.
 
 Không file nào bị ghi đè. Lượt đã có thì được bỏ qua. Muốn chạy đợt mới thì đặt `experiment_id` hoặc `--id` mới.
+
+`baselines` không có `--datasets` thì chạy cả 4 bảng cũ, 6 dataset mới (adult, madelon, student, digits, gaming, wilt) và 2 time series. Một `--id` baseline khoá hash code `baselines.py`/`metrics.py`: đợt đã có từ trước (vd `v5-01`) không chạy lại hay bổ sung được sau khi code đổi, phải dùng `--id` mới (vd `v6-01`).
 
 ## 6. Mở rộng
 

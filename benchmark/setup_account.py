@@ -9,7 +9,7 @@ lại lệnh: bước đã xong được bỏ qua, KHÔNG upload trùng):
 1. Đăng nhập bằng AGENT_USER / AGENT_PASSWORD (.env). Tài khoản phải TRỐNG (không dataset, job, kết nối) -
    tránh dataset trùng tên, job cũ làm list_my_jobs dài, ID nhầm. Có sẵn thì dừng và liệt kê (trừ khi
    --allow-existing).
-2. Upload 6 file TRAIN đã khoá hash (4 bảng + 2 chuỗi thời gian) - không bao giờ upload *_test.csv - rồi đọc
+2. Upload 12 file TRAIN đã khoá hash (4 bảng + 2 chuỗi thời gian + 6 dataset mới) - không bao giờ upload *_test.csv - rồi đọc
    lại schema: số dòng và tên cột phải khớp manifest.
 3. Hai job fixture trên Glass (config của C01, train bằng code, không LLM): GLASS_JOB được kích hoạt,
    INACTIVE_JOB để tắt.
@@ -45,7 +45,16 @@ DATASET_FILES = {
     "CRAB_ID": ("datasets/crab_train.csv", "crab_train"),
     "ELEC_ID": ("datasets/timeseries/electricity_MT_301_2013_hourly_train.csv", "electricity_MT_301_2013_hourly_train"),
     "WEATHER_ID": ("datasets/timeseries/weather_jena_co2_hourly_train.csv", "weather_jena_co2_hourly_train"),
+    # 6 dataset mới (prepare_extra): chỉ upload phần train.
+    "ADULT_ID": ("datasets/extra/adult_train.csv", "adult_train"),
+    "MADELON_ID": ("datasets/extra/madelon_train.csv", "madelon_train"),
+    "STUDENT_ID": ("datasets/extra/student_train.csv", "student_train"),
+    "DIGITS_ID": ("datasets/extra/digits_train.csv", "digits_train"),
+    "GAMING_ID": ("datasets/extra/gaming_train.csv", "gaming_train"),
+    "WILT_ID": ("datasets/extra/wilt_train.csv", "wilt_train"),
 }
+EXTRA_PLACEHOLDERS = {"ADULT_ID": "adult", "MADELON_ID": "madelon", "STUDENT_ID": "student",
+                      "DIGITS_ID": "digits", "GAMING_ID": "gaming", "WILT_ID": "wilt"}
 DEFAULT_MISSING_ID = "ffffffffffffffffffffffff"
 
 
@@ -60,6 +69,9 @@ def expected_schemas() -> dict[str, tuple[int, set[str]]]:
     for key, name in (("ELEC_ID", "electricity"), ("WEATHER_ID", "weather")):
         meta = ts["datasets"][name]
         out[key] = (meta["n_train"], {meta["time_column"], meta["target"]})
+    extra = protocol.check_extra_data()["datasets"]
+    for key, name in EXTRA_PLACEHOLDERS.items():
+        out[key] = (extra[name]["n_train"], set(extra[name]["columns"]))
     return out
 
 
@@ -126,7 +138,7 @@ def run(cfg: dict, pg: dict, mysql: dict, password: str, allow_existing: bool = 
             _save(state)
         found = state["placeholders"]
 
-        # 2. Upload 6 file train, kiểm lại schema.
+        # 2. Upload 12 file train (4 bảng + 2 chuỗi thời gian + 6 dataset mới; không có file test), kiểm lại schema.
         schemas = expected_schemas()
         for key, (relative, data_name) in DATASET_FILES.items():
             if found.get(key):

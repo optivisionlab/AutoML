@@ -215,26 +215,32 @@ def bench(tmp_path, monkeypatch):
     return SimpleNamespace(run=run, by_id=by_id, cfg=cfg, cases_doc=cases_doc, root=tmp_path / "runs")
 
 
+def validate_case(case: dict, doc: dict) -> None:
+    """Kiểm một ca theo schema chung của cases.json (dùng lại cho nhóm G trong test_extra)."""
+    from benchmark import consent
+    assert case["flow"] in ("chat", "train", "train_start")
+    policy = consent.policy_for(case, doc)
+    # Người dùng mô phỏng chỉ đồng ý train khi prompt yêu cầu train.
+    assert (policy["train"] != "reject") == (case["flow"] in ("train", "train_start")), case["id"]
+    if case["flow"] in ("train", "train_start") or case["expect"].get("config") == "match_task":
+        assert case.get("task"), case["id"]
+    if case.get("task", {}).get("problem_type") == "time_series":
+        # Backend tìm cột thời gian trong list_feature: phải có đúng cột đó.
+        assert case["task"]["time_column"] in case["task"]["features"], case["id"]
+
+
 def test_cases_file_is_consistent():
     cases = load_json(CASES_PATH)["cases"]
     ids = [c["id"] for c in cases]
-    assert len(ids) == len(set(ids)) == 47
-    # 33 ca của v4 giữ nguyên để so với đợt trước; nhóm T (v4.1) và S (v5, SQL Agent) thêm riêng.
-    assert sum(c["group"] not in ("T", "S") for c in cases) == 33
+    assert len(ids) == len(set(ids)) == 59
+    # 33 ca của v4 giữ nguyên để so với đợt trước; nhóm T (v4.1), S (v5, SQL Agent) và G (v6) thêm riêng.
+    assert sum(c["group"] not in ("T", "S", "G") for c in cases) == 33
     assert [c["id"] for c in cases if c["group"] == "T"] == ["T01", "T02", "T03", "T04", "T05", "T06"]
     assert [c["id"] for c in cases if c["group"] == "S"] == [f"S0{i}" for i in range(1, 9)]
-    from benchmark import consent
+    assert [c["id"] for c in cases if c["group"] == "G"] == [f"G{i:02d}" for i in range(1, 13)]
     doc = load_json(CASES_PATH)
     for case in cases:
-        assert case["flow"] in ("chat", "train", "train_start")
-        policy = consent.policy_for(case, doc)
-        # Người dùng mô phỏng chỉ đồng ý train khi prompt yêu cầu train.
-        assert (policy["train"] != "reject") == (case["flow"] in ("train", "train_start")), case["id"]
-        if case["flow"] in ("train", "train_start") or case["expect"].get("config") == "match_task":
-            assert case.get("task"), case["id"]
-        if case.get("task", {}).get("problem_type") == "time_series":
-            # Backend tìm cột thời gian trong list_feature: phải có đúng cột đó.
-            assert case["task"]["time_column"] in case["task"]["features"], case["id"]
+        validate_case(case, doc)
 
 
 def test_lookup_case_passes_and_counts_steps(bench):
@@ -481,13 +487,14 @@ def test_protocol_counts_immutability_and_completion(tmp_path, monkeypatch):
     cases = load_json(CASES_PATH)
     monkeypatch.setattr(protocol, "check_data", lambda *_: {})
     monkeypatch.setattr(protocol, "check_ts_data", lambda *_: {})
+    monkeypatch.setattr(protocol, "check_extra_data", lambda *_: {})
     monkeypatch.setattr(protocol, "source_hashes", lambda: {"agent.py": "first"})
     monkeypatch.setattr(protocol, "provider_settings", lambda _cfg: {"name": "test", "model": "m"})
-    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 47
-    # (33 ca v4 + 6 ca T + 8 ca S) x 5 lần + 13 ca ablation x 5 biến thể x 3 lần.
-    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 430
+    assert len(protocol.snapshot(cfg, cases, None, "pilot")["plan"]) == 59
+    # (33 ca v4 + 6 ca T + 8 ca S + 12 ca G) x 5 lần + (13 + 6 ca G) ablation x 5 biến thể x 3 lần.
+    assert len(protocol.snapshot(cfg, cases, None, "official")["plan"]) == 580
     cfg["ablation"]["enabled"] = False
-    assert len(protocol.plan(cfg, cases)) == 235
+    assert len(protocol.plan(cfg, cases)) == 295
     cfg["ablation"]["enabled"] = True
     payload = protocol.snapshot(cfg, cases, None, "official")
     locked = protocol.freeze(tmp_path, payload)
@@ -497,6 +504,9 @@ def test_protocol_counts_immutability_and_completion(tmp_path, monkeypatch):
     monkeypatch.setattr(protocol, "source_hashes", lambda: {"agent.py": "changed"})
     with pytest.raises(ValueError, match="đã thay đổi"):
         protocol.verify_current(tmp_path, cfg, cases, None, "official")
+    allowed = protocol.verify_current(tmp_path, cfg, cases, None, "official", allow_changes=True)
+    assert allowed["protocol_id"] == locked["protocol_id"]
+    assert allowed["changes"] == ["file:agent.py"]
     altered = json.loads((tmp_path / "protocol.json").read_text())
     altered["payload"]["phase"] = "pilot"
     (tmp_path / "protocol.json").write_text(json.dumps(altered))
@@ -517,6 +527,27 @@ def test_retry_invalid_preserves_original_and_does_not_retry_pass(bench, monkeyp
     assert load_json(archived[0])["fixtures"] == run["fixtures"]
     assert bench.run("full", "A01") is None
     assert len(report.build_rows(bench.root, bench.cases_doc, None)) == 1
+
+
+def test_rerun_archives_previous_attempt_and_report_discloses_it(bench):
+    folder = bench.run("full", "A01")
+    first = load_json(folder / "run.json")
+    bench.cfg["_rerun"] = True
+    assert bench.run("full", "A01") == folder
+    archived = list(folder.parent.glob("A01_r01.rerun-*/run.json"))
+    assert len(archived) == 1
+    assert load_json(archived[0])["started_at"] == first["started_at"]
+    assert len(report.build_rows(bench.root, bench.cases_doc, None)) == 1
+    assert report.rerun_summary(bench.root) == {"full/A01_r01": 1}
+
+
+def test_rerun_after_changes_marks_run(bench):
+    folder = bench.run("full", "A01")
+    bench.cfg["_rerun"] = True
+    bench.cfg["_changes_since_lock"] = ["file:src/backend/agent/team.py"]
+    bench.run("full", "A01")
+    assert load_json(folder / "run.json")["changes_since_lock"] == ["file:src/backend/agent/team.py"]
+    assert load_json(next(folder.parent.glob("A01_r01.rerun-*")) / "run.json")["changes_since_lock"] == []
 
 
 def test_scoring_gate_rejects_invalid_fixture_before_test_is_seen(bench):

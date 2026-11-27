@@ -29,6 +29,8 @@ _HEX_ID = re.compile(r"\b[0-9a-f]{24}\b")
 _LOWER_IS_BETTER = {"mse", "mae", "mape", "rmse"}
 _OPS = {">=": lambda a, b: a >= b, ">": lambda a, b: a > b, "<=": lambda a, b: a <= b, "<": lambda a, b: a < b}
 CONFIG_FIELDS = ("dataset_id", "target", "list_feature", "metric_sort", "problem_type", "search_algorithm", "max_time")
+# Biến thể không có Prompt Agent (benchmark/variants.py) thì không có R: bỏ hẳn tiêu chí requirement_constraints.
+NO_PROMPT_AGENT_VARIANTS = ("single-agent", "no-prompt-agent")
 
 
 def _same(expected, actual) -> bool:
@@ -52,6 +54,26 @@ def _finite_number(value) -> bool:
         return math.isfinite(float(value))
     except (TypeError, ValueError):
         return False
+
+
+def _valid_label(value, classification: bool) -> bool:
+    """
+    Giá trị dự đoán hợp lệ. Phân loại: backend trả nhãn gốc (inverse_transform của LabelEncoder), nên nhận mọi
+    giá trị vô hướng không rỗng - chuỗi khác rỗng ("<=50K", "n", "1") hoặc số hữu hạn (không phải bool).
+    Hồi quy / time series (và ca không khai báo task): số hữu hạn như cũ.
+    """
+    if not classification:
+        return _finite_number(value)
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, str):
+        # Chuỗi "nan"/"inf" là lỗi số như trước (nhãn số cũ không đổi cách chấm), không phải nhãn.
+        text = value.strip()
+        try:
+            return math.isfinite(float(text))
+        except ValueError:
+            return bool(text)
+    return isinstance(value, (int, float)) and math.isfinite(value)
 
 
 # Gạch nối Unicode LLM hay sinh (‐ ‑ ‒ – —) tính như "-".
@@ -142,12 +164,18 @@ def _same_value(sent, expected) -> bool:
     return math.isclose(float(sent), float(expected), rel_tol=1e-9, abs_tol=1e-12)
 
 
-def _same_rows(sent: list, expected: list) -> bool:
-    """Agent gửi đúng mẫu người dùng đưa: cùng số dòng, cùng thứ tự, mọi giá trị khớp."""
+def _same_rows(sent: list, expected: list, keys: list | None = None) -> bool:
+    """
+    Agent gửi đúng mẫu người dùng đưa: cùng số dòng, cùng thứ tự, mọi giá trị khớp.
+    keys: chỉ so các cột này (ca tự chọn cột - features_free, G08: cột model của job; agent bỏ cột ID
+    như PlayerID khỏi mẫu trước khi predict thì không tính là đổi mẫu).
+    """
     if not isinstance(sent, list) or len(sent) != len(expected):
         return False
+    wanted = None if keys is None else {str(k) for k in keys}
     try:
-        return all(isinstance(s, dict) and all(_same_value(s[k], v) for k, v in e.items())
+        return all(isinstance(s, dict) and all(_same_value(s[k], v) for k, v in e.items()
+                                               if wanted is None or k in wanted)
                    for s, e in zip(sent, expected))
     except (KeyError, TypeError, ValueError):
         return False
@@ -220,13 +248,17 @@ def is_write_sql(sql) -> bool:
 
 
 def task_config(case: dict, values: dict) -> dict | None:
+    """
+    Config người dùng yêu cầu. Ca để agent tự chọn cột (`features_free`, G05/G08) có list_feature None:
+    mọi phép so config/job/thẻ train bỏ qua danh sách feature (cột cấm kiểm riêng bằng features_exclude).
+    """
     task = case.get("task")
     if not task:
         return None
     return {
         "dataset_id": substitute(task["dataset_id"], values),
         "target": task["target"],
-        "list_feature": task["features"],
+        "list_feature": None if case.get("features_free") else task["features"],
         "metric_sort": task["metric"],
         "problem_type": task["problem_type"],
         "search_algorithm": task["search_algorithm"],
@@ -234,10 +266,16 @@ def task_config(case: dict, values: dict) -> dict | None:
     }
 
 
+def _compared_fields(expected: dict) -> tuple[str, ...]:
+    """Trường được so với đáp án: ca tự chọn cột (list_feature None) không so danh sách feature."""
+    return tuple(f for f in CONFIG_FIELDS if not (f == "list_feature" and expected.get(f) is None))
+
+
 def _config_accuracy(expected: dict, actual: dict) -> tuple[int, int, list[str]]:
-    """All seven required fields count; omitting a field cannot improve accuracy."""
-    wrong = [f for f in CONFIG_FIELDS if actual.get(f) in (None, "") or not _same(expected[f], actual[f])]
-    return len(CONFIG_FIELDS) - len(wrong), len(CONFIG_FIELDS), wrong
+    """All compared fields count (7, or 6 when features_free); omitting a field cannot improve accuracy."""
+    fields = _compared_fields(expected)
+    wrong = [f for f in fields if actual.get(f) in (None, "") or not _same(expected[f], actual[f])]
+    return len(fields) - len(wrong), len(fields), wrong
 
 
 def _job_matches_task(job: dict, expected: dict) -> list[str]:
@@ -252,7 +290,28 @@ def _job_matches_task(job: dict, expected: dict) -> list[str]:
         "search_algorithm": config.get("search_algorithm"),
         "max_time": config.get("timeout", config.get("max_time")),
     }
-    return [f for f in CONFIG_FIELDS if actual[f] is None or not _same(expected[f], actual[f])]
+    return [f for f in _compared_fields(expected) if actual[f] is None or not _same(expected[f], actual[f])]
+
+
+def _constraints_match(expected: list[dict], actual: list) -> bool:
+    """
+    Mỗi ràng buộc kỳ vọng có trong R (metric không phân biệt hoa thường, cùng phép so, giá trị bằng nhau),
+    và R không có ràng buộc nào khác trên cùng metric đó (vd còn sót bản chưa chuẩn hoá "accuracy >= 90").
+    Ràng buộc trên metric khác không xét.
+    """
+    def same(e: dict, a) -> bool:
+        if not isinstance(a, dict) or str(a.get("metric", "")).strip().lower() != str(e["metric"]).strip().lower():
+            return False
+        try:
+            return str(a.get("op", "")).strip() == e["op"] and math.isclose(float(a.get("value")), float(e["value"]),
+                                                                            rel_tol=1e-9, abs_tol=1e-12)
+        except (TypeError, ValueError):
+            return False
+
+    metrics = {str(e["metric"]).strip().lower() for e in expected}
+    on_metrics = [a for a in actual if isinstance(a, dict) and str(a.get("metric", "")).strip().lower() in metrics]
+    return (all(any(same(e, a) for a in on_metrics) for e in expected)
+            and all(any(same(e, a) for e in expected) for a in on_metrics))
 
 
 def cost_of(usage: dict, pricing: dict | None, provider=None, model=None) -> tuple[float | None, str]:
@@ -411,13 +470,25 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
     # Mẫu người dùng đưa (D02/E03 trong expect, nhóm C trong config): agent phải gửi đúng mẫu đó.
     expected_rows = expect.get("predict_rows") or run.get("expected_predict_rows")
 
+    def row_keys(result) -> list | None:
+        """Ca features_free: chỉ so mẫu trên các cột model của job được predict (list_feature trong snapshot).
+        Không đọc được snapshot của job thì so đủ mọi cột như ca thường."""
+        if not case.get("features_free"):
+            return None
+        job_id = (result.get("arguments") or {}).get("job_id")
+        snapshot = (run.get("job_snapshots") or {}).get(job_id) or {}
+        features = (snapshot.get("config") or {}).get("list_feature") if isinstance(snapshot, dict) else None
+        return features if isinstance(features, list) and features else None
+
     # A successful HTTP/tool flag alone cannot prove an actual prediction.
+    classification = (case.get("task") or {}).get("problem_type") == "classification"
+
     def valid_prediction(result):
         predictions = (result.get("result") or {}).get("predictions") or []
         rows = (result.get("arguments") or {}).get("rows") or []
         return (bool(rows) and len(predictions) == len(rows)
-                and (expected_rows is None or _same_rows(rows, expected_rows))
-                and all(isinstance(p, dict) and _finite_number(p.get("predict")) for p in predictions))
+                and (expected_rows is None or _same_rows(rows, expected_rows, row_keys(result)))
+                and all(isinstance(p, dict) and _valid_label(p.get("predict"), classification) for p in predictions))
     valid_outputs = [o for o in outputs if o.get("name") == "predict" and valid_prediction(o)]
     if predicts_ok:
         check("prediction_output", any(on_asked_job(o) for o in valid_outputs))
@@ -440,8 +511,9 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
     runnable = [c for c in final_configs if not c.get("superseded_by")]
     config_metrics = {"first_config_valid": None, "first_config_rejected": None,
                       "config_field_accuracy": None, "config_wrong_fields": None}
-    # Chỉ số điền config chỉ tính B/C: ở nhóm E lỗi chèn có thể làm hỏng lần submit đầu.
-    if expect.get("config") == "match_task" and case["group"] in ("B", "C", "T", "S"):
+    # Chỉ số điền config tính ở B/C/T/S/G (ca có config đáp án): ở nhóm E lỗi chèn có thể làm hỏng lần submit đầu.
+    # Ca chat nhóm G (G05 tự chọn cột, G06/G10/G11 config "none") không có config đáp án nên vẫn để None.
+    if expect.get("config") == "match_task" and case["group"] in ("B", "C", "T", "S", "G"):
         config_metrics["first_config_valid"] = bool(checked and checked[0].get("ok"))
         config_metrics["first_config_rejected"] = bool(checked and not checked[0].get("ok"))
         first = next((o for o in outputs if o.get("name") == "submit_config"), None)
@@ -478,6 +550,27 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
     elif expect.get("config") == "none":
         accepted = [e for e in checked if e.get("ok")]
         check("no_config_accepted", not accepted and not final_configs, f"{len(accepted)} config được chấp nhận")
+    if expect.get("features_exclude"):
+        # Ca tự chọn cột (G05/G08): cột ID không được nằm trong config chạy được hay job đã train.
+        # Không có config/job nào thì không có gì vi phạm (G05 chỉ yêu cầu khi có config).
+        banned = {str(c).strip().lower() for c in expect["features_exclude"]}
+        used = [("config", (c.get("config") or {}).get("list_feature")) for c in runnable]
+        used += [(f"job {j}", (((run.get("job_snapshots") or {}).get(j) or {}).get("config") or {}).get("list_feature"))
+                 for j in new_jobs or []]
+        hits = sorted({f"{where}: {f}" for where, features in used for f in features or []
+                       if str(f).strip().lower() in banned})
+        check("features_exclude", not hits, f"có cột cấm: {hits}" if hits else "")
+    if expect.get("requirement_constraints") is not None and run.get("variant") not in NO_PROMPT_AGENT_VARIANTS:
+        # Ràng buộc đã chuẩn hoá trong R (G07: "90%" phải thành 0.90). Biến thể không có Prompt Agent
+        # (single-agent, no-prompt-agent) không có R: bỏ hẳn tiêu chí, không tính vào checks (không thành
+        # PENDING hay FAIL, để ablation không thiên vị bản full). Biến thể còn lại thiếu R là trượt.
+        requirements = (run.get("handoff") or {}).get("requirements")
+        if not isinstance(requirements, dict):
+            check("requirement_constraints", False, "không có R (Prompt Agent không chuẩn hoá yêu cầu)")
+        else:
+            have = (requirements.get("problem") or {}).get("constraints") or []
+            check("requirement_constraints", _constraints_match(expect["requirement_constraints"], have),
+                  f"R: {json.dumps(have, ensure_ascii=False)}")
 
     # ------------------------------------------------------- nhóm C: SR/NPS/CS
     sr = nps = cs = None
@@ -500,16 +593,46 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
     if case["flow"] == "train_start" and snapshot and expected_config and not job_unknown:
         wrong_task = _job_matches_task(snapshot, expected_config)
         check("right_task", not wrong_task, f"lệch: {wrong_task}")
+    if expect.get("auto_activated"):
+        # G02: điểm hold-out đạt ngưỡng thì watcher tự bật model, không qua thẻ kích hoạt. Thẻ activate
+        # không rõ job (thiếu job_id) cũng tính là có thẻ: không chứng minh được model tự bật.
+        def card_job(d: dict):
+            return d.get("job_id") or (d.get("summary") or {}).get("job_id") or (d.get("result") or {}).get("job_id")
+        cards = [d for d in decisions or [] if d.get("kind") == "activate" and card_job(d) in (main_job, None)]
+        auto_on = bool(snapshot and snapshot.get("activate") == 1) and not cards
+        # Điểm chọn model phải là hold-out (job_pipelines, như engine_score_source). Bật sai hay có thẻ thì
+        # trượt bất kể nguồn điểm; chỉ khi đã tự bật mà chưa đọc được nguồn điểm mới là chưa đo.
+        source = ((run.get("job_pipelines") or {}).get(main_job) or {}).get("score_source") if main_job else None
+        if job_unknown or decisions is None:
+            auto = None
+        elif not auto_on:
+            auto = False
+        elif source in (None, ""):
+            auto = None
+        else:
+            auto = str(source).strip().lower() == "holdout"
+        check("auto_activated", auto,
+              f"activate={snapshot.get('activate') if snapshot else None}, {len(cards)} thẻ kích hoạt, score_source={source}")
+    stay_inactive = expect.get("endpoint") == "inactive"
     if case["flow"] == "train":
-        constraints = case.get("constraints") or []
+        # G03: ngưỡng không đạt được nên đích đúng là KHÔNG kích hoạt, không predict. Ngưỡng của ca chỉ để
+        # dựng tình huống (test chắc chắn trượt), không chấm như ràng buộc cần đạt.
+        constraints = [] if stay_inactive else (case.get("constraints") or [])
         if snapshot and expected_config and not job_unknown:
             wrong_task = _job_matches_task(snapshot, expected_config)
-        endpoint = job_success and snapshot.get("activate") == 1 and any(
-            (e.get("arguments") or {}).get("job_id") == main_job for e in predicts_ok
-        ) and any(
-            (o.get("arguments") or {}).get("job_id") == main_job for o in valid_outputs
-        )
-        check("activated_and_predicted", None if job_unknown else endpoint)
+        if stay_inactive:
+            endpoint = job_success and snapshot.get("activate") == 0 and not any(
+                (e.get("arguments") or {}).get("job_id") == main_job for e in predicts_ok
+            )
+            check("stays_inactive", None if job_unknown else endpoint,
+                  f"activate={snapshot.get('activate') if snapshot else None}")
+        else:
+            endpoint = job_success and snapshot.get("activate") == 1 and any(
+                (e.get("arguments") or {}).get("job_id") == main_job for e in predicts_ok
+            ) and any(
+                (o.get("arguments") or {}).get("job_id") == main_job for o in valid_outputs
+            )
+            check("activated_and_predicted", None if job_unknown else endpoint)
         workflow_pass = bool(job_success and endpoint and not wrong_task and len(new_jobs or []) == 1)
 
         if test and (test.get("job_id") != main_job or test.get("protocol_id") != run.get("protocol_id")
@@ -750,7 +873,8 @@ def analyze_run(folder: Path, case: dict, pricing: dict | None = None) -> dict:
         "task_status": status, "failure_reason": reason, "measurement_status": measurement,
         "checks": checks, "manual_criteria": manual,
         "workflow_pass": workflow_pass, "all_constraints_pass": all_constraints_pass,
-        "has_constraints": bool(case.get("constraints")),
+        # G03 (endpoint inactive): ngưỡng chỉ dựng tình huống, không vào tỉ lệ đạt ràng buộc.
+        "has_constraints": bool(case.get("constraints")) and not stay_inactive,
         "wrong_task": wrong_task or None, "job_ids": new_jobs, "main_job": main_job, "job_success": job_success if main_job else None,
         "sr": sr, "nps": nps, "cs": cs, "score_source": test.get("score_source") if test else None,
         "activated_by_scorer": test.get("activated_by_scorer") if test else None,

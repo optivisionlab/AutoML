@@ -24,6 +24,28 @@ CLASSIFICATION, REGRESSION, TIME_SERIES = "classification", "regression", "time_
 PROBLEM_TYPES = (CLASSIFICATION, REGRESSION, TIME_SERIES)
 
 
+def normalize_label(value):
+    """
+    Nhãn phân loại về dạng so sánh được: nếu ép được thành số hữu hạn thì là float ("4.0", 4, 4.0 -> 4.0),
+    ngược lại là chuỗi đã strip() ("<=50K", " >50K " -> ">50K"). Dùng cho cả nhãn thật lẫn dự đoán.
+    """
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        text = str(value).strip()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if not math.isfinite(number):
+            return text
+    if not math.isfinite(number):
+        raise ValueError("Nhãn là NaN/Inf.")
+    return number
+
+
 def _check_pairs(y_true: Sequence, y_pred: Sequence) -> int:
     n = len(y_true)
     if not n or len(y_pred) != n:
@@ -191,7 +213,8 @@ def compute(problem_type: str, y_true: Sequence, y_pred: Sequence, proba=None, c
         raise ValueError("Loại bài toán không hợp lệ.")
     if problem_type == CLASSIFICATION:
         _check_pairs(y_true, y_pred)
-        _check_finite(list(y_true) + list(y_pred))
+        y_true = [normalize_label(v) for v in y_true]
+        y_pred = [normalize_label(v) for v in y_pred]
         return classification_metrics(y_true, y_pred, proba, classes)
     if problem_type == TIME_SERIES:
         return time_series_metrics(y_true, y_pred)

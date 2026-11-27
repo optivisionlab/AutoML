@@ -56,6 +56,9 @@ def card_mismatch(summary: dict, expected: dict | None) -> list[str]:
             wrong.append("max_time")
     except (TypeError, ValueError, KeyError):
         wrong.append("max_time")
+    if "list_feature" in expected and expected["list_feature"] is None:
+        # Ca để agent tự chọn cột (features_free, G05/G08): không so danh sách feature trên thẻ.
+        return wrong
     wanted = {str(f) for f in expected.get("list_feature") or []}
     shown = {str(f) for f in summary.get("features") or []}
     count = summary.get("feature_count")
