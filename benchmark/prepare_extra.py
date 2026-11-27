@@ -10,6 +10,8 @@ File chia giữ đúng thứ tự cột của file gốc (wilt có target `class
 manifest ghi `columns` (header đầy đủ), `features` (mọi cột trừ target, theo thứ tự gốc) và `target`.
 """
 
+from __future__ import annotations
+
 # Standard libraries
 import hashlib
 import json
@@ -18,8 +20,12 @@ import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
-# Third-party
-import pandas as pd
+# Third-party: pandas chỉ cần khi dựng split (prepare-extra); preflight/setup-account chỉ đọc hằng số và manifest,
+# nên không bắt môi trường chạy benchmark phải có pandas.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # Local modules
 from benchmark.common import ARTIFACTS, load_json
@@ -92,6 +98,8 @@ def _cv_score(train: pd.DataFrame, target: str, metric: str) -> float:
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
+    import pandas as pd
+
     features = _features(train, target)
     numeric = [c for c in features if pd.to_numeric(train[c], errors="coerce").notna().all()]
     text = [c for c in features if c not in numeric]
@@ -111,6 +119,8 @@ def cv_threshold(train: pd.DataFrame, target: str, metric: str) -> float:
 
 
 def _read_raw(name: str) -> pd.DataFrame:
+    import pandas as pd
+
     return pd.read_csv(RAW_DIR / SPECS[name]["raw"], dtype=str, keep_default_na=False)
 
 
