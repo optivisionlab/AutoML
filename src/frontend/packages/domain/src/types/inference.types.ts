@@ -32,6 +32,8 @@ export interface CodeSnippets {
 
 export interface DeploymentInfoResponseData {
   job_id: string;
+  /** Dataset đã train job này (DeploymentInfoResponse.dataset_id của backend). */
+  dataset_id?: string | null;
   model_name: string;
   status: "ACTIVE" | "INACTIVE" | string;
   activate: 0 | 1 | number;

@@ -13,7 +13,9 @@
     "lint": "next lint apps/web",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
     "typecheck:packages": "tsc -p packages/domain/tsconfig.json --noEmit && tsc -p packages/api/tsconfig.json --noEmit",
-    "typecheck:all": "npm run typecheck:packages && npm run typecheck"
+    "typecheck:all": "npm run typecheck:packages && npm run typecheck",
+    "test:agent": "tsc apps/web/src/features/agent/lib/eventAdapter.test.ts --outDir node_modules/.cache/agent-test --module commonjs --target es2020 --moduleResolution node --esModuleInterop --skipLibCheck --types node && node --test \"node_modules/.cache/agent-test/**/*.test.js\"",
+    "test:connections": "tsc apps/web/src/features/database-connections/lib/connectionForm.test.ts --outDir node_modules/.cache/connections-test --module commonjs --target es2020 --moduleResolution node --esModuleInterop --skipLibCheck --types node && node node_modules/.cache/connections-test/connectionForm.test.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

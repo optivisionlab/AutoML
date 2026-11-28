@@ -7,4 +7,4 @@ export * from "./types/job.types";
 export * from "./types/pipeline.types";
 export * from "./types/inference.types";
 export * from "./types/notification.types";
-
+export * from "./types/databaseConnection.types";

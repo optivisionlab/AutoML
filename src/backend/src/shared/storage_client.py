@@ -46,9 +46,12 @@ class S3Storage:
     def _clean_endpoint(raw_url: str) -> str:
         if not raw_url:
             return ""
-        parsed = urlparse(raw_url)
-        endpoint = parsed.netloc if parsed.netloc else parsed.path
-        return endpoint.strip("/")
+        raw_url = raw_url.strip()
+        # Without "//", urlparse treats "minio:9000" as scheme="minio",
+        # path="9000", silently discarding the hostname.
+        if "://" not in raw_url and not raw_url.startswith("//"):
+            raw_url = f"//{raw_url}"
+        return urlparse(raw_url).netloc
 
     def _init_client(self) -> None:
         if not self.endpoint or not self.access_key:

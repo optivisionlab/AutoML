@@ -4,3 +4,4 @@ pytest-asyncio==0.25.2
 pytest-mock==3.14.0
 pytest-cov==6.0.0
 httpx==0.28.1
+mongomock==4.3.0

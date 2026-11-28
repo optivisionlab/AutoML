@@ -334,6 +334,29 @@ class TestDatasetServiceLogic(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(df_read), 2)
         self.assertListEqual(list(df_read.columns), ["x", "y"])
 
+    def test_xlsx_zip_bomb_is_rejected_before_pandas_reads_it(self):
+        # Review 2026-11-08: vài MB nén giải ra hàng GB XML -> tiến trình API hết RAM khi pd.read_excel.
+        import zipfile
+        bomb = io.BytesIO()
+        with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("xl/worksheets/sheet1.xml", b"0" * 5_000)
+        bomb.seek(0)
+        with patch.object(type(self.service), "XLSX_MAX_UNCOMPRESSED_BYTES", 1_000), \
+                patch("pandas.read_excel") as read_excel:
+            with self.assertRaises(ValueError) as ctx:
+                self.service._process_stream_to_parquet(bomb, "data.xlsx")
+        self.assertIn("giải nén ra quá lớn", str(ctx.exception))
+        read_excel.assert_not_called()
+        with self.assertRaises(ValueError):
+            self.service._process_stream_to_parquet(io.BytesIO(b"PK\x03\x04" + b"0" * 100), "data.xlsx")
+        # XLSX đặt tên .xls: pandas vẫn nhận ra nội dung XLSX -> phải kiểm theo NỘI DUNG, không theo đuôi.
+        bomb.seek(0)
+        with patch.object(type(self.service), "XLSX_MAX_UNCOMPRESSED_BYTES", 1_000), \
+                patch("pandas.read_excel") as read_excel:
+            with self.assertRaises(ValueError):
+                self.service._process_stream_to_parquet(bomb, "bomb.xls")
+        read_excel.assert_not_called()
+
     @patch("src.shared.minio_service.upload_file_stream", new_callable=AsyncMock)
     @patch("src.shared.minio_service.upload_dataset", new_callable=AsyncMock)
     async def test_upload_and_process_dataset_table_and_image(self, mock_upload_dataset, mock_upload_stream):

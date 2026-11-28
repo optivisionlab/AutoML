@@ -29,6 +29,8 @@ export default withAuth(
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/agent/:path*",
+    "/database-connections/:path*",
     "/profile/:path*",
     "/datasets/:path*",
     "/public-datasets/:path*",

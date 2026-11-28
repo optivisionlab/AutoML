@@ -210,3 +210,5 @@ next-env.d.ts
 .gradio
 *.swp
 src/frontend/components.json
+# File kết quả benchmark
+benchmark_artifacts/ 

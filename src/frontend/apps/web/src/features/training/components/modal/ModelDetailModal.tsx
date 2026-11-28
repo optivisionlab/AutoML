@@ -21,7 +21,6 @@ import {
   Sliders,
   XCircle,
 } from "lucide-react";
-import toTitleLabel from "@/shared/utils/toTitleLable";
 import { formatPipelineValue } from "@/features/training/utils/pipelineGraphBuilder";
 import { cn } from "@/shared/lib/utils";
 

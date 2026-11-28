@@ -1,0 +1,47 @@
+# Postgres + MySQL THẬT để test nguồn dữ liệu PostgreSQL / MySQL của SQL agent (chỉ dùng cho test).
+#   docker compose -f src/backend/tests/sql_sources/docker-compose.yml up -d --wait
+#   (chạy test: xem src/backend/tests/integration/test_sql_server_sources.py)
+#   docker compose -f src/backend/tests/sql_sources/docker-compose.yml down -v
+# Dữ liệu: bộ Glass (UCI) thật ở tests/fixtures/glass.csv. Server cố ý để chế độ chuỗi BẤT LỢI
+# (Postgres standard_conforming_strings=off; MySQL ANSI_QUOTES + NO_BACKSLASH_ESCAPES) để kiểm bộ
+# chạy tự ép lại chế độ an toàn trong phiên, không bị lệch cách hiểu chuỗi.
+name: hautoml-sql-sources
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hautoml-test-postgres
+    command: ["postgres", "-c", "standard_conforming_strings=off"]
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin-test-password
+      POSTGRES_DB: lab
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ../fixtures/glass.csv:/fixtures/glass.csv:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d lab"]
+      interval: 2s
+      retries: 30
+
+  mysql:
+    image: mysql:8.4
+    container_name: hautoml-test-mysql
+    command: ["--sql-mode=ANSI_QUOTES,NO_BACKSLASH_ESCAPES,PIPES_AS_CONCAT,STRICT_TRANS_TABLES"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root-test-password
+      MYSQL_DATABASE: lab
+    ports:
+      - "127.0.0.1:53306:3306"
+    volumes:
+      # Entrypoint MySQL đổi chủ sở hữu thư mục secure_file_priv: chép CSV vào trong container lúc
+      # khởi tạo thay vì mount thẳng (không đụng tới file trong repo).
+      - ./mysql-copy.sh:/docker-entrypoint-initdb.d/01-copy.sh:ro
+      - ./mysql-init.sql:/docker-entrypoint-initdb.d/02-init.sql:ro
+      - ../fixtures/glass.csv:/seed/glass.csv:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -uhautoml_ro -pro-test-password -e 'SELECT COUNT(*) FROM lab.glass' lab"]
+      interval: 3s
+      retries: 60

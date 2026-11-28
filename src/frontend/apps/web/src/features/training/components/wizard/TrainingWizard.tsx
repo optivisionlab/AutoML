@@ -523,7 +523,7 @@ export default function TrainingWizard({
                               >
                                 <div className="min-w-0 flex items-center gap-1.5">
                                   <span className="truncate">{feature}</span>
-                                  {recommended && (
+                                  {recommended === true && (
                                     <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                                       {t("step4.recommended")}
                                     </span>
