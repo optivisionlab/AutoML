@@ -75,14 +75,13 @@ def mock_mqtt(monkeypatch):
 @pytest.fixture
 def mock_mapreduce(monkeypatch):
     """
-    Mock PyMapReduce Manager for cluster operations
+    Mock Ray Manager for cluster operations
     """
     mock_mgr = MagicMock()
-    mock_driver = MagicMock()
-    mock_mgr.get_driver = AsyncMock(return_value=mock_driver)
+    mock_mgr.get_driver = AsyncMock(return_value=None)
     mock_mgr.shutdown = AsyncMock()
     
-    monkeypatch.setattr("src.shared.MapReduceManager", mock_mgr)
+    monkeypatch.setattr("src.shared.RayManager", mock_mgr)
     return mock_mgr
 
 
@@ -125,10 +124,10 @@ def mock_lifespan_services(monkeypatch):
     """
     monkeypatch.setattr("src.config.databases.DatabaseManager.connection", AsyncMock())
     monkeypatch.setattr("src.config.databases.DatabaseManager.close_connection", AsyncMock())
-    monkeypatch.setattr("src.shared.MapReduceManager.get_driver", AsyncMock())
-    monkeypatch.setattr("src.shared.MapReduceManager.shutdown", AsyncMock())
-    monkeypatch.setattr("src.shared.mapreduce_client.MapReduceManager.get_driver", AsyncMock())
-    monkeypatch.setattr("src.shared.mapreduce_client.MapReduceManager.shutdown", AsyncMock())
+    monkeypatch.setattr("src.shared.RayManager.get_driver", AsyncMock())
+    monkeypatch.setattr("src.shared.RayManager.shutdown", AsyncMock())
+    monkeypatch.setattr("src.shared.mapreduce_client.RayManager.get_driver", AsyncMock())
+    monkeypatch.setattr("src.shared.mapreduce_client.RayManager.shutdown", AsyncMock())
     monkeypatch.setattr("src.main.mqtt_service.connect", AsyncMock())
     monkeypatch.setattr("src.main.mqtt_service.disconnect", AsyncMock())
     monkeypatch.setattr("src.main.kafka_service.connect", AsyncMock())

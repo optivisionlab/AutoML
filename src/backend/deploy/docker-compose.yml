@@ -15,6 +15,9 @@ services:
     environment:
       - GRADIO_SERVER_NAME=0.0.0.0
       - GRADIO_SERVER_PORT=7860
+      - GRADIO_IN_BROWSER=False
+      - RAY_MODE=local
+      - RAY_HEAD_ADDRESS=localhost:7777
     networks:
       - hautoml_net
 
@@ -27,6 +30,8 @@ services:
       dockerfile: deploy/Dockerfile
       target: production
     container_name: hautoml_service
+    # Ray (engine train/predict) dùng /dev/shm làm object store; mặc định Docker chỉ 64MB.
+    shm_size: "2gb"
     restart: unless-stopped
     command: ["python", "-m", "src.main"]
     volumes:
@@ -64,6 +69,8 @@ services:
       dockerfile: deploy/Dockerfile
       target: production
     container_name: hautoml_consumer
+    # Ray (engine train/predict) dùng /dev/shm làm object store; mặc định Docker chỉ 64MB.
+    shm_size: "4gb"
     restart: unless-stopped
     command: ["python", "-m", "src.kafka_consumer"]
     env_file:

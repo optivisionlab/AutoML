@@ -2,7 +2,7 @@ from src.shared.email import email_service
 from src.shared.mqtt_client import mqtt_service
 from src.shared.kafka_client import kafka_service
 from src.shared.storage_client import minio_service, backblaze_service
-from src.shared.mapreduce_client import MapReduceManager, ModelInferenceActor
+from src.shared.distributed_client import RayManager, ModelInferenceActor
 
 
 __all__ = [
@@ -11,6 +11,6 @@ __all__ = [
     "minio_service",
     "backblaze_service",
     "email_service",
-    "MapReduceManager",
+    "RayManager",
     "ModelInferenceActor"
 ]

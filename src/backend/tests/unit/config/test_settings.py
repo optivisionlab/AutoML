@@ -29,10 +29,8 @@ class TestSettings(unittest.TestCase):
         self.assertIsInstance(settings.BACKEND.PORT, int)
         self.assertGreater(settings.BACKEND.PORT, 0)
 
-    def test_pymapreduce_settings(self):
-        self.assertIn(settings.PYMAPREDUCE.MODE, ["cluster", "local"])
-        self.assertIsNotNone(settings.PYMAPREDUCE.HEAD_ADDRESS)
-        if settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT is not None:
-            self.assertGreaterEqual(settings.PYMAPREDUCE.WORKER_IDLE_TIMEOUT, 0)
-        if settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT is not None:
-            self.assertGreaterEqual(settings.PYMAPREDUCE.ACTOR_IDLE_TIMEOUT, 0)
+    def test_ray_settings(self):
+        self.assertIn(settings.RAY.MODE, ["cluster", "local"])
+        self.assertIsNotNone(settings.RAY.HEAD_ADDRESS)
+        if settings.RAY.ACTOR_IDLE_TIMEOUT is not None:
+            self.assertGreaterEqual(settings.RAY.ACTOR_IDLE_TIMEOUT, 0)

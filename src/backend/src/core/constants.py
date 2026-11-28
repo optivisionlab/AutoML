@@ -28,7 +28,7 @@ class ProblemType(str):
     TIME_SERIES = "time_series"
 
 
-class MapReduceMode(str):
+class RayMode(str):
     LOCAL = "local"
     CLUSTER = "cluster"
 

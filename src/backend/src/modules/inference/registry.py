@@ -4,11 +4,11 @@ import asyncio
 from typing import Any
 
 # Third-party Libraries
-import pymapreduce
+import ray
 
 # Local Libraries
 from src.config import settings
-from src.shared import MapReduceManager, ModelInferenceActor
+from src.shared import RayManager, ModelInferenceActor
 
 
 # Logging
@@ -40,9 +40,9 @@ class InferenceActorRegistry:
             if not object_name:
                 raise ValueError(f"Storage path for job '{job_id}' is empty or invalid.")
 
-            await MapReduceManager.get_driver()
+            await RayManager.get_driver()
 
-            actor_handle = await ModelInferenceActor.remote(
+            actor_handle = ModelInferenceActor.remote(
                 bucket_name=bucket_name,
                 object_name=object_name,
                 minio_endpoint=settings.MINIO.ENDPOINT,
@@ -73,7 +73,7 @@ class InferenceActorRegistry:
         actor_handle = cls._actors.pop(job_id, None)
         if actor_handle is not None:
             try:
-                await pymapreduce.kill(actor_handle)
+                ray.kill(actor_handle)
             except Exception as e:
                 logger.warning(f"Error while killing actor for job '{job_id}': {e}")
             return True
@@ -84,11 +84,7 @@ class InferenceActorRegistry:
         async with cls._get_lock():
             for job_id, handle in list(cls._actors.items()):
                 try:
-                    await pymapreduce.kill(handle)
+                    ray.kill(handle)
                 except Exception as e:
                     logger.debug(f"Error destroying actor '{job_id}': {e}")
             cls._actors.clear()
-
-
-# Alias for compatibility
-InferenceModelRegistry = InferenceActorRegistry

@@ -4,7 +4,7 @@ import logging
 
 # Local Libraries
 from src.config import setup_logging, settings, databases
-from src.shared import kafka_service, minio_service, MapReduceManager, mqtt_service
+from src.shared import kafka_service, minio_service, RayManager, mqtt_service
 from src.modules.trainings import TrainingRepository, TrainingService
 from src.modules.notifications import NotificationRepository, NotificationService
 
@@ -24,7 +24,7 @@ async def start_training_consumer() -> None:
     try:
         logger.info("Initializing Training Consumer resources...")
         await databases.DatabaseManager.connection()
-        await MapReduceManager.get_driver()
+        await RayManager.get_driver()
         await mqtt_service.connect()
 
         # Instantiate Repositories and Services
@@ -95,9 +95,9 @@ async def start_training_consumer() -> None:
             logger.debug(f"Error disconnecting Kafka: {e}")
 
         try:
-            await MapReduceManager.shutdown()
+            await RayManager.shutdown()
         except Exception as e:
-            logger.debug(f"Error shutting down MapReduce: {e}")
+            logger.debug(f"Error shutting down Ray: {e}")
 
         try:
             await minio_service.close()
