@@ -13,7 +13,8 @@
     "lint": "next lint apps/web",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit",
     "typecheck:packages": "tsc -p packages/domain/tsconfig.json --noEmit && tsc -p packages/api/tsconfig.json --noEmit",
-    "typecheck:all": "npm run typecheck:packages && npm run typecheck"
+    "typecheck:all": "npm run typecheck:packages && npm run typecheck",
+    "test:pipeline": "tsc apps/web/src/features/training/utils/pipelineRealtime.test.ts --outDir node_modules/.cache/pipeline-test --module commonjs --target es2020 --moduleResolution node --esModuleInterop --skipLibCheck --types node && node node_modules/.cache/pipeline-test/utils/pipelineRealtime.test.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

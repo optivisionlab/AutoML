@@ -2,13 +2,16 @@ import { AxiosInstance } from "axios";
 import {
   ActivateModelPayload,
   ActiveModelsResponse,
+  BaseResponse,
   CancelJobResponse,
   DeploymentInfoResponse,
+  JobDetailResponse,
   JobsListParams,
   JobsListResponse,
   PredictionFile,
   RealtimePredictPayload,
   RealtimePredictResponse,
+  TrainingJob,
   UniversalFile,
 } from "@automl/domain";
 import { appendUniversalFile } from "../form-data";
@@ -28,8 +31,26 @@ export const createInferenceService = (client: AxiosInstance) => ({
     return res.data;
   },
 
+  // GET /api/v1/inference/jobs/{id}
+  getJobDetail: async (jobId: string): Promise<JobDetailResponse | TrainingJob> => {
+    const res = await client.get<JobDetailResponse | TrainingJob>(
+      `/api/v1/inference/jobs/${jobId}`,
+    );
+    return res.data;
+  },
+
+  // GET /api/v1/inference/jobs/{id}/pipeline
+  getJobPipeline: async (jobId: string): Promise<JobDetailResponse> => {
+    const res = await client.get<JobDetailResponse>(
+      `/api/v1/inference/jobs/${jobId}/pipeline`,
+    );
+    return res.data;
+  },
+
   // 6.2 POST /api/v1/inference/jobs/{id}/cancel
-  cancelJob: async (jobId: string): Promise<CancelJobResponse> => {
+  cancelJob: async (
+    jobId: string,
+  ): Promise<CancelJobResponse> => {
     const res = await client.post<CancelJobResponse>(
       `/api/v1/inference/jobs/${jobId}/cancel`,
     );

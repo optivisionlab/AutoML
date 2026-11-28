@@ -4,8 +4,14 @@ export { ModelParamsChips } from "./components/cards/ModelParamsChips";
 export { ModelDetailModal, type ModelDetailData } from "./components/modal/ModelDetailModal";
 export { default as ProgressMap } from "./components/progress-map/ProgressMap";
 export { default as TrainingWizard } from "./components/wizard/TrainingWizard";
+export {
+  usePipelineRealtime,
+  applyPipelineEvent,
+  mergePipelineWithSnapshot,
+  type PipelineMqttStatus,
+  type UsePipelineRealtimeOptions,
+  type UsePipelineRealtimeResult,
+} from "./hooks/usePipelineRealtime";
 export * from "./constants/progressMapSample";
 export * from "./constants/pipelineFixtures";
 export * from "./utils/pipelineGraphBuilder";
-
-

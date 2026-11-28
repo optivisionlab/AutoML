@@ -1,15 +1,18 @@
 export type PipelineNodeStatus =
   | "queued"
+  | "pending"
   | "running"
   | "succeeded"
+  | "done"
+  | "success"
+  | "completed"
   | "failed"
+  | "error"
   | "skipped"
   | "cancelled"
-  | "pending"
-  | "done"
-  | "completed"
-  | "error"
   | null;
+
+export type PipelineTrialStatus = PipelineNodeStatus | "pruned";
 
 export interface PipelineError {
   message?: string;
@@ -37,6 +40,8 @@ export interface ReadDatasetParams {
 export interface ReadDatasetOutput {
   data_url?: string | null;
   cache_hit?: boolean | null;
+  n_rows?: number | null;
+  n_columns?: number | null;
   [key: string]: unknown;
 }
 
@@ -51,6 +56,7 @@ export interface SplitHoldoutParams {
 export interface SplitHoldoutOutput {
   train_rows?: number | null;
   holdout_rows?: number | null;
+  reason?: string | null;
   [key: string]: unknown;
 }
 
@@ -91,9 +97,8 @@ export interface PreprocessingOutput {
   [key: string]: unknown;
 }
 
-
 export interface ModelSelectionParams {
-  problem_type?: string;
+  problem_type?: string | null;
   model_names?: string[];
   search_algorithm?: string | null;
   max_time?: number | string | null;
@@ -101,10 +106,10 @@ export interface ModelSelectionParams {
   metric_sort?: string | null;
   metrics?: Record<string, string>;
   cv?: {
-    name?: string;
-    n_splits?: number;
-    n_repeats?: number;
-    description?: string;
+    name?: string | null;
+    n_splits?: number | null;
+    n_repeats?: number | null;
+    description?: string | null;
     [key: string]: unknown;
   } | null;
   split?: {
@@ -117,20 +122,38 @@ export interface ModelSelectionParams {
   [key: string]: unknown;
 }
 
-export interface ModelTrial {
-  params: Record<string, unknown>;
-  status: "succeeded" | "pruned" | string;
-  scores: Record<string, number | null>;
+export interface ModelTrialDetail {
+  trial_id?: number;
+  number?: number;
+  status?: PipelineTrialStatus | string;
+  params?: Record<string, unknown> | null;
+  scores?: Record<string, number | null> | null;
+  cv_scores?: Record<string, number | null> | null;
+  duration_sec?: number | null;
+  started_at?: string | number | null;
+  finished_at?: string | number | null;
+  error?: string | null;
+  [key: string]: unknown;
 }
+
+export type ModelTrial = ModelTrialDetail;
 
 export interface ModelScoreDetail {
   status: PipelineNodeStatus;
   error?: string | PipelineError | null;
+  started_at?: string | number | null;
+  finished_at?: string | number | null;
+  // Pipeline v2.0.0 schema fields
+  trials?: ModelTrialDetail[] | null;
   best_trial?: number | null;
-  trials?: ModelTrial[] | null;
-  holdout_scores?: Record<string, number> | null;
+  best_scores?: Record<string, number | null> | null;
+  holdout_scores?: Record<string, number | null> | null;
+  n_trials?: number | null;
+  n_pruned?: number | null;
+  // Pipeline v1.0.0 backward-compatible fields
   best_params?: Record<string, unknown> | null;
-  scores?: Record<string, number> | null;
+  scores?: Record<string, number | null> | null;
+  [key: string]: unknown;
 }
 
 export interface TrainOutput {
@@ -145,6 +168,9 @@ export interface SelectBestParams {
 
 export interface SelectBestOutput {
   best_model?: string | null;
+  best_trial?: number | null;
+  best_scores?: Record<string, number | null> | null;
+  holdout_scores?: Record<string, number | null> | null;
   score_source?: "holdout" | "cv" | string | null;
   time_limit_reached?: boolean | null;
   [key: string]: unknown;
@@ -157,6 +183,7 @@ export interface SaveResultParams {
 
 export interface SaveResultOutput {
   object_name?: string | null;
+  pipeline_object_name?: string | null;
   [key: string]: unknown;
 }
 
@@ -164,9 +191,12 @@ export interface PipelineData {
   job_id?: string | null;
   version?: string;
   mode?: string;
-  source?: "tracked" | "legacy" | string;
+  source?: "tracked" | "legacy" | string | null;
   status?: PipelineNodeStatus;
   error?: string | PipelineError | null;
+  seq?: number;
+  started_at?: string | number | null;
+  finished_at?: string | number | null;
   updated_at?: string | number | null;
   read_dataset?: PipelineBaseNode<ReadDatasetParams, ReadDatasetOutput>;
   split_holdout_data?: PipelineBaseNode<SplitHoldoutParams, SplitHoldoutOutput>;
@@ -178,6 +208,69 @@ export interface PipelineData {
   save_result?: PipelineBaseNode<SaveResultParams, SaveResultOutput>;
   [customNodeKey: string]: unknown;
 }
+
+export interface PipelineNodeStartedEvent {
+  event: "node_started";
+  job_id: string;
+  seq?: number;
+  node: string;
+  status: "running" | PipelineNodeStatus;
+  at?: string;
+}
+
+export interface PipelineNodeFinishedEvent {
+  event: "node_finished";
+  job_id: string;
+  seq?: number;
+  node: string;
+  status: PipelineNodeStatus;
+  output?: Record<string, unknown> | null;
+  error?: string | null;
+  at?: string;
+}
+
+export interface PipelineModelFinishedEvent {
+  event: "model_finished";
+  job_id: string;
+  seq?: number;
+  node?: string;
+  model_name: string;
+  status: PipelineNodeStatus;
+  best_trial?: number | null;
+  best_scores?: Record<string, number | null> | null;
+  best_params?: Record<string, unknown> | null;
+  holdout_scores?: Record<string, number | null> | null;
+  n_trials?: number | null;
+  n_pruned?: number | null;
+  error?: string | null;
+  at?: string;
+}
+
+export interface PipelineJobFinishedEvent {
+  event: "job_finished";
+  job_id: string;
+  seq?: number;
+  status: PipelineNodeStatus;
+  best_model?: string | null;
+  holdout_scores?: Record<string, number | null> | null;
+  error?: string | null;
+  at?: string;
+}
+
+export interface PipelineSnapshotEvent {
+  event: "snapshot";
+  job_id: string;
+  seq?: number;
+  pipeline: PipelineData;
+  at?: string;
+}
+
+export type PipelineRealtimeEvent =
+  | PipelineNodeStartedEvent
+  | PipelineNodeFinishedEvent
+  | PipelineModelFinishedEvent
+  | PipelineJobFinishedEvent
+  | PipelineSnapshotEvent;
 
 export interface GetPipelineSamplePayload {
   problem_type: string;

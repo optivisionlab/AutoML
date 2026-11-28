@@ -23,6 +23,10 @@ import {
   TrainingJob,
   useGetLegacyJobsByUserIdQuery,
 } from "@/core/api/jobApi";
+import {
+  isJobActive,
+  isJobCompleted,
+} from "@/features/training/utils/pipelineGraphBuilder";
 import { cn } from "@/shared/lib/utils";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -41,8 +45,8 @@ const formatDate = (timestamp: number | undefined, locale: string, fallback: str
 const formatPercent = (value?: number) =>
   value === undefined ? "--" : `${(value * 100).toFixed(1)}%`;
 
-const isCompleted = (status: number | string) => Number(status) === 1;
-const isRunning = (status: number | string) => Number(status) === 0;
+const isCompleted = (status: number | string) => isJobCompleted(status);
+const isRunning = (status: number | string) => isJobActive(status);
 
 const getDatasetTime = (dataset: Dataset) =>
   dataset.latestUpdate || dataset.lastestUpdate || dataset.createDate || 0;
@@ -193,7 +197,8 @@ export default function DashboardPage() {
         };
       }),
       ...jobs.map((job, idx) => {
-        const jobId = job.job_id || job._id || `job-${idx}`;
+        const targetId = job.job_id || job._id;
+        const jobId = targetId || `job-${idx}`;
         return {
           id: `job-${jobId}`,
           title: isCompleted(job.status)
@@ -205,9 +210,7 @@ export default function DashboardPage() {
             job.best_score !== undefined ? ` · ${formatPercent(job.best_score)}` : ""
           }`,
           timestamp: getJobTime(job),
-          href: isCompleted(job.status)
-            ? `/training-history/${jobId}`
-            : `/training-history?highlight=${jobId}`,
+          href: targetId ? `/training-history/${targetId}` : "/training-history",
           icon: isCompleted(job.status)
             ? CheckCircle2
             : isRunning(job.status)
@@ -476,10 +479,11 @@ export default function DashboardPage() {
                 {dashboard.recentJobs.length > 0 ? (
                   dashboard.recentJobs.map((job, idx) => {
                     const done = isCompleted(job.status);
-                    const jobId = job.job_id || job._id || `recent-${idx}`;
-                    const href = done
-                      ? `/training-history/${jobId}`
-                      : `/training-history?highlight=${jobId}`;
+                    const targetId = job.job_id || job._id;
+                    const jobId = targetId || `recent-${idx}`;
+                    const href = targetId
+                      ? `/training-history/${targetId}`
+                      : "/training-history";
 
                     return (
                       <tr

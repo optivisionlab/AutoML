@@ -4,11 +4,14 @@ import {
   type ActiveModelsResponse,
   type CancelJobResponse,
   type DeploymentInfoResponse,
+  type JobDetailPayload,
+  type JobDetailResponse,
   type JobsListParams,
   type JobsListResponse,
   type PredictionFile,
   type RealtimePredictPayload,
   type RealtimePredictResponse,
+  type TrainingJob,
 } from "@automl/domain";
 import { appendUniversalFile, resolveFileName } from "@automl/api";
 import { axiosClient, baseApi } from "./baseApi";
@@ -18,11 +21,13 @@ export type {
   ActiveModelsResponse,
   CancelJobResponse,
   DeploymentInfoResponse,
+  JobDetailResponse,
   JobsListParams,
   JobsListResponse,
   PredictionFile,
   RealtimePredictPayload,
   RealtimePredictResponse,
+  TrainingJob,
 };
 
 export const inferenceApi = baseApi.injectEndpoints({
@@ -39,6 +44,25 @@ export const inferenceApi = baseApi.injectEndpoints({
         },
       }),
       providesTags: ["Job"],
+    }),
+
+    // GET /api/v1/inference/jobs/{id}
+    getTrainingJobById: builder.query<JobDetailPayload, string>({
+      query: (id) => ({
+        url: `/api/v1/inference/jobs/${id}`,
+      }),
+      transformResponse: (response: JobDetailResponse | JobDetailPayload) =>
+        response &&
+        typeof response === "object" &&
+        "data" in response &&
+        response.data &&
+        typeof response.data === "object" &&
+        !("_id" in response) &&
+        !("read_dataset" in response) &&
+        !("train" in response)
+          ? (response.data as JobDetailPayload)
+          : (response as JobDetailPayload),
+      providesTags: (_result, _error, id) => [{ type: "Job", id }],
     }),
 
     // 5.2 GET /api/v1/inference/models
@@ -304,10 +328,12 @@ export const {
   useExportNotebookMutation,
   useGetActiveModelsQuery,
   useGetModelDeploymentInfoQuery,
+  useGetTrainingJobByIdQuery,
   useGetTrainingJobsQuery,
   useInferenceModelMutation,
   useLazyGetActiveModelsQuery,
   useLazyGetModelDeploymentInfoQuery,
+  useLazyGetTrainingJobByIdQuery,
   useLazyGetTrainingJobsQuery,
   usePredictBatchFileMutation,
   usePredictRealtimeMutation,

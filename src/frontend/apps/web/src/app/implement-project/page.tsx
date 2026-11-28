@@ -36,6 +36,11 @@ import {
 
 import PaginationCustom from "@/shared/components/common/Panigation";
 import { useGetLegacyJobsByUserIdQuery, useCancelJobMutation } from "@/core/api/jobApi";
+import {
+  isJobActive,
+  isJobCancelled,
+  isJobCompleted,
+} from "@/features/training/utils/pipelineGraphBuilder";
 import { useActivateModelMutation } from "@/core/api/inferenceApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -55,9 +60,9 @@ const formatDate = (timestamp: number | undefined, locale: string, fallback: str
   });
 };
 
-const isCompleted = (status: number | string) => Number(status) === 1;
-const isRunning = (status: number | string) => Number(status) === 0;
-const isCancelled = (status: number | string) => Number(status) === -2;
+const isCompleted = (status: number | string) => isJobCompleted(status);
+const isRunning = (status: number | string) => isJobActive(status);
+const isCancelled = (status: number | string) => isJobCancelled(status);
 
 const ImplementProject = () => {
   const locale = useLocale();
