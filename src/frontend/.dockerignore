@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.github
+*.log
+npm-debug.log*
+.DS_Store
+
+docs/
+apps/web/public/

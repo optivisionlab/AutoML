@@ -1,10 +1,9 @@
 services:
   hautoml-frontend:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    # image: hautoml-frontend:latest
-    image: vanh74/hautoml-frontend:v3.2    
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hautoml-frontend:latest
     container_name: hautoml_frontend
     restart: unless-stopped
     ports:
