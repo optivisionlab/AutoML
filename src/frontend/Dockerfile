@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY packages/api/package.json ./packages/api/package.json
+COPY packages/assets/package.json ./packages/assets/package.json
 COPY packages/domain/package.json ./packages/domain/package.json
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 

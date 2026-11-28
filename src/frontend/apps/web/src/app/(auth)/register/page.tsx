@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { brandAssets } from "@automl/assets/brand";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -33,7 +34,7 @@ const RegisterPage = () => {
             <Link href="/" className="flex items-center gap-3 text-sm font-black text-automl-ink hover:opacity-90 transition">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-automl-line bg-automl-surface p-1.5">
                 <Image
-                  src="/logoHautoMLNotext.png"
+                  src={brandAssets.logoNoText}
                   alt="HAutoML"
                   width={30}
                   height={30}

@@ -13,13 +13,9 @@ import { Button } from "@/shared/components/ui/button";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { getPublicEnv } from "@/core/config/publicEnv";
+import { labCarouselList } from "@automl/assets/lab-carousel";
 
-const images = [
-  "/lab-carousel/startup_mindset_2025.JPG",
-  "/lab-carousel/t77503.jpg",
-  "/lab-carousel/lab1.jpg",
-  "/lab-carousel/background.png",
-];
+const images = labCarouselList;
 
 export default function ImageCarousel() {
   const { data: session } = useSession();

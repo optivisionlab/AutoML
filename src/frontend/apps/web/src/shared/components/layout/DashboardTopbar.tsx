@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { brandAssets } from "@automl/assets/brand";
 import { useEffect } from "react";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -113,7 +114,7 @@ export default function DashboardTopbar({
           <div className="flex items-center gap-2 lg:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-1 ring-1 ring-slate-200/80 dark:bg-white/10 dark:ring-white/10 shadow-xs">
               <Image
-                src="/logoHautoMLNotext.png"
+                src={brandAssets.logoNoText}
                 alt="HAutoML"
                 width={24}
                 height={24}

@@ -1,11 +1,13 @@
+import { videoAssets } from "@automl/assets/videos";
+
 /**
  * =========================================================================
  * CẤU HÌNH QUY TRÌNH HAUTOML (PRODUCTION PIPELINE CONFIG)
  * =========================================================================
- * 
+ *
  * HƯỚNG DẪN CẬP NHẬT KHI BẠN CÓ VIDEO:
- * 1. Đặt file video của bạn vào thư mục `public/` (Ví dụ: `public/videos/hautoml-demo.mp4`).
- * 2. Cập nhật biến `DEMO_VIDEO_URL` bên dưới thành đường dẫn tương đối (Ví dụ: `"/videos/hautoml-demo.mp4"`).
+ * 1. Đặt file video vào thư mục dùng chung `packages/assets/videos/` và export trong `packages/assets/src/videos.ts`.
+ * 2. Cập nhật biến `DEMO_VIDEO_URL` bên dưới từ `videoAssets` (từ `@automl/assets/videos`).
  * 3. Chỉnh sửa `startTime` (giây bắt đầu) và `endTime` (giây kết thúc) cho từng bước.
  * 4. Nếu video có nhiều bước hơn (04, 05...), chỉ cần thêm đối tượng mới vào mảng `PIPELINE_STEPS`.
  */
@@ -25,11 +27,10 @@ export interface PipelineStep {
 }
 
 /**
- * Đường dẫn video demo (mp4/webm).
- * Để trống `""` nếu chưa có video thật (hệ thống sẽ tự động chạy giao diện mô phỏng AI cực đẹp).
- * Khi có video, chỉ cần điền ví dụ: `"/videos/hautoml_pipeline.mp4"`
+ * Đường dẫn video demo (mp4/webm) dùng chung từ `@automl/assets/videos`.
+ * Để trống `""` nếu chưa có video thật (hệ thống sẽ tự động chạy giao diện mô phỏng AI).
  */
-export const DEMO_VIDEO_URL = "/videos/hautoml-pipeline.mp4";
+export const DEMO_VIDEO_URL = videoAssets.hautomlPipeline;
 
 /**
  * Danh sách 4 bước chuẩn hóa theo video thực tế HAutoML:

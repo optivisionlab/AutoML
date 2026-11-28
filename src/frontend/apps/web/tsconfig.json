@@ -6,7 +6,9 @@
       "@automl/domain": ["../../packages/domain/src/index.ts"],
       "@automl/domain/*": ["../../packages/domain/src/*"],
       "@automl/api": ["../../packages/api/src/index.ts"],
-      "@automl/api/*": ["../../packages/api/src/*"]
+      "@automl/api/*": ["../../packages/api/src/*"],
+      "@automl/assets": ["../../packages/assets/src/index.ts"],
+      "@automl/assets/*": ["../../packages/assets/src/*"]
     },
     "target": "ES2017",
     "lib": [

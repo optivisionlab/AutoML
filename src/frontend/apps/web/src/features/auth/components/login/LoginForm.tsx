@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
+import { brandAssets } from "@automl/assets/brand";
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -97,7 +98,7 @@ const LoginForm = () => {
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-automl-line bg-white p-2 shadow-sm dark:bg-white/10">
             <Image
-              src="/logoHautoMLNotext.png"
+              src={brandAssets.logoNoText}
               alt="HAutoML"
               width={40}
               height={40}
