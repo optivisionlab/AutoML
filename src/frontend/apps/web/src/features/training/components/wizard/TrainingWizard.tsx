@@ -1518,7 +1518,6 @@ const ResponsiveStepNavigator = ({
       {steps.map((item, index) => {
         const isDone = item.id < currentStep;
         const isActive = item.id === currentStep;
-        const Icon = item.icon;
 
         return (
           <div key={item.id} className="flex items-center flex-1 min-w-[70px] sm:min-w-[120px]">

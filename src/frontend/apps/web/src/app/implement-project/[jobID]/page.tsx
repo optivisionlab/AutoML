@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
@@ -12,13 +12,11 @@ import {
   Activity,
   ArrowDownToLine,
   Check,
-  CheckCircle2,
   Code2,
   Copy,
   Cpu,
   FileCode,
   FileSpreadsheet,
-  Gauge,
   Layers,
   Package,
   Play,

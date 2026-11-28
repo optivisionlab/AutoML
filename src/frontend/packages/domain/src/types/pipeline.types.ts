@@ -26,7 +26,7 @@ export interface PipelineBaseNode<TParams = Record<string, unknown>, TOutput = R
   status: PipelineNodeStatus;
   started_at?: string | number | null;
   finished_at?: string | number | null;
-  error?: string | PipelineError | null;
+  error?: string | null;
   params: TParams;
   output: TOutput;
 }
@@ -140,7 +140,7 @@ export type ModelTrial = ModelTrialDetail;
 
 export interface ModelScoreDetail {
   status: PipelineNodeStatus;
-  error?: string | PipelineError | null;
+  error?: string | null;
   started_at?: string | number | null;
   finished_at?: string | number | null;
   // Pipeline v2.0.0 schema fields
@@ -193,7 +193,7 @@ export interface PipelineData {
   mode?: string;
   source?: "tracked" | "legacy" | string | null;
   status?: PipelineNodeStatus;
-  error?: string | PipelineError | null;
+  error?: string | null;
   seq?: number;
   started_at?: string | number | null;
   finished_at?: string | number | null;

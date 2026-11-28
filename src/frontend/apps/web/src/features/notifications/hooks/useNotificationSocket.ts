@@ -86,7 +86,10 @@ export function useNotificationSocket() {
   });
   const clientRef = useRef<MqttClient | null>(globalMqttClient);
 
-  const userId = session?.user?.id || userMeResponse?.data?._id || userMeResponse?.data?.id;
+  const userId =
+    session?.user?.id ||
+    userMeResponse?.data?._id ||
+    (userMeResponse?.data as { id?: string } | undefined)?.id;
 
   useEffect(() => {
     if (!userId) {
