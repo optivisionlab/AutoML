@@ -42,4 +42,4 @@ install-nodejs.sh
 run-fe.sh
 
 # Others
-packages/assets/images
+packages/assets/images/

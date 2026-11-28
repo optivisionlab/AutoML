@@ -1,21 +1,6 @@
 services:
   # ==========================================
-  # 1. Redis Storage for Ray GCS
-  # ==========================================
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --requirepass password123 --user admin on >password123 ~* &* +@all
-    networks:
-      - hautoml_net
-
-  # ==========================================
-  # 2. Ray Head Node
+  # 1. Ray Head Node
   # ==========================================
   headnode:
     build:
@@ -39,13 +24,14 @@ services:
       - hautoml_net
 
   # ==========================================
-  # 3. Ray Worker Nodes
+  # 2. Ray Worker Nodes
   # ==========================================
   workernode:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       target: base-worker
+    image: clusters:latest
     restart: unless-stopped
     shm_size: "2gb"
     depends_on:
@@ -60,6 +46,3 @@ networks:
   hautoml_net:
     name: hautoml_net
     external: true
-
-volumes:
-  redis_data:
