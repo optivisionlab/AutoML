@@ -236,10 +236,10 @@ def test_features_free_ignores_feature_list_everywhere(bench):
     assert expected["list_feature"] is None
     assert _job_matches_task({"config": {"target": "Type", "list_feature": ["RI"], "metric_sort": "f1_macro",
                                          "problem_type": "classification", "search_algorithm": "random_search",
-                                         "timeout": 300}, "data": {"id": "x"}}, expected) == []
+                                         "timeout": 86400}, "data": {"id": "x"}}, expected) == []
     from benchmark import consent
     card = {"dataset_id": "x", "target": "Type", "problem_type": "classification", "metric_sort": "f1_macro",
-            "search_algorithm": "random_search", "max_time": 300, "features": ["RI"], "feature_count": 1}
+            "search_algorithm": "random_search", "max_time": 86400, "features": ["RI"], "feature_count": 1}
     assert consent.card_mismatch(card, expected) == []
     assert consent.card_mismatch({**card, "target": "Na"}, expected) == ["target"]
 
@@ -571,7 +571,7 @@ def test_group_g_cases_valid():
             assert task["problem_type"] == "classification"
             assert task["target"] == _manifest()["datasets"][task["dataset"]]["target"]
             assert set(task["features"]) <= set(_manifest()["datasets"][task["dataset"]]["features"])
-            assert (task["search_algorithm"], task["max_time"]) == ("random_search", 300)
+            assert (task["search_algorithm"], task["max_time"]) == ("random_search", 86400)
             assert case["expect"]["config"] == "match_task"
             assert (case["expect"]["min_new_jobs"], case["expect"]["max_new_jobs"]) == (1, 1)
             assert task["dataset_id"] in case["turns"][0] and len(case["turns"]) == 1

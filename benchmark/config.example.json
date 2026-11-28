@@ -933,7 +933,7 @@
  "model": null,
  "repeats": 5,
  "cases_subset": null,
- "max_wait_seconds": 600,
+ "max_wait_seconds": 3600,
  "max_continuations": 2,
  "cleanup_imported_datasets": true,
  "ablation": {

@@ -86,7 +86,7 @@ Ngưỡng G02/G09 tính **chỉ từ phần train** khi chạy prepare, trước
 - Dùng Python `src/backend/.venv/bin/python` và dependency của backend. `src/backend/.env` hoặc biến môi trường cần `AGENT_USER`, `AGENT_PASSWORD`, cùng key của provider. Không điền mật khẩu/token vào prompt hay JSON benchmark.
 - Giữ cố định máy, CPU/GPU, số worker, phiên bản thư viện, giới hạn token, polling và tracing. Ghi thông tin triển khai vào `environment_notes` của config trước khi khóa; không chứa bí mật.
 - Mỗi ca/lần lặp mở session mới; các lượt chat trong một ca dùng chung session. Chạy tuần tự. Seed 42 chỉ áp dụng chia tập, không bảo đảm LLM/HPO deterministic.
-- Ngân sách nhóm C: `random_search`, `max_time=300` giây; E02 dùng 60 giây. Đây là ngân sách backend, không phải giới hạn tổng thời gian ca. `max_wait_seconds=600` áp dụng cho từng giai đoạn chờ watcher và chờ xác nhận backend; tổng thời gian có thể lớn hơn 600 giây.
+- Ngân sách mọi ca train (C, T, S05/S06, G): `random_search`, `max_time=86400` giây (mức tối đa agent cho phép, thực tế là train tới khi mọi model xong); E02 dùng 60 giây. Lý do: với `timeout` nhỏ, engine huỷ model chưa xong (vd SVC trên adult/gaming) và job có thể treo vĩnh viễn (worker rớt kết nối khi huỷ). Các ca chỉ tạo cấu hình (B, F, E01, E04) vẫn ghi `max_time 300` trong prompt vì không train. `max_wait_seconds=3600` áp dụng cho từng giai đoạn chờ watcher và chờ xác nhận backend.
 - Runner đăng nhập lại khi nhận HTTP 401 rồi thử lại một lần; không tự retry POST khi timeout/503. Cơ chế này chỉ nằm trong bộ benchmark, không sửa agent sản phẩm.
 
 ### 2.3. Cấu hình cần điền
@@ -271,7 +271,7 @@ Trong B03–B06, agent phát hiện lỗi trước khi gọi `submit_config` v�
 
 Mỗi ca bắt đầu phiên mới và tạo job mới. Gồm hai lượt chat cố định:
 
-1. Gửi prompt trong bảng, nối nguyên văn hậu tố: `Dùng random_search, max_time 300 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.`
+1. Gửi prompt trong bảng, nối nguyên văn hậu tố: `Dùng random_search, max_time 86400 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.`
 2. Bộ chạy chờ watcher và lưu snapshot job. Gửi: `Hãy kiểm tra kết quả job vừa tạo, báo trạng thái và các metric thực tế, đối chiếu mọi ràng buộc tôi đã nêu. Nếu train thành công, kích hoạt mô hình và gọi predict cho mẫu sau: <ROWS>. Không tạo job mới.` Bộ chạy thay `<ROWS>` bằng `predict_rows` tương ứng trong cấu hình.
 
 Không yêu cầu agent tự kích hoạt ngay từ callback watcher: hệ thống hiện chuyển kết quả nền vào ngữ cảnh cho lượt tiếp theo. Hai lượt cố định trên là một ca benchmark, bao gồm chi phí cả hai lượt. Nếu agent hỏi lại dù đã đủ thông tin, không cung cấp thêm gợi ý; ghi ca chưa hoàn thành theo protocol.
@@ -346,7 +346,7 @@ Chỉ số config đúng ngay lần đầu không tính nhóm F, vì config đ�
 
 ### Nhóm T — Dự báo chuỗi thời gian (time series): 6 ca
 
-Thêm ở v4.1 theo task Time-Series Forecasting của AutoML-Agent. Ca train (T01–T05) chạy đúng hai lượt như nhóm C, cùng hậu tố lượt 1 và câu lượt 2. `<ROWS>` là **24 mốc giờ đầu** của phần test (`predict_rows` trong config, dạng `{"date": "..."}`): kiểm agent kích hoạt và gọi dự báo đúng các mốc người dùng đưa. Chất lượng do bộ chấm đo trên **đủ 96 bước** test. Ngân sách như nhóm C: `random_search`, `max_time` 300 giây.
+Thêm ở v4.1 theo task Time-Series Forecasting của AutoML-Agent. Ca train (T01–T05) chạy đúng hai lượt như nhóm C, cùng hậu tố lượt 1 và câu lượt 2. `<ROWS>` là **24 mốc giờ đầu** của phần test (`predict_rows` trong config, dạng `{"date": "..."}`): kiểm agent kích hoạt và gọi dự báo đúng các mốc người dùng đưa. Chất lượng do bộ chấm đo trên **đủ 96 bước** test. Ngân sách như nhóm C: `random_search`, `max_time` 86400 giây.
 
 | ID | Prompt lượt 1 trước hậu tố | Loại đánh giá |
 |---|---|---|

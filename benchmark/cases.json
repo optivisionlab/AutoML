@@ -1,6 +1,6 @@
 {
  "version": "hautoml-bench-v6",
- "train_suffix": "Dùng random_search, max_time 300 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.",
+ "train_suffix": "Dùng random_search, max_time 86400 giây. Tôi yêu cầu chạy train, sau khi hoàn tất kích hoạt mô hình và dự đoán mẫu tôi cung cấp. Không thay dataset, target, feature hoặc metric đã chỉ định.",
  "followup": "Hãy kiểm tra kết quả job vừa tạo, báo trạng thái và các metric thực tế, đối chiếu mọi ràng buộc tôi đã nêu. Nếu train thành công, kích hoạt mô hình và gọi predict cho mẫu sau: <ROWS>. Không tạo job mới.",
  "cases": [
   {
@@ -264,7 +264,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -306,7 +306,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -346,7 +346,7 @@
     ],
     "metric": "mae",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -387,7 +387,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -428,7 +428,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -476,7 +476,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -522,7 +522,7 @@
     ],
     "metric": "mae",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -569,7 +569,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -622,7 +622,7 @@
     ],
     "metric": "mae",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -664,7 +664,7 @@
     ],
     "metric": "mae",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -1194,7 +1194,7 @@
     "time_column": "date",
     "metric": "rmse",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -1228,7 +1228,7 @@
     "time_column": "date",
     "metric": "rmse",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -1268,7 +1268,7 @@
     "time_column": "date",
     "metric": "rmse",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -1302,7 +1302,7 @@
     "time_column": "date",
     "metric": "rmse",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -1342,7 +1342,7 @@
     "time_column": "date",
     "metric": "rmse",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -1568,7 +1568,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "consent": {
@@ -1633,7 +1633,7 @@
     ],
     "metric": "mae",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "consent": {
@@ -1753,7 +1753,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -1799,7 +1799,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -1852,7 +1852,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -2392,7 +2392,7 @@
     ],
     "metric": "accuracy",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -2525,7 +2525,7 @@
     ],
     "metric": "accuracy",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -2582,7 +2582,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [
@@ -2622,7 +2622,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [
     {
@@ -2708,7 +2708,7 @@
     ],
     "metric": "f1_macro",
     "search_algorithm": "random_search",
-    "max_time": 300
+    "max_time": 86400
    },
    "constraints": [],
    "turns": [

@@ -103,3 +103,7 @@ Câu lệnh viết bằng tiếng Việt như ca cũ. Ca `flow: train` nối `tr
 - `predict_rows` của 6 dataset mới (adult, madelon, student, digits, gaming, wilt) dùng **1 dòng đầu phần test** (bỏ cột
   target), không phải 3 dòng, cho giống ca bảng cũ - ca cũ (glass, shopping, concrete, crab) thực tế dùng 1 dòng; tránh G04
   (500 cột) trượt vì phải chép dữ liệu dài vào lời gọi predict. Quyết định trước mọi lượt chạy, không dựa trên kết quả.
+- Mọi ca train dùng `max_time 86400` giây (mức tối đa agent cho phép) thay cho 300, `max_wait_seconds` 3600. Lý do: pilot v6
+  cho thấy với 300 giây engine huỷ SVC chưa xong trên gaming (25 nghìn dòng) và job treo vĩnh viễn (worker rớt kết nối khi
+  huỷ, kết quả model đã xong bị mất). Người dùng quyết định để model train tới khi xong. Đây là lỗi hạ tầng engine, không
+  dựa trên kết quả agent; áp dụng cho mọi ca train và mọi biến thể.

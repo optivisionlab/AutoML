@@ -238,7 +238,7 @@ def test_write_request_is_blocked_and_source_table_unchanged(sbench, monkeypatch
 
 def test_sql_pipeline_uses_imported_dataset_and_scores_lowercase_columns(sbench, monkeypatch, tmp_path):
     crab_config = dict(target="age", list_feature=CRAB_COLUMNS[:-1], metric_sort="mae", problem_type="regression",
-                       search_algorithm="random_search", max_time=300)
+                       search_algorithm="random_search", max_time=86400)
     imported = found(r"b{22}\d\d")
     monkeypatch.setitem(SCRIPTS, ("full", "S06"), [
         reply(tool="ask_sql_agent", task="Nhập crab_train", connection_id=PG),
@@ -445,7 +445,7 @@ def _c01_turn1(config):
 
 def test_training_card_with_wrong_config_is_rejected(bench, monkeypatch):
     without_user_value_lock(monkeypatch)   # kiểm chính sách xác nhận của bộ chạy, không kiểm chốt của agent
-    monkeypatch.setitem(SCRIPTS, ("full", "C01"), _c01_turn1({**GOOD_CONFIG, "metric_sort": "accuracy"}) + [
+    monkeypatch.setitem(SCRIPTS, ("full", "C01"), _c01_turn1({**GOOD_CONFIG, "max_time": 86400, "metric_sort": "accuracy"}) + [
         reply("Chưa có job nào chạy."),
     ])
     folder = bench.run("full", "C01")

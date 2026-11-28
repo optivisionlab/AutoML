@@ -120,6 +120,8 @@ class ScriptedLLM:
 
 GOOD_CONFIG = dict(dataset_id=GLASS, target="Type", list_feature=FEATURES, metric_sort="f1_macro",
                    problem_type="classification", search_algorithm="random_search", max_time=300)
+# Ca train dùng max_time 86400 (train tới khi xong); ca chỉ tạo cấu hình (B, F) giữ 300 như prompt.
+TRAIN_CONFIG = {**GOOD_CONFIG, "max_time": 86400}
 SCRIPTS = {
     ("full", "A01"): [
         reply(tool="ask_data_agent", task="Liệt kê dataset"),
@@ -158,7 +160,7 @@ SCRIPTS = {
     ("full", "C01"): [
         # Lượt 1: chốt config rồi ĐỀ NGHỊ train (thẻ xác nhận); người dùng mô phỏng bấm Xác nhận sau lượt.
         reply(tool="ask_model_agent", task="Tạo config", dataset_id=GLASS),
-        reply(tool="submit_config", **GOOD_CONFIG),
+        reply(tool="submit_config", **TRAIN_CONFIG),
         reply("Config hợp lệ"),
         reply(tool="ask_operation_agent", task="Chạy config vừa chốt"),
         lambda m: reply(tool="start_training", config_id=found(r"cfg_[0-9a-f]{6}")(m)),
@@ -1023,7 +1025,7 @@ def test_time_series_case_is_scored_on_the_96_test_steps(ts_data, tmp_path, monk
     job = {
         "_id": job_id, "user": {"id": "user-1"}, "status": 1, "activate": 1, "data": {"id": "e" * 24},
         "config": {"problem_type": "time_series", "target": "load_kwh", "list_feature": ["date"], "metric_sort": "rmse",
-                   "search_algorithm": "random_search", "timeout": 300},
+                   "search_algorithm": "random_search", "timeout": 86400},
     }
     FakeBackend.jobs = {job_id: job}
     seen = []
