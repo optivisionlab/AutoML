@@ -8,6 +8,10 @@ import AppShell from "@/shared/components/layout/AppShell";
 import { getLocale } from "next-intl/server";
 import { LanguageProvider } from "@/core/i18n/LanguageProvider";
 import { AppLocale, defaultLocale, isAppLocale } from "@/core/i18n/config";
+import {
+  getServerRuntimePublicEnv,
+  serializePublicEnvScript,
+} from "@/core/config/publicEnv";
 
 export const metadata: Metadata = {
   title: "HAutoML",
@@ -52,9 +56,17 @@ export default async function RootLayout({ children }: IProps) {
   const locale: AppLocale = isAppLocale(requestLocale)
     ? requestLocale
     : defaultLocale;
+  const runtimePublicEnv = getServerRuntimePublicEnv();
 
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: serializePublicEnvScript(runtimePublicEnv),
+          }}
+        />
+      </head>
       <body>
         <LanguageProvider initialLocale={locale}>
           <ThemeProvider

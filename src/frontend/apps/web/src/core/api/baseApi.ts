@@ -1,6 +1,7 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { BaseQueryFn } from "@reduxjs/toolkit/query";
 import { getSession } from "next-auth/react";
+import { getPublicEnv } from "@/core/config/publicEnv";
 import {
   createApiClient,
   createPublicClient,
@@ -45,13 +46,13 @@ export const getAuthToken = async (): Promise<string | undefined> => {
 
 // Client with dynamic NextAuth session token injection
 export const axiosClient = createApiClient({
-  baseUrl: () => process.env.NEXT_PUBLIC_BASE_API || "",
+  baseUrl: () => getPublicEnv("NEXT_PUBLIC_BASE_API"),
   getToken: getAuthToken,
 });
 
 // Public client without authentication token
 export const publicClient = createPublicClient(
-  () => process.env.NEXT_PUBLIC_BASE_API || ""
+  () => getPublicEnv("NEXT_PUBLIC_BASE_API")
 );
 
 // RTK Query Base Query using configured web axios client

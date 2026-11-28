@@ -1,3 +1,4 @@
+import path from "path";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
@@ -6,12 +7,7 @@ const withNextIntl = createNextIntlPlugin("./src/core/i18n/request.ts");
 const nextConfig: NextConfig = {
   /* config options here */
   output: "standalone",
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: false,
   transpilePackages: ["@automl/domain", "@automl/api"],
   images: {

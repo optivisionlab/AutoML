@@ -18,6 +18,7 @@ import {
   type VerifyOtpResponse,
 } from "@automl/domain";
 import { baseApi } from "./baseApi";
+import { getPublicEnv } from "@/core/config/publicEnv";
 
 export type {
   ApiMessageResponse,
@@ -155,7 +156,8 @@ export const authApi = baseApi.injectEndpoints({
 });
 
 export const getGoogleLoginUrl = (baseUrl?: string): string => {
-  const base = baseUrl || process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+  const base =
+    baseUrl || getPublicEnv("NEXT_PUBLIC_BASE_API", "http://localhost:9999");
   const cleanBase = base.replace(/\/+$/, "");
   return cleanBase.endsWith("/api/v1")
     ? `${cleanBase}/auth/google`

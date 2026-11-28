@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import axios from "axios";
 import type { IUser } from "@/shared/types/user/user.types";
+import { getPublicEnv } from "@/core/config/publicEnv";
 
 interface UserState {
   user: IUser | null;
@@ -19,7 +20,7 @@ export const registerAsync = createAsyncThunk(
   async (payload: IUser, thunkAPI) => {
     try {
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BASE_API}/signup`,
+        `${getPublicEnv("NEXT_PUBLIC_BASE_API")}/signup`,
         payload
       );
       return response.data;

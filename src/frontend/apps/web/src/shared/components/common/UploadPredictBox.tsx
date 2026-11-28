@@ -8,6 +8,7 @@ import {
   useRunPredictionMutation,
 } from "@/core/api/inferenceApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
+import { getPublicEnv } from "@/core/config/publicEnv";
 import { useTranslations } from "next-intl";
 
 type Props = {
@@ -93,7 +94,7 @@ const UploadPredictBox = ({ jobId, disabled }: Props) => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (loading && jobId) {
         fetch(
-          `${process.env.NEXT_PUBLIC_BASE_API}/v2/auto/${jobId}/predictions`,
+          `${getPublicEnv("NEXT_PUBLIC_BASE_API")}/v2/auto/${jobId}/predictions`,
           {
             method: "DELETE",
             headers: {

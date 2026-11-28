@@ -13,6 +13,7 @@ import Link from "next/link";
 import { Button } from "@/shared/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { getPublicEnv } from "@/core/config/publicEnv";
 
 const images = [
   "/lab-carousel/startup_mindset_2025.JPG",
@@ -25,7 +26,7 @@ export default function ImageCarousel() {
   const { data: session } = useSession();
   const plugin = React.useRef(
     Autoplay({
-      delay: parseInt(process.env.NEXT_PUBLIC_TIMEOUT_CAROUSEL || "10000", 10),
+      delay: parseInt(getPublicEnv("NEXT_PUBLIC_TIMEOUT_CAROUSEL", "10000"), 10),
       stopOnInteraction: false,
     }),
   );

@@ -1,9 +1,12 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { jwtDecode } from "jwt-decode";
+import { getPublicEnv } from "@/core/config/publicEnv";
 
 const getBaseApiUrl = (): string => {
-  const base = process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+  const base =
+    process.env.INTERNAL_API_URL ||
+    getPublicEnv("NEXT_PUBLIC_BASE_API", "http://localhost:9999");
   return base.replace(/\/+$/, "");
 };
 

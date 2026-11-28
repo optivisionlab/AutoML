@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import axios from "axios";
+import { getPublicEnv } from "@/core/config/publicEnv";
 
 interface UCIDataState {
   dataUCI: any; 
@@ -18,7 +19,7 @@ export const getDataUCIAsync = createAsyncThunk(
   "uciData/getData",
   async (_, thunkAPI) => {
     try {
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_BASE_API}/get-data-from-uci?id_data=53`);
+      const response = await axios.post(`${getPublicEnv("NEXT_PUBLIC_BASE_API")}/get-data-from-uci?id_data=53`);
       return response.data;
     } catch (error: any) {
       const message = error.response?.data?.message || "Lỗi khi lấy dữ liệu UCI";

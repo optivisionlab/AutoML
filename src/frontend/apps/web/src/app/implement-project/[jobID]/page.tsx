@@ -36,6 +36,7 @@ import {
   usePredictRealtimeMutation,
 } from "@/core/api/inferenceApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
+import { getPublicEnv } from "@/core/config/publicEnv";
 import { downloadApiFile } from "@automl/api";
 import BackButton from "@/shared/components/common/BackButton";
 import AppLoading from "@/shared/components/common/AppLoading";
@@ -236,7 +237,7 @@ export default function ModelServingWorkbenchPage() {
       const formData = new FormData();
       formData.append("file", batchFile);
 
-      const base = process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+      const base = getPublicEnv("NEXT_PUBLIC_BASE_API", "http://localhost:9999");
       const cleanBase = base.replace(/\/+$/, "");
       const predictUrl = cleanBase.endsWith("/api/v1")
         ? `${cleanBase}/inference/models/${jobId}/predict/file`
@@ -271,7 +272,7 @@ export default function ModelServingWorkbenchPage() {
     setDownloadingArtifact(type);
 
     try {
-      const base = process.env.NEXT_PUBLIC_BASE_API || "http://localhost:9999";
+      const base = getPublicEnv("NEXT_PUBLIC_BASE_API", "http://localhost:9999");
       const cleanBase = base.replace(/\/+$/, "");
       const prefix = cleanBase.endsWith("/api/v1") ? cleanBase : `${cleanBase}/api/v1`;
 

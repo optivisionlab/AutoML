@@ -1,14 +1,17 @@
 # Dependencies
 node_modules
+**/node_modules
 .pnp
 .pnp.js
 
 # Build artifacts and cache
 .next
+**/.next
 out
 build
 dist
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 # Debug logs
 npm-debug.log*
@@ -20,16 +23,19 @@ yarn-error.log*
 .git
 .gitignore
 .DS_Store
+**/.DS_Store
 Thumbs.db
 *.pem
 
-# Documentation and unused media
+# Documentation and unused folders
 docs
-packages/video
-packages/image_gt
+packages/ui
+packages/config
+src
 
-# Environment local overrides (giữ bí mật các file env local)
-.env*.local
+# Environment files
+.env*
+**/.env*
 
 # Scripts
 install-nodejs.sh
