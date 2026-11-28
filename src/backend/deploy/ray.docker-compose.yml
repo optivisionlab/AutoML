@@ -1,0 +1,70 @@
+services:
+  # ==========================================
+  # 1. Redis Storage for Ray GCS
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass password123 --user admin on >password123 ~* &* +@all
+    networks:
+      - hautoml_net
+
+  # ==========================================
+  # 2. Ray Head Node
+  # ==========================================
+  headnode:
+    image: rayproject/ray:2.60.0-py310
+    container_name: headnode
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "7777:7777"
+      - "10001:10001"
+    depends_on:
+      - redis
+    volumes:
+      - ./autoscaler.yaml:/app/deploy/autoscaler.yaml:ro
+      - headnode_tmp:/tmp/ray
+    command: >
+      ray start --head
+        --port=7777
+        --ray-client-server-port=10001
+        --include-dashboard=false
+        --redis-address=redis:6379
+        --redis-username=admin
+        --redis-password=password123
+        --block
+    networks:
+      - hautoml_net
+
+  # ==========================================
+  # 3. Ray Worker Nodes
+  # ==========================================
+  workernode:
+    image: rayproject/ray:2.60.0-py310
+    restart: unless-stopped
+    shm_size: "2gb"
+    depends_on:
+      - headnode
+    volumes:
+      - workernode_tmp:/tmp/ray
+    command: ray start --address=headnode:7777 --block
+    deploy:
+      replicas: 2
+    networks:
+      - hautoml_net
+
+networks:
+  hautoml_net:
+    name: hautoml_net
+    external: true
+
+volumes:
+  redis_data:
+  headnode_tmp:
+  workernode_tmp:

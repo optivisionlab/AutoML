@@ -6,12 +6,13 @@ import asyncio
 from typing import Any, Awaitable, Callable
 
 # Third-party Libraries
+import ray
 import pandas as pd
 from sklearn.base import BaseEstimator
 
 # Local Libraries
 from src.core import search_space, constants
-from src.shared import minio_service, MapReduceManager
+from src.shared import minio_service, RayManager
 from src.modules.notifications import NotificationService
 from src.modules.preprocessing import TabularPreprocessor, FittedPreprocessor, CVStrategyConfig, TimeSeriesForecaster
 from src.modules.trainings.tasks import train_single_model_task
@@ -86,7 +87,6 @@ class TrainingService:
 
     @staticmethod
     async def _dispatch_and_collect_tasks(
-        driver: Any,
         space_models: dict[str, list[dict[str, Any]]],
         train_bytes: bytes,
         test_bytes: bytes | None,
@@ -97,7 +97,8 @@ class TrainingService:
         search_algorithm: str = constants.SearchAlgorithm.TPESEARCH,
         timeout: int | None = None
     ) -> list[dict[str, Any]]:
-        tasks = [
+        # Ray .remote() returns ObjectRef immediately (non-blocking)
+        object_refs = [
             train_single_model_task.remote(
                 model_name,
                 param_grid,
@@ -112,38 +113,40 @@ class TrainingService:
             for model_name, param_grid in space_models.items()
         ]
 
-        task_futures = [asyncio.create_task(task_coroutine) for task_coroutine in tasks]
-
         logger.info(
-            f"Dispatched {len(tasks)} parallel {problem_type} model training tasks to PyMapReduce (timeout={timeout}s)..."
+            f"Dispatched {len(object_refs)} parallel {problem_type} model training tasks to Ray (timeout={timeout}s)..."
         )
+
+        # Ray ObjectRef is natively awaitable — wrap in asyncio tasks for timeout support
+        async def _await_ref(ref: Any) -> Any:
+            return await ref
+
+        async_tasks = [asyncio.create_task(_await_ref(ref)) for ref in object_refs]
+
         wait_timeout = float(timeout) if timeout and timeout > 0 else None
-        completed_futures, pending_futures = await asyncio.wait(
-            task_futures,
+        done, pending = await asyncio.wait(
+            async_tasks,
             timeout=wait_timeout,
             return_when=asyncio.ALL_COMPLETED,
         )
-        for pending_future in pending_futures:
-            pending_future.cancel()
 
-        raw_outputs = []
-        for completed_future in completed_futures:
+        # Cancel pending tasks that exceeded the timeout
+        for i, task in enumerate(async_tasks):
+            if task in pending:
+                task.cancel()
+                ray.cancel(object_refs[i], force=True)
+
+        valid_results: list[dict[str, Any]] = []
+        for completed_task in done:
             try:
-                raw_outputs.append(completed_future.result())
+                result = completed_task.result()
+                if isinstance(result, dict):
+                    valid_results.append(result)
             except Exception as exc:
                 logger.warning(f"Training task encountered an error: {exc}")
 
-        valid_results: list[dict[str, Any]] = []
-        for raw_output in raw_outputs:
-            if hasattr(raw_output, "object_id"):
-                resolved_val = await driver.get(raw_output)
-                if isinstance(resolved_val, dict):
-                    valid_results.append(resolved_val)
-            elif isinstance(raw_output, dict):
-                valid_results.append(raw_output)
-
         if not valid_results:
-            raise ValueError("No successful model training results received from PyMapReduce workers within the timeout.")
+            raise ValueError("No successful model training results received from Ray workers within the timeout.")
 
         return valid_results
 
@@ -207,7 +210,7 @@ class TrainingService:
         if df is None or df.empty:
             raise ValueError("Input DataFrame is empty or invalid.")
 
-        driver = await MapReduceManager.get_driver()
+        await RayManager.get_driver()
 
         target_col = target_col or str(df.columns[-1])
         if problem_type == constants.ProblemType.REGRESSION:
@@ -268,7 +271,6 @@ class TrainingService:
             await progress()
 
         valid_results = await cls._dispatch_and_collect_tasks(
-            driver=driver,
             space_models=space_models,
             train_bytes=train_bytes,
             test_bytes=test_bytes,

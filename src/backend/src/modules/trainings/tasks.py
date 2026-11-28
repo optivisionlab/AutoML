@@ -6,7 +6,7 @@ import warnings
 from typing import Any
 
 # Third-party Libraries
-import pymapreduce
+import ray
 from sklearn.exceptions import ConvergenceWarning
 
 # Local Libraries
@@ -37,7 +37,7 @@ if not logging.getLogger().handlers:
 logger = logging.getLogger(__name__)
 
 
-@pymapreduce.remote
+@ray.remote
 def train_single_model_task(
     model_name: str,
     param_grid: list[dict[str, Any]],
