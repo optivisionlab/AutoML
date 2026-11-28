@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
+import { labMemberImages } from "@automl/assets/lab-members";
 import { useLanguage } from "@/core/i18n/LanguageProvider";
 import {
   ArrowRight,
@@ -17,7 +18,7 @@ import {
   Layers,
   Users,
 } from "lucide-react";
-import { FaGithub } from "react-icons/fa";
+import { GithubIcon } from "@/shared/components/common/BrandIcons";
 import {
   Carousel,
   CarouselContent,
@@ -37,7 +38,7 @@ type MemberCategory =
 interface LabMember {
   name: string;
   position: string;
-  image: string;
+  image: StaticImageData | string;
   category: MemberCategory[];
   company: string;
   isAuthor?: boolean;
@@ -57,7 +58,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Đỗ Mạnh Quang (Founder)",
     position: "Giảng viên Khoa CNTT, SICT – ĐH Công nghiệp Hà Nội",
-    image: "/lab-members/quang.png",
+    image: labMemberImages.quang,
     category: ["all", "core-authors"],
     company: "HaUI SICT",
     isAuthor: true,
@@ -65,7 +66,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Chử Thị Ánh",
     position: "Data Engineer tại Samsung R&D Institute Vietnam",
-    image: "/lab-members/chuanh.jpg",
+    image: labMemberImages.chuanh,
     category: ["all", "core-authors", "ai-data"],
     company: "Samsung R&D",
     isAuthor: true,
@@ -73,7 +74,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Ngọ Công Bình",
     position: "Backend Developer tại Samsung Electronics Vietnam",
-    image: "/lab-members/binh.jpeg",
+    image: labMemberImages.binh,
     category: ["all", "core-authors", "systems"],
     company: "Samsung VN",
     isAuthor: true,
@@ -81,7 +82,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Bùi Huy Nam",
     position: "BrSE / Backend Developer tại FPT Software",
-    image: "/lab-members/BuiHuyNam.jpg",
+    image: labMemberImages.buiHuyNam,
     category: ["all", "core-authors", "systems"],
     company: "FPT Software",
     isAuthor: true,
@@ -89,7 +90,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Nguyễn Thị Mỹ Khánh",
     position: "BA & Frontend Developer tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/mykhanh.jpg",
+    image: labMemberImages.mykhanh,
     category: ["all", "core-authors", "frontend"],
     company: "OptiVisionLab",
     isAuthor: true,
@@ -97,7 +98,7 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Nguyễn Thị Minh",
     position: "Business Analyst & Backend Developer tại FPT Telecom",
-    image: "/lab-members/nguyenminh.JPG",
+    image: labMemberImages.nguyenminh,
     category: ["all", "core-authors", "systems"],
     company: "FPT Telecom",
     isAuthor: true,
@@ -105,70 +106,70 @@ const LAB_MEMBERS: LabMember[] = [
   {
     name: "Hoàng Việt Anh",
     position: "Fullstack Developer / Làm việc tại Tập đoàn công nghệ BKAV",
-    image: "/lab-members/HoangVietAnh.jpg",
+    image: labMemberImages.hoangVietAnh,
     category: ["all", "students", "systems", "frontend"],
     company: "Tập đoàn công nghệ BKAV",
   },
   {
     name: "Vũ Xuân Đông",
     position: "Backend & Storage Engineer tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/VuXuanDong.jpg",
+    image: labMemberImages.vuXuanDong,
     category: ["all", "systems", "students"],
     company: "OptiVisionLab",
   },
   {
     name: "Nguyễn Hồng Quân",
     position: "Application Security Engineer tại Techcombank",
-    image: "/lab-members/NguyenHongQuan.jpg",
+    image: labMemberImages.nguyenHongQuan,
     category: ["all", "systems"],
     company: "Techcombank",
   },
   {
     name: "Nguyễn Thanh Long",
     position: "BrSE & AI Engineer tại FPT Software",
-    image: "/lab-members/thanhlong.jpg",
+    image: labMemberImages.thanhlong,
     category: ["all", "ai-data"],
     company: "FPT Software",
   },
   {
     name: "Nguyễn Thị Lan",
     position: "Product Quality Assurance (PQA) tại NTQ Solution JSC",
-    image: "/lab-members/nguyenlan.jpg",
+    image: labMemberImages.nguyenlan,
     category: ["all", "ai-data"],
     company: "NTQ Solution",
   },
   {
     name: "Trần Xuân Đức",
     position: "Mobile & Backend Developer tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/TranXuanDuc_MobileDev.jpg",
+    image: labMemberImages.tranXuanDuc,
     category: ["all", "frontend"],
     company: "OptiVisionLab",
   },
   {
     name: "Lưu Hoàng Phúc",
     position: "Student Research Assistant tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/LuuHoangPhuc.jpg",
+    image: labMemberImages.luuHoangPhuc,
     category: ["all", "students"],
     company: "OptiVisionLab",
   },
   {
     name: "Phan Đại Cương",
     position: "Student Research Assistant tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/PhanDaiCuong.jpg",
+    image: labMemberImages.phanDaiCuong,
     category: ["all", "students"],
     company: "OptiVisionLab",
   },
   {
     name: "Nguyễn Thị Hải Quỳnh",
     position: "Student Research Assistant tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/haiquynh.jpg",
+    image: labMemberImages.haiquynh,
     category: ["all", "students"],
     company: "OptiVisionLab",
   },
   {
     name: "Nguyễn Thị Khánh Ly",
     position: "Student Research Assistant tại OptiVisionLab, SICT, HaUI",
-    image: "/lab-members/khanhly.jpg",
+    image: labMemberImages.khanhly,
     category: ["all", "students"],
     company: "OptiVisionLab",
   },
@@ -436,7 +437,7 @@ export default function MemberLab() {
             rel="noopener noreferrer"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-500"
           >
-            <FaGithub className="h-3.5 w-3.5" />
+            <GithubIcon className="h-3.5 w-3.5" />
             <span>GitHub Contributors</span>
             <ExternalLink className="h-3 w-3" />
           </a>
@@ -461,7 +462,7 @@ export default function MemberLab() {
                   className="h-12 w-12 rounded-xl object-cover ring-2 ring-blue-500/30 transition-transform duration-200 group-hover:scale-105 group-hover:ring-blue-500"
                 />
                 <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white">
-                  <FaGithub className="h-2.5 w-2.5" />
+                  <GithubIcon className="h-2.5 w-2.5" />
                 </span>
               </div>
 

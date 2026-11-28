@@ -104,7 +104,12 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-5rem)]">
+    <div
+      className={cn(
+        "min-h-[calc(100vh-5rem)]",
+        !session && "mx-auto max-w-[1360px] px-4 pb-16 pt-24 sm:px-6 sm:pt-28",
+      )}
+    >
       {/* Top Header & Breadcrumbs theo phong cách ảnh mẫu */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-4 dark:border-white/10">
         <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
@@ -234,7 +239,7 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-start gap-3.5">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-automl-blue dark:bg-blue-950/50 dark:text-cyan-400">
                       <LayoutGrid className="h-5 w-5" />
                     </div>
                     <div>
@@ -254,7 +259,7 @@ export default function SettingsPage() {
                       className={cn(
                         "flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition",
                         (settings.datasetViewMode || "table") === "grid"
-                          ? "bg-white text-purple-600 shadow-xs dark:bg-slate-800 dark:text-white"
+                          ? "bg-white text-automl-blue shadow-xs dark:bg-slate-800 dark:text-white"
                           : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                       )}
                     >
@@ -267,7 +272,7 @@ export default function SettingsPage() {
                       className={cn(
                         "flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition",
                         (settings.datasetViewMode || "table") === "table"
-                          ? "bg-white text-purple-600 shadow-xs dark:bg-slate-800 dark:text-white"
+                          ? "bg-white text-automl-blue shadow-xs dark:bg-slate-800 dark:text-white"
                           : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                       )}
                     >

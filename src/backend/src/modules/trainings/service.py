@@ -131,10 +131,16 @@ class TrainingService:
         )
 
         # Cancel pending tasks that exceeded the timeout
-        for i, task in enumerate(async_tasks):
-            if task in pending:
+        if pending:
+            for i, task in enumerate(async_tasks):
+                if task in pending:
+                    ray.cancel(object_refs[i], force=True)
+
+            _, still_pending = await asyncio.wait(pending, timeout=2.0)
+            for task in still_pending:
                 task.cancel()
-                ray.cancel(object_refs[i], force=True)
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
 
         valid_results: list[dict[str, Any]] = []
         for completed_task in done:
@@ -146,7 +152,7 @@ class TrainingService:
                 logger.warning(f"Training task encountered an error: {exc}")
 
         if not valid_results:
-            raise ValueError("No successful model training results received from Ray workers within the timeout.")
+            raise ValueError("No successful model training results received within the timeout")
 
         return valid_results
 

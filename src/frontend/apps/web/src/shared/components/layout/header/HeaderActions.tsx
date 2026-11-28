@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
-import { FaGithub } from "react-icons/fa";
+import { GithubIcon } from "@/shared/components/common/BrandIcons";
 import { Menu, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/shared/components/ui/button";
@@ -31,7 +31,7 @@ export default function HeaderActions({
         className="hidden rounded-xl p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white sm:flex"
         aria-label="GitHub Repository"
       >
-        <FaGithub className="h-5 w-5" />
+        <GithubIcon className="h-5 w-5" />
       </Link>
 
       {/* Mode & Language Toggles */}

@@ -76,7 +76,7 @@ async def delete_user(
     )
 
 
-@router.get("/{id}/avatar", dependencies=[Depends(dependencies.require_owner_or_admin)], response_class=StreamingResponse)
+@router.get("/{id}/avatar", response_class=StreamingResponse)
 async def get_avatar(
     id: str = Path(..., description="User ID"),
     service: UserService = Depends(get_user_service)

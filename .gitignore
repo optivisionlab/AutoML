@@ -210,3 +210,6 @@ next-env.d.ts
 .gradio
 *.swp
 src/frontend/components.json
+
+# img
+src/frontend/packages/image_gt

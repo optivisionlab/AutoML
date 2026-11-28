@@ -14,9 +14,14 @@ export interface BreadcrumbItem {
 interface BreadcrumbNavProps {
   items: BreadcrumbItem[];
   className?: string;
+  showHome?: boolean;
 }
 
-export default function BreadcrumbNav({ items, className }: BreadcrumbNavProps) {
+export default function BreadcrumbNav({
+  items,
+  className,
+  showHome = true,
+}: BreadcrumbNavProps) {
   const common = useTranslations("Common");
 
   return (
@@ -27,19 +32,24 @@ export default function BreadcrumbNav({ items, className }: BreadcrumbNavProps) 
         className
       )}
     >
-      <Link
-        href="/"
-        className="transition-colors hover:text-blue-600 dark:hover:text-cyan-400 font-medium"
-      >
-        {common("home")}
-      </Link>
+      {showHome && (
+        <Link
+          href="/"
+          className="transition-colors hover:text-blue-600 dark:hover:text-cyan-400 font-medium"
+        >
+          {common("home")}
+        </Link>
+      )}
 
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
+        const showSlash = showHome || index > 0;
 
         return (
           <span key={`${item.label}-${index}`} className="flex items-center gap-2">
-            <span className="text-slate-400 dark:text-slate-600">/</span>
+            {showSlash && (
+              <span className="text-slate-400 dark:text-slate-600">/</span>
+            )}
             {isLast || !item.href ? (
               <span className="font-bold text-blue-600 dark:text-cyan-400 truncate">
                 {item.label}

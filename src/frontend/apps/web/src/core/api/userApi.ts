@@ -88,6 +88,7 @@ export const userApi = baseApi.injectEndpoints({
     }),
 
     // 2.5 GET /api/v1/users/{id}/avatar
+<<<<<<< HEAD
     getUserAvatar: builder.query<string, string>({
       async queryFn(id) {
         if (!id) return { data: "" };
@@ -110,6 +111,13 @@ export const userApi = baseApi.injectEndpoints({
         }
       },
       providesTags: (_result, _error, id) => [{ type: "User", id: `${id}-avatar` }],
+=======
+    getUserAvatar: builder.query<Blob, string>({
+      query: (id) => ({
+        url: `/api/v1/users/${id}/avatar`,
+        responseType: "blob",
+      }),
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
     }),
 
     // 2.6 POST /api/v1/users/{id}/avatar

@@ -1,0 +1,17 @@
+{
+  "name": "@automl/assets",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./brand": "./src/brand.ts",
+    "./achievements": "./src/achievements.ts",
+    "./lab-carousel": "./src/lab-carousel.ts",
+    "./lab-members": "./src/lab-members.ts",
+    "./videos": "./src/videos.ts",
+    "./images/*": "./images/*",
+    "./videos/*": "./videos/*"
+  }
+}

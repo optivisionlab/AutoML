@@ -600,12 +600,25 @@
     "status": {
       "completed": "Completed",
       "training": "Training",
+      "queued": "Queued",
+      "cancelled": "Cancelled",
       "error": "An error occurred"
     },
     "actions": {
       "viewDetails": "View details",
+      "trackProgress": "Track progress",
       "uploadTest": "Upload Test",
-      "closeUpload": "Close upload"
+      "closeUpload": "Close upload",
+      "cancelJob": "Cancel training",
+      "refresh": "Refresh"
+    },
+    "cancel": {
+      "title": "Cancel this training job?",
+      "description": "The active training pipeline will be stopped and marked as cancelled.",
+      "successTitle": "Cancellation requested",
+      "successDesc": "The training job is stopping.",
+      "errorTitle": "Unable to cancel job",
+      "errorDesc": "Please try again later."
     }
   },
   "Deploy": {
@@ -763,7 +776,8 @@
       "done": "Completed",
       "running": "Running",
       "pending": "Pending",
-      "failed": "Failed"
+      "failed": "Failed",
+      "skipped": "Skipped"
     }
   },
   "Profile": {

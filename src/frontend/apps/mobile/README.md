@@ -9,6 +9,7 @@ Thư mục này dành cho ứng dụng di động trong tương lai của HAutoM
 - **Tái sử dụng tầng dùng chung**:
   - DTOs / Types / Schemas từ `@automl/domain` (nằm trong `packages/domain`).
   - Universal API Client & Pure Services từ `@automl/api` (nằm trong `packages/api`).
+  - Hình ảnh & video dùng chung từ `@automl/assets` (nằm trong `packages/assets`).
 - **Lưu trữ bảo mật Auth**: `expo-secure-store`.
 
 ## Hướng Dẫn Tái Sử Dụng API Từ `@automl/api` & `@automl/domain`
@@ -103,3 +104,24 @@ await datasetService.uploadDataset({
 });
 ```
 Hàm `buildDatasetFormData` và `appendUniversalFile` trong `@automl/api` sẽ tự động xử lý tương thích với `FormData` của React Native.
+
+### 4. Tái Sử Dụng Hình Ảnh & Video Từ `@automl/assets`
+
+Toàn bộ tài nguyên ảnh/video dùng chung giữa Web và Mobile nằm trong `packages/assets` (ưu tiên import theo subpath để Metro không bundle thừa ảnh không dùng):
+
+```tsx
+import { Image } from "react-native";
+import { brandAssets } from "@automl/assets/brand";
+
+export function BrandHeader() {
+  return (
+    <Image
+      source={brandAssets.logoNoText}
+      style={{ width: 32, height: 32 }}
+      resizeMode="contain"
+    />
+  );
+}
+```
+
+Các icon và splash screen đặc thù riêng cho iOS/Android (`app.json`) đặt tại `apps/mobile/assets/`.

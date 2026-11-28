@@ -57,6 +57,7 @@ async def get_list_jobs(
 
 
 @router.get("/jobs/{id}", response_model=responses.BaseResponse[dict])
+@router.get("/jobs/{id}/pipeline", response_model=responses.BaseResponse[dict])
 async def get_job_detail(
     id: str = Path(..., description="Training Job ID"),
     current_user: dict = Depends(dependencies.get_current_user),

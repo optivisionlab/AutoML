@@ -191,12 +191,18 @@ class RayManager:
     @classmethod
     async def get_driver(cls) -> None:
         """Initialize or connect to Ray"""
-        if cls._is_initialized:
+        if cls._is_initialized and ray.is_initialized():
             return
 
         async with cls._get_lock():
-            if cls._is_initialized:
+            if cls._is_initialized and ray.is_initialized():
                 return
+
+            try:
+                if not ray.is_initialized():
+                    ray.shutdown()
+            except Exception:
+                pass
 
             mode = settings.RAY.MODE
             head_addr = settings.RAY.HEAD_ADDRESS

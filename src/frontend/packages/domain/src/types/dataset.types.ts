@@ -57,19 +57,35 @@ export interface DatasetDataPreviewResponseData {
   records?: Record<string, unknown>[];
 }
 
+export interface ProblemMetricsData {
+  problem_type: string;
+  metrics: string[];
+}
+
+export type ProblemMetricsResponse = BaseResponse<ProblemMetricsData>;
+
+export interface GetProblemMetricsParams {
+  problem_type?: "classification" | "regression" | "time_series" | string;
+}
+
 export interface DatasetTrainingConfig {
   choose?: string | null;
   problem_type: "classification" | "regression" | string;
   target: string;
   list_feature: string[];
   metric_sort: string;
+<<<<<<< HEAD
   search_algorithm?:
+=======
+  search_algorithm:
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
     | "tpe_search"
     | "bayesian_search"
     | "grid_search"
     | "random_search"
     | "genetic_algorithm"
     | string;
+  timeout?: number | null;
 }
 
 export interface StartTrainingPayload {
@@ -100,17 +116,37 @@ export type DatasetFormPayload = {
   thumbnail_file?: UniversalFile | null;
 };
 
-export interface ConnectDBPayload {
-  db_type: string;
+// Database Connector (4.5, 4.6, 4.7)
+export interface DatabaseConnection {
+  db_type:
+    | "postgres"
+    | "postgresql"
+    | "mysql"
+    | "sqlite"
+    | "sqlite3"
+    | "duckdb"
+    | "mssql"
+    | "sqlserver"
+    | "snowflake"
+    | "bigquery"
+    | "clickhouse"
+    | "oracle"
+    | "trino"
+    | "presto"
+    | "hive"
+    | "redshift"
+    | "amazon_redshift"
+    | string;
   database: string;
-  host?: string;
+  host?: string | null;
   port?: number | null;
-  user?: string;
-  password?: string;
-  schema_name?: string;
+  user?: string | null;
+  password?: string | null;
+  schema_name?: string | null;
   extra_params?: Record<string, unknown>;
 }
 
+<<<<<<< HEAD
 export interface ConnectDBResponseData {
   tables: string[];
 }
@@ -130,11 +166,53 @@ export interface ImportDatabaseTablePayload {
   password?: string;
   schema_name?: string;
   extra_params?: Record<string, unknown>;
+=======
+export type ConnectDBPayload = DatabaseConnection;
+
+export interface DatabaseConnectData {
+  tables: string[];
+}
+
+export type ConnectDBResponse = BaseResponse<DatabaseConnectData> & {
+  tables?: string[];
+};
+
+// 4.6 Database Table Info & Preview
+export interface TableInfoRequest extends DatabaseConnection {
+  table_name: string;
+  limit?: number;
+}
+
+export interface TableColumnSchema {
+  name: string;
+  type: string;
+}
+
+export interface TableInfoData {
+  table_name: string;
+  columns: TableColumnSchema[];
+  preview_data: Array<Record<string, unknown>>;
+  preview_count: number;
+}
+
+export type TableInfoResponse = BaseResponse<TableInfoData>;
+
+// 4.7 Database Table Import
+export interface ImportDatabaseTablePayload extends DatabaseConnection {
+  table_name: string;
+  data_name: string;
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
   description?: string | null;
   public?: boolean;
 }
 
+<<<<<<< HEAD
 export interface ImportDatabaseTableResponse extends BaseResponse<Dataset> {
   dataset_id?: string;
 }
 
+=======
+export type ImportDatabaseTableResponse = BaseResponse<Dataset> & {
+  dataset_id?: string;
+};
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe

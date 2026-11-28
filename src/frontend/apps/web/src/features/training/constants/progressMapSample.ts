@@ -1,27 +1,37 @@
-import { ModelScoreDetail, PipelineData } from "@automl/domain";
+import { ModelScoreDetail, ModelTrialDetail, PipelineData } from "@automl/domain";
 
-export type ProgressMapNodeStatus = "done" | "running" | "pending" | "failed";
+export type ProgressMapNodeStatus = "done" | "running" | "pending" | "failed" | "skipped";
 
 export type ProgressMapNode = {
   id: string;
   label: string;
   subtitle?: string;
+  metricBadge?: string;
   status: ProgressMapNodeStatus;
   x: number;
   y: number;
+  px?: number;
+  py?: number;
   parentIds?: string[];
+  dashedParentIds?: string[];
   branch?: string;
   startedAt?: string;
   finishedAt?: string;
   elapsed?: string;
   error?: string;
   kind?: string;
+  modelName?: string;
   isBestModel?: boolean;
   params?: Record<string, string | number | boolean>;
   result?: Record<string, string | number | boolean>;
   rawParams?: Record<string, unknown>;
   rawOutput?: Record<string, unknown>;
   modelsList?: Record<string, ModelScoreDetail>;
+  trials?: ModelTrialDetail[] | null;
+  bestTrial?: number | null;
+  holdoutScores?: Record<string, number | null> | null;
+  nTrials?: number | null;
+  nPruned?: number | null;
   log?: string[];
 };
 
@@ -31,6 +41,8 @@ export type ProgressMapPipeline = {
   predictionColumn: string;
   rankBy: string;
   scoreMode: string;
+  canvasWidth?: number;
+  canvasHeight?: number;
   nodes: ProgressMapNode[];
   rawPipeline?: PipelineData;
 };

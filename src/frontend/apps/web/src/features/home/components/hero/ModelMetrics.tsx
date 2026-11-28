@@ -2,7 +2,6 @@
 
 import type { CSSProperties } from "react";
 import { Clock3, Cuboid, TrendingUp } from "lucide-react";
-import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 
 import type { HeroPointer } from "./HeroSection";
@@ -49,12 +48,9 @@ export default function ModelMetrics({ pointer }: ModelMetricsProps) {
         const Icon = metric.icon;
 
         return (
-          <motion.div
+          <div
             key={metric.labelKey}
             className={`automl-ai-metric-card ${metric.tone}`}
-            initial={{ opacity: 0, x: 22, scale: 0.96 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.7 + index * 0.1, ease: "easeOut" }}
             style={{ "--metric-delay": `${index * 0.18}s` } as CSSProperties}
           >
             <span className="automl-ai-metric-icon">
@@ -64,7 +60,7 @@ export default function ModelMetrics({ pointer }: ModelMetricsProps) {
               <small>{t(metric.labelKey)}</small>
               <strong>{metric.value}</strong>
             </span>
-          </motion.div>
+          </div>
         );
       })}
     </div>

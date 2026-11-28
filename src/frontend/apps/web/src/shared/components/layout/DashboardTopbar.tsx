@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { brandAssets } from "@automl/assets/brand";
 import { useEffect } from "react";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -26,7 +27,10 @@ import {
 } from "@/shared/components/ui/dropdown-menu";
 import ModeToggle from "@/shared/components/mode-toggle";
 import { useGetCurrentUserQuery } from "@/core/api/authApi";
+<<<<<<< HEAD
 import { useGetUserAvatarQuery } from "@/core/api/userApi";
+=======
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
 import LanguageToggle from "@/shared/components/language-toggle";
 import NotificationBell from "@/features/notifications/components/NotificationBell";
 import { useTranslations } from "next-intl";
@@ -86,13 +90,17 @@ export default function DashboardTopbar({
   const { data: session } = useSession();
   const roleLabel =
     session?.user?.role === "admin" ? t("adminRole") : t("userRole");
+<<<<<<< HEAD
 
   // Lấy thông tin user hiện tại qua /api/v1/auth/me
+=======
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
   const { data: userResponse, refetch: refetchUser } = useGetCurrentUserQuery(
     undefined,
     { skip: !session?.user },
   );
   const userData = userResponse?.data;
+<<<<<<< HEAD
   const userId = userData?._id || userData?.id || session?.user?.id;
   const username = userData?.username || session?.user?.username;
 
@@ -101,6 +109,14 @@ export default function DashboardTopbar({
   const { data: blobAvatarUrl } = useGetUserAvatarQuery(userId ?? "", {
     skip: !userId || !isObjectStorageAvatar,
   });
+=======
+  const avatarUrl = getAvatarSrc(
+    userData?.avatar ?? (userData as any)?.image ?? (session?.user as any)?.avatar,
+  );
+
+  useEffect(() => {
+    if (!session?.user) return;
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
 
   const avatarUrl = isObjectStorageAvatar
     ? blobAvatarUrl
@@ -111,7 +127,11 @@ export default function DashboardTopbar({
     window.addEventListener("avatar-updated", handleAvatarUpdate);
     return () =>
       window.removeEventListener("avatar-updated", handleAvatarUpdate);
+<<<<<<< HEAD
   }, [refetchUser]);
+=======
+  }, [refetchUser, session?.user]);
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-automl-navy/90 transition-colors">
@@ -149,7 +169,7 @@ export default function DashboardTopbar({
           <div className="flex items-center gap-2 lg:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-1 ring-1 ring-slate-200/80 dark:bg-white/10 dark:ring-white/10 shadow-xs">
               <Image
-                src="/logoHautoMLNotext.png"
+                src={brandAssets.logoNoText}
                 alt="HAutoML"
                 width={24}
                 height={24}

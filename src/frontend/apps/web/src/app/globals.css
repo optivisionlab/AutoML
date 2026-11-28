@@ -322,6 +322,28 @@
     padding-left: clamp(0rem, 2vw, 1.25rem);
   }
 
+  .automl-hero-enter {
+    animation: automl-hero-fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--hero-delay, 0s);
+  }
+
+  @keyframes automl-hero-fade-up {
+    from {
+      opacity: 0;
+      transform: translate3d(0, var(--hero-y, 14px), 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .automl-hero-enter {
+      animation: none;
+    }
+  }
+
   .automl-ai-badge {
     display: inline-flex;
     align-items: center;

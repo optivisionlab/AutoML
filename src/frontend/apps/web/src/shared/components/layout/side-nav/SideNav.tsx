@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { brandAssets } from "@automl/assets/brand";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -59,7 +60,7 @@ export default function SideNav({
           {/* Logo to, rõ nét, sang trọng, vẫn căn giữa chuẩn trục dọc với Header */}
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200/80 dark:bg-white/10 dark:ring-white/15">
             <Image
-              src="/logoHautoMLNotext.png"
+              src={brandAssets.logoNoText}
               alt="HAutoML"
               width={34}
               height={34}

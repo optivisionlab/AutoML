@@ -1,6 +1,9 @@
+import type { StaticImageData } from "next/image";
+import { achievementImages } from "@automl/assets/achievements";
+
 export interface IndustryCard {
   id: string;
-  image: string;
+  image: StaticImageData | string;
 }
 
 export interface AwardItem {
@@ -12,7 +15,7 @@ export interface AwardItem {
   iconType: "trophy" | "award" | "users" | "zap";
   badge: string;
   badgeEn?: string;
-  image: string;
+  image: StaticImageData | string;
 }
 
 export const AWARDS_DATA: AwardItem[] = [
@@ -25,7 +28,7 @@ export const AWARDS_DATA: AwardItem[] = [
     iconType: "trophy",
     badge: "Giải Nhất",
     badgeEn: "1st Prize",
-    image: "/achievements/giai_nhat_nckh_2025_2026.jpg",
+    image: achievementImages.giaiNhatNckh20252026,
   },
   {
     id: "giai-nhi-startup-mindset",
@@ -36,7 +39,7 @@ export const AWARDS_DATA: AwardItem[] = [
     iconType: "award",
     badge: "Giải Nhì",
     badgeEn: "2nd Prize",
-    image: "/achievements/giai_nhi_startup_mindset_2025.jpg",
+    image: achievementImages.giaiNhiStartupMindset2025,
   },
   {
     id: "giai-khuyen-khich-sv-startup",
@@ -47,7 +50,7 @@ export const AWARDS_DATA: AwardItem[] = [
     iconType: "trophy",
     badge: "Cấp Quốc Gia",
     badgeEn: "National",
-    image: "/achievements/giai_khuyen_khich_sv_startup_lan_8.jpg",
+    image: achievementImages.giaiKhuyenKhichSvStartupLan8,
   },
   {
     id: "giai-trien-vong-nextgen",
@@ -58,7 +61,7 @@ export const AWARDS_DATA: AwardItem[] = [
     iconType: "zap",
     badge: "Triển Vọng",
     badgeEn: "Promising",
-    image: "/achievements/giai_trien_vong_nextgen.jpg",
+    image: achievementImages.giaiTrienVongNextgen,
   },
   {
     id: "giai-khuyen-khich-doi-moi-sang-tao",
@@ -69,60 +72,60 @@ export const AWARDS_DATA: AwardItem[] = [
     iconType: "award",
     badge: "Đổi Mới Sáng Tạo",
     badgeEn: "Innovation",
-    image: "/achievements/giai_khuyen_khich_doi_moi_sang_tao.jpg",
+    image: achievementImages.giaiKhuyenKhichDoiMoiSangTao,
   },
 ];
 
 export const INDUSTRY_ROW_1: IndustryCard[] = [
   {
     id: "row1-giai-nhat-nckh",
-    image: "/achievements/giai_nhat_nckh_2025_2026.jpg",
+    image: achievementImages.giaiNhatNckh20252026,
   },
   {
     id: "row1-giai-nhi-startup",
-    image: "/achievements/giai_nhi_startup_mindset_2025.jpg",
+    image: achievementImages.giaiNhiStartupMindset2025,
   },
   {
     id: "row1-giai-khuyen-khich-sv-startup",
-    image: "/achievements/giai_khuyen_khich_sv_startup_lan_8.jpg",
+    image: achievementImages.giaiKhuyenKhichSvStartupLan8,
   },
   {
     id: "row1-icisn-springer",
-    image: "/achievements/icisn_springer_2025.png",
+    image: achievementImages.icisnSpringer2025,
   },
   {
     id: "row1-giai-trien-vong-nextgen",
-    image: "/achievements/giai_trien_vong_nextgen.jpg",
+    image: achievementImages.giaiTrienVongNextgen,
   },
   {
     id: "row1-team-work",
-    image: "/achievements/optivision_team_work.png",
+    image: achievementImages.optivisionTeamWork,
   },
 ];
 
 export const INDUSTRY_ROW_2: IndustryCard[] = [
   {
     id: "row2-giai-khuyen-khich-dmst",
-    image: "/achievements/giai_khuyen_khich_doi_moi_sang_tao.jpg",
+    image: achievementImages.giaiKhuyenKhichDoiMoiSangTao,
   },
   {
     id: "row2-giai-trien-vong-nextgen",
-    image: "/achievements/giai_trien_vong_nextgen.jpg",
+    image: achievementImages.giaiTrienVongNextgen,
   },
   {
     id: "row2-giai-nhat-nckh",
-    image: "/achievements/giai_nhat_nckh_2025_2026.jpg",
+    image: achievementImages.giaiNhatNckh20252026,
   },
   {
     id: "row2-giai-khuyen-khich-sv-startup",
-    image: "/achievements/giai_khuyen_khich_sv_startup_lan_8.jpg",
+    image: achievementImages.giaiKhuyenKhichSvStartupLan8,
   },
   {
     id: "row2-icta-conference",
-    image: "/achievements/icta_2024_conference.png",
+    image: achievementImages.icta2024Conference,
   },
   {
     id: "row2-giai-nhi-startup",
-    image: "/achievements/giai_nhi_startup_mindset_2025.jpg",
+    image: achievementImages.giaiNhiStartupMindset2025,
   },
 ];

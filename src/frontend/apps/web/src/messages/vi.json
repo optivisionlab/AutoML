@@ -600,12 +600,25 @@
     "status": {
       "completed": "Đã hoàn thành",
       "training": "Đang training",
+      "queued": "Đang chờ",
+      "cancelled": "Đã hủy",
       "error": "Có lỗi xảy ra"
     },
     "actions": {
       "viewDetails": "Xem chi tiết",
+      "trackProgress": "Theo dõi tiến trình",
       "uploadTest": "Upload Test",
-      "closeUpload": "Đóng upload"
+      "closeUpload": "Đóng upload",
+      "cancelJob": "Hủy huấn luyện",
+      "refresh": "Làm mới"
+    },
+    "cancel": {
+      "title": "Xác nhận hủy tác vụ huấn luyện?",
+      "description": "Tiến trình huấn luyện đang chạy sẽ bị dừng và chuyển sang trạng thái đã hủy.",
+      "successTitle": "Đã gửi yêu cầu hủy",
+      "successDesc": "Tác vụ huấn luyện đang được dừng lại.",
+      "errorTitle": "Không thể hủy tác vụ",
+      "errorDesc": "Vui lòng thử lại sau."
     }
   },
   "Deploy": {
@@ -763,7 +776,8 @@
       "done": "Hoàn tất",
       "running": "Đang chạy",
       "pending": "Đang chờ",
-      "failed": "Lỗi"
+      "failed": "Lỗi",
+      "skipped": "Bỏ qua"
     }
   },
   "Profile": {
