@@ -1,0 +1,33 @@
+# Git & Version Control
+.git
+.gitignore
+.github
+
+# Environment & Config files (ĐẶC BIỆT QUAN TRỌNG để bảo mật)
+.env
+.env.*
+!.env.example
+
+# Documentation & Assets (Không cần thiết trong runtime image)
+README.md
+docs/
+assets/
+demo/
+
+# Testing & Development
+tests/
+deploy/mosquitto/
+
+# Docker files (Tránh copy chính cấu hình docker vào trong container)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Python cache & virtual environments (nếu có ở root)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/

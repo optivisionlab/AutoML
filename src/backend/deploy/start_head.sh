@@ -9,22 +9,22 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default settings
-PORT=7777
-CLIENT_PORT=10001
+PORT=7776
+CLIENT_PORT=7777
 BACKGROUND=false
 
 print_usage() {
     echo "Usage: ./start_head.sh [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -p, --port <PORT>        GCS port for Head Node (Default: 7777)"
-    echo "  -c, --client-port <PORT> Ray Client server port (Default: 10001)"
+    echo "  -p, --port <PORT>        GCS port for Head Node (Default: 7776)"
+    echo "  -c, --client-port <PORT> Ray Client server port (Default: 7777)"
     echo "  -D, --daemon             Run in background (Daemon mode)"
     echo "  -h, --help               Show this help message"
     echo ""
     echo "Examples:"
     echo "  ./start_head.sh"
-    echo "  ./start_head.sh -p 7777 -D"
+    echo "  ./start_head.sh -p 7776 -c 7777 -D"
 }
 
 # Parse CLI arguments
@@ -51,6 +51,7 @@ CMD=(ray start --head
     --ray-client-server-port="$CLIENT_PORT"
     --include-dashboard=false
 )
+
 
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"

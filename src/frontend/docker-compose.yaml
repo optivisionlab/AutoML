@@ -1,17 +1,25 @@
-version: '3.3'
-
 services:
-  hautoml_frontend:
-    image: hautoml-frontend:latest
-    container_name: hautoml-frontend
-    network_mode: host
+  hautoml-frontend:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    # image: hautoml-frontend:latest
+    image: vanh74/hautoml-frontend:v3.2    
+    container_name: hautoml_frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    expose:
-      - '3000'
-    command: npm run dev
+      - "${FRONTEND_PORT:-3000}:3000"
+    env_file:
+      - apps/web/.env
+    networks:
+      - hautoml_net
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  hautoml_net:
+    name: hautoml_net
+    external: true
