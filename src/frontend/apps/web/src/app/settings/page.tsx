@@ -104,7 +104,12 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-5rem)]">
+    <div
+      className={cn(
+        "min-h-[calc(100vh-5rem)]",
+        !session && "mx-auto max-w-[1360px] px-4 pb-16 pt-24 sm:px-6 sm:pt-28",
+      )}
+    >
       {/* Top Header & Breadcrumbs theo phong cách ảnh mẫu */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/80 pb-4 dark:border-white/10">
         <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">

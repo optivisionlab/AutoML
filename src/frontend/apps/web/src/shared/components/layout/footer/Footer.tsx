@@ -10,7 +10,11 @@ import {
   Star,
   BookOpen,
 } from "lucide-react";
-import { FaFacebook, FaGithub, FaYoutube } from "react-icons/fa";
+import {
+  FacebookIcon,
+  GithubIcon,
+  YoutubeIcon,
+} from "@/shared/components/common/BrandIcons";
 import { useTranslations } from "next-intl";
 import {
   footerNavigationColumns,
@@ -30,11 +34,11 @@ export default function Footer() {
   const getSocialIcon = (key: string) => {
     switch (key) {
       case "github":
-        return <FaGithub className="h-4 w-4" />;
+        return <GithubIcon className="h-4 w-4" />;
       case "facebook":
-        return <FaFacebook className="h-4 w-4" />;
+        return <FacebookIcon className="h-4 w-4" />;
       case "youtube":
-        return <FaYoutube className="h-4 w-4" />;
+        return <YoutubeIcon className="h-4 w-4" />;
       default:
         return null;
     }

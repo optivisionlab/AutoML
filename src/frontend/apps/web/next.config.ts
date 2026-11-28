@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: false,
   transpilePackages: ["@automl/domain", "@automl/api"],
+  experimental: {
+    optimizePackageImports: ["lucide-react", "recharts", "date-fns"],
+  },
   images: {
     domains: [
       "developers.google.com",

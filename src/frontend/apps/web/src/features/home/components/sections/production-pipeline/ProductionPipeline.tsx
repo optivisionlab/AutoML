@@ -33,14 +33,45 @@ export default function ProductionPipeline() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(true);
+  const [shouldLoadVideo, setShouldLoadVideo] = useState<boolean>(false);
+  const [isInView, setIsInView] = useState<boolean>(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Tự động play video khi component mount
+  // Chỉ tải và phát video khi người dùng cuộn gần tới section (tránh kéo 1.34MB ngay lúc vừa mở trang)
   useEffect(() => {
-    if (DEMO_VIDEO_URL && videoRef.current) {
-      videoRef.current.play().catch(() => {});
+    const el = sectionRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setShouldLoadVideo(true);
+      setIsInView(true);
+      return;
     }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoadVideo(true);
+          setIsInView(true);
+        } else {
+          setIsInView(false);
+        }
+      },
+      { rootMargin: "200px 0px", threshold: 0.01 }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
+
+  // Tự động play/pause video theo vùng nhìn thấy và trạng thái isPlaying
+  useEffect(() => {
+    if (!DEMO_VIDEO_URL || !shouldLoadVideo || !videoRef.current) return;
+    if (isInView && isPlaying) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  }, [shouldLoadVideo, isInView, isPlaying]);
 
   // Xác định bước đang kích hoạt dựa trên currentTime
   const activeStepIndex = useMemo(() => {
@@ -100,6 +131,7 @@ export default function ProductionPipeline() {
   };
 
   const handleStepClick = (step: PipelineStep) => {
+    setShouldLoadVideo(true);
     setCurrentTime(step.startTime);
     setIsPlaying(true);
 
@@ -110,6 +142,7 @@ export default function ProductionPipeline() {
   };
 
   const togglePlayPause = () => {
+    setShouldLoadVideo(true);
     if (isPlaying) {
       setIsPlaying(false);
       if (videoRef.current) videoRef.current.pause();
@@ -175,6 +208,7 @@ export default function ProductionPipeline() {
 
   return (
     <section
+      ref={sectionRef}
       id="pipeline-showcase"
       className="relative w-full overflow-hidden border-y border-slate-200/70 bg-slate-50/80 pt-16 pb-24 text-automl-ink transition-colors dark:border-white/10 dark:bg-[#060b16] sm:pt-20 sm:pb-32"
     >
@@ -232,10 +266,10 @@ export default function ProductionPipeline() {
                   /* KHI BẠN CUNG CẤP VIDEO */
                   <video
                     ref={videoRef}
-                    src={DEMO_VIDEO_URL}
+                    src={shouldLoadVideo ? DEMO_VIDEO_URL : undefined}
+                    preload="none"
                     playsInline
                     muted={isMuted}
-                    autoPlay
                     loop
                     onTimeUpdate={handleVideoTimeUpdate}
                     onEnded={handleVideoEnded}

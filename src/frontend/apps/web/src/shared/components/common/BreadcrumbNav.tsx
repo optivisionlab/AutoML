@@ -20,7 +20,7 @@ interface BreadcrumbNavProps {
 export default function BreadcrumbNav({
   items,
   className,
-  showHome = false,
+  showHome = true,
 }: BreadcrumbNavProps) {
   const common = useTranslations("Common");
 
@@ -33,25 +33,21 @@ export default function BreadcrumbNav({
       )}
     >
       {showHome && (
-        <>
-          <Link
-            href="/"
-            className="transition-colors hover:text-blue-600 dark:hover:text-cyan-400 font-medium"
-          >
-            {common("home")}
-          </Link>
-          {items.length > 0 && (
-            <span className="text-slate-400 dark:text-slate-600">/</span>
-          )}
-        </>
+        <Link
+          href="/"
+          className="transition-colors hover:text-blue-600 dark:hover:text-cyan-400 font-medium"
+        >
+          {common("home")}
+        </Link>
       )}
 
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
+        const showSlash = showHome || index > 0;
 
         return (
-          <React.Fragment key={`${item.label}-${index}`}>
-            {index > 0 && (
+          <span key={`${item.label}-${index}`} className="flex items-center gap-2">
+            {showSlash && (
               <span className="text-slate-400 dark:text-slate-600">/</span>
             )}
             {isLast || !item.href ? (
@@ -66,7 +62,7 @@ export default function BreadcrumbNav({
                 {item.label}
               </Link>
             )}
-          </React.Fragment>
+          </span>
         );
       })}
     </nav>

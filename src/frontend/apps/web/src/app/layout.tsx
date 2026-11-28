@@ -5,7 +5,7 @@ import ClientSessionProvider from "../pages/api/auth/ClientSessionProvider";
 import { Metadata } from "next";
 import { ThemeProvider } from "@/core/theme/ThemeProvider";
 import AppShell from "@/shared/components/layout/AppShell";
-import { getLocale } from "next-intl/server";
+import { getLocale, getMessages } from "next-intl/server";
 import { LanguageProvider } from "@/core/i18n/LanguageProvider";
 import { AppLocale, defaultLocale, isAppLocale } from "@/core/i18n/config";
 import {
@@ -52,7 +52,10 @@ interface IProps {
 }
 
 export default async function RootLayout({ children }: IProps) {
-  const requestLocale = await getLocale();
+  const [requestLocale, initialMessages] = await Promise.all([
+    getLocale(),
+    getMessages(),
+  ]);
   const locale: AppLocale = isAppLocale(requestLocale)
     ? requestLocale
     : defaultLocale;
@@ -68,7 +71,10 @@ export default async function RootLayout({ children }: IProps) {
         />
       </head>
       <body>
-        <LanguageProvider initialLocale={locale}>
+        <LanguageProvider
+          initialLocale={locale}
+          initialMessages={initialMessages}
+        >
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

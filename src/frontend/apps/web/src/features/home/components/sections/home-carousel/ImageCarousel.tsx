@@ -8,10 +8,9 @@ import {
   CarouselItem,
 } from "@/shared/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
-import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import Link from "next/link";
 import { Button } from "@/shared/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { getPublicEnv } from "@/core/config/publicEnv";
 
@@ -63,7 +62,7 @@ export default function ImageCarousel() {
         onClick={() => api?.scrollPrev()}
         className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/50 hover:bg-black/70 text-white p-3 rounded-full"
       >
-        <FaChevronLeft size={20} />
+        <ChevronLeft size={20} />
       </button>
 
       {/* Custom nút phải */}
@@ -71,7 +70,7 @@ export default function ImageCarousel() {
         onClick={() => api?.scrollNext()}
         className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-black/50 hover:bg-black/70 text-white p-3 rounded-full"
       >
-        <FaChevronRight size={20} />
+        <ChevronRight size={20} />
       </button>
 
       {/* Overlay chữ */}

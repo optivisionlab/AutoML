@@ -17,7 +17,7 @@ import {
   Layers,
   Users,
 } from "lucide-react";
-import { FaGithub } from "react-icons/fa";
+import { GithubIcon } from "@/shared/components/common/BrandIcons";
 import {
   Carousel,
   CarouselContent,
@@ -436,7 +436,7 @@ export default function MemberLab() {
             rel="noopener noreferrer"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-500"
           >
-            <FaGithub className="h-3.5 w-3.5" />
+            <GithubIcon className="h-3.5 w-3.5" />
             <span>GitHub Contributors</span>
             <ExternalLink className="h-3 w-3" />
           </a>
@@ -461,7 +461,7 @@ export default function MemberLab() {
                   className="h-12 w-12 rounded-xl object-cover ring-2 ring-blue-500/30 transition-transform duration-200 group-hover:scale-105 group-hover:ring-blue-500"
                 />
                 <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white">
-                  <FaGithub className="h-2.5 w-2.5" />
+                  <GithubIcon className="h-2.5 w-2.5" />
                 </span>
               </div>
 
