@@ -9,6 +9,7 @@ Hàm ở đây là thuần tuý: không mạng, không LLM, không đọc file. 
 được bằng pytest hoặc chạy tay, không tốn quota.
 """
 
+import re
 import difflib
 
 # Tên thuật toán tìm kiếm mà backend chấp nhận.
@@ -26,10 +27,17 @@ MIN_MAX_TIME = 60
 MAX_MAX_TIME = 24 * 60 * 60
 
 
+# Hậu tố ID kiểu CamelCase (StudentID, PlayerID, CustomerId, Order2ID): "I" hoa ngay sau chữ thường/số, nên
+# không bắt nhầm từ thường kết thúc bằng "id" (paid, valid, Fluid) hay viết hoa toàn bộ (AVID).
+_CAMEL_ID = re.compile(r"[a-z0-9](ID|Id)$")
+
+
 def looks_like_id(column: str) -> bool:
     """Đoán cột có phải khoá định danh không, để cảnh báo khi dùng làm đặc trưng."""
-    lowered = column.strip().lower()
-    return lowered in _ID_HINTS or lowered.endswith("_id") or lowered.startswith("id_")
+    stripped = column.strip()
+    lowered = stripped.lower()
+    return (lowered in _ID_HINTS or lowered.endswith("_id") or lowered.startswith("id_")
+            or bool(_CAMEL_ID.search(stripped)))
 
 
 _MAX_UNKNOWN_LISTED = 10
