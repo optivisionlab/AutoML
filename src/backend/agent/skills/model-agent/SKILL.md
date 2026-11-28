@@ -63,6 +63,13 @@ nói bỏ cột nào thì bỏ). Hồ sơ có `columns_truncated: true` thì `co
   one-hot (vd `Sex_F/Sex_I/Sex_M` giữ đủ cả 3): mọi model trong `list_models`
   (cây, SVM, KNN, hồi quy tuyến tính/logistic của sklearn) đều chạy được với đủ
   cột. Muốn khuyên thì ghi trong báo cáo, không sửa config.
+- Người dùng chỉ định đặc trưng mà trong đó có cột bình thường bạn sẽ loại → vẫn giữ
+  ĐÚNG config họ chốt, nhưng BẮT BUỘC ghi vào báo cáo một mục "Cảnh báo" nêu từng cột:
+  khoá định danh (tên kiểu `id`, `*_id`, `StudentID`, giá trị gần như mỗi dòng một khác),
+  hằng số / thiếu gần hết, và cột nghi **rò rỉ mục tiêu** (cột là nguồn hoặc mã hoá lại của
+  cột mục tiêu, vd điểm trung bình `GPA` khi mục tiêu là xếp loại `GradeClass` suy từ điểm;
+  cột chỉ biết sau khi có kết quả). Nói hệ quả: điểm đánh giá sẽ cao giả tạo, không phản
+  ánh khả năng dự đoán thật.
 - `time_series`: `list_feature` PHẢI có đúng một cột trong `time_columns` (backend
   tạo lag và đặc trưng lịch từ cột này). Người dùng không chỉ định feature thì
   chỉ thêm cột khác khi biết trước giá trị của nó ở tương lai (vd lịch khuyến
@@ -97,7 +104,8 @@ báo Manager lỗi cụ thể để hỏi người dùng. Kết quả có `user_
 ## Báo cáo cho Manager
 
 `config_id`, cột mục tiêu và lý do, số cột đặc trưng (và cột đã loại), metric,
-thuật toán, `max_time`, model dự đoán sẽ tốt, `warnings` nếu có. Với
+thuật toán, `max_time`, model dự đoán sẽ tốt, `warnings` nếu có, và mục "Cảnh báo" về cột
+định danh / rò rỉ mục tiêu (B2) nếu có. Với
 time_series thêm cột thời gian, `step` và `estimated_last` - Manager cần chúng để
 dự báo các mốc tiếp theo.
 
