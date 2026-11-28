@@ -409,9 +409,19 @@ class ChatSession:
                 if activation.get("needs_confirmation") and self.team.propose_activation_after_job(summary):
                     activated += " Đã hiện thẻ xác nhận KÍCH HOẠT cho người dùng - họ bấm thì model mới được bật."
             source = f" Nguồn điểm: {summary.get('score_note')}" if summary.get("score_note") else ""
+            # Cảnh báo của chính config job này (vd cột định danh người dùng ép giữ): pilot v6 G12 cho thấy Manager
+            # nêu ở lượt chốt config rồi quên khi báo kết quả - nhắc lại ngay trong sự kiện.
+            handoff = self.team.handoff
+            config_warnings = (handoff.configs.get(handoff.jobs.get(job_id)) or {}).get("warnings") or []
+            caution = (
+                f" Cảnh báo của cấu hình job này: {' '.join(config_warnings)} Nhắc lại cho người dùng khi báo kết "
+                "quả (cùng các cột nghi rò rỉ mục tiêu đã cảnh báo trước đó, nếu có): điểm có thể bị thổi phồng, "
+                "không phản ánh khả năng dự đoán thật."
+                if config_warnings else ""
+            )
             text = (
                 f"Job {job_id} đã huấn luyện xong: model tốt nhất {summary.get('best_model')}, "
-                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated}{source} "
+                f"{summary.get('metric_sort')} = {summary.get('best_score')}; kiểm định: {judged}.{activated}{source}{caution} "
                 "Đủ các metric của model tốt nhất nằm trong best_model_scores, xếp hạng các "
                 f"model trong leaderboard.{_EVENT_DETAIL}{json.dumps(summary, ensure_ascii=False, default=str)}"
             )
