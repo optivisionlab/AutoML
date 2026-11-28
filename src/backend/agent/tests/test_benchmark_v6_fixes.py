@@ -8,6 +8,8 @@ Lỗi tìm thấy ở pilot benchmark hautoml-v6-pilot3 (2026-11-28), khoá hàn
 """
 import pytest
 
+from agent.tests.test_agent import session  # noqa: F401 - fixture dùng chung
+
 from agent import tools
 from agent.skills import load_skills
 
@@ -51,3 +53,16 @@ def test_manager_relays_leakage_warnings_and_does_not_overpromise():
     text = _skill_text("agent-manager")
     assert "rò rỉ" in text and "thổi phồng" in text
     assert "lưu" in text and "không hứa" in text.lower()
+
+
+def test_job_done_event_repeats_config_warnings(session):
+    """G12_r01 (lần thử 3): cảnh báo có ở lượt chốt config nhưng báo kết quả job lại quên - sự kiện job xong
+    phải mang theo cảnh báo của chính config job đó."""
+    from agent.tests.test_agent import SUCCESS_JOB
+    warning = "Cột 'StudentID' trông như khoá định danh, thường không mang thông tin dự đoán."
+    session.team.handoff.configs["cfg_abc123"] = {"config_id": "cfg_abc123", "config": {}, "warnings": [warning]}
+    session.team.handoff.jobs["job-9"] = "cfg_abc123"
+    session._on_job_finished({**SUCCESS_JOB, "job_id": "job-9"})
+    session._on_job_finished({**SUCCESS_JOB, "job_id": "job-other"})
+    assert "StudentID" in session.pending_events[0] and "thổi phồng" in session.pending_events[0]
+    assert "StudentID" not in session.pending_events[1]
