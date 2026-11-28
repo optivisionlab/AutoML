@@ -1,10 +1,45 @@
+# Dependencies
 node_modules
-.next
-.git
-.github
-*.log
-npm-debug.log*
-.DS_Store
+**/node_modules
+.pnp
+.pnp.js
 
-docs/
-apps/web/public/
+# Build artifacts and cache
+.next
+**/.next
+out
+build
+dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Git and OS metadata
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+Thumbs.db
+*.pem
+
+# Documentation and unused folders
+docs
+packages/ui
+packages/config
+src
+
+# Environment files
+.env*
+**/.env*
+
+# Scripts
+install-nodejs.sh
+run-fe.sh
+
+# Others
+packages/assets/images

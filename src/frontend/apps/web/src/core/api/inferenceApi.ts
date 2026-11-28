@@ -2,12 +2,16 @@ import axios from "axios";
 import {
   type ActivateModelPayload,
   type ActiveModelsResponse,
+  type CancelJobResponse,
   type DeploymentInfoResponse,
+  type JobDetailPayload,
+  type JobDetailResponse,
   type JobsListParams,
   type JobsListResponse,
   type PredictionFile,
   type RealtimePredictPayload,
   type RealtimePredictResponse,
+  type TrainingJob,
 } from "@automl/domain";
 import { appendUniversalFile, resolveFileName } from "@automl/api";
 import { axiosClient, baseApi } from "./baseApi";
@@ -15,12 +19,15 @@ import { axiosClient, baseApi } from "./baseApi";
 export type {
   ActivateModelPayload,
   ActiveModelsResponse,
+  CancelJobResponse,
   DeploymentInfoResponse,
+  JobDetailResponse,
   JobsListParams,
   JobsListResponse,
   PredictionFile,
   RealtimePredictPayload,
   RealtimePredictResponse,
+  TrainingJob,
 };
 
 export const inferenceApi = baseApi.injectEndpoints({
@@ -37,6 +44,25 @@ export const inferenceApi = baseApi.injectEndpoints({
         },
       }),
       providesTags: ["Job"],
+    }),
+
+    // GET /api/v1/inference/jobs/{id}
+    getTrainingJobById: builder.query<JobDetailPayload, string>({
+      query: (id) => ({
+        url: `/api/v1/inference/jobs/${id}`,
+      }),
+      transformResponse: (response: JobDetailResponse | JobDetailPayload) =>
+        response &&
+        typeof response === "object" &&
+        "data" in response &&
+        response.data &&
+        typeof response.data === "object" &&
+        !("_id" in response) &&
+        !("read_dataset" in response) &&
+        !("train" in response)
+          ? (response.data as JobDetailPayload)
+          : (response as JobDetailPayload),
+      providesTags: (_result, _error, id) => [{ type: "Job", id }],
     }),
 
     // 5.2 GET /api/v1/inference/models
@@ -189,19 +215,120 @@ export const inferenceApi = baseApi.injectEndpoints({
       },
       invalidatesTags: ["Inference"],
     }),
+<<<<<<< HEAD
     cancelJob: builder.mutation<BaseResponse<{ status: string; job_id: string }>, string>({
+=======
+
+    // 6.2 POST /api/v1/inference/jobs/{id}/cancel (also available as cancelJob in jobApi)
+    cancelPrediction: builder.mutation<CancelJobResponse, string>({
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
       query: (jobId) => ({
         url: `/api/v1/inference/jobs/${jobId}/cancel`,
         method: "POST",
       }),
       invalidatesTags: ["Job", "Inference"],
     }),
+<<<<<<< HEAD
     cancelPrediction: builder.mutation<BaseResponse<{ status: string; job_id: string }>, string>({
       query: (jobId) => ({
         url: `/api/v1/inference/jobs/${jobId}/cancel`,
         method: "POST",
       }),
       invalidatesTags: ["Job", "Inference"],
+=======
+
+    // 6.8 GET /api/v1/inference/models/{id}/export/notebook
+    exportNotebook: builder.mutation<PredictionFile, string>({
+      async queryFn(jobId) {
+        try {
+          const response = await axiosClient.get(
+            `/api/v1/inference/models/${jobId}/export/notebook`,
+            { responseType: "blob" },
+          );
+          return {
+            data: {
+              blob: response.data,
+              fileName: resolveFileName(
+                response.headers["content-disposition"],
+                `hautoml_pipeline_${jobId}.ipynb`,
+              ),
+            },
+          };
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            return {
+              error: {
+                status: error.response?.status,
+                data: error.response?.data ?? error.message,
+              },
+            };
+          }
+          return { error: { data: "Export notebook failed" } };
+        }
+      },
+    }),
+
+    // 6.9 GET /api/v1/inference/models/{id}/export/docker
+    exportDocker: builder.mutation<PredictionFile, string>({
+      async queryFn(jobId) {
+        try {
+          const response = await axiosClient.get(
+            `/api/v1/inference/models/${jobId}/export/docker`,
+            { responseType: "blob" },
+          );
+          return {
+            data: {
+              blob: response.data,
+              fileName: resolveFileName(
+                response.headers["content-disposition"],
+                `hautoml_docker_${jobId}.zip`,
+              ),
+            },
+          };
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            return {
+              error: {
+                status: error.response?.status,
+                data: error.response?.data ?? error.message,
+              },
+            };
+          }
+          return { error: { data: "Export docker package failed" } };
+        }
+      },
+    }),
+
+    // 6.10 GET /api/v1/inference/models/{id}/export/model
+    exportModel: builder.mutation<PredictionFile, string>({
+      async queryFn(jobId) {
+        try {
+          const response = await axiosClient.get(
+            `/api/v1/inference/models/${jobId}/export/model`,
+            { responseType: "blob" },
+          );
+          return {
+            data: {
+              blob: response.data,
+              fileName: resolveFileName(
+                response.headers["content-disposition"],
+                `model_${jobId}.pkl`,
+              ),
+            },
+          };
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            return {
+              error: {
+                status: error.response?.status,
+                data: error.response?.data ?? error.message,
+              },
+            };
+          }
+          return { error: { data: "Export model artifact failed" } };
+        }
+      },
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
     }),
   }),
 });
@@ -210,12 +337,17 @@ export const {
   useActivateModelMutation,
   useCancelJobMutation,
   useCancelPredictionMutation,
+  useExportDockerMutation,
+  useExportModelMutation,
+  useExportNotebookMutation,
   useGetActiveModelsQuery,
   useGetModelDeploymentInfoQuery,
+  useGetTrainingJobByIdQuery,
   useGetTrainingJobsQuery,
   useInferenceModelMutation,
   useLazyGetActiveModelsQuery,
   useLazyGetModelDeploymentInfoQuery,
+  useLazyGetTrainingJobByIdQuery,
   useLazyGetTrainingJobsQuery,
   usePredictBatchFileMutation,
   usePredictRealtimeMutation,

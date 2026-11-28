@@ -1,0 +1,25 @@
+# Ignore loose/temporary image files outside official asset directories
+*.png
+*.PNG
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.webp
+*.WEBP
+*.gif
+*.GIF
+*.bmp
+*.BMP
+*.tiff
+*.TIFF
+*.avif
+*.AVIF
+*.heic
+*.HEIC
+
+# Track official shared assets and web-only public/app icons
+!packages/assets/images/**
+!apps/web/public/**
+!apps/web/src/app/*.png
+!apps/web/src/app/*.ico

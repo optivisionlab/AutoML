@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { brandAssets } from "@automl/assets/brand";
 
 interface HeaderBrandProps {
   onNavigate?: () => void;
@@ -20,7 +21,7 @@ export default function HeaderBrand({ onNavigate }: HeaderBrandProps) {
     >
       <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 p-1.5 ring-1 ring-white/15 backdrop-blur transition-all duration-200 group-hover:scale-105 group-hover:bg-white/15 group-hover:ring-blue-400/30">
         <Image
-          src="/logoHautoMLNotext.png"
+          src={brandAssets.logoNoText}
           alt="HAutoML"
           width={30}
           height={30}

@@ -83,6 +83,15 @@ export const createAuthService = (client: AxiosInstance) => ({
     return res.data;
   },
 
+  // 1.13 POST /api/v1/auth/google (OAuth2 Initiate)
+  getGoogleLoginUrl: (baseUrl?: string): string => {
+    const base = baseUrl || client.defaults.baseURL || "";
+    const cleanBase = base.replace(/\/+$/, "");
+    return cleanBase.endsWith("/api/v1")
+      ? `${cleanBase}/auth/google`
+      : `${cleanBase}/api/v1/auth/google`;
+  },
+
   // Legacy method aliases
   registerUser: async (payload: any): Promise<any> => {
     const res = await client.post("/api/v1/auth/signup", payload);

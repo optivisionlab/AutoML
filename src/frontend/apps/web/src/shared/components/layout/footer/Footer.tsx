@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { brandAssets } from "@automl/assets/brand";
 import {
   ArrowUp,
   ExternalLink,
@@ -10,7 +11,11 @@ import {
   Star,
   BookOpen,
 } from "lucide-react";
-import { FaFacebook, FaGithub, FaYoutube } from "react-icons/fa";
+import {
+  FacebookIcon,
+  GithubIcon,
+  YoutubeIcon,
+} from "@/shared/components/common/BrandIcons";
 import { useTranslations } from "next-intl";
 import {
   footerNavigationColumns,
@@ -30,11 +35,11 @@ export default function Footer() {
   const getSocialIcon = (key: string) => {
     switch (key) {
       case "github":
-        return <FaGithub className="h-4 w-4" />;
+        return <GithubIcon className="h-4 w-4" />;
       case "facebook":
-        return <FaFacebook className="h-4 w-4" />;
+        return <FacebookIcon className="h-4 w-4" />;
       case "youtube":
-        return <FaYoutube className="h-4 w-4" />;
+        return <YoutubeIcon className="h-4 w-4" />;
       default:
         return null;
     }
@@ -96,7 +101,7 @@ export default function Footer() {
             >
               <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 p-1.5 ring-1 ring-white/15 backdrop-blur transition-all duration-200 group-hover:scale-105 group-hover:bg-white/15 group-hover:ring-blue-400/40">
                 <Image
-                  src="/logoHautoMLNotext.png"
+                  src={brandAssets.logoNoText}
                   alt="HAutoML"
                   width={32}
                   height={32}

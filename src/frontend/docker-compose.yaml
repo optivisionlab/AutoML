@@ -7,18 +7,28 @@ services:
     container_name: hautoml_frontend
     restart: unless-stopped
     ports:
+<<<<<<< HEAD
       - "${FRONTEND_PORT:-3000}:3000"
     env_file:
       - apps/web/.env
     networks:
       - hautoml_net
+=======
+      - "3000:3000"
+    expose:
+      - '3000'
+    command: node apps/web/server.js
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+<<<<<<< HEAD
 
 networks:
   hautoml_net:
     name: hautoml_net
     external: true
+=======
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe

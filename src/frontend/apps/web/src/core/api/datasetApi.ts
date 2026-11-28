@@ -15,6 +15,12 @@ import {
   type GetDatasetsParams,
   type ImportDatabaseTablePayload,
   type ImportDatabaseTableResponse,
+  type ProblemMetricsResponse,
+  type GetProblemMetricsParams,
+  type TableInfoRequest,
+  type TableInfoResponse,
+  type TableInfoData,
+  type TableColumnSchema,
   type StartTrainingPayload,
   type StartTrainingResponse,
 } from "@automl/domain";
@@ -41,6 +47,12 @@ export type {
   GetDatasetsParams,
   ImportDatabaseTablePayload,
   ImportDatabaseTableResponse,
+  ProblemMetricsResponse,
+  GetProblemMetricsParams,
+  TableInfoRequest,
+  TableInfoResponse,
+  TableInfoData,
+  TableColumnSchema,
   StartTrainingPayload,
   StartTrainingResponse,
 };
@@ -62,7 +74,25 @@ export const datasetApi = baseApi.injectEndpoints({
       providesTags: ["Dataset"],
     }),
 
-    // 3.2 GET /api/v1/datasets/default
+    // 4.2 GET /api/v1/datasets/metrics (Problem Metrics)
+    getProblemMetrics: builder.query<
+      ProblemMetricsResponse,
+      GetProblemMetricsParams | { problem_type?: string } | string | void
+    >({
+      query: (arg) => {
+        const problemType = typeof arg === "string" ? arg : arg?.problem_type ?? "classification";
+        return {
+          url: "/api/v1/datasets/metrics",
+          params: { problem_type: problemType },
+        };
+      },
+      providesTags: (_result, _error, arg) => {
+        const problemType = typeof arg === "string" ? arg : arg?.problem_type ?? "classification";
+        return [{ type: "Dataset", id: `metrics-${problemType}` }];
+      },
+    }),
+
+    // 4.3 GET /api/v1/datasets/default
     getDefaultDatasets: builder.query<DatasetsListResponse, GetDatasetsParams | void>({
       query: (params) => ({
         url: "/api/v1/datasets/default",
@@ -138,6 +168,28 @@ export const datasetApi = baseApi.injectEndpoints({
         url: `/api/v1/datasets/${datasetId}/features`,
         params: { problem_type: problemType },
       }),
+      transformResponse: (response: any): DatasetFeaturesResponse => {
+        const raw = response?.data?.features ?? response?.data ?? response?.features ?? response;
+        const featuresMap: Record<string, boolean> = {};
+
+        if (Array.isArray(raw)) {
+          raw.forEach((col: string) => {
+            featuresMap[col] = true;
+          });
+        } else if (raw && typeof raw === "object") {
+          Object.entries(raw).forEach(([k, v]) => {
+            if (k !== "success" && k !== "message" && k !== "status" && k !== "meta") {
+              featuresMap[k] = Boolean(v);
+            }
+          });
+        }
+
+        return {
+          success: true,
+          message: response?.message || "Features retrieved successfully",
+          data: { features: featuresMap },
+        };
+      },
       providesTags: (_result, _error, { datasetId }) => [
         { type: "Dataset", id: `features-${datasetId}` },
       ],
@@ -174,20 +226,50 @@ export const datasetApi = baseApi.injectEndpoints({
       },
     }),
 
-    // 3.10 POST /api/v1/datasets/{id}/training
+    // 4.14 POST /api/v1/datasets/{id}/training
     startDatasetTraining: builder.mutation<
       StartTrainingResponse,
-      { id: string; config: DatasetTrainingConfig }
+      { id: string; config: DatasetTrainingConfig | any }
     >({
+<<<<<<< HEAD
       query: ({ id, config }) => ({
         url: `/api/v1/datasets/${id}/training`,
         method: "POST",
         data: config,
       }),
+=======
+      query: ({ id, config }) => {
+        const rawConfig = (config as any)?.config ? (config as any).config : config;
+        let listFeature = rawConfig.list_feature || rawConfig.features || [];
+        if (typeof listFeature === "string") {
+          try {
+            listFeature = JSON.parse(listFeature);
+          } catch {
+            listFeature = [listFeature];
+          }
+        }
+
+        const body = {
+          choose: rawConfig.choose || "new_model",
+          problem_type: rawConfig.problem_type || rawConfig.problemType || "classification",
+          target: rawConfig.target,
+          list_feature: Array.isArray(listFeature) ? listFeature : [],
+          metric_sort: rawConfig.metric_sort,
+          search_algorithm: rawConfig.search_algorithm || "bayesian_search",
+          ...(rawConfig.timeout !== undefined ? { timeout: rawConfig.timeout } : {}),
+        };
+
+        return {
+          url: `/api/v1/datasets/${id}/training`,
+          method: "POST",
+          data: body,
+        };
+      },
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
       invalidatesTags: ["Job", "Inference"],
     }),
 
-    // External Database connector endpoints
+    // 4.5 POST /api/v1/datasets/database/connect
     connectDatabase: builder.mutation<ConnectDBResponse, ConnectDBPayload>({
       query: (payload) => ({
         url: "/api/v1/datasets/database/connect",
@@ -196,6 +278,16 @@ export const datasetApi = baseApi.injectEndpoints({
       }),
     }),
 
+    // 4.6 POST /api/v1/datasets/database/table-info
+    getTableInfo: builder.mutation<TableInfoResponse, TableInfoRequest>({
+      query: (payload) => ({
+        url: "/api/v1/datasets/database/table-info",
+        method: "POST",
+        data: payload,
+      }),
+    }),
+
+    // 4.7 POST /api/v1/datasets/database/import
     importDatabaseTable: builder.mutation<
       ImportDatabaseTableResponse,
       ImportDatabaseTablePayload
@@ -240,12 +332,15 @@ export const {
   useGetDatasetsByUserIdQuery,
   useGetDatasetsQuery,
   useGetDefaultDatasetsQuery,
+  useGetProblemMetricsQuery,
+  useGetTableInfoMutation,
   useImportDatabaseTableMutation,
   useLazyGetDatasetDataPreviewQuery,
   useLazyGetDatasetFeaturesQuery,
   useLazyGetDatasetInfoQuery,
   useLazyGetDatasetsQuery,
   useLazyGetDefaultDatasetsQuery,
+  useLazyGetProblemMetricsQuery,
   useStartDatasetTrainingMutation,
   useUpdateDatasetMutation,
   useUploadDatasetMutation,

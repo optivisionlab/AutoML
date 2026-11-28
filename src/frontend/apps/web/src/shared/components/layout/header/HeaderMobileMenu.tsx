@@ -5,7 +5,7 @@ import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { FaGithub } from "react-icons/fa";
+import { GithubIcon } from "@/shared/components/common/BrandIcons";
 import { Button } from "@/shared/components/ui/button";
 import {
   headerDropdownCategories,
@@ -132,7 +132,7 @@ export default function HeaderMobileMenu({ onClose }: HeaderMobileMenuProps) {
           onClick={onClose}
           className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-200 transition hover:bg-white/10 hover:text-white"
         >
-          <FaGithub className="h-4 w-4" />
+          <GithubIcon className="h-4 w-4" />
           <span>GitHub Repository</span>
         </Link>
 

@@ -70,14 +70,15 @@ apps/
         en.json
         vi.json
 
-      assets/
-        images/
+    public/          # Chỉ giữ tài nguyên web-only (favicon, apple-touch-icon, OG image)
 
   mobile/
     README.md
 
 packages/
   domain/
+  api/
+  assets/            # Ảnh & video dùng chung cho Web và Mobile (@automl/assets)
   ui/
   config/
 ```
@@ -317,6 +318,16 @@ packages/
     training/
     datasets/
     marketplace/
+  api/
+    src/
+  assets/
+    images/
+      brand/
+      achievements/
+      lab-carousel/
+      lab-members/
+    videos/
+    src/
   ui/
     web/
     mobile/

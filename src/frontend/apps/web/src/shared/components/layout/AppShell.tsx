@@ -1,17 +1,23 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Header from "@/shared/components/layout/header/Header";
 import Footer from "@/shared/components/layout/footer/Footer";
-import SideNav from "@/shared/components/layout/side-nav/SideNav";
-import DashboardTopbar from "@/shared/components/layout/DashboardTopbar";
 import { Toaster } from "@/shared/components/ui/toaster";
 import AppLoading from "@/shared/components/common/AppLoading";
 import { cn } from "@/shared/lib/utils";
 import { useTranslations } from "next-intl";
 import { useNotificationSocket } from "@/features/notifications/hooks/useNotificationSocket";
+
+const SideNav = dynamic(
+  () => import("@/shared/components/layout/side-nav/SideNav"),
+);
+const DashboardTopbar = dynamic(
+  () => import("@/shared/components/layout/DashboardTopbar"),
+);
 
 const authRoutes = new Set([
   "/login",
@@ -165,7 +171,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           onDesktopSidebarToggle={() => setSidebarCollapsed((value) => !value)}
           onMobileSidebarOpen={() => setMobileSidebarOpen(true)}
         />
-        <main className="w-full px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="w-full px-4 pt-3 pb-6 sm:px-6 sm:pt-4 sm:pb-8 lg:px-8">{children}</main>
       </div>
       <Toaster />
     </div>

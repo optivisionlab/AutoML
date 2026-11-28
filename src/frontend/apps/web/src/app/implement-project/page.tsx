@@ -35,10 +35,20 @@ import {
 } from "@/shared/components/ui/alert-dialog";
 
 import PaginationCustom from "@/shared/components/common/Panigation";
+<<<<<<< HEAD
 import { useGetLegacyJobsByUserIdQuery } from "@/core/api/jobApi";
 import { useGetCurrentUserQuery } from "@/core/api/authApi";
+=======
+import { useGetLegacyJobsByUserIdQuery, useCancelJobMutation } from "@/core/api/jobApi";
+import {
+  isJobActive,
+  isJobCancelled,
+  isJobCompleted,
+} from "@/features/training/utils/pipelineGraphBuilder";
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
 import { useActivateModelMutation } from "@/core/api/inferenceApi";
 import { getApiErrorMessage } from "@/core/api/baseApi";
+import { useToast } from "@/shared/hooks/use-toast";
 import { CheckCircle2, Clock3, Gauge, Search, ServerCog } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useAppSettings } from "@/shared/hooks/useAppSettings";
@@ -55,12 +65,15 @@ const formatDate = (timestamp: number | undefined, locale: string, fallback: str
   });
 };
 
-const isCompleted = (status: number | string) => Number(status) === 1;
+const isCompleted = (status: number | string) => isJobCompleted(status);
+const isRunning = (status: number | string) => isJobActive(status);
+const isCancelled = (status: number | string) => isJobCancelled(status);
 
 const ImplementProject = () => {
   const locale = useLocale();
   const t = useTranslations("Deploy");
   const common = useTranslations("Common");
+  const { toast } = useToast();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [focusedJobId, setFocusedJobId] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -69,6 +82,7 @@ const ImplementProject = () => {
 
   const { data: session } = useSession();
   const router = useRouter();
+<<<<<<< HEAD
   const { data: userMeResponse } = useGetCurrentUserQuery(undefined, {
     skip: !session?.user,
   });
@@ -76,8 +90,15 @@ const ImplementProject = () => {
   const { data: jobs = [], isLoading } = useGetLegacyJobsByUserIdQuery(
     userId ?? undefined,
     { skip: !session?.user },
+=======
+  const userId = session?.user?.id;
+  const { data: jobs = [], isLoading, refetch } = useGetLegacyJobsByUserIdQuery(
+    userId ?? "",
+    { skip: !userId },
+>>>>>>> 74d7c7dad45c7c2b084c2a84f048936d3ec164fe
   );
   const [activateModel] = useActivateModelMutation();
+  const [cancelJobMutation] = useCancelJobMutation();
   const dateLocale = locale === "vi" ? "vi-VN" : "en-US";
 
   const { settings } = useAppSettings();
@@ -242,7 +263,7 @@ const ImplementProject = () => {
                   const jobId = job.job_id || job._id;
                   const isDone = isCompleted(job.status);
                   const isSelected = selectedJobId === jobId;
-                  const readiness = isDone ? 100 : 42;
+                  const readiness = isDone ? 100 : isCancelled(job.status) ? 0 : 42;
 
                   return (
                     <TableRow
@@ -292,9 +313,9 @@ const ImplementProject = () => {
                         <div className="space-y-1.5">
                           <Badge
                             variant="outline"
-                            className={`${isDone ? "automl-status-success" : "automl-status-warning"} rounded-full px-2.5 py-0.5 text-xs font-bold`}
+                            className={`${isDone ? "automl-status-success" : isCancelled(job.status) ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400" : "automl-status-warning"} rounded-full px-2.5 py-0.5 text-xs font-bold`}
                           >
-                            {isDone ? t("status.ready") : t("status.training")}
+                            {isDone ? t("status.ready") : isCancelled(job.status) ? "Đã hủy" : t("status.training")}
                           </Badge>
                           <div className="h-1.5 w-24 rounded-full bg-slate-100 dark:bg-white/10">
                             <div
@@ -317,6 +338,27 @@ const ImplementProject = () => {
                               {
                                 label: t("actions.viewHistory"),
                                 onClick: () => router.push(`/training-history/${jobId}`),
+                              },
+                              {
+                                label: isRunning(job.status) ? "Hủy tiến trình" : "Hủy",
+                                disabled: !isRunning(job.status),
+                                onClick: async () => {
+                                  try {
+                                    await cancelJobMutation(jobId).unwrap();
+                                    toast({
+                                      title: "Đã hủy tiến trình",
+                                      description: `Tiến trình '${job.data?.name || jobId}' đã được gửi yêu cầu hủy.`,
+                                      className: "bg-amber-100 text-amber-800 border border-amber-300",
+                                    });
+                                    refetch();
+                                  } catch (err) {
+                                    toast({
+                                      title: "Không thể hủy",
+                                      description: getApiErrorMessage(err, "Không thể hủy tiến trình này."),
+                                      variant: "destructive",
+                                    });
+                                  }
+                                },
                               },
                             ]}
                           />

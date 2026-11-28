@@ -38,7 +38,7 @@ const getDataTypeIcon = (type?: string) => {
     normalized.includes("csv") ||
     normalized.includes("bảng")
   ) {
-    return <FileSpreadsheet className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />;
+    return <FileSpreadsheet className="h-6 w-6 text-blue-600 dark:text-blue-400" />;
   }
   if (
     normalized.includes("image") ||
@@ -84,8 +84,8 @@ export default function DatasetCard({
       onClick={onSelect}
       onFocus={onSelect}
       className={cn(
-        "group relative flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition-all duration-200 hover:border-slate-300 hover:shadow-md dark:border-white/10 dark:bg-[#0f172a]/60 outline-none",
-        focused && "ring-2 ring-purple-500 shadow-md shadow-purple-500/10 dark:ring-purple-400",
+        "group relative flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition-all duration-200 hover:border-automl-blue/50 hover:shadow-md hover:shadow-blue-500/5 dark:border-white/10 dark:bg-[#0f172a]/60 dark:hover:border-blue-400/40 outline-none",
+        focused && "ring-2 ring-automl-blue shadow-md shadow-blue-500/10 dark:ring-cyan-400 dark:shadow-cyan-500/10",
         flashing && "automl-row-flash",
       )}
       data-focused={focused}
@@ -105,7 +105,7 @@ export default function DatasetCard({
 
           <div className="min-w-0 flex-1">
             <h3
-              className="truncate text-base font-bold text-slate-900 transition group-hover:text-purple-600 dark:text-white dark:group-hover:text-purple-400"
+              className="truncate text-base font-bold text-slate-900 transition group-hover:text-automl-blue dark:text-white dark:group-hover:text-cyan-400"
               title={dataset.dataName}
             >
               {dataset.dataName || "Bộ dữ liệu"}
@@ -144,9 +144,9 @@ export default function DatasetCard({
             e.stopPropagation();
             onTrain();
           }}
-          className="flex-1 h-10 rounded-xl border border-purple-500/80 bg-white font-bold text-purple-600 hover:bg-purple-50 hover:border-purple-600 dark:bg-transparent dark:border-purple-400 dark:text-purple-300 dark:hover:bg-purple-950/30 gap-1.5 transition shadow-xs text-xs sm:text-sm"
+          className="flex-1 h-10 rounded-xl border border-automl-blue/60 bg-white font-bold text-automl-blue hover:bg-automl-blue-soft hover:border-automl-blue dark:bg-transparent dark:border-blue-400/60 dark:text-cyan-300 dark:hover:bg-blue-950/30 gap-1.5 transition shadow-xs text-xs sm:text-sm"
         >
-          <Zap className="h-4 w-4 fill-purple-500 text-purple-500" />
+          <Zap className="h-4 w-4 fill-automl-blue text-automl-blue dark:fill-cyan-400 dark:text-cyan-400" />
           <span>{trainLabel}</span>
         </Button>
 

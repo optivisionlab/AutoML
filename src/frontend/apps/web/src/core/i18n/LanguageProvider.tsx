@@ -1,9 +1,15 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { AbstractIntlMessages, NextIntlClientProvider } from "next-intl";
-import enMessages from "@/messages/en.json";
-import viMessages from "@/messages/vi.json";
 import {
   AppLocale,
   defaultLocale,
@@ -17,10 +23,22 @@ type LanguageContextValue = {
   setLocale: (locale: AppLocale) => void;
 };
 
-const messagesByLocale: Record<AppLocale, AbstractIntlMessages> = {
-  en: enMessages,
-  vi: viMessages,
-};
+const messagesCache: Partial<Record<AppLocale, AbstractIntlMessages>> = {};
+
+async function loadLocaleMessages(
+  targetLocale: AppLocale,
+): Promise<AbstractIntlMessages> {
+  const cached = messagesCache[targetLocale];
+  if (cached) return cached;
+
+  const mod =
+    targetLocale === "en"
+      ? await import("@/messages/en.json")
+      : await import("@/messages/vi.json");
+  const loaded = mod.default as AbstractIntlMessages;
+  messagesCache[targetLocale] = loaded;
+  return loaded;
+}
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
@@ -33,42 +51,61 @@ function persistLocale(locale: AppLocale) {
 export function LanguageProvider({
   children,
   initialLocale = defaultLocale,
+  initialMessages,
 }: {
   children: ReactNode;
   initialLocale?: AppLocale;
+  initialMessages: AbstractIntlMessages;
 }) {
-  const [locale, setLocaleState] = useState<AppLocale>(
-    isAppLocale(initialLocale) ? initialLocale : defaultLocale,
-  );
+  const resolvedInitialLocale: AppLocale = isAppLocale(initialLocale)
+    ? initialLocale
+    : defaultLocale;
+
+  if (!messagesCache[resolvedInitialLocale]) {
+    messagesCache[resolvedInitialLocale] = initialMessages;
+  }
+
+  const [locale, setLocaleState] = useState<AppLocale>(resolvedInitialLocale);
+  const [messages, setMessages] = useState<AbstractIntlMessages>(initialMessages);
+
+  const switchLocale = useCallback(async (nextLocale: AppLocale) => {
+    try {
+      const nextMessages = await loadLocaleMessages(nextLocale);
+      setMessages(nextMessages);
+      setLocaleState(nextLocale);
+      persistLocale(nextLocale);
+    } catch (error) {
+      console.error("Failed to load locale messages:", error);
+    }
+  }, []);
 
   useEffect(() => {
     const savedLocale = localStorage.getItem(localeStorageKey);
 
-    if (isAppLocale(savedLocale) && savedLocale !== locale) {
-      setLocaleState(savedLocale);
-      persistLocale(savedLocale);
+    if (isAppLocale(savedLocale) && savedLocale !== resolvedInitialLocale) {
+      void switchLocale(savedLocale);
       return;
     }
 
-    persistLocale(locale);
-  }, [locale]);
+    persistLocale(resolvedInitialLocale);
+  }, [resolvedInitialLocale, switchLocale]);
 
   const value = useMemo<LanguageContextValue>(
     () => ({
       locale,
       setLocale: (nextLocale) => {
-        setLocaleState(nextLocale);
-        persistLocale(nextLocale);
+        if (nextLocale === locale) return;
+        void switchLocale(nextLocale);
       },
     }),
-    [locale],
+    [locale, switchLocale],
   );
 
   return (
     <LanguageContext.Provider value={value}>
       <NextIntlClientProvider
         locale={locale}
-        messages={messagesByLocale[locale]}
+        messages={messages}
         timeZone="Asia/Ho_Chi_Minh"
       >
         {children}

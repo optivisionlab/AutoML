@@ -1,8 +1,8 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 
 const chipKeys = ["chip1", "chip2", "chip3", "chip4"] as const;
@@ -12,32 +12,27 @@ export default function HeroContent() {
 
   return (
     <div className="automl-ai-hero-content">
-      <motion.h1
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65, delay: 0.08, ease: "easeOut" }}
+      <h1
+        className="automl-hero-enter"
+        style={{ "--hero-delay": "0.08s", "--hero-y": "16px" } as CSSProperties}
       >
         {t("titleLine1")}
         <br />
         {t("titleLine2")}
         <br />
         {t("titleLine3")}
-      </motion.h1>
+      </h1>
 
-      <motion.p
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65, delay: 0.16, ease: "easeOut" }}
-        className="automl-ai-description"
+      <p
+        className="automl-ai-description automl-hero-enter"
+        style={{ "--hero-delay": "0.16s", "--hero-y": "14px" } as CSSProperties}
       >
         {t("description")}
-      </motion.p>
+      </p>
 
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65, delay: 0.24, ease: "easeOut" }}
-        className="automl-ai-actions"
+      <div
+        className="automl-ai-actions automl-hero-enter"
+        style={{ "--hero-delay": "0.24s", "--hero-y": "14px" } as CSSProperties}
       >
         <Link href="/register" className="automl-ai-primary-action">
           {t("primaryAction")}
@@ -46,18 +41,16 @@ export default function HeroContent() {
         <Link href="/public-datasets" className="automl-ai-secondary-action">
           {t("secondaryAction")}
         </Link>
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.32, ease: "easeOut" }}
-        className="automl-ai-chips"
+      <div
+        className="automl-ai-chips automl-hero-enter"
+        style={{ "--hero-delay": "0.32s", "--hero-y": "12px" } as CSSProperties}
       >
         {chipKeys.map((chipKey) => (
           <span key={chipKey}>{t(`chips.${chipKey}`)}</span>
         ))}
-      </motion.div>
+      </div>
     </div>
   );
 }

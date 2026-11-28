@@ -1,17 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 
 import { useLanguage } from "@/core/i18n/LanguageProvider";
 import DocsHeader from "@/features/docs/components/DocsHeader";
 import DocsSidebar from "@/features/docs/components/DocsSidebar";
 import DocsOverview from "@/features/docs/components/DocsOverview";
-import DocsArticle from "@/features/docs/components/DocsArticle";
-import DocsSearchModal from "@/features/docs/components/DocsSearchModal";
 import { getDocCategories, getTopNavTabs } from "@/features/docs/data/docs-content";
 import BreadcrumbNav from "@/shared/components/common/BreadcrumbNav";
 import { cn } from "@/shared/lib/utils";
+
+const DocsArticle = dynamic(
+  () => import("@/features/docs/components/DocsArticle"),
+  {
+    loading: () => (
+      <div className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/70 p-6 sm:p-8 dark:border-white/10 dark:bg-[#0B0F19]/60">
+        <div className="h-6 w-48 animate-pulse rounded-lg bg-slate-200 dark:bg-white/10" />
+        <div className="h-4 w-full animate-pulse rounded bg-slate-200/80 dark:bg-white/5" />
+        <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/80 dark:bg-white/5" />
+        <div className="h-40 w-full animate-pulse rounded-2xl bg-slate-200/70 dark:bg-white/5" />
+      </div>
+    ),
+  },
+);
+
+const DocsSearchModal = dynamic(
+  () => import("@/features/docs/components/DocsSearchModal"),
+  { ssr: false },
+);
 
 // Helper to map sub-topic IDs to their parent top navigation tab
 function getParentTabId(topicId: string): string {
@@ -59,7 +77,19 @@ export default function DocsPage() {
 
     syncFromUrl();
     window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
+
+    const handleGlobalSearchShortcut = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalSearchShortcut);
+
+    return () => {
+      window.removeEventListener("popstate", syncFromUrl);
+      window.removeEventListener("keydown", handleGlobalSearchShortcut);
+    };
   }, []);
 
   const handleSelectTopic = (topicId: string) => {
@@ -162,12 +192,14 @@ export default function DocsPage() {
         </main>
       </div>
 
-      {/* Search Modal (⌘K) */}
-      <DocsSearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onSelectTopic={handleSelectTopic}
-      />
+      {/* Search Modal (⌘K) - lazy-loaded only when opened */}
+      {isSearchOpen && (
+        <DocsSearchModal
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
+          onSelectTopic={handleSelectTopic}
+        />
+      )}
     </div>
   );
 }

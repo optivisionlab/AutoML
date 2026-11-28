@@ -341,7 +341,27 @@ export default function AIModelScene({ pointer }: AIModelSceneProps) {
       updateScale(width, height);
     };
 
+    let isVisible = true;
+    let isTabVisible = !document.hidden;
+
+    const scheduleFrame = () => {
+      if (frameId === 0 && isVisible && isTabVisible) {
+        clock.getDelta();
+        frameId = window.requestAnimationFrame(animate);
+      }
+    };
+
+    const stopFrame = () => {
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+        frameId = 0;
+      }
+    };
+
     const animate = () => {
+      frameId = 0;
+      if (!isVisible || !isTabVisible) return;
+
       const delta = Math.min(clock.getDelta(), 0.05);
       elapsed += delta;
       const phase = elapsed % 8;
@@ -452,7 +472,9 @@ export default function AIModelScene({ pointer }: AIModelSceneProps) {
       }
 
       renderer.render(scene, camera);
-      frameId = window.requestAnimationFrame(animate);
+      if (isVisible && isTabVisible) {
+        frameId = window.requestAnimationFrame(animate);
+      }
     };
 
     resize();
@@ -460,12 +482,38 @@ export default function AIModelScene({ pointer }: AIModelSceneProps) {
       resize();
     });
     resizeObserver.observe(host);
+
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        isVisible = entry.isIntersecting;
+        if (isVisible) {
+          scheduleFrame();
+        } else {
+          stopFrame();
+        }
+      },
+      { threshold: 0.01 },
+    );
+    intersectionObserver.observe(host);
+
+    const handleVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+      if (isTabVisible) {
+        scheduleFrame();
+      } else {
+        stopFrame();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("resize", resize);
-    frameId = window.requestAnimationFrame(animate);
+    scheduleFrame();
 
     return () => {
-      window.cancelAnimationFrame(frameId);
+      stopFrame();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("resize", resize);
+      intersectionObserver.disconnect();
       resizeObserver.disconnect();
       renderer.dispose();
       disposeObject(root);

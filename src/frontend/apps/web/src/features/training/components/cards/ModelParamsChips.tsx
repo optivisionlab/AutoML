@@ -29,11 +29,11 @@ export const ModelParamsChips: React.FC<ModelParamsChipsProps> = ({
       {visibleEntries.map(([key, value]) => (
         <span
           key={key}
-          className="inline-flex items-center gap-1 rounded-lg border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-2 py-0.5 font-mono text-[11px] shadow-2xs"
+          className="inline-flex max-w-[160px] items-center gap-1 rounded-lg border border-[var(--automl-data-card-border)] bg-[var(--automl-table-header-bg)] px-2 py-0.5 font-mono text-[11px] shadow-2xs"
           title={`${key}: ${formatPipelineValue(value)}`}
         >
-          <span className="font-semibold text-[var(--automl-data-muted)]">{key}:</span>
-          <span className="font-bold text-[var(--automl-data-text)]">
+          <span className="font-semibold text-[var(--automl-data-muted)] truncate">{key}:</span>
+          <span className="font-bold text-[var(--automl-data-text)] truncate">
             {formatPipelineValue(value)}
           </span>
         </span>
@@ -43,7 +43,7 @@ export const ModelParamsChips: React.FC<ModelParamsChipsProps> = ({
         <button
           type="button"
           onClick={onViewDetails}
-          className="inline-flex items-center rounded-lg border border-blue-200/80 bg-blue-50/80 px-2 py-0.5 text-[11px] font-bold text-automl-blue hover:bg-blue-100 dark:border-cyan-800/60 dark:bg-cyan-950/60 dark:text-cyan-300 dark:hover:bg-cyan-900/60 transition-colors cursor-pointer"
+          className="inline-flex shrink-0 items-center rounded-lg border border-blue-200/80 bg-blue-50/80 px-2 py-0.5 text-[11px] font-bold text-automl-blue hover:bg-blue-100 dark:border-cyan-800/60 dark:bg-cyan-950/60 dark:text-cyan-300 dark:hover:bg-cyan-900/60 transition-colors cursor-pointer"
         >
           +{remainingCount} tham số
         </button>
@@ -54,7 +54,7 @@ export const ModelParamsChips: React.FC<ModelParamsChipsProps> = ({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-6 w-6 p-0 rounded-md text-[var(--automl-data-muted)] hover:text-automl-blue dark:hover:text-cyan-300"
+          className="h-6 w-6 shrink-0 p-0 rounded-md text-[var(--automl-data-muted)] hover:text-automl-blue dark:hover:text-cyan-300"
           onClick={onViewDetails}
           title="Xem đầy đủ tham số & kết quả"
         >
